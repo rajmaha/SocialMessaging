@@ -40,11 +40,14 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
   const [messageText, setMessageText] = useState('')
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [visitorOnline, setVisitorOnline] = useState<boolean | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (conversation) {
       fetchMessages(conversation.id)
+      // Reset visitor online status when switching conversation
+      setVisitorOnline(conversation.platform === 'webchat' ? false : null)
     }
   }, [conversation])
 
@@ -79,13 +82,18 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
     setSending(true)
     try {
       const token = getAuthToken()
-      await axios.post(`${API_URL}/messages/send`, null, {
+      const response = await axios.post(`${API_URL}/messages/send`, null, {
         params: {
           conversation_id: conversation.id,
           message_text: messageText,
         },
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
+
+      // For webchat, show whether the visitor received it live
+      if (conversation.platform === 'webchat') {
+        setVisitorOnline(response.data?.data?.delivered === true)
+      }
 
       setMessageText('')
       // Refresh messages and conversations
@@ -133,14 +141,22 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
           <h2 className="text-lg font-semibold text-gray-800">
             {conversation.contact_name}
           </h2>
-          <span
-            className={`inline-block px-3 py-1 text-xs font-semibold rounded-full mt-1 ${getPlatformColor(
-              conversation.platform
-            )}`}
-          >
-            {conversation.platform.charAt(0).toUpperCase() +
-              conversation.platform.slice(1)}
-          </span>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <span
+              className={`inline-block px-3 py-1 text-xs font-semibold rounded-full ${getPlatformColor(
+                conversation.platform
+              )}`}
+            >
+              {conversation.platform.charAt(0).toUpperCase() +
+                conversation.platform.slice(1)}
+            </span>
+            {conversation.platform === 'webchat' && visitorOnline !== null && (
+              <span className={`inline-flex items-center gap-1 text-xs font-medium ${visitorOnline ? 'text-green-600' : 'text-gray-400'}`}>
+                <span className={`w-2 h-2 rounded-full ${visitorOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
+                {visitorOnline ? 'Visitor online' : 'Visitor offline — message saved'}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

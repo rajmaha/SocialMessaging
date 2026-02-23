@@ -53,18 +53,9 @@ async def send_message(
                 conversation.contact_id, message_text
             )
         elif platform == "webchat":
-            # Push directly to visitor's open WebSocket instead of calling an external API
-            from app.services.webchat_service import webchat_service
-            session_id = conversation.contact_id
-            delivered = await webchat_service.send_to_visitor(session_id, {
-                "type": "message",
-                "id": None,  # will be filled after DB commit
-                "text": message_text,
-                "sender": current_user.full_name or "Agent",
-                "is_agent": True,
-                "timestamp": None,
-            })
-            result = {"success": True, "delivered": delivered}
+            result = {"success": True, "delivered": False}  # updated after DB commit
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported platform: {platform}")
         
         # Save message to database
         db_message = Message(
@@ -83,17 +74,18 @@ async def send_message(
         db.commit()
         db.refresh(db_message)
 
-        # For webchat: update the payload with the real DB id/timestamp
+        # For webchat: push agent reply to visitor WebSocket after DB commit (real id + timestamp)
         if platform == "webchat":
             from app.services.webchat_service import webchat_service
-            await webchat_service.send_to_visitor(conversation.contact_id, {
-                "type": "message_confirm",
+            delivered = await webchat_service.send_to_visitor(conversation.contact_id, {
+                "type": "message",
                 "id": db_message.id,
                 "text": message_text,
                 "sender": current_user.full_name or "Agent",
                 "is_agent": True,
                 "timestamp": db_message.timestamp.isoformat() if db_message.timestamp else None,
             })
+            result["delivered"] = delivered
         timezone = events_service.get_timezone(db)
         event_data = {
             "message_id": db_message.id,

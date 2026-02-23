@@ -42,9 +42,12 @@ export default function WidgetPage() {
   const [agentOnline, setAgentOnline] = useState(false)
   const [isTyping, setIsTyping] = useState(false) // agent typing
   const [connecting, setConnecting] = useState(false)
+  const [wsConnected, setWsConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sessionIdRef = useRef<string | null>(null)
 
   // Load branding immediately (no auth required)
   useEffect(() => {
@@ -113,6 +116,7 @@ export default function WidgetPage() {
 
   const applySession = (data: any, name: string) => {
     setSessionId(data.session_id)
+    sessionIdRef.current = data.session_id
     setConversationId(data.conversation_id)
     setVisitorName(name)
     setBranding((b) => ({ ...b, ...data.branding }))
@@ -131,12 +135,24 @@ export default function WidgetPage() {
   }
 
   const connectWs = (sid: string) => {
-    if (wsRef.current) wsRef.current.close()
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
+    if (wsRef.current) {
+      wsRef.current.onclose = null // prevent reconnect from old close
+      wsRef.current.close()
+    }
+
     const ws = new WebSocket(`${WS_URL}/webchat/ws/${sid}`)
     wsRef.current = ws
 
-    ws.onopen = () => setAgentOnline(true)
-    ws.onclose = () => {}
+    let ping: ReturnType<typeof setInterval> | null = null
+
+    ws.onopen = () => {
+      setWsConnected(true)
+      setAgentOnline(true)
+      ping = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
+      }, 25000)
+    }
 
     ws.onmessage = (ev) => {
       const data = JSON.parse(ev.data)
@@ -174,17 +190,29 @@ export default function WidgetPage() {
       }
     }
 
-    // Keep-alive ping
-    const ping = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
-    }, 25000)
+    ws.onclose = () => {
+      if (ping) clearInterval(ping)
+      setWsConnected(false)
+      // Auto-reconnect after 3 seconds if we still have a session
+      const currentSid = sessionIdRef.current
+      if (currentSid) {
+        reconnectTimer.current = setTimeout(() => connectWs(currentSid), 3000)
+      }
+    }
 
-    ws.onclose = () => clearInterval(ping)
+    ws.onerror = () => ws.close()
   }
 
   const sendMessage = () => {
     const text = inputText.trim()
-    if (!text || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    if (!text || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      if (text && wsRef.current?.readyState !== WebSocket.OPEN) {
+        // Trigger a reconnect immediately if we have a session
+        const currentSid = sessionIdRef.current
+        if (currentSid) connectWs(currentSid)
+      }
+      return
+    }
 
     // Optimistic bubble
     setMessages((prev) => [...prev, {
@@ -274,6 +302,13 @@ export default function WidgetPage() {
         </div>
       </div>
 
+      {/* Reconnecting banner */}
+      {!wsConnected && phase === 'chat' && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-3 py-1.5 text-xs text-yellow-700 text-center flex-shrink-0">
+          Reconnecting… your messages are saved.
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
         {/* Welcome bubble from agent */}
@@ -342,7 +377,7 @@ export default function WidgetPage() {
         />
         <button
           onClick={sendMessage}
-          disabled={!inputText.trim()}
+          disabled={!inputText.trim() || !wsConnected}
           className="w-9 h-9 rounded-xl flex items-center justify-center text-white disabled:opacity-40 transition flex-shrink-0"
           style={{ background: headerBg }}
         >
