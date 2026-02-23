@@ -1,617 +1,467 @@
-# Social Media Messenger - Complete User Manual
+# User Manual — Unified Social Messaging Platform
+
+**Version 2.0 · Updated February 2026**
+
+---
 
 ## Table of Contents
-1. [Getting Started](#getting-started)
-2. [Creating Your Account](#creating-your-account)
-3. [Logging In](#logging-in)
-4. [Dashboard Overview](#dashboard-overview)
-5. [Connecting Platform Accounts](#connecting-platform-accounts)
-6. [Sending and Receiving Messages](#sending-and-receiving-messages)
-7. [Managing Accounts](#managing-accounts)
-8. [Troubleshooting](#troubleshooting)
+
+1. [System Overview](#1-system-overview)
+2. [Getting Started — First Login](#2-getting-started--first-login)
+3. [Dashboard](#3-dashboard)
+4. [Profile & Account Settings](#4-profile--account-settings)
+5. [Connecting Messaging Platforms](#5-connecting-messaging-platforms)
+6. [Conversations & Messaging](#6-conversations--messaging)
+7. [Email Inbox](#7-email-inbox)
+8. [Live Web Chat (Widget)](#8-live-web-chat-widget)
+9. [Admin Panel](#9-admin-panel)
+10. [Roles & Permissions](#10-roles--permissions)
+11. [Troubleshooting](#11-troubleshooting)
+12. [Keyboard Shortcuts](#12-keyboard-shortcuts)
 
 ---
 
-## Getting Started
+## 1. System Overview
 
-### System Requirements
-- **Web Browser**: Chrome, Firefox, Safari, or Edge (latest version recommended)
-- **Internet Connection**: Required for all features
-- **Devices**: Available on desktop and tablet browsers
+This platform gives your team a **single inbox** for every customer message, regardless of where it comes from:
 
-### Access the Application
-1. Open your web browser
-2. Navigate to: `http://localhost:3000`
-3. You will be automatically redirected to the login page if not authenticated
+| Channel | Direction | Notes |
+|---------|-----------|-------|
+| WhatsApp | Send & Receive | Requires Meta Business API |
+| Facebook Messenger | Send & Receive | Requires Facebook App with webhook |
+| Viber | Send & Receive | Requires Viber Bot token |
+| LinkedIn | Send & Receive | Requires LinkedIn App OAuth |
+| Email (SMTP/IMAP) | Send & Receive | Any email provider |
+| Web Chat Widget | Send & Receive | Embeddable on any website, no external API needed |
 
----
-
-## Creating Your Account
-
-### Step 1: Navigate to Registration
-1. Go to `http://localhost:3000`
-2. You'll see the Login page with two options:
-   - "Sign In" (for existing users)
-   - "Register Now" (for new users)
-3. Click **"Register Now"** tab
-
-### Step 2: Fill Out Registration Form
-Complete the following fields:
-
-| Field | Requirements | Example |
-|-------|-------------|---------|
-| **Full Name** | 2-50 characters | John Smith |
-| **Email** | Valid email format | john.smith@example.com |
-| **Password** | Minimum 6 characters | SecurePass123! |
-| **Confirm Password** | Must match password field | SecurePass123! |
-
-### Step 3: Submit Registration
-1. Click the **"Register"** button
-2. System validates your information:
-   - ✅ Email format is valid
-   - ✅ Password is at least 6 characters
-   - ✅ Passwords match
-   - ✅ Email is not already registered
-
-### Step 4: Automatic Login
-After successful registration, you will:
-- See a success message: "Registration successful! Logging you in..."
-- Be automatically logged in
-- Be redirected to the Dashboard within 2 seconds
-
-### Validation Errors
-If registration fails, you'll see error messages:
-- ❌ "Invalid email format" → Use correct email format (example@domain.com)
-- ❌ "Password must be at least 6 characters" → Use longer password
-- ❌ "Passwords do not match" → Confirm password matches exactly
-- ❌ "Email already registered" → Use different email or login instead
+All conversations land in the **Dashboard**, where agents reply from one place. Admins manage users, platform credentials, and branding from the **Admin Panel**.
 
 ---
 
-## Logging In
+## 2. Getting Started — First Login
 
-### Step 1: Access Login Page
-1. Go to `http://localhost:3000`
-2. Click the **"Sign In"** tab (if Registration tab is active)
-3. You should see the Login form
+### 2.1 Register
 
-### Step 2: Enter Credentials
-- **Email**: Enter your registered email address
-- **Password**: Enter your password
+1. Open `http://localhost:3000` in your browser.
+2. Click **"Register Now"**.
+3. Fill in **Full Name**, **Email**, and **Password** (min 6 characters).
+4. Click **Register** — a 6-digit OTP is sent to your email.
+5. Enter the OTP code on the verification screen.
+6. You are logged in and taken to the Dashboard.
 
-### Step 3: Submit Login
-1. Click the **"Sign In"** button
-2. Wait for authentication (1-2 seconds)
+> **OTP expires in 10 minutes.** Click "Resend Code" if needed.
 
-### Step 4: Access Dashboard
-Upon successful login, you'll be:
-- Redirected to the Dashboard
-- Shown your connected messaging platforms
-- Ready to start messaging
+### 2.2 Login
 
-### Demo Credentials (For Testing)
-If you want to test quickly:
-- **Email**: `test@example.com`
-- **Password**: `password123`
+1. Go to `http://localhost:3000`.
+2. Enter your **Email** and **Password**, then click **Sign In**.
+3. A 6-digit OTP is sent to your email — enter it to complete login.
 
-### Login Troubleshooting
-- ❌ "Invalid email or password" → Check credentials and try again
-- ❌ "Cannot connect to server" → Ensure backend is running on port 8000
-- ❌ "Redirects to login repeatedly" → Clear browser cache and cookies
+### 2.3 Forgot Password
+
+1. Click **"Forgot Password?"** on the login page.
+2. Enter your registered email and click **Send Reset Link**.
+3. Open the reset link from your email (valid 1 hour).
+4. Enter and confirm your new password.
+
+### 2.4 Change Password (while logged in)
+
+1. Go to **Settings** → **Security** tab.
+2. Enter your current password, then your new password (twice).
+3. Click **Change Password**.
 
 ---
 
-## Dashboard Overview
-
-### Navigation Layout
+## 3. Dashboard
 
 ```
-┌─────────────────────────────────────┐
-│ SIDEBAR (Left)  │   CHAT AREA (Right) │
-├─────────────────────────────────────┤
-│ Messages        │                       │
-│ (Full Name)     │                       │
-│ ⚙️ 🚪 (Icons)  │                       │
-│                 │                       │
-│ [All] [WhatsApp]│  ← Selected Chat     │
-│ [Facebook]      │   Messages Display   │
-│ [Viber]         │                      │
-│ [LinkedIn]      │                      │
-│                 │                      │
-│ • Conversation1 │                      │
-│ • Conversation2 │                      │
-│ • Conversation3 │                      │
-├─────────────────────────────────────┤
-│ Message Input   │                       │
-│ [Type message]  │ [Send Button]        │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Messages                              [Profile Avatar]  │
+│  ──────────────────────────────────────────────────────  │
+│  [All][WhatsApp][Facebook][Viber][LinkedIn][Web Chat]    │
+│  ──────────────────────────────────────────────────────  │
+│  │ Conversation List      │   Chat Window              │  │
+│  │                        │                            │  │
+│  │ 🟢 John (WhatsApp)     │  ← Messages appear here   │  │
+│  │ 🔵 Alice (Facebook)    │                            │  │
+│  │ 🟣 Bob (Viber)         │  [Type message…]  [Send]   │  │
+│  │ 🩵 Widget Visitor      │                            │  │
+└──────────────────────────────────────────────────────────┘
 ```
 
-### Dashboard Components
+### 3.1 Platform Filter Bar
 
-#### 1. **Header (Top Left)**
-- **"Messages"**: Application title
-- Your **Full Name**: Displayed below title
-- **Settings Icon (⚙️)**: Click to manage platform accounts
-- **Logout Button (🚪)**: Click to sign out
+Click any badge to filter conversations:
 
-#### 2. **Platform Filter**
-Filter conversations by messaging platform:
-- **All**: Shows all conversations from all platforms
-- **WhatsApp**: Only WhatsApp messages
-- **Facebook**: Only Facebook Messenger messages
-- **Viber**: Only Viber messages
-- **LinkedIn**: Only LinkedIn messages
+| Badge | Color | Platform |
+|-------|-------|----------|
+| All | — | Show everything |
+| WhatsApp | Green | WhatsApp Business |
+| Facebook | Blue | Facebook Messenger |
+| Viber | Purple | Viber |
+| LinkedIn | Dark Blue | LinkedIn |
+| Web Chat | Teal | Website chat widget |
 
-#### 3. **Conversation List**
-Shows your active conversations:
-- **Contact Name**: Person you're chatting with
-- **Platform Badge**: Colored dot showing platform (🟢 Green: WhatsApp, 🔵 Blue: Facebook, 🟣 Purple: Viber, 🔷 Dark Blue: LinkedIn)
-- **Last Message Preview**: First 50 characters of last message
-- **Unread Badge**: Red badge with count if unread messages exist
-- **Time**: When last message was received
+### 3.2 Conversation List
 
-#### 4. **Chat Window (Right)**
-Displays selected conversation:
-- Full message history
-- Message sender/receiver indicators
-- Timestamps for each message
-- Input field to compose new messages
-- Send button
+Each row shows:
+- **Contact name** and platform badge
+- **Last message preview**
+- **Unread count** (red badge)
+- **Time** of last message
 
----
+Click any conversation to open it on the right.
 
-## Connecting Platform Accounts
+### 3.3 Chat Window
 
-### Accessing Platform Settings
+- Full message history in chronological order.
+- Your replies appear on the right (blue); incoming messages on the left.
+- Type in the input box at the bottom and press **Enter** or click **Send**.
+- For webchat conversations, your reply is pushed directly to the visitor's browser in real time via WebSocket.
 
-#### Method 1: From Dashboard
-1. Click the **Settings icon (⚙️)** in the top-left corner
-2. You'll navigate to the Settings page
+### 3.4 Profile Dropdown (top right)
 
-#### Method 2: From Settings Button
-1. In the Dashboard header, click **"Settings"**
-2. You'll navigate to the Settings page
+Click your avatar circle (top-right corner) to open the dropdown:
 
-### Settings Page Overview
-
-The Settings page has two main sections:
-
-**Profile Section**:
-- Shows your Full Name
-- Shows your Email
-- Read-only (for privacy)
-
-**Connected Accounts Section**:
-- Grid showing all 4 messaging platforms
-- Connection status for each
-- Add/Remove buttons
-
-### Advanced: Setting Up Real-Time 2-Way Messaging
-
-For a complete 2-way conversation experience with real-time message synchronization, you need to:
-
-1. **Configure Webhooks**: Allow your application to receive incoming messages from each platform
-2. **Get API Credentials**: Obtain tokens and IDs from each platform's developer console
-3. **Enable Message Forwarding**: Set up your application to send responses back to users
-
-**Important**: This requires technical setup with platform developer accounts.
-
-**See Complete Guide**: [Webhooks & Real-Time Setup Guide](./WEBHOOKS_SETUP.md)
-
-This advanced guide includes:
-- Step-by-step webhook configuration for Facebook, WhatsApp, Viber, LinkedIn
-- Getting API credentials and tokens
-- Backend webhook handler implementation
-- Testing and validation procedures
-- Troubleshooting webhook issues
+- **Name & role badge** (Admin / Agent / User)
+- **Email** and **phone** (if set)
+- **Edit Profile** → opens Settings → Profile tab
+- **Settings** → opens Settings
+- **Logout** (red)
 
 ---
 
-## Connecting Individual Platform Accounts
+## 4. Profile & Account Settings
 
-### WhatsApp Setup
+Navigate to **Settings** (`/settings`) from the profile dropdown.
 
-#### Prerequisites
-- Active WhatsApp account
-- Phone number associated with WhatsApp
-- Phone number with country code (e.g., +1 for US)
+### 4.1 Profile Tab
 
-#### Steps
-1. Go to **Settings** page
-2. Find **WhatsApp** card (💬 icon)
-3. Click **"Add"** button
-4. Fill out the form:
-   - **Account ID / Phone Number**: `+1234567890` (with country code)
-   - **Display Name / Username**: `John Smith` (how you appear to contacts)
-   - **API Key / Access Token**: Leave empty (optional for now)
-5. Click **"Save Account"**
-6. Confirmation: "WhatsApp account added successfully!"
-7. Card now shows:
-   - Status: "Connected" with @username
-   - Connected date
-   - **"Remove"** button to disconnect
+| Field | Notes |
+|-------|-------|
+| Avatar photo | Click the circle to upload. JPEG, PNG, GIF, WebP — max 5 MB |
+| Full Name | Displayed everywhere in the UI |
+| Phone | Shown in profile dropdown |
+| Bio | Short description |
+| Social links | Twitter/X, Facebook, LinkedIn, Instagram, YouTube |
 
-#### Valid WhatsApp Formats
-✅ +1 (555) 123-4567  
-✅ +1-555-123-4567  
-✅ +15551234567  
-✅ 1-555-123-4567
+Click **Save Profile** to apply changes.
+
+### 4.2 Platform Accounts Tab
+
+Add or remove your connected messaging accounts (WhatsApp, Facebook, Viber, LinkedIn). Each platform allows one account per user.
+
+### 4.3 Security Tab
+
+Change your password by providing the current password and a new one (minimum 6 characters).
 
 ---
 
-### Facebook Messenger Setup
+## 5. Connecting Messaging Platforms
 
-#### Prerequisites
-- Active Facebook account
-- Facebook Messenger access enabled
-- Facebook username or user ID
+All platform credentials are entered in **Settings → Platform Accounts**.
 
-#### Steps
-1. Go to **Settings** page
-2. Find **Facebook Messenger** card (👤 icon)
-3. Click **"Add"** button
-4. Fill out the form:
-   - **Account ID / Phone Number**: Your Facebook username or ID (e.g., `john.smith.123` or `123456789`)
-   - **Display Name / Username**: `John Smith` (your Facebook name)
-   - **API Key / Access Token**: Leave empty (optional for now)
-5. Click **"Save Account"**
-6. Confirmation: "Facebook Messenger account added successfully!"
-7. Card now shows connection status
+### 5.1 WhatsApp
 
-#### Finding Your Facebook Information
-| Item | How to Find |
-|------|------------|
-| Username | Facebook Profile → About → Username |
-| User ID | facebook.com/your-username → URL shows ID |
-| Display Name | Your full name on Facebook profile |
+| Field | Example |
+|-------|---------|
+| Account ID / Phone Number | `+15551234567` |
+| Display Name | `Support Team` |
+| API Key / Access Token | From Meta Developer Console |
 
-#### Valid Facebook Formats
-✅ john.smith.123  
-✅ johnsmith  
-✅ 123456789 (User ID)  
-✅ john@example.com (if linked to email)
+**Prerequisites**: Meta Business account → WhatsApp Business API → Phone Number ID and permanent access token.
 
----
+### 5.2 Facebook Messenger
 
-### Viber Setup
+| Field | Example |
+|-------|---------|
+| Account ID | Facebook username or Page ID |
+| Display Name | `Acme Support` |
+| API Key | Page Access Token from Meta Developer Console |
 
-#### Prerequisites
-- Active Viber account
-- Viber phone number
-- Phone number with country code
+**Prerequisites**: Facebook Developer App with Messenger product enabled, Page access token, and webhook configured.
 
-#### Steps
-1. Go to **Settings** page
-2. Find **Viber** card (📞 icon)
-3. Click **"Add"** button
-4. Fill out the form:
-   - **Account ID / Phone Number**: Your Viber phone number (e.g., `+1234567890`)
-   - **Display Name / Username**: `John Smith` (your Viber display name)
-   - **API Key / Access Token**: Leave empty (optional for now)
-5. Click **"Save Account"**
-6. Confirmation: "Viber account added successfully!"
+### 5.3 Viber
 
-#### Valid Viber Phone Formats
-✅ +1 234 567 8900  
-✅ +1-234-567-8900  
-✅ +12345678900  
-✅ (234) 567-8900
+| Field | Example |
+|-------|---------|
+| Account ID | Bot name or phone |
+| Display Name | `Acme Viber Bot` |
+| API Key | Bot token from Viber Admin Panel |
+
+### 5.4 LinkedIn
+
+| Field | Example |
+|-------|---------|
+| Account ID | LinkedIn username or org ID |
+| Display Name | `Acme LinkedIn` |
+| API Key | OAuth access token |
+
+> For real-time, two-way messaging on any of the above platforms, webhooks must be configured so the platform can push incoming messages to your server. See `WEBHOOKS_SETUP.md` for step-by-step instructions.
 
 ---
 
-### LinkedIn Setup
+## 6. Conversations & Messaging
 
-#### Prerequisites
-- Active LinkedIn account
-- LinkedIn profile URL or email
-- Account verification
+### 6.1 Viewing Messages
 
-#### Steps
-1. Go to **Settings** page
-2. Find **LinkedIn** card (💼 icon)
-3. Click **"Add"** button
-4. Fill out the form:
-   - **Account ID / Phone Number**: LinkedIn username or email (e.g., `john.smith` or `john@example.com`)
-   - **Display Name / Username**: Your professional name (e.g., `John Smith`)
-   - **API Key / Access Token**: Leave empty (optional for now)
-5. Click **"Save Account"**
-6. Confirmation: "LinkedIn account added successfully!"
+1. Click a conversation in the list — full history opens on the right.
+2. Scroll up to view older messages.
 
-#### Finding Your LinkedIn Information
-| Item | How to Find |
-|------|-----------|
-| Username | LinkedIn Profile URL: linkedin.com/in/your-username |
-| Display Name | Your name on LinkedIn profile |
-| Email | Associated email on LinkedIn |
+### 6.2 Sending a Message
 
-#### Valid LinkedIn Formats
-✅ john.smith  
-✅ john-smith-123  
-✅ john@example.com  
-✅ /in/john-smith-123
+1. Click the message input at the bottom.
+2. Type your text.
+3. Press **Enter** or click **Send**.
+
+The system routes the message to the correct platform API (WhatsApp, Facebook, etc.) automatically based on which platform the conversation is on. For webchat, it is sent via WebSocket instantly.
+
+### 6.3 Searching Conversations
+
+Use the **search box** at the top of the conversation list. It filters by contact name in real time.
+
+### 6.4 Unread Counts
+
+The red badge on each conversation shows unread messages. Opening the conversation marks them as read.
+
+### 6.5 Real-Time Events
+
+The dashboard receives live events via a Server-Sent Events (SSE) connection. When a new message arrives on any platform (via webhook), the conversation list and chat window update automatically without a page refresh.
 
 ---
 
-## Managing Accounts
+## 7. Email Inbox
 
-### View All Connected Accounts
+The Email feature is accessible at `/email` from the dashboard navigation.
 
-1. Go to **Settings** page
-2. See **Connected Accounts** section
-3. Each connected account shows:
-   - Platform name and icon
-   - Display name / username
-   - Connection date (e.g., "Connected since 2/22/2026")
-   - Status badge
+### 7.1 Connecting an Email Account
 
-### Remove an Account
+1. Go to **Admin Panel → Email Accounts** (admin) or request your admin to add one.
+2. Provide SMTP and IMAP credentials:
+   - **SMTP Host / Port** — for sending (e.g., `smtp.gmail.com:587`)
+   - **IMAP Host / Port** — for receiving (e.g., `imap.gmail.com:993`)
+   - **Username / Password** — your email credentials
+   - **Security** — TLS or SSL
 
-#### Steps
-1. Go to **Settings** page
-2. Find the connected account you want to remove
-3. Click **"Remove"** button
-4. Confirmation dialog appears: "Are you sure you want to remove this account?"
-5. Click **"OK"** to confirm or **"Cancel"** to abort
-6. Success message: "Account removed successfully!"
-7. Card reverts to "Not connected" state
+3. Click **Test Credentials** to verify the connection before saving.
 
-####⚠️ Warnings
-- Removing an account does NOT delete message history
-- You can re-add the same account anytime
-- Contacts will still see you in their conversations
+### 7.2 Sending Email
 
-### Update Account Information
+1. Open the Email section.
+2. Click **Compose** → fill in To, Subject, and Body.
+3. Attach files if needed.
+4. Click **Send**.
 
-#### Current Behavior
-- Directly updating account information is not yet available
-- To change account details: Remove and re-add the account
+### 7.3 Auto-Sync
 
-#### Planned Feature
-- Edit button (coming in future update)
-- Update display name without removing account
-- Change API keys/access tokens
+The backend automatically syncs all connected email accounts every **5 minutes** via a background scheduler. You can also trigger a manual sync.
+
+### 7.4 Email Threads
+
+Emails are grouped into threads. Replies within the same conversation are shown together.
 
 ---
 
-## Sending and Receiving Messages
+## 8. Live Web Chat (Widget)
 
-### Viewing Conversations
+The webchat system lets website visitors start a live conversation with your agents — no third-party service required.
 
-1. **From Dashboard**, conversations appear in the **left sidebar**
-2. Click any conversation to open it in the **right chat window**
-3. See full message history in chronological order
+### 8.1 How It Works
 
-### Filtering Conversations
+```
+Your Website                Backend              Dashboard
+    │                          │                     │
+    │── POST /webchat/session ─►│                     │
+    │◄─ session_id + history ───│                     │
+    │                          │                     │
+    │══ WS /webchat/ws/{id} ══►│◄═══ SSE events ════│
+    │                          │                     │
+    │── {type:"message"} ─────►│─── broadcast ──────►│
+    │                          │                     │
+    │◄──────────── {type:"message_confirm"} ─────────│
+```
 
-1. Click platform filter buttons:
-   - **All**: Show all conversations
-   - **WhatsApp**: Show only WhatsApp chats
-   - **Facebook**: Show only Messenger chats
-   - **Viber**: Show only Viber chats
-   - **LinkedIn**: Show only LinkedIn messages
+1. Visitor opens your website → floating chat button appears (bottom-right).
+2. Visitor clicks it → chat iframe opens → enters their name.
+3. Messages flow in real time via WebSocket.
+4. Agents see the conversation in the Dashboard under the **Web Chat** filter.
+5. Agent replies are pushed instantly back to the visitor.
 
-2. Conversation list updates instantly
+### 8.2 Embedding on Your Website
 
-### Sending a Message
+Add this single line before `</body>` on any HTML page:
 
-1. Select a conversation from the left sidebar
-2. Click in the **message input field** at the bottom
-3. Type your message
-4. Click the **Send button** (or press Enter/Cmd+Enter)
-5. Message appears in chat window
-6. Notification shows delivery status
+```html
+<script src="http://your-domain.com/chat-widget.js"></script>
+```
 
-### Receiving Messages
+To point to a custom backend:
 
-Messages appear in real-time when:
-- Receiver opens the conversation
-- Message appears from the sender
-- Unread count updates in conversation list
-- Red badge shows number of unread messages
+```html
+<script>
+  window.SocialChatConfig = { serverUrl: 'https://your-domain.com' };
+</script>
+<script src="https://your-domain.com/chat-widget.js"></script>
+```
 
-### Message Status
+The script:
+- Adds a floating 💬 button (bottom-right, styled with your brand color from branding settings).
+- Opens a 360×560 px iframe to the `/widget` page.
+- Shows an unread message badge (red counter) when a new message arrives.
 
-| Status | Meaning |
-|--------|---------|
-| 📤 Sent | Message sent to server |
-| ✓ Delivered | Message received by platform |
-| ✓✓ Read | Recipient has read message |
-| ⏳ Pending | Message is sending |
-| ❌ Failed | Message failed to send |
+### 8.3 Widget Standalone Page
 
----
+The widget is also accessible directly at: `http://localhost:3000/widget`
 
-## Troubleshooting
+This is what loads inside the iframe. It shows:
+- A name prompt screen (first visit)
+- The live chat screen with message bubbles and typing indicator
 
-### Account Creation Issues
+### 8.4 Session Persistence
 
-| Problem | Solution |
-|---------|----------|
-| "Email already registered" | Use a different email address |
-| "Invalid email format" | Use format: name@domain.com |
-| "Passwords do not match" | Ensure both password fields are identical |
-| "Password too short" | Use at least 6 characters |
-| Cannot create account | Ensure backend is running and database is connected |
+The visitor's `session_id` and `visitor_name` are stored in `localStorage`. If the visitor refreshes or reopens the tab, their chat history is restored automatically.
 
-### Login Issues
+### 8.5 Agent Workflow for Web Chat
 
-| Problem | Solution |
-|---------|----------|
-| "Invalid email or password" | Check credentials - they're case-sensitive |
-| Stuck on login page | Clear cache: Ctrl+Shift+Delete (or Cmd+Shift+Delete on Mac) |
-| "Cannot connect to server" | Verify backend is running on port 8000 |
-| Auto-logs out frequently | Check browser cookie settings |
-
-### Platform Account Issues
-
-| Problem | Solution |
-|---------|----------|
-| "Account already exists" | That account is already connected, remove first to re-add |
-| Cannot add WhatsApp | Use phone with country code: +1 234 567 8900 |
-| Cannot add Facebook | Verify username/ID is correct and account is public |
-| Cannot add Viber | Ensure phone number is valid and registered in Viber |
-| Cannot add LinkedIn | Use correct LinkedIn username from your profile URL |
-| Added account not showing | Refresh page (Ctrl+R or Cmd+R) |
-
-### Dashboard Issues
-
-| Problem | Solution |
-|---------|----------|
-| No conversations appearing | Connect a platform account first |
-| Messages not showing | Ensure conversation is selected in left sidebar |
-| Filter not working | Refresh page and try again |
-| Settings button not responding | Try clicking the gear icon instead |
-
-### General Issues
-
-| Problem | Solution |
-|---------|----------|
-| "Loading..." stuck | Refresh page (Ctrl+R) |
-| Chat won't load | Check internet connection |
-| Error messages appearing | Note the message and restart application |
-| Buttons not responding | Browser may be outdated - update your browser |
+1. A new WebChat conversation appears in the Dashboard sidebar with a **teal** badge.
+2. Click it to open — message history is on the right.
+3. Type a reply and click **Send** — it is pushed to the visitor immediately.
+4. When the visitor disconnects, a `webchat_visitor_offline` event is broadcast to agents.
 
 ---
 
-## Tips & Best Practices
+## 9. Admin Panel
 
-### ✅ Do's
-- ✅ Use your real name in display settings for better identification
-- ✅ Add all messaging platforms to see all conversations in one place
-- ✅ Check the platform badges to know which service each message comes from
-- ✅ Remove accounts you no longer use
-- ✅ Keep your password secure and don't share it
+Admin Panel is accessible at `/admin` (only for users with `admin` role).
 
-### ❌ Don'ts
-- ❌ Share your login credentials with anyone
-- ❌ Use weak passwords (less than 8 characters recommended)
-- ❌ Leave sensitive information in message history
-- ❌ Add multiple accounts for the same platform (system prevents this)
-- ❌ Forget to logout on shared computers
+### 9.1 Dashboard (Overview)
+
+- Total Users / Active Users
+- Platform Accounts connected
+- Total Conversations / Messages
+- Recent activity
+
+### 9.2 User Management
+
+| Action | Steps |
+|--------|-------|
+| View all users | Admin → Users |
+| Create a user | Click **Add User** → fill name, email, password, role → Save |
+| Edit a user | Select user → Edit button → change fields → Save |
+| Deactivate a user | Toggle the Active switch to Off |
+| Delete a user | Select user → Delete (permanent) |
+| Change a user's role | Edit user → Role dropdown → Admin / Agent / User |
+
+### 9.3 Platform Settings
+
+Manage global API credentials and webhook configurations for WhatsApp, Facebook, Viber, and LinkedIn that apply to the entire platform (as opposed to per-user accounts).
+
+### 9.4 Email Accounts
+
+Add, edit, test, and remove SMTP/IMAP email accounts for the organization. Click **Test Credentials** before saving to verify connectivity.
+
+### 9.5 Branding
+
+Customize how the platform and the chat widget appear:
+
+| Setting | Description |
+|---------|-------------|
+| Company Name | Shown in widget header and emails |
+| Primary Color | Widget button color, badge color |
+| Logo URL | Displayed in widget and email headers |
+| Welcome Message | First message shown to widget visitors |
+
+Changes take effect immediately. The chat widget fetches branding on every page load.
+
+### 9.6 RBAC — Roles
+
+| Role | Access |
+|------|--------|
+| **admin** | Full access: admin panel, all users, all settings |
+| **agent** | Dashboard, messaging, email — no admin panel |
+| **user** | Dashboard, messaging — read-only settings |
 
 ---
 
-## Keyboard Shortcuts
+## 10. Roles & Permissions
+
+| Feature | Admin | Agent | User |
+|---------|:-----:|:-----:|:----:|
+| View conversations | ✅ | ✅ | ✅ |
+| Send messages | ✅ | ✅ | ✅ |
+| Connect platform accounts | ✅ | ✅ | ✅ |
+| Edit own profile | ✅ | ✅ | ✅ |
+| Change own password | ✅ | ✅ | ✅ |
+| Access email inbox | ✅ | ✅ | — |
+| Access Admin Panel | ✅ | — | — |
+| Manage all users | ✅ | — | — |
+| Change user roles | ✅ | — | — |
+| Edit branding | ✅ | — | — |
+| Manage platform settings | ✅ | — | — |
+| Add org email accounts | ✅ | — | — |
+
+---
+
+## 11. Troubleshooting
+
+### Login / Auth
+
+| Problem | Fix |
+|---------|-----|
+| OTP not received | Check spam. Click "Resend Code" after 30 seconds. |
+| OTP expired | Request a new one — OTPs expire in 10 minutes. |
+| "Invalid email or password" | Credentials are case-sensitive. |
+| Stuck on login (redirect loop) | Clear browser cookies: Cmd+Shift+Delete (Mac). |
+| "Cannot connect to server" | Ensure backend is running on port 8000. |
+
+### Platform Accounts
+
+| Problem | Fix |
+|---------|-----|
+| "Account already exists" | Remove the existing account first. |
+| Messages not delivering | Verify API key / token is still valid (they expire). |
+| Webhook not triggering | Check platform developer console for webhook health. |
+| Conversations not updating | Check SSE connection — refresh the page. |
+
+### Web Chat Widget
+
+| Problem | Fix |
+|---------|-----|
+| Widget button not appearing | Confirm `chat-widget.js` is loaded without JS errors. |
+| "Session not found" WebSocket error | Ensure `POST /webchat/session` was called first. |
+| Messages not reaching agent | Ensure backend is running and SSE connection is active. |
+| Chat history lost | Check that `localStorage` is not cleared between visits. |
+
+### Email
+
+| Problem | Fix |
+|---------|-----|
+| "Authentication failed" on Test | Verify username/password. For Gmail, use an App Password. |
+| Emails not syncing | Check IMAP credentials and firewall rules on port 993. |
+| Sent emails not delivered | Check SMTP credentials and port (587 for TLS, 465 for SSL). |
+
+### General
+
+| Problem | Fix |
+|---------|-----|
+| "Loading…" never ends | Refresh (Cmd+R). Check DevTools console for errors. |
+| CORS errors in console | Confirm backend is on port 8000; do not run it on a different port. |
+| Avatar not loading | Ensure `backend/avatar_storage/` directory exists and is writable. |
+| Backend crashes on start | Run `cat /tmp/backend.log` to see the error. |
+
+---
+
+## 12. Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| **Enter** | Send message (in chat window) |
-| **Ctrl+R** | Refresh page (any browser) |
-| **Cmd+R** | Refresh page (Mac) |
-| **Ctrl+Shift+Del** | Open browser cache/cookies (Windows/Linux) |
-| **Cmd+Shift+Del** | Open browser cache/cookies (Mac) |
+| Enter | Send message |
+| Cmd+R / Ctrl+R | Refresh page |
+| Cmd+Shift+Delete (Mac) | Clear browser cache |
+| Ctrl+Shift+Delete (Windows) | Clear browser cache |
 
 ---
 
-## Account Recovery
-
-### Forgot Password
-Currently not implemented. To recover access:
-1. Register a new account with different email
-2. Contact administrator with proof of identity
-
-**Planned Feature**: Password reset link via email (coming soon)
-
-### Account Deactivation
-To deactivate your account:
-1. Go to **Settings**
-2. Look for **"Deactivate Account"** button (planned feature)
-3. Confirm deletion
-4. Account data will be archived
-
----
-
-## GDPR & Privacy
-
-### Your Data
-- Stored securely on our servers
-- Never shared with third parties
-- Your messaging platforms are not contacted
-- Message history accessible only by you
-
-### Data Access
-1. Go to **Settings** page
-2. Your profile information is visible
-3. Download all your data (planned feature)
-
-### Data Deletion
-To delete your account and all data:
-1. Requesting via Settings → Delete Account (coming soon)
-2. 30-day grace period before permanent deletion
-3. Contact admin to expedite
-
----
-
-## Frequently Asked Questions (FAQ)
-
-**Q: Can I connect the same WhatsApp account twice?**  
-A: No, the system prevents duplicate accounts for the same platform.
-
-**Q: Are my messages encrypted?**  
-A: Messages are encrypted in transit (HTTPS). End-to-end encryption coming soon.
-
-**Q: Can I access my account from multiple devices?**  
-A: Yes, login from any device with your email and password.
-
-**Q: What if I forget my password?**  
-A: Password reset feature coming soon. Currently register a new account.
-
-**Q: Can I change my email after registration?**  
-A: Not currently. This feature is planned for future releases.
-
-**Q: How many platform accounts can I connect?**  
-A: Up to one account per platform (WhatsApp, Facebook, Viber, LinkedIn).
-
-**Q: Are conversations automatically synced?**  
-A: Not yet. This feature is in development - manual refresh available now.
-
-**Q: Can I send scheduled messages?**  
-A: Not yet. This feature is planned for a future update.
-
-**Q: Is real-time messaging supported?**  
-A: Yes, with slight delay. Full real-time via WebSocket coming soon.
-
----
-
-## Getting Help
-
-### Support Channels
-- **Documentation**: Review this manual
-- **Troubleshooting**: Check troubleshooting section above
-- **Email**: support@socialmediamessenger.local
-- **Issues**: Report bugs at [GitHub Issues]
-
-### Providing Feedback
-Help us improve! Share your ideas:
-- Suggest new features
-- Report bugs
-- Share your experience
-- Rate the application
-
----
-
-## Version Information
-
-- **Application Version**: 1.0.0
-- **Last Updated**: February 22, 2026
-- **Browser Compatibility**: Chrome 90+, Firefox 88+, Safari 14+, Edge 90+
-- **Operating Systems**: Windows, macOS, Linux
-
----
-
-## Additional Resources
-
-- [Quick Start Guide](./QUICK_START.md)
-- [API Documentation](./API_DOCUMENTATION.md)
-- [Database Schema](./DATABASE_SETUP.md)
-- [Deployment Guide](./DEPLOYMENT.md)
-- [Project Timeline](./PROJECT_SUMMARY.md)
-
----
-
-**Last Updated**: February 22, 2026  
-**Document Version**: 1.0  
-**Status**: Final Release
-
-For the latest updates and features, visit the application Settings page.
+**Version 2.0 · February 2026**  
+For developer setup, see [SETUP_GUIDE.md](./SETUP_GUIDE.md).  
+For API reference, see [API_DOCUMENTATION.md](./API_DOCUMENTATION.md).
