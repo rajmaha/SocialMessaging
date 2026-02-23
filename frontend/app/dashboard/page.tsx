@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import { authAPI, type User } from '@/lib/auth'
@@ -9,6 +9,7 @@ import ChatWindow from '@/components/ChatWindow'
 import PlatformFilter from '@/components/PlatformFilter'
 import ProfileDropdown from '@/components/ProfileDropdown'
 import { useBranding } from '@/lib/branding-context'
+import { useEvents } from '@/lib/events-context'
 import { FiMessageSquare, FiMail } from 'react-icons/fi'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -28,6 +29,7 @@ export default function DashboardPage() {
   const router = useRouter()
   const brandingCtx = useBranding()
   const branding = brandingCtx?.branding
+  const { subscribe } = useEvents()
   const [user, setUser] = useState<User | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
@@ -35,6 +37,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<'messaging' | 'email'>('email')
   const [localLogo, setLocalLogo] = useState<string | null>(null)
+  const userRef = useRef<User | null>(null)
+  const platformRef = useRef<string>('all')
 
   useEffect(() => {
     const currentUser = authAPI.getUser()
@@ -43,31 +47,21 @@ export default function DashboardPage() {
       return
     }
     setUser(currentUser)
+    userRef.current = currentUser
     fetchConversations(currentUser.user_id)
-    // Load logo from localStorage as fallback
     const saved = localStorage.getItem('companyLogo')
     if (saved) setLocalLogo(saved)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
   const logoSrc = branding?.logo_url || localLogo
 
-  useEffect(() => {
-    const currentUser = authAPI.getUser()
-    if (!currentUser) {
-      router.push('/login')
-      return
-    }
-    setUser(currentUser)
-    fetchConversations(currentUser.user_id)
-  }, [router])
-
-  const fetchConversations = async (userId: number) => {
+  const fetchConversations = useCallback(async (userId: number, platform?: string) => {
+    const plat = platform ?? platformRef.current
     setLoading(true)
     try {
       const params: any = { user_id: userId }
-      if (selectedPlatform !== 'all') {
-        params.platform = selectedPlatform
-      }
+      if (plat !== 'all') params.platform = plat
       const response = await axios.get(`${API_URL}/conversations/`, { params })
       setConversations(response.data)
     } catch (error) {
@@ -75,18 +69,20 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  // Auto-refresh conversation list on new incoming messages
+  useEffect(() => {
+    const refresh = () => { if (userRef.current) fetchConversations(userRef.current.user_id) }
+    const unsubReceived = subscribe('message_received', refresh)
+    const unsubWebchat = subscribe('webchat_visitor_online', refresh)
+    return () => { unsubReceived(); unsubWebchat() }
+  }, [subscribe, fetchConversations])
 
   const handlePlatformChange = (platform: string) => {
     setSelectedPlatform(platform)
-    if (user) {
-      const params: any = { user_id: user.user_id }
-      if (platform !== 'all') params.platform = platform
-      axios
-        .get(`${API_URL}/conversations/`, { params })
-        .then((response) => setConversations(response.data))
-        .catch((error) => console.error('Error fetching conversations:', error))
-    }
+    platformRef.current = platform
+    if (user) fetchConversations(user.user_id, platform)
   }
 
   if (!user) {

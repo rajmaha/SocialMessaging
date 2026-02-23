@@ -82,8 +82,8 @@ export function EventNotifications() {
         }
       case 'message_received':
         return {
-          title: 'New Message',
-          description: `${event.data.sender_name}: ${event.data.message_text?.substring(0, 50)}...`,
+          title: event.data.platform === 'webchat' ? '💬 New Web Chat Message' : 'New Message',
+          description: `${event.data.visitor_name || event.data.sender_name}: ${(event.data.message_text || event.data.text || '').substring(0, 60)}`,
           icon: '💬',
           bgColor: 'bg-blue-50',
           borderColor: 'border-blue-200',

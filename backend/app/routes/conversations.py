@@ -13,12 +13,20 @@ def get_conversations(
     platform: str = None,
     db: Session = Depends(get_db)
 ):
-    """Get all conversations for a user, optionally filtered by platform"""
-    query = db.query(Conversation).filter(Conversation.user_id == user_id)
-    
+    """Get all conversations for a user, optionally filtered by platform.
+    Webchat conversations are shared across all users (no user_id filter)."""
+    from sqlalchemy import or_
+
+    query = db.query(Conversation).filter(
+        or_(
+            Conversation.user_id == user_id,
+            Conversation.platform == "webchat",  # visible to every agent
+        )
+    )
+
     if platform:
         query = query.filter(Conversation.platform == platform.lower())
-    
+
     conversations = query.order_by(Conversation.updated_at.desc()).all()
     return conversations
 
