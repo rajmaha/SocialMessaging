@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import { FiSend } from 'react-icons/fi'
+import { FiSend, FiPaperclip, FiX, FiFile, FiDownload } from 'react-icons/fi'
 import { getAuthToken } from '@/lib/auth'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -13,6 +13,7 @@ interface Message {
   sender_name: string
   message_text: string
   message_type: string
+  media_url?: string | null
   platform: string
   is_sent: number
   read_status: number
@@ -41,6 +42,10 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [visitorOnline, setVisitorOnline] = useState<boolean | null>(null)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [allowedTypes, setAllowedTypes] = useState<string[]>([])
+  const [maxFileMb, setMaxFileMb] = useState(10)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -50,6 +55,14 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
       setVisitorOnline(conversation.platform === 'webchat' ? false : null)
     }
   }, [conversation])
+
+  // Load allowed file types once on mount
+  useEffect(() => {
+    axios.get(`${API_URL}/messages/allowed-file-types`).then((r) => {
+      setAllowedTypes(r.data.allowed_file_types || [])
+      setMaxFileMb(r.data.max_file_size_mb || 10)
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     scrollToBottom()
@@ -76,18 +89,51 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
     }
   }
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (allowedTypes.length > 0 && !allowedTypes.includes(file.type)) {
+      alert(`File type not allowed. Allowed types: ${allowedTypes.join(', ')}`)
+      return
+    }
+    if (file.size > maxFileMb * 1024 * 1024) {
+      alert(`File too large. Maximum size is ${maxFileMb} MB.`)
+      return
+    }
+    setPendingFile(file)
+    // reset input so same file can be re-selected
+    e.target.value = ''
+  }
+
   const handleSendMessage = async () => {
-    if (!messageText.trim() || !conversation) return
+    if (!messageText.trim() && !pendingFile) return
+    if (!conversation) return
 
     setSending(true)
     try {
       const token = getAuthToken()
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+
+      let mediaUrl: string | undefined
+      let attachmentName: string | undefined
+
+      // Upload file first if one is pending
+      if (pendingFile) {
+        const fd = new FormData()
+        fd.append('file', pendingFile)
+        const uploadResp = await axios.post(`${API_URL}/messages/upload-attachment`, fd, { headers })
+        mediaUrl = uploadResp.data.url
+        attachmentName = uploadResp.data.filename
+        setPendingFile(null)
+      }
+
       const response = await axios.post(`${API_URL}/messages/send`, null, {
         params: {
           conversation_id: conversation.id,
           message_text: messageText,
+          ...(mediaUrl ? { media_url: mediaUrl, attachment_name: attachmentName } : {}),
         },
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers,
       })
 
       // For webchat, show whether the visitor received it live
@@ -186,7 +232,33 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
                     : 'message-received bg-gray-200 text-gray-800'
                 }`}
               >
-                <p className="break-words">{message.message_text}</p>
+                {/* Image attachment */}
+                {message.message_type === 'image' && message.media_url && (
+                  <a href={`${API_URL}${message.media_url}`} target="_blank" rel="noreferrer">
+                    <img
+                      src={`${API_URL}${message.media_url}`}
+                      alt={message.message_text}
+                      className="rounded-lg max-w-full mb-1 max-h-48 object-cover"
+                    />
+                  </a>
+                )}
+                {/* File attachment */}
+                {message.message_type === 'file' && message.media_url && (
+                  <a
+                    href={`${API_URL}${message.media_url}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`flex items-center gap-2 py-1 underline text-sm ${message.is_sent ? 'text-blue-100' : 'text-blue-700'}`}
+                  >
+                    <FiFile size={16} />
+                    <span className="break-all">{message.message_text}</span>
+                    <FiDownload size={14} />
+                  </a>
+                )}
+                {/* Text (always show for text messages; captions for attachments) */}
+                {(message.message_type === 'text' || (!message.media_url)) && (
+                  <p className="break-words">{message.message_text}</p>
+                )}
                 <p className={`text-xs mt-1 ${
                   message.is_sent ? 'text-blue-100' : 'text-gray-500'
                 }`}>
@@ -204,7 +276,34 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
 
       {/* Message Input */}
       <div className="border-t px-6 py-4">
+        {/* Pending file preview */}
+        {pendingFile && (
+          <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+            <FiFile size={16} />
+            <span className="flex-1 truncate">{pendingFile.name}</span>
+            <button onClick={() => setPendingFile(null)} className="text-blue-500 hover:text-blue-700">
+              <FiX size={16} />
+            </button>
+          </div>
+        )}
         <div className="flex gap-3">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={allowedTypes.join(',')}
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          {/* Paperclip button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending}
+            title={`Attach file (max ${maxFileMb} MB)`}
+            className="text-gray-500 hover:text-blue-600 disabled:opacity-40 px-2 transition"
+          >
+            <FiPaperclip size={20} />
+          </button>
           <input
             type="text"
             value={messageText}
@@ -214,13 +313,13 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
                 handleSendMessage()
               }
             }}
-            placeholder="Type a message..."
+            placeholder={pendingFile ? 'Add a caption (optional)…' : 'Type a message...'}
             className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             disabled={sending}
           />
           <button
             onClick={handleSendMessage}
-            disabled={sending || !messageText.trim()}
+            disabled={sending || (!messageText.trim() && !pendingFile)}
             className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white px-4 py-3 rounded-lg flex items-center gap-2 transition"
           >
             <FiSend size={18} />

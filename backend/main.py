@@ -14,6 +14,27 @@ logger = logging.getLogger(__name__)
 # Create tables
 Base.metadata.create_all(bind=engine)
 
+# Apply any pending column additions that create_all won't handle
+def _run_inline_migrations():
+    """Safely add columns that may not exist yet (idempotent)."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text(
+            "ALTER TABLE branding_settings "
+            "ADD COLUMN IF NOT EXISTS allowed_file_types JSON"
+        ))
+        conn.execute(text(
+            "ALTER TABLE branding_settings "
+            "ADD COLUMN IF NOT EXISTS max_file_size_mb INTEGER DEFAULT 10"
+        ))
+        conn.commit()
+
+try:
+    _run_inline_migrations()
+except Exception as _mig_err:
+    import logging as _log
+    _log.getLogger(__name__).warning("Inline migration skipped: %s", _mig_err)
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Social Media Messaging System",
@@ -54,6 +75,11 @@ app.include_router(webchat.router)
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
 os.makedirs(AVATAR_DIR, exist_ok=True)
 app.mount("/avatars", StaticFiles(directory=AVATAR_DIR), name="avatars")
+
+# Serve message attachments (images, files, documents)
+MSG_ATTACH_DIR = os.path.join(os.path.dirname(__file__), "attachment_storage", "messages")
+os.makedirs(MSG_ATTACH_DIR, exist_ok=True)
+app.mount("/attachments/messages", StaticFiles(directory=MSG_ATTACH_DIR), name="msg_attachments")
 
 # Auto-sync scheduler
 scheduler = None

@@ -20,6 +20,8 @@ interface BrandingData {
   terms_url: string
   timezone: string
   admin_email: string
+  allowed_file_types: string[]
+  max_file_size_mb: number
 }
 
 interface SmtpData {
@@ -39,7 +41,7 @@ export default function BrandingAdmin() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [activeTab, setActiveTab] = useState<'company' | 'colors' | 'smtp' | 'links'>('company')
+  const [activeTab, setActiveTab] = useState<'company' | 'colors' | 'smtp' | 'links' | 'attachments'>('company')
 
   const [branding, setBranding] = useState<BrandingData>({
     company_name: 'Social Media Messenger',
@@ -54,6 +56,11 @@ export default function BrandingAdmin() {
     terms_url: '',
     timezone: 'UTC',
     admin_email: '',
+    allowed_file_types: [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf',
+    ],
+    max_file_size_mb: 10,
   })
 
   const [smtp, setSmtp] = useState<SmtpData>({
@@ -100,6 +107,8 @@ export default function BrandingAdmin() {
           terms_url: data.terms_url || '',
           timezone: data.timezone || 'UTC',
           admin_email: data.admin_email || '',
+          allowed_file_types: data.allowed_file_types || ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'],
+          max_file_size_mb: data.max_file_size_mb || 10,
         })
 
         setSmtp({
@@ -252,7 +261,7 @@ export default function BrandingAdmin() {
 
         {/* Tabs */}
         <div className="flex gap-4 border-b border-gray-200 mb-8 overflow-x-auto">
-          {(['company', 'colors', 'smtp', 'links'] as const).map((tab) => (
+          {(['company', 'colors', 'smtp', 'links', 'attachments'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -625,7 +634,6 @@ export default function BrandingAdmin() {
           </div>
         )}
 
-        {/* Settings */}
         {/* Links */}
         {activeTab === 'links' && (
           <div className="bg-white rounded-lg shadow p-6 space-y-6">
@@ -677,6 +685,100 @@ export default function BrandingAdmin() {
             </button>
           </div>
         )}
+
+        {/* Attachments */}
+        {activeTab === 'attachments' && (() => {
+          const FILE_TYPE_GROUPS = [
+            {
+              label: 'Images',
+              types: [
+                { mime: 'image/jpeg', label: 'JPEG (.jpg)' },
+                { mime: 'image/png',  label: 'PNG (.png)' },
+                { mime: 'image/gif',  label: 'GIF (.gif)' },
+                { mime: 'image/webp', label: 'WebP (.webp)' },
+              ],
+            },
+            {
+              label: 'Documents',
+              types: [
+                { mime: 'application/pdf', label: 'PDF (.pdf)' },
+                { mime: 'application/msword', label: 'Word (.doc)' },
+                { mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', label: 'Word (.docx)' },
+                { mime: 'application/vnd.ms-excel', label: 'Excel (.xls)' },
+                { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', label: 'Excel (.xlsx)' },
+              ],
+            },
+            {
+              label: 'Archives',
+              types: [
+                { mime: 'application/zip', label: 'ZIP (.zip)' },
+                { mime: 'application/x-zip-compressed', label: 'ZIP (x-zip-compressed)' },
+              ],
+            },
+          ]
+
+          const toggleType = (mime: string) => {
+            setBranding((prev) => ({
+              ...prev,
+              allowed_file_types: prev.allowed_file_types.includes(mime)
+                ? prev.allowed_file_types.filter((t) => t !== mime)
+                : [...prev.allowed_file_types, mime],
+            }))
+          }
+
+          return (
+            <div className="bg-white rounded-lg shadow p-6 space-y-6">
+              <p className="text-sm text-gray-600">
+                Choose which file types agents (and webchat visitors) are allowed to send.
+                These settings are enforced on every upload.
+              </p>
+
+              {FILE_TYPE_GROUPS.map((group) => (
+                <div key={group.label}>
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">{group.label}</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    {group.types.map(({ mime, label }) => (
+                      <label key={mime} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={branding.allowed_file_types.includes(mime)}
+                          onChange={() => toggleType(mime)}
+                          className="w-4 h-4 rounded border-gray-300 accent-blue-600"
+                        />
+                        <span className="text-sm text-gray-700">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Maximum file size (MB)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={branding.max_file_size_mb}
+                  onChange={(e) =>
+                    setBranding((prev) => ({ ...prev, max_file_size_mb: parseInt(e.target.value) || 1 }))
+                  }
+                  className="w-32 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">Per-file cap applied to all uploads (max 100 MB).</p>
+              </div>
+
+              <button
+                onClick={saveBranding}
+                disabled={saving}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+              >
+                {saving ? 'Saving...' : 'Save Attachment Settings'}
+              </button>
+            </div>
+          )
+        })()}
       </main>
     </div>
   )

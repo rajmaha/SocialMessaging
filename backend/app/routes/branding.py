@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.user import User
 from app.services.branding_service import branding_service
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 router = APIRouter(prefix="/branding", tags=["branding"])
 
@@ -66,6 +66,8 @@ class BrandingUpdate(BaseModel):
     terms_url: Optional[str] = None
     timezone: Optional[str] = None
     admin_email: Optional[str] = None
+    allowed_file_types: Optional[List[str]] = None
+    max_file_size_mb: Optional[int] = None
 
 class SmtpUpdate(BaseModel):
     smtp_server: Optional[str] = None
@@ -97,6 +99,8 @@ def get_branding_public(db: Session = Depends(get_db)):
             "terms_url": branding_obj.terms_url,
             "timezone": branding_obj.timezone,
             "admin_email": branding_obj.admin_email,
+            "allowed_file_types": branding_obj.allowed_file_types,
+            "max_file_size_mb": branding_obj.max_file_size_mb or 10,
         }
     }
 
@@ -132,6 +136,8 @@ def get_branding_admin(
             "terms_url": branding.terms_url,
             "timezone": branding.timezone,
             "admin_email": branding.admin_email,
+            "allowed_file_types": branding.allowed_file_types,
+            "max_file_size_mb": branding.max_file_size_mb or 10,
             "created_at": branding.created_at,
             "updated_at": branding.updated_at,
         }

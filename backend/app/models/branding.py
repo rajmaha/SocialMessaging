@@ -42,6 +42,10 @@ class BrandingSettings(Base):
     # Admin Contact
     admin_email = Column(String, nullable=True)
 
+    # Attachment / file-upload settings
+    allowed_file_types = Column(JSON, nullable=True)   # list of MIME strings; None = use defaults
+    max_file_size_mb = Column(Integer, default=10)     # per-upload cap in MB
+
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
