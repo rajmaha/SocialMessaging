@@ -13,6 +13,7 @@ export default function PlatformFilter({
     { id: 'facebook', name: 'Facebook', color: 'bg-blue-600' },
     { id: 'viber', name: 'Viber', color: 'bg-purple-600' },
     { id: 'linkedin', name: 'LinkedIn', color: 'bg-blue-700' },
+    { id: 'webchat', name: 'Web Chat', color: 'bg-teal-500' },
   ]
 
   return (

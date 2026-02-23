@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.database import Base, engine, SessionLocal
 from app.config import settings
-from app.routes import messages, conversations, auth, accounts, admin, branding, email, events
+from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.services.email_service import email_service
 import logging
@@ -48,6 +48,7 @@ app.include_router(admin.router)
 app.include_router(branding.router)
 app.include_router(email.router)
 app.include_router(events.router)
+app.include_router(webchat.router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")

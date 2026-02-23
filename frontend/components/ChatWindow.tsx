@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { FiSend } from 'react-icons/fi'
+import { getAuthToken } from '@/lib/auth'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -77,11 +78,13 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
 
     setSending(true)
     try {
+      const token = getAuthToken()
       await axios.post(`${API_URL}/messages/send`, null, {
         params: {
           conversation_id: conversation.id,
           message_text: messageText,
         },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
 
       setMessageText('')
@@ -117,6 +120,7 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
       facebook: 'bg-blue-100 text-blue-800',
       viber: 'bg-purple-100 text-purple-800',
       linkedin: 'bg-blue-100 text-blue-800',
+      webchat: 'bg-teal-100 text-teal-800',
     }
     return colors[platform.toLowerCase()] || 'bg-gray-100 text-gray-800'
   }

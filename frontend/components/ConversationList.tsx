@@ -28,6 +28,7 @@ export default function ConversationList({
       facebook: 'bg-blue-600',
       viber: 'bg-purple-600',
       linkedin: 'bg-blue-700',
+      webchat: 'bg-teal-500',
     }
     return colors[platform.toLowerCase()] || 'bg-gray-500'
   }
