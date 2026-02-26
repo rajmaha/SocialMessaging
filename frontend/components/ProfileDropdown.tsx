@@ -22,6 +22,7 @@ export default function ProfileDropdown({ user }: ProfileDropdownProps) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (!user?.user_id) return
     let ignore = false
     const token = getAuthToken()
     axios
@@ -31,9 +32,9 @@ export default function ProfileDropdown({ user }: ProfileDropdownProps) {
       .then((r) => {
         if (!ignore) setProfile({ phone: r.data.phone, avatar_url: r.data.avatar_url })
       })
-      .catch(() => {})
+      .catch(() => { })
     return () => { ignore = true }
-  }, [user.user_id])
+  }, [user?.user_id])
 
   // Close on outside click
   useEffect(() => {

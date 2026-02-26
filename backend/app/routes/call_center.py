@@ -15,7 +15,7 @@ router = APIRouter(
 @router.get("/settings", response_model=CallCenterSettingsResponse)
 def get_call_center_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Get the current call center settings."""
     settings = db.query(CallCenterSettings).first()

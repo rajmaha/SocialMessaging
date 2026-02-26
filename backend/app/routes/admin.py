@@ -750,3 +750,99 @@ async def update_cors_settings(
         )
     db.commit()
     return {"status": "success", "origins": cleaned}
+
+# ============ USER PERMISSIONS ============
+
+from app.models.user_permission import (
+    UserPermission, 
+    AVAILABLE_MODULES, 
+    AVAILABLE_CHANNELS, 
+    AVAILABLE_FEATURES,
+    get_all_permission_keys
+)
+
+@router.get("/user-permissions")
+async def get_all_user_permissions(current_user: dict = Depends(verify_admin), db: Session = Depends(get_db)):
+    """List all permission keys available to be granted (admin only)"""
+    return {
+        "modules": [{"key": k[0], "label": k[1], "description": k[2]} for k in AVAILABLE_MODULES],
+        "channels": [{"key": k[0], "label": k[1], "description": k[2]} for k in AVAILABLE_CHANNELS],
+        "features": [{"key": k[0], "label": k[1], "description": k[2]} for k in AVAILABLE_FEATURES]
+    }
+
+@router.get("/user-permissions/{user_target_id}")
+async def list_user_permissions(
+    user_target_id: int,
+    current_user: dict = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """List all granted permissions for a specific user (admin only)"""
+    user = db.query(User).filter(User.id == user_target_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    perms = db.query(UserPermission).filter(UserPermission.user_id == user_target_id).all()
+    granted_keys = [p.permission_key for p in perms]
+    
+    return {"granted_keys": granted_keys}
+
+@router.post("/user-permissions/{user_target_id}")
+async def grant_user_permission(
+    user_target_id: int,
+    permission_key: str = Body(..., embed=True),
+    current_user: dict = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Grant a single permission key to a user (admin only)"""
+    valid_keys = get_all_permission_keys()
+    if permission_key not in valid_keys:
+        raise HTTPException(status_code=400, detail="Invalid permission key")
+        
+    user = db.query(User).filter(User.id == user_target_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    existing = db.query(UserPermission).filter(
+        UserPermission.user_id == user_target_id,
+        UserPermission.permission_key == permission_key
+    ).first()
+    
+    if not existing:
+        perm = UserPermission(
+            user_id=user_target_id,
+            permission_key=permission_key,
+            granted_by=current_user.get("user_id")
+        )
+        db.add(perm)
+        db.commit()
+        
+    return {"status": "success", "message": f"Granted {permission_key} to user {user_target_id}"}
+    
+@router.delete("/user-permissions/{user_target_id}/{permission_key}")
+async def revoke_user_permission(
+    user_target_id: int,
+    permission_key: str,
+    current_user: dict = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Revoke a permission key from a user (admin only)"""
+    perm = db.query(UserPermission).filter(
+        UserPermission.user_id == user_target_id,
+        UserPermission.permission_key == permission_key
+    ).first()
+    
+    if perm:
+        db.delete(perm)
+        db.commit()
+        
+    return {"status": "success", "message": f"Revoked {permission_key} from user {user_target_id}"}
+    
+@router.get("/my-permissions")
+async def get_my_permissions(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Returns list of all granted permission keys for the calling user"""
+    if current_user.get("role") == "admin":
+        return {"permissions": get_all_permission_keys()}
+        
+    perms = db.query(UserPermission).filter(UserPermission.user_id == current_user.get("user_id")).all()
+    return {"permissions": [p.permission_key for p in perms]}
+

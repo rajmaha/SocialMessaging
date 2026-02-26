@@ -121,6 +121,12 @@ export default function CallCenterSettings() {
                                     <option value="data_center">Data Center</option>
                                     <option value="banking">Banking</option>
                                     <option value="broker_investment">Broker / Investment Company</option>
+                                    <option value="isp">Internet Service Provider</option>
+                                    <option value="manpower">Manpower Company</option>
+                                    <option value="hotels">Hotels / Resorts</option>
+                                    <option value="apartments">Appartments / Colonies</option>
+                                    <option value="warehouses">Wirehouses</option>
+                                    <option value="hospitals">Hospitals / Nurshing Homes</option>
                                 </select>
                                 <p className="mt-1 text-sm text-gray-500">
                                     Select the primary use case for this call center.

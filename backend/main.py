@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.database import Base, engine, SessionLocal
 from app.config import settings
-from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat, bot, webhooks, teams, reports, call_center, telephony, calls, extensions, agent_workspace, reminders, notifications
+from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat, bot, webhooks, teams, reports, call_center, telephony, calls, extensions, agent_workspace, reminders, notifications, tickets, dynamic_fields, organizations
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -299,6 +299,29 @@ def _run_inline_migrations():
             "ALTER TABLE user_email_accounts "
             "ADD COLUMN IF NOT EXISTS chat_integration_enabled BOOLEAN NOT NULL DEFAULT true"
         ))
+        # Tickets enhancements
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_number VARCHAR UNIQUE"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_name VARCHAR"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_gender VARCHAR"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS category VARCHAR"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS forward_target VARCHAR"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS forward_reason VARCHAR"))
+        
+        # Dynamic Fields configuration table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS dynamic_fields (
+                id SERIAL PRIMARY KEY,
+                application_type VARCHAR NOT NULL,
+                field_name VARCHAR NOT NULL,
+                field_label VARCHAR NOT NULL,
+                field_type VARCHAR DEFAULT 'text',
+                options JSON,
+                display_order INTEGER DEFAULT 0,
+                is_required BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
         conn.commit()
 
 try:
@@ -408,6 +431,9 @@ app.include_router(extensions.router)
 app.include_router(agent_workspace.router)
 app.include_router(reminders.router)
 app.include_router(notifications.router)
+app.include_router(tickets.router)
+app.include_router(dynamic_fields.router)
+app.include_router(organizations.router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
@@ -423,6 +449,11 @@ app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 MSG_ATTACH_DIR = os.path.join(os.path.dirname(__file__), "attachment_storage", "messages")
 os.makedirs(MSG_ATTACH_DIR, exist_ok=True)
 app.mount("/attachments/messages", StaticFiles(directory=MSG_ATTACH_DIR), name="msg_attachments")
+
+# Serve organization logos
+LOGO_DIR = os.path.join(os.path.dirname(__file__), "logo_storage")
+os.makedirs(LOGO_DIR, exist_ok=True)
+app.mount("/logos", StaticFiles(directory=LOGO_DIR), name="logos")
 
 # Auto-sync scheduler
 scheduler = None

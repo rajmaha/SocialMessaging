@@ -7,6 +7,8 @@ import { FiMessageSquare, FiMail, FiBarChart2, FiGrid, FiHeadphones } from 'reac
 import ProfileDropdown from '@/components/ProfileDropdown'
 import { useBranding } from '@/lib/branding-context'
 import type { User } from '@/lib/auth'
+import { hasModuleAccess } from '@/lib/permissions'
+import { useState, useEffect } from 'react'
 
 interface MainHeaderProps {
     user: User
@@ -29,7 +31,36 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
     const isReportsActive = pathname === '/admin/reports'
     const isWorkspaceActive = pathname === '/workspace'
 
+    const [canAccessEmail, setCanAccessEmail] = useState(true)
+    const [canAccessMessaging, setCanAccessMessaging] = useState(true)
+    const [canAccessWorkspace, setCanAccessWorkspace] = useState(true)
+
+    useEffect(() => {
+        if (user && user.role !== 'admin') {
+            setCanAccessEmail(hasModuleAccess('email'))
+            // Logic for messaging: if they have any channel or a specific messaging module (we removed messaging module, it's channels now)
+            // Let's assume if they have WhatsApp or Messenger or any channel, they can access messaging
+            import('@/lib/permissions').then(({ hasChannelAccess }) => {
+                setCanAccessMessaging(
+                    hasChannelAccess('whatsapp') ||
+                    hasChannelAccess('viber') ||
+                    hasChannelAccess('linkedin') ||
+                    hasChannelAccess('messenger') ||
+                    hasChannelAccess('webchat')
+                )
+            });
+            setCanAccessWorkspace(hasModuleAccess('workspace'))
+        }
+    }, [user])
+
+    const [isMounted, setIsMounted] = useState(false)
+    useEffect(() => setIsMounted(true), [])
+
     const logoSrc = branding?.logo_url
+
+    if (!isMounted || !user) {
+        return <header className="bg-white border-b border-gray-200 flex items-center justify-between px-6 h-14 fixed top-0 left-0 right-0 z-[60]" />
+    }
 
     return (
         <header className="bg-white border-b border-gray-200 flex items-center justify-between px-6 h-14 fixed top-0 left-0 right-0 z-[60]">
@@ -48,50 +79,56 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
 
                 {/* Navigation Tabs */}
                 <nav className="flex items-center gap-1">
-                    <Link
-                        href="/dashboard?tab=email"
-                        onClick={(e) => {
-                            if (setActiveTab && pathname === '/dashboard') {
-                                e.preventDefault()
-                                setActiveTab('email')
-                            }
-                        }}
-                        className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isEmailActive
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'text-gray-600 hover:bg-gray-100'
-                            }`}
-                    >
-                        <FiMail size={15} />
-                        Email
-                    </Link>
-                    <Link
-                        href="/dashboard?tab=messaging"
-                        onClick={(e) => {
-                            if (setActiveTab && pathname === '/dashboard') {
-                                e.preventDefault()
-                                setActiveTab('messaging')
-                            }
-                        }}
-                        className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isMessagingActive
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'text-gray-600 hover:bg-gray-100'
-                            }`}
-                    >
-                        <FiMessageSquare size={15} />
-                        Messaging
-                    </Link>
-                    <Link
-                        href="/workspace"
-                        className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isWorkspaceActive
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'text-gray-600 hover:bg-gray-100'
-                            }`}
-                    >
-                        <FiHeadphones size={15} />
-                        Workspace
-                    </Link>
+                    {canAccessEmail && (
+                        <Link
+                            href="/dashboard?tab=email"
+                            onClick={(e) => {
+                                if (setActiveTab && pathname === '/dashboard') {
+                                    e.preventDefault()
+                                    setActiveTab('email')
+                                }
+                            }}
+                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isEmailActive
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'text-gray-600 hover:bg-gray-100'
+                                }`}
+                        >
+                            <FiMail size={15} />
+                            Email
+                        </Link>
+                    )}
+                    {canAccessMessaging && (
+                        <Link
+                            href="/dashboard?tab=messaging"
+                            onClick={(e) => {
+                                if (setActiveTab && pathname === '/dashboard') {
+                                    e.preventDefault()
+                                    setActiveTab('messaging')
+                                }
+                            }}
+                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isMessagingActive
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'text-gray-600 hover:bg-gray-100'
+                                }`}
+                        >
+                            <FiMessageSquare size={15} />
+                            Messaging
+                        </Link>
+                    )}
+                    {canAccessWorkspace && (
+                        <Link
+                            href="/workspace"
+                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isWorkspaceActive
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'text-gray-600 hover:bg-gray-100'
+                                }`}
+                        >
+                            <FiHeadphones size={15} />
+                            Workspace
+                        </Link>
+                    )}
 
-                    {user.role === 'admin' && (
+                    {user?.role === 'admin' && (
                         <>
                             <div className="h-6 w-px bg-gray-200 mx-2" />
                             <Link

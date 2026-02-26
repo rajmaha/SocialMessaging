@@ -38,6 +38,7 @@ const sidebarGroups = [
     {
         label: 'Security',
         items: [
+            { href: '/admin/roles', label: 'Role Permissions', icon: '🔑' },
             { href: '/admin/cors', label: 'CORS / Widget Origins', icon: '🌐' },
         ],
     },
@@ -45,6 +46,10 @@ const sidebarGroups = [
         label: 'Applications',
         items: [
             { href: '/admin/callcenter', label: 'Call Center', icon: '📞' },
+            { href: '/admin/ticket-fields', label: 'Ticket Config', icon: '📝' },
+            { href: '/admin/tickets', label: 'All Tickets', icon: '📋' },
+            { href: '/admin/organizations', label: 'Organizations', icon: '🏢' },
+            { href: '/admin/subscription-modules', label: 'Subscription Modules', icon: '📦' },
         ],
     },
 ]

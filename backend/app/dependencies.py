@@ -104,3 +104,55 @@ def verify_admin_role(user: User) -> bool:
 def verify_user_role(user: User) -> bool:
     """Check if user has user role"""
     return user.role in ["user", "admin"]
+
+def require_module(module_key: str):
+    """Dependency generator to require access to a specific module or channel"""
+    async def verify_module_access(current_user: User = Depends(get_current_user)):
+        if current_user.role == "admin":
+            return current_user
+            
+        from app.database import SessionLocal
+        from app.models.user_permission import UserPermission
+        
+        db = SessionLocal()
+        try:
+            perm = db.query(UserPermission).filter(
+                UserPermission.user_id == current_user.id,
+                UserPermission.permission_key == module_key
+            ).first()
+            if not perm:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Access to {module_key} is disabled for your account"
+                )
+            return current_user
+        finally:
+            db.close()
+            
+    return verify_module_access
+
+def require_admin_feature(feature_key: str):
+    """Dependency generator for sub-admin precise feature grants"""
+    async def verify_admin_access(current_user: User = Depends(get_current_user)):
+        if current_user.role == "admin":
+            return current_user
+            
+        from app.database import SessionLocal
+        from app.models.user_permission import UserPermission
+        
+        db = SessionLocal()
+        try:
+            perm = db.query(UserPermission).filter(
+                UserPermission.user_id == current_user.id,
+                UserPermission.permission_key == feature_key
+            ).first()
+            if not perm:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"You do not have permission to use the {feature_key} feature"
+                )
+            return current_user
+        finally:
+            db.close()
+            
+    return verify_admin_access
