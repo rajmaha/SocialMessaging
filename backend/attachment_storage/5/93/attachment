@@ -1,0 +1,44 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id BCD39180537
+	for <raj_maha@gotmail.com>; Tue, 17 Feb 2026 19:58:44 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1771337624;
+ h=from:subject:date:message-id:to:mime-version:content-type;
+	bh=wJ1t/8vUpMGLhgl5ahxdmitYos+VNpgwiT5NuHx+6Q4=;
+	b=V8INIGDsXiP87N2Q80XL+42TLe1jK5kb0zvd/MfX69z1DVxY0sm+R94fYFCYOCrLr/RCBd
+	ofBS3DUH+O2TbMpZ3S0tqjRYf48OgxMcw2340IuPNZtdu/L1tS0220U2CxIx9zyTl1Iv97
+	Xem/9fNSjActg9X1HkoWqUEXyaa0pqzoMtlELUSBe3h0sBgW/mmxl6baUR75nyaKngMUYl
+	+19yRbYnPcfHC2qbGGqV5FNPUjlpvx0XEyLiw4VjQDqcQZ1ALvhcC25WpPcs9vRybVqdpN
+	uBlcV50ifSyLFfn7bg1R8k4SmpplrL26fVl1duxAPBhpS1vO1b9WmlaZM11ttw==
+From: noreply@saraloms.com
+To: raj_maha@gotmail.com
+Subject: New Verification Code - Form Submission
+Message-ID: <7ec4a739-0804-dc40-b1ec-acd665a02ad3@saraloms.com>
+Date: Tue, 17 Feb 2026 14:13:43 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="--_NmP-0f07b8a1bcebda34-Part_1"
+X-Last-TLS-Session-Version: TLSv1.3
+
+----_NmP-0f07b8a1bcebda34-Part_1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Your new OTP is: 424574. This will expire in 2 minutes.
+----_NmP-0f07b8a1bcebda34-Part_1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+
+            <h2>Verify Your Form Submission</h2>
+            <p>Your new =
+One-Time Password (OTP) is:</p>
+            <h1 style=3D"font-size: 32px; =
+letter-spacing: 4px; color: #007bff;">424574</h1>
+            <p>This OTP =
+will expire in 2 minutes.</p>
+            <p>If you didn't request this, =
+please ignore this email.</p>
+         =20
+----_NmP-0f07b8a1bcebda34-Part_1--

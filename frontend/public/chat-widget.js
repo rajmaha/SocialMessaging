@@ -115,6 +115,23 @@
   var open = false
   var unread = 0
 
+  function playNotificationSound() {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)()
+      var osc = ctx.createOscillator()
+      var gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(880, ctx.currentTime)
+      osc.frequency.setValueAtTime(660, ctx.currentTime + 0.08)
+      gain.gain.setValueAtTime(0.28, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.3)
+    } catch (e) {}
+  }
+
   function openChat() {
     open = true
     container.style.display = 'flex'
@@ -143,12 +160,13 @@
     open ? closeChat() : openChat()
   })
 
-  // Listen for new-message events from the iframe so we can show the badge
+  // Listen for new-message events from the iframe so we can show the badge + play sound
   window.addEventListener('message', function (ev) {
     if (ev.data && ev.data.type === 'sc_new_message' && !open) {
       unread++
       badge.textContent = unread > 9 ? '9+' : String(unread)
       badge.style.display = 'block'
+      playNotificationSound()
     }
   })
 

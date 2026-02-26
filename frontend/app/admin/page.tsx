@@ -1,9 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import MainHeader from "@/components/MainHeader";
+import { authAPI } from "@/lib/auth";
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
+import AdminNav from '@/components/AdminNav';
 
 interface DashboardData {
   total_users: number;
@@ -20,6 +23,7 @@ interface DashboardData {
 }
 
 export default function AdminDashboard() {
+  const user = authAPI.getUser();
   const router = useRouter();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,7 +37,7 @@ export default function AdminDashboard() {
           router.push('/login');
           return;
         }
-        
+
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/dashboard`, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -79,33 +83,10 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="ml-60 pt-14 min-h-screen bg-gray-100">
+      <MainHeader user={user!} />
+      <AdminNav />
       {/* Admin Navigation */}
-      <nav className="bg-blue-700 text-white p-4">
-        <div className="max-w-7xl mx-auto flex flex-wrap gap-3 justify-between items-center">
-          <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin" className="hover:bg-blue-600 px-3 py-2 rounded text-sm whitespace-nowrap">
-              Dashboard
-            </Link>
-            <Link href="/admin/users" className="hover:bg-blue-600 px-3 py-2 rounded text-sm whitespace-nowrap">
-              Users
-            </Link>
-            <Link href="/admin/email-accounts" className="hover:bg-blue-600 px-3 py-2 rounded text-sm whitespace-nowrap">
-              Email Accounts
-            </Link>
-            <Link href="/admin/settings" className="hover:bg-blue-600 px-3 py-2 rounded text-sm whitespace-nowrap">
-              Settings
-            </Link>
-            <Link href="/admin/branding" className="hover:bg-blue-600 px-3 py-2 rounded text-sm whitespace-nowrap">
-              Branding
-            </Link>
-            <Link href="/dashboard" className="hover:bg-blue-600 px-3 py-2 rounded text-sm whitespace-nowrap">
-              Messaging
-            </Link>
-          </div>
-        </div>
-      </nav>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto p-6">
@@ -199,21 +180,19 @@ export default function AdminDashboard() {
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Configuration:</span>
-                      <span className={`font-medium ${
-                        status.is_configured === 0 ? 'text-red-600' :
+                      <span className={`font-medium ${status.is_configured === 0 ? 'text-red-600' :
                         status.is_configured === 1 ? 'text-yellow-600' :
-                        'text-green-600'
-                      }`}>
+                          'text-green-600'
+                        }`}>
                         {status.is_configured === 0 ? 'Not Setup' :
-                         status.is_configured === 1 ? 'Configured' :
-                         'Verified'}
+                          status.is_configured === 1 ? 'Configured' :
+                            'Verified'}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Webhook:</span>
-                      <span className={`font-medium ${
-                        status.webhook_registered === 1 ? 'text-green-600' : 'text-red-600'
-                      }`}>
+                      <span className={`font-medium ${status.webhook_registered === 1 ? 'text-green-600' : 'text-red-600'
+                        }`}>
                         {status.webhook_registered === 1 ? 'Registered' : 'Not Registered'}
                       </span>
                     </div>
@@ -235,20 +214,20 @@ export default function AdminDashboard() {
               Manage Users
             </Link>
             <Link
-              href="/admin/settings"
-              className="bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition"
-            >
-              Configure Platforms
-            </Link>
-            <Link
               href="/admin/branding"
               className="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-3 px-6 rounded-lg transition"
             >
               Branding Settings
             </Link>
+            <Link
+              href="/admin/cors"
+              className="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-3 px-6 rounded-lg transition"
+            >
+              🌐 CORS / Widget Origins
+            </Link>
           </div>
         </div>
       </main>
     </div>
-  );
+  )
 }

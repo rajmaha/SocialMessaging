@@ -11,6 +11,10 @@ class ConversationResponse(BaseModel):
     last_message_time: Optional[datetime]
     unread_count: int
     contact_avatar: Optional[str]
+    status: str = "open"
+    category: Optional[str] = None
+    assigned_to: Optional[int] = None
+    assigned_to_name: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -1,9 +1,13 @@
 'use client'
 
+import MainHeader from '@/components/MainHeader';
+import { authAPI } from '@/lib/auth';
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
+import AdminNav from '@/components/AdminNav'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -36,6 +40,7 @@ interface SmtpData {
 }
 
 export default function BrandingAdmin() {
+  const user = authAPI.getUser();
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -233,18 +238,9 @@ export default function BrandingAdmin() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex flex-wrap gap-3 justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">Branding & Settings</h1>
-          <button
-            onClick={() => router.push('/admin')}
-            className="px-4 py-2 text-gray-700 font-medium hover:text-gray-900"
-          >
-            Back to Admin
-          </button>
-        </div>
-      </header>
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <MainHeader user={user!} />
+      <AdminNav />
 
       <main className="max-w-4xl mx-auto px-6 py-8">
         {error && (
@@ -265,11 +261,10 @@ export default function BrandingAdmin() {
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-3 font-medium border-b-2 ${
-                activeTab === tab
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-4 py-3 font-medium border-b-2 ${activeTab === tab
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
@@ -693,8 +688,8 @@ export default function BrandingAdmin() {
               label: 'Images',
               types: [
                 { mime: 'image/jpeg', label: 'JPEG (.jpg)' },
-                { mime: 'image/png',  label: 'PNG (.png)' },
-                { mime: 'image/gif',  label: 'GIF (.gif)' },
+                { mime: 'image/png', label: 'PNG (.png)' },
+                { mime: 'image/gif', label: 'GIF (.gif)' },
                 { mime: 'image/webp', label: 'WebP (.webp)' },
               ],
             },

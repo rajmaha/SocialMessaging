@@ -1,0 +1,43 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id BF3C9180D3A
+	for <info@podamibe.nst>; Wed, 18 Feb 2026 22:22:06 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1771432626;
+ h=from:subject:date:message-id:to:mime-version:content-type;
+	bh=OSGrZYzooof7Tl+RgfdQftgsG+tESJX5jeNReHaHwhY=;
+	b=Yn7VeGwrkK50oaDfPcKZ2ihUVpDTH0JVa3n2HKpopHKrQPRChYwX/Bd/b+bQtlYeu2Vkgz
+	cbwmj1V1XEjRrqwIdw+lL44YYLxvT//1ndGQhXD5VPVV2DgQQVYnbwT4Vn1MVavPgiy34W
+	WOYsxxMa0YaxnBRa0zYSt4Zjbg4B7Gp/nRrmYYkVAtw7AiIx5Bifx4VP7bVV+9/84czBqr
+	L1ayvGfc0pN8HT0Q6q/Bxs6YFUSoua2EAOMSkOcRN3PacuSkW8chOFF8rD3I2pV7ax3Q4y
+	rfsE3H/YoIJkEwy0zg1dTNDPmR3ed8tFUAOaEwZZfCFjog+Bjd6rBQ2YnQs1vA==
+From: noreply@saraloms.com
+To: info@podamibe.nst
+Subject: Contact Submission Verification - OTP
+Message-ID: <3889bdfa-6cc4-34e1-8ddc-14960b0429bd@saraloms.com>
+Date: Wed, 18 Feb 2026 16:37:06 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="--_NmP-ac6cb3f14b23ef96-Part_1"
+X-Last-TLS-Session-Version: TLSv1.3
+
+----_NmP-ac6cb3f14b23ef96-Part_1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Your OTP is: 842034. This will expire in 10 minutes.
+----_NmP-ac6cb3f14b23ef96-Part_1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+
+            <h2>Verify Your Contact Submission</h2>
+            <p>Your One-Time Password (OTP) is:</p>
+            <h1 style=3D"font-size: 32px; letter-spacing: 4px; color: =
+#007bff;">842034</h1>
+            <p>This OTP will expire in 10 minutes.=
+</p>
+            <p>If you didn't request this, please ignore this email.=
+</p>
+         =20
+----_NmP-ac6cb3f14b23ef96-Part_1--

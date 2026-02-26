@@ -1,0 +1,44 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id 243FD180FC2
+	for <info@podamibe.ent>; Wed, 18 Feb 2026 22:41:29 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1771433789;
+ h=from:subject:date:message-id:to:mime-version:content-type;
+	bh=3V10vXovZrUbz/QhK8HZUyekJzSJ49+eVdNzHW4TmtA=;
+	b=SM/chPveeni3fbtvBNvJXislHMBMhPhxvK2eg7A6yzRxmFNXdm1CJxPPbaDfbC/LcTnmSP
+	M0BMaKQfyUwllg3M7ycvSJPHw+9G1EvwMOqyQa1YvI6jhC66mcq16Nf7vU40rclFoWQS38
+	3oFrZTTHaHR0otz6c5JmLiVPSp7yI+lOhO0fxXAXKaUWNyv3Mn4IxUmrgq8L1Tw+xQMvnG
+	CuoZ+8EBsfC3+dU9xL3E9HLtCuISOickfOlW8ZuxX3mM9z/z6Cad5spCXfPO4T1ega0/z1
+	nGPPjrzzrCD67tPRUz2xBa473p4cxNXMELQCVUMyMOYEVq66MTjG3CL3nfm05w==
+From: noreply@saraloms.com
+To: info@podamibe.ent
+Subject: Demo Request Verification - OTP
+Message-ID: <36e1f4be-d672-4192-4ad6-f4339d7e3574@saraloms.com>
+Date: Wed, 18 Feb 2026 16:56:28 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="--_NmP-697df35677d725d9-Part_1"
+X-Last-TLS-Session-Version: TLSv1.3
+
+----_NmP-697df35677d725d9-Part_1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Your OTP is: 766140. This will expire in 10 minutes.
+----_NmP-697df35677d725d9-Part_1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+
+            <h2>Verify Your Demo Request</h2>
+            <p>Your One-Time=
+ Password (OTP) is:</p>
+            <h1 style=3D"font-size: 32px; =
+letter-spacing: 4px; color: #007bff;">766140</h1>
+            <p>This OTP =
+will expire in 10 minutes.</p>
+            <p>If you didn't request this, =
+please ignore this email.</p>
+         =20
+----_NmP-697df35677d725d9-Part_1--

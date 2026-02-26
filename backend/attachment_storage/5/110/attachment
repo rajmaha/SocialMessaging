@@ -1,0 +1,43 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id 58C22181026
+	for <debug@test.com>; Sat, 14 Feb 2026 19:55:27 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1771078228;
+ h=from:subject:date:message-id:to:mime-version:content-type;
+	bh=62B3KlGFBwtSdS18FZvvZeitBliOz7XbcQ1Gaf7Dsn8=;
+	b=k3NQe0fPplNf/C7x3kmzdWHPEERxz66Zia3z5Swyh4hENABJ8HUE08qg3yHnLnES2BWZVy
+	fLzAPYroFT0rIv556xDa2SieAtinIxPCXyupR2wF03qyem3YLdTuVl/1W45d75IIbvY4/2
+	dUvX3DgJRpTVzR9gzBvF1D5bve2IrqQH5LPINurPAVsRz5lcAEnn+8ZbYo3x4XBu1NO5MC
+	K0g4DUnzKcQ86jjULG6hSsi6jiMpdih0S5kZh1CgDMMn7gxoEHooRKo4WG2ICSabZD7zrz
+	z/RzDONkVm4epITkbMQQ6zebz21LnAzLBkSxEegnF8p9CRJ6xcKRxXuy0ta96w==
+From: noreply@saraloms.com
+To: debug@test.com
+Subject: Verify Your Form Submission - OTP
+Message-ID: <9e7793e7-8b83-4c82-b318-6bfc9c858794@saraloms.com>
+Date: Sat, 14 Feb 2026 14:10:26 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="--_NmP-8ab1a846cc040fd4-Part_1"
+X-Last-TLS-Session-Version: TLSv1.3
+
+----_NmP-8ab1a846cc040fd4-Part_1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Your OTP is: 796682. This will expire in 10 minutes.
+----_NmP-8ab1a846cc040fd4-Part_1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+
+              <h2>Verify Your Form Submission</h2>
+              <p>Your One-Time Password (OTP) is:</p>
+              <h1 style=3D"font-size: 32px; letter-spacing: 4px; color: =
+#007bff;">796682</h1>
+              <p>This OTP will expire in 10 minutes.=
+</p>
+              <p>If you didn't request this, please ignore this email.=
+</p>
+           =20
+----_NmP-8ab1a846cc040fd4-Part_1--

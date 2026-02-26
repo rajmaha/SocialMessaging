@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import axios from 'axios'
 import { authAPI, getAuthToken } from '@/lib/auth'
+import MainHeader from '@/components/MainHeader'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -51,6 +52,7 @@ export default function SettingsPage() {
 
   const [profileData, setProfileData] = useState({
     full_name: '',
+    display_name: '',
     phone: '',
     bio: '',
     social_twitter: '',
@@ -134,6 +136,7 @@ export default function SettingsPage() {
       const d = resp.data
       setProfileData({
         full_name: d.full_name || '',
+        display_name: d.display_name || '',
         phone: d.phone || '',
         bio: d.bio || '',
         social_twitter: d.social_twitter || '',
@@ -184,6 +187,7 @@ export default function SettingsPage() {
         `${API_URL}/auth/profile`,
         {
           full_name: profileData.full_name || undefined,
+          display_name: profileData.display_name || undefined,
           phone: profileData.phone || undefined,
           bio: profileData.bio || undefined,
           social_twitter: profileData.social_twitter || undefined,
@@ -260,7 +264,7 @@ export default function SettingsPage() {
     } catch (error: any) {
       setError(
         error.response?.data?.detail ||
-          'Failed to add account'
+        'Failed to add account'
       )
     } finally {
       setLoading(false)
@@ -347,10 +351,6 @@ export default function SettingsPage() {
     }
   }
 
-  const handleLogout = () => {
-    authAPI.logout()
-    router.push('/login')
-  }
 
   if (loading && !user) {
     return (
@@ -365,46 +365,9 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <div className="flex gap-4">
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="px-4 py-2 text-gray-700 font-medium hover:text-gray-900"
-            >
-              Back to Dashboard
-            </button>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
+      <MainHeader user={user} />
 
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        {/* User Info */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Profile</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">
-                Full Name
-              </label>
-              <p className="text-lg text-gray-900">{user?.full_name || 'N/A'}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">
-                Email
-              </label>
-              <p className="text-lg text-gray-900">{user?.email || 'N/A'}</p>
-            </div>
-          </div>
-        </div>
+      <main className="max-w-6xl mx-auto px-6 pt-20 pb-8">
 
         {/* Alerts */}
         {error && (
@@ -438,73 +401,57 @@ export default function SettingsPage() {
             <div className="flex flex-wrap gap-1 -mb-4 border-b border-gray-200">
               <button
                 onClick={() => setActiveTab('profile')}
-                className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${
-                  activeTab === 'profile'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
+                className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'profile'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  }`}
               >
                 Profile
               </button>
               <button
                 onClick={() => setActiveTab('email-messaging')}
-                className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${
-                  activeTab === 'email-messaging'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
+                className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'email-messaging'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  }`}
               >
                 Email & Messaging
               </button>
               <button
                 onClick={() => setActiveTab('accounts')}
-                className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${
-                  activeTab === 'accounts'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
+                className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'accounts'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  }`}
               >
                 Connected Accounts
               </button>
               {user?.role === 'admin' && (
                 <>
                   <button
-                    onClick={() => setActiveTab('platform-settings')}
-                    className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${
-                      activeTab === 'platform-settings'
-                        ? 'border-blue-600 text-blue-600'
-                        : 'border-transparent text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Platform Settings
-                  </button>
-                  <button
                     onClick={() => setActiveTab('branding')}
-                    className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${
-                      activeTab === 'branding'
-                        ? 'border-blue-600 text-blue-600'
-                        : 'border-transparent text-gray-600 hover:text-gray-900'
-                    }`}
+                    className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'branding'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                      }`}
                   >
                     Branding
                   </button>
                   <button
                     onClick={() => setActiveTab('users')}
-                    className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${
-                      activeTab === 'users'
-                        ? 'border-blue-600 text-blue-600'
-                        : 'border-transparent text-gray-600 hover:text-gray-900'
-                    }`}
+                    className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'users'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                      }`}
                   >
                     Users
                   </button>
                   <button
                     onClick={() => setActiveTab('email-accounts')}
-                    className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${
-                      activeTab === 'email-accounts'
-                        ? 'border-blue-600 text-blue-600'
-                        : 'border-transparent text-gray-600 hover:text-gray-900'
-                    }`}
+                    className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'email-accounts'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                      }`}
                   >
                     Email Accounts
                   </button>
@@ -512,11 +459,10 @@ export default function SettingsPage() {
               )}
               <button
                 onClick={() => setActiveTab('account-settings')}
-                className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${
-                  activeTab === 'account-settings'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
+                className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'account-settings'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  }`}
               >
                 Account Settings
               </button>
@@ -575,6 +521,19 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Chat Nickname
+                        <span className="ml-1 text-xs font-normal text-gray-400">(shown to visitors instead of real name)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={profileData.display_name}
+                        onChange={(e) => setProfileData({ ...profileData, display_name: e.target.value })}
+                        placeholder="e.g. Alex (leave blank to use real name)"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                       <input
                         type="tel"
@@ -602,11 +561,11 @@ export default function SettingsPage() {
                     <h3 className="text-sm font-semibold text-gray-700 mb-3">Social Media Links</h3>
                     <div className="space-y-3">
                       {[
-                        { key: 'social_twitter',   label: 'Twitter / X',  icon: '𝕏',  placeholder: 'https://twitter.com/yourhandle' },
-                        { key: 'social_facebook',  label: 'Facebook',     icon: '👤', placeholder: 'https://facebook.com/yourprofile' },
-                        { key: 'social_linkedin',  label: 'LinkedIn',     icon: '💼', placeholder: 'https://linkedin.com/in/yourprofile' },
-                        { key: 'social_instagram', label: 'Instagram',    icon: '📷', placeholder: 'https://instagram.com/yourhandle' },
-                        { key: 'social_youtube',   label: 'YouTube',      icon: '▶️', placeholder: 'https://youtube.com/@yourchannel' },
+                        { key: 'social_twitter', label: 'Twitter / X', icon: '𝕏', placeholder: 'https://twitter.com/yourhandle' },
+                        { key: 'social_facebook', label: 'Facebook', icon: '👤', placeholder: 'https://facebook.com/yourprofile' },
+                        { key: 'social_linkedin', label: 'LinkedIn', icon: '💼', placeholder: 'https://linkedin.com/in/yourprofile' },
+                        { key: 'social_instagram', label: 'Instagram', icon: '📷', placeholder: 'https://instagram.com/yourhandle' },
+                        { key: 'social_youtube', label: 'YouTube', icon: '▶️', placeholder: 'https://youtube.com/@yourchannel' },
                       ].map(({ key, label, icon, placeholder }) => (
                         <div key={key} className="flex items-center gap-3">
                           <span className="w-8 text-center text-lg flex-shrink-0">{icon}</span>
@@ -641,148 +600,148 @@ export default function SettingsPage() {
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">
                   Manage your messaging platform accounts
                 </h2>
-                
+
                 {/* Connected Accounts Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-              {Object.entries(platforms).map(([key, platform]) => {
-                const connected = accounts.find((acc) => acc.platform === key)
-                return (
-                  <div
-                    key={key}
-                    className="border border-gray-200 rounded-lg p-4 flex justify-between items-start"
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="text-2xl">{platform.icon}</span>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">
-                          {platform.name}
-                        </h3>
-                        {connected ? (
+                  {Object.entries(platforms).map(([key, platform]) => {
+                    const connected = accounts.find((acc) => acc.platform === key)
+                    return (
+                      <div
+                        key={key}
+                        className="border border-gray-200 rounded-lg p-4 flex justify-between items-start"
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="text-2xl">{platform.icon}</span>
                           <div>
-                            <p className="text-sm text-gray-600 mt-1">
-                              @{connected.account_username}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              Connected since{' '}
-                              {new Date(connected.created_at).toLocaleDateString()}
-                            </p>
+                            <h3 className="font-semibold text-gray-900">
+                              {platform.name}
+                            </h3>
+                            {connected ? (
+                              <div>
+                                <p className="text-sm text-gray-600 mt-1">
+                                  @{connected.account_username}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Connected since{' '}
+                                  {new Date(connected.created_at).toLocaleDateString()}
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-gray-500 mt-1">
+                                Not connected
+                              </p>
+                            )}
                           </div>
+                        </div>
+
+                        {connected ? (
+                          <button
+                            onClick={() => handleDeleteAccount(connected.id)}
+                            className="px-3 py-1 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 font-medium whitespace-nowrap"
+                          >
+                            Remove
+                          </button>
                         ) : (
-                          <p className="text-sm text-gray-500 mt-1">
-                            Not connected
-                          </p>
+                          <button
+                            onClick={() => handleAddPlatform(key)}
+                            className="px-3 py-1 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 font-medium whitespace-nowrap"
+                          >
+                            Add
+                          </button>
                         )}
                       </div>
-                    </div>
-
-                    {connected ? (
-                      <button
-                        onClick={() => handleDeleteAccount(connected.id)}
-                        className="px-3 py-1 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 font-medium whitespace-nowrap"
-                      >
-                        Remove
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleAddPlatform(key)}
-                        className="px-3 py-1 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 font-medium whitespace-nowrap"
-                      >
-                        Add
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Add Account Form */}
-            {addingPlatform && (
-              <div className="border-t border-gray-200 pt-6 mt-6">
-                <h3 className="font-semibold text-gray-900 mb-4">
-                  Add {platforms[addingPlatform].name} Account
-                </h3>
-
-                <div className="space-y-4 max-w-md">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Account ID / Phone Number
-                    </label>
-                    <input
-                      type="text"
-                      placeholder={
-                        addingPlatform === 'whatsapp'
-                          ? '+1234567890'
-                          : addingPlatform === 'facebook'
-                            ? 'user123456'
-                            : addingPlatform === 'viber'
-                              ? '+1234567890'
-                              : 'user@example.com'
-                      }
-                      value={formData.account_id}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          account_id: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Display Name / Username
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Your display name"
-                      value={formData.account_username}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          account_username: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      API Key / Access Token (Optional)
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="API key or access token"
-                      value={formData.access_token}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          access_token: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      onClick={handleSaveAccount}
-                      disabled={loading}
-                      className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-medium disabled:opacity-50"
-                    >
-                      {loading ? 'Saving...' : 'Save Account'}
-                    </button>
-                    <button
-                      onClick={handleCancelAdd}
-                      className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                    )
+                  })}
                 </div>
-              </div>
-            )}
+
+                {/* Add Account Form */}
+                {addingPlatform && (
+                  <div className="border-t border-gray-200 pt-6 mt-6">
+                    <h3 className="font-semibold text-gray-900 mb-4">
+                      Add {platforms[addingPlatform].name} Account
+                    </h3>
+
+                    <div className="space-y-4 max-w-md">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Account ID / Phone Number
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={
+                            addingPlatform === 'whatsapp'
+                              ? '+1234567890'
+                              : addingPlatform === 'facebook'
+                                ? 'user123456'
+                                : addingPlatform === 'viber'
+                                  ? '+1234567890'
+                                  : 'user@example.com'
+                          }
+                          value={formData.account_id}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              account_id: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Display Name / Username
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Your display name"
+                          value={formData.account_username}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              account_username: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          API Key / Access Token (Optional)
+                        </label>
+                        <input
+                          type="password"
+                          placeholder="API key or access token"
+                          value={formData.access_token}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              access_token: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div className="flex gap-3 pt-2">
+                        <button
+                          onClick={handleSaveAccount}
+                          disabled={loading}
+                          className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-medium disabled:opacity-50"
+                        >
+                          {loading ? 'Saving...' : 'Save Account'}
+                        </button>
+                        <button
+                          onClick={handleCancelAdd}
+                          className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Info Box */}
                 <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
@@ -807,16 +766,16 @@ export default function SettingsPage() {
 
             {/* Admin iframe tabs */}
             {activeTab === 'platform-settings' && (
-              <iframe src="/admin/settings" className="w-full border-0 rounded-lg" style={{ height: '70vh' }} title="Platform Settings" />
+              <iframe src="/admin/settings" className="w-full border-0 rounded-lg" style={{ height: '85vh' }} title="Platform Settings" />
             )}
             {activeTab === 'branding' && (
-              <iframe src="/admin/branding" className="w-full border-0 rounded-lg" style={{ height: '70vh' }} title="Branding" />
+              <iframe src="/admin/branding" className="w-full border-0 rounded-lg" style={{ height: '85vh' }} title="Branding" />
             )}
             {activeTab === 'users' && (
-              <iframe src="/admin/users" className="w-full border-0 rounded-lg" style={{ height: '70vh' }} title="Users" />
+              <iframe src="/admin/users" className="w-full border-0 rounded-lg" style={{ height: '85vh' }} title="Users" />
             )}
             {activeTab === 'email-accounts' && (
-              <iframe src="/admin/email-accounts" className="w-full border-0 rounded-lg" style={{ height: '70vh' }} title="Email Accounts" />
+              <iframe src="/admin/email-accounts" className="w-full border-0 rounded-lg" style={{ height: '85vh' }} title="Email Accounts" />
             )}
 
             {/* Email & Messaging Tab */}
@@ -845,7 +804,7 @@ export default function SettingsPage() {
                       <iframe
                         src="/admin/email-accounts"
                         className="w-full border border-gray-200 rounded-lg"
-                        style={{ height: '35vh' }}
+                        style={{ height: '80vh' }}
                         title="Email Accounts"
                       />
                     ) : (
@@ -855,61 +814,7 @@ export default function SettingsPage() {
                     )}
                   </div>
 
-                  {/* Messaging Platforms Section */}
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-base font-semibold text-gray-800 flex items-center gap-2">
-                        <span>💬</span> Messaging Platforms
-                      </h3>
-                      <button
-                        onClick={() => setActiveTab('accounts')}
-                        className="text-sm text-blue-600 hover:underline"
-                      >
-                        Manage →
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {Object.entries(platforms).map(([key, platform]) => {
-                        const connected = accounts.find((acc) => acc.platform === key)
-                        return (
-                          <div
-                            key={key}
-                            className="border border-gray-200 rounded-lg p-4 flex justify-between items-start"
-                          >
-                            <div className="flex items-start gap-3">
-                              <span className="text-2xl">{platform.icon}</span>
-                              <div>
-                                <h4 className="font-semibold text-gray-900">{platform.name}</h4>
-                                {connected ? (
-                                  <div>
-                                    <p className="text-sm text-gray-600 mt-1">@{connected.account_username}</p>
-                                    <span className="inline-block mt-1 text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Connected</span>
-                                  </div>
-                                ) : (
-                                  <span className="inline-block mt-1 text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">Not connected</span>
-                                )}
-                              </div>
-                            </div>
-                            {connected ? (
-                              <button
-                                onClick={() => handleDeleteAccount(connected.id)}
-                                className="px-3 py-1 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 font-medium whitespace-nowrap"
-                              >
-                                Remove
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => { setActiveTab('accounts'); handleAddPlatform(key) }}
-                                className="px-3 py-1 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 font-medium whitespace-nowrap"
-                              >
-                                Add
-                              </button>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
+                  {/* Messaging Platforms section removed as it exists in Connected Accounts */}
                 </div>
               </div>
             )}

@@ -1,0 +1,43 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id 44A49180FC2
+	for <info@podamibe.nst>; Wed, 18 Feb 2026 22:22:35 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1771432655;
+ h=from:subject:date:message-id:to:mime-version:content-type;
+	bh=qDPFFldcfXOEC/yNZMlHevbYvWf1LzW+w0sS3XlxTUM=;
+	b=eErNxFbaKQJuoMHQuyUAGI1NcV3UIk7x3p2Z0R3MP0BUgXxAk7kQud+UDsnZwOJX0zErQX
+	pBIxkBuR1vh5fG/qK5shVvAo9y4jpnkEENzx26d4kLwC0SqMdQGGjQvgGiYZk2KTOB630K
+	7f0vRdlen9dFwTxw+BydEMTUTaqWfJdwinR/HN69md/xwwSl3XUQuAaUHLnUQYgkWHzFL+
+	WHSOr0cFVqaSykGOb/Nmx8DZNC0ZW7qmsFujZITK6puglN9WW6jpRuzv8e07wGIXke9b2J
+	AOyt/DXqrzoiJiuqAHqS8zAWprPhq2/1vuJFBvQOe9wN/XScLagV0x2bN1CBUQ==
+From: noreply@saraloms.com
+To: info@podamibe.nst
+Subject: New Verification Code - Contact Submission
+Message-ID: <b0070ae7-914b-e5ca-30ee-8e018ef54298@saraloms.com>
+Date: Wed, 18 Feb 2026 16:37:35 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="--_NmP-44f55c58552f73c3-Part_1"
+X-Last-TLS-Session-Version: TLSv1.3
+
+----_NmP-44f55c58552f73c3-Part_1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hello test,
+
+Your new verification code is: 243632
+
+This code will expire in 10 minutes.
+
+If you didn't request this code, please ignore this email.
+----_NmP-44f55c58552f73c3-Part_1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<p>Hello test,</p><p>Your new verification code is: =
+<strong>243632</strong></p><p>This code will expire in 10 minutes.</p><p>If=
+ you didn't request this code, please ignore this email.=
+</p>
+----_NmP-44f55c58552f73c3-Part_1--

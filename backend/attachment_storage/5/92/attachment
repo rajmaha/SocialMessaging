@@ -1,0 +1,35 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id 24688181036
+	for <admin@example.com>; Sun, 22 Feb 2026 20:55:05 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1771773007; h=from:subject:to:mime-version:content-type;
+	bh=CjVZJmsgqfsx/QFyMs1Um4lsItmpjJcA7l+czcdWlCU=;
+	b=TsSpLQuBbZCtvAdhqViqo8Lo6EhQWbjSLdy90OWxyd97uCXrtaPmtSKYWVAKCHvV/NBbVe
+	NPcoQVq32X9SP9ZPA/VRfo9tZt5nU7r/11V4uRqP9tMtjW7N1/BPLBwjt1e8XMQeJhe9LM
+	C72n5ImYw+bRYh8WXQU/zqM+wpBusHysR5pYlBx2JucUBd/kNQGej4sTziwy6eilW6m/2s
+	YcZbv/fZCNIO49XaH0vC4ppxq5T/MmxL2lSevVJsOYutyvxOh21QDRHUQAozY8W/MXlXJ5
+	ITxwI5GZyLx7Kpgg7SUhw8XODLIVBRT3zt8pR325zX0dF9S82tWSoKm9lPazbQ==
+Content-Type: multipart/alternative;
+ boundary="===============7912209054517870019=="
+MIME-Version: 1.0
+Subject: SMTP Configuration Test
+From: Social Media Messenger <noreply@saraloms.com>
+To: admin@example.com
+X-Last-TLS-Session-Version: TLSv1.3
+
+--===============7912209054517870019==
+Content-Type: text/html; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+
+CiAgICAgICAgPGh0bWw+CiAgICAgICAgICAgIDxib2R5IHN0eWxlPSJmb250LWZhbWlseTogQXJp
+YWwsIHNhbnMtc2VyaWY7Ij4KICAgICAgICAgICAgICAgIDxoMiBzdHlsZT0iY29sb3I6ICMyNTYz
+ZWI7Ij5TTVRQIENvbmZpZ3VyYXRpb24gVGVzdDwvaDI+CiAgICAgICAgICAgICAgICA8cD5UaGlz
+IGlzIGEgdGVzdCBlbWFpbCBmcm9tIFNvY2lhbCBNZWRpYSBNZXNzZW5nZXIuPC9wPgogICAgICAg
+ICAgICAgICAgPHAgc3R5bGU9ImNvbG9yOiAjODg4OyBmb250LXNpemU6IDEycHg7Ij4KICAgICAg
+ICAgICAgICAgICAgICDCqSAyMDI2IFNvY2lhbCBNZWRpYSBNZXNzZW5nZXIuIEFsbCByaWdodHMg
+cmVzZXJ2ZWQuCiAgICAgICAgICAgICAgICA8L3A+CiAgICAgICAgICAgIDwvYm9keT4KICAgICAg
+ICA8L2h0bWw+CiAgICAgICAg
+
+--===============7912209054517870019==--

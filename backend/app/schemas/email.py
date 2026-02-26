@@ -21,6 +21,7 @@ class EmailAccountCreate(BaseModel):
     smtp_username: str
     smtp_password: str
     smtp_security: str = 'STARTTLS'  # SSL, TLS, STARTTLS, or NONE
+    chat_integration_enabled: bool = True  # If False, emails are not bridged into chat conversations
 
 
 class EmailAccountUpdate(BaseModel):
@@ -42,6 +43,7 @@ class EmailAccountUpdate(BaseModel):
     smtp_username: Optional[str] = None
     smtp_password: Optional[str] = None
     smtp_security: Optional[str] = None  # SSL, TLS, STARTTLS, or NONE
+    chat_integration_enabled: Optional[bool] = None  # None = don't change
 
 
 class EmailAccountResponse(BaseModel):
@@ -51,6 +53,7 @@ class EmailAccountResponse(BaseModel):
     account_name: str
     display_name: Optional[str]
     is_active: bool
+    chat_integration_enabled: bool = True
     last_sync: Optional[datetime]
     created_at: datetime
     
@@ -66,6 +69,7 @@ class EmailAccountFullResponse(BaseModel):
     account_name: str
     display_name: Optional[str]
     is_active: bool
+    chat_integration_enabled: bool = True
     last_sync: Optional[datetime]
     
     # IMAP Settings
@@ -151,6 +155,16 @@ class SendEmailRequest(BaseModel):
     to_address: str
     subject: str
     body: str
+    cc: Optional[str] = None
+    bcc: Optional[str] = None
+
+
+class ScheduledSendRequest(BaseModel):
+    """Schema for scheduling an email to be sent later"""
+    to_address: str
+    subject: str
+    body: str
+    scheduled_at: str  # ISO 8601 datetime string (UTC)
     cc: Optional[str] = None
     bcc: Optional[str] = None
 

@@ -54,6 +54,8 @@ async def websocket_endpoint(
                 if message.get("type") == "ping":
                     await websocket.send_json({"type": "pong"})
                 
+            except WebSocketDisconnect:
+                raise
             except json.JSONDecodeError:
                 await websocket.send_json({
                     "type": "error",
@@ -64,15 +66,15 @@ async def websocket_endpoint(
                 break
     
     except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for user")
-        events_service.disconnect(websocket)
+        logger.info("WebSocket disconnected (client navigated away)")
     except Exception as e:
         logger.error(f"WebSocket error: {str(e)}")
-        events_service.disconnect(websocket)
         try:
             await websocket.close(code=status.WS_1011_SERVER_ERROR)
         except:
             pass
+    finally:
+        events_service.disconnect(websocket)
 
 
 @router.get("/")

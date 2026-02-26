@@ -1,0 +1,27 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id DB22D18111E
+	for <info@podamibe.ent>; Mon, 23 Feb 2026 15:36:43 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1771840304; h=from:subject:to:mime-version:content-type;
+	bh=pzOZUeFKTzNzGGzs4mqh8pIci8UNHBP1a++TC0TLH+4=;
+	b=eTXt1RnCxHFi77scv0nt6j0A1vtM+SBtziXl0gtPTgZnVdnPrJlSL64PUbn0StkCA3fdKX
+	BwI0w3NyWOXlKZVW38vK2PGWXjsd1RKFk3WpCexuKpItk9LIXuY220bK0h6cEgjwVFhtUP
+	vQQN+puxAKD1qslHeBrXcw07TdZ8FZfatDIP1n0/vbPaqnPoRGgW2pAsmrmFie4ujMNbP9
+	ypxGgojdpc8pmvVplEFuQkd/J6MJUV+WAkvkuOJJvponH0pU7GV9HspvkfAkY5AnNiOAMW
+	fEV3Rh9cwRAN62EypS+6PXTPSYcH9A4+4UH85UU9STIjg0c5cc9a6nZXx0zi4g==
+Content-Type: multipart/alternative;
+ boundary="===============0244055255155355510=="
+MIME-Version: 1.0
+Subject: test email
+From: SaralOMS <noreply@saraloms.com>
+To: info@podamibe.ent
+X-Last-TLS-Session-Version: TLSv1.3
+
+--===============0244055255155355510==
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+
+<p>Dear sir this is just test mail</p>
+--===============0244055255155355510==--

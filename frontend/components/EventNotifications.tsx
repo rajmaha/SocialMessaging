@@ -36,11 +36,17 @@ export function EventNotifications() {
       addNotification(event)
     })
 
+    // Subscribe to conversation assignment (agent gets notified when forwarded a chat)
+    const unsubscribeAssigned = subscribe('conversation_assigned', (event) => {
+      addNotification(event)
+    })
+
     return () => {
       unsubscribeSent()
       unsubscribeReceived()
       unsubscribeEmailSent()
       unsubscribeEmailReceived()
+      unsubscribeAssigned()
     }
   }, [subscribe])
 
@@ -69,11 +75,12 @@ export function EventNotifications() {
   }
 
   const getNotificationContent = (event: EventMessage) => {
+    const d = event.data || event as any
     switch (event.type) {
       case 'message_sent':
         return {
           title: 'Message Sent',
-          description: `Message sent to ${event.data.receiver_name}`,
+          description: `Message sent to ${d.receiver_name || ''}`,
           icon: '✓',
           bgColor: 'bg-green-50',
           borderColor: 'border-green-200',
@@ -82,8 +89,8 @@ export function EventNotifications() {
         }
       case 'message_received':
         return {
-          title: event.data.platform === 'webchat' ? '💬 New Web Chat Message' : 'New Message',
-          description: `${event.data.visitor_name || event.data.sender_name}: ${(event.data.message_text || event.data.text || '').substring(0, 60)}`,
+          title: d.platform === 'webchat' ? '💬 New Web Chat Message' : 'New Message',
+          description: `${d.visitor_name || d.sender_name || 'Unknown'}: ${(d.message_text || d.text || '').substring(0, 60)}`,
           icon: '💬',
           bgColor: 'bg-blue-50',
           borderColor: 'border-blue-200',
@@ -93,7 +100,7 @@ export function EventNotifications() {
       case 'email_sent':
         return {
           title: 'Email Sent',
-          description: `Email sent to ${event.data.recipient}`,
+          description: `Email sent to ${d.recipient || ''}`,
           icon: '📧',
           bgColor: 'bg-purple-50',
           borderColor: 'border-purple-200',
@@ -103,17 +110,29 @@ export function EventNotifications() {
       case 'email_received':
         return {
           title: 'New Email',
-          description: `From: ${event.data.sender}`,
+          description: d.sender ? `From: ${d.sender}` : (d.message || `${d.synced_count ?? 1} new email${(d.synced_count ?? 1) !== 1 ? 's' : ''} received`),
           icon: '📬',
           bgColor: 'bg-indigo-50',
           borderColor: 'border-indigo-200',
           textColor: 'text-indigo-800',
           titleColor: 'text-indigo-900',
         }
+      case 'conversation_assigned':
+        return {
+          title: '🔄 Conversation Assigned to You',
+          description: d.note
+            ? `From ${d.assigned_by_name}: "${d.note}"`
+            : `${d.assigned_by_name} forwarded ${d.contact_name || 'a chat'} to you`,
+          icon: '🔄',
+          bgColor: 'bg-orange-50',
+          borderColor: 'border-orange-400',
+          textColor: 'text-orange-800',
+          titleColor: 'text-orange-900',
+        }
       default:
         return {
           title: event.type,
-          description: JSON.stringify(event.data),
+          description: JSON.stringify(d),
           icon: 'ℹ',
           bgColor: 'bg-gray-50',
           borderColor: 'border-gray-200',

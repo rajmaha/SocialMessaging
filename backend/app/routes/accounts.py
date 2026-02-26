@@ -26,6 +26,24 @@ class PlatformAccountResponse(BaseModel):
     class Config:
         from_attributes = True
 
+@router.get("/active-platforms")
+def get_active_platforms(db: Session = Depends(get_db)):
+    """Return distinct platform names that have at least one active account configured."""
+    from app.models import UserEmailAccount
+    rows = (
+        db.query(PlatformAccount.platform)
+        .filter(PlatformAccount.is_active == 1)
+        .distinct()
+        .all()
+    )
+    platforms = [r.platform for r in rows]
+    # Include email if any user has an active email account configured
+    email_active = db.query(UserEmailAccount).filter(UserEmailAccount.is_active == True).first()
+    if email_active and 'email' not in platforms:
+        platforms.append('email')
+    return {"platforms": platforms}
+
+
 @router.post("/", response_model=dict)
 def add_platform_account(
     account_data: PlatformAccountCreate,

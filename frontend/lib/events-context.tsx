@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
 import { useAuth } from './auth'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'
 
 export interface EventMessage {
@@ -35,7 +34,8 @@ export function EventsProvider({ children }: { children: React.ReactNode }) {
 
   const connect = useCallback(() => {
     if (!token) return
-    if (websocketRef.current?.readyState === WebSocket.OPEN) return
+    const state = websocketRef.current?.readyState
+    if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return
 
     try {
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -101,12 +101,21 @@ export function EventsProvider({ children }: { children: React.ReactNode }) {
   }, [token])
 
   const disconnect = useCallback(() => {
-    if (websocketRef.current) {
-      websocketRef.current.close()
-      websocketRef.current = null
-    }
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
+    const ws = websocketRef.current
+    websocketRef.current = null
+    if (ws) {
+      // Null out handlers first so the close event doesn't schedule a reconnect
+      ws.onclose = null
+      ws.onerror = null
+      ws.onopen = null
+      ws.onmessage = null
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close()
+      }
     }
     setConnected(false)
   }, [])

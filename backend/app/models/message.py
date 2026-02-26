@@ -19,5 +19,8 @@ class Message(Base):
     is_sent = Column(Integer, default=1)  # 1 = sent, 0 = received
     read_status = Column(Integer, default=0)  # 0 = unread, 1 = read
     platform_message_id = Column(String, unique=True, index=True, nullable=True)
+    delivery_status = Column(String, default="sent")  # sent, delivered, read, failed
+    subject = Column(String, nullable=True)      # email subject (email platform only)
+    email_id = Column(Integer, nullable=True)    # FK to emails.id (email platform only)
     timestamp = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)

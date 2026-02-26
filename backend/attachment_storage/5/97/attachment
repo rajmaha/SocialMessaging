@@ -1,0 +1,43 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id DC6DD180FC2
+	for <rajendara@podamibenepal.com>; Thu, 19 Feb 2026 09:25:30 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1771472430;
+ h=from:subject:date:message-id:to:mime-version:content-type;
+	bh=7Nk34si8ZOlczQ2qBMMQ40UgBnE6mY/8RtZHxSgy+vk=;
+	b=HQ2/e+Juzb0VZQ5K6NcF/gFWen/yba8LNJg8Gn4gTo9vqA7/eFXEdBReBwpI1tgWbDkHvr
+	xgzgsec0MZ5aubbiYkwJ1ngkR1xh2ulSAr713lHJiyiS2i+PBJc/CIE90bCYlKaYR7BgSq
+	Sy6uo78/ajeHdqPh0HfGhZVWkTxy9KN4IKRUAXNFTNcTO8H7P46CrU/1zwvoPvTr3I8P6K
+	Nerz6LrcbGaMw3pP07T7NXmHSTRjX8v9Lc6G0FKyaAU8EwJAdz2wqMtss9rdF3Mch9gBIu
+	Eb7RzNGJbKi3JV4q66NeTwu1vPuWZnNaSvQj91Vz9SoiLLyyHGAi/UXwbUG7Kw==
+From: noreply@saraloms.com
+To: rajendara@podamibenepal.com
+Subject: New Verification Code - Job Application
+Message-ID: <6504170a-de14-0fd5-8e4b-e9c8ac2ad9cc@saraloms.com>
+Date: Thu, 19 Feb 2026 03:40:30 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="--_NmP-b5af515526b422c2-Part_1"
+X-Last-TLS-Session-Version: TLSv1.3
+
+----_NmP-b5af515526b422c2-Part_1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hello test ,
+
+Your new verification code is: 475703
+
+This code will expire in 10 minutes.
+
+If you didn't request this code, please ignore this email.
+----_NmP-b5af515526b422c2-Part_1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<p>Hello test ,</p><p>Your new verification code is: =
+<strong>475703</strong></p><p>This code will expire in 10 minutes.</p><p>If=
+ you didn't request this code, please ignore this email.=
+</p>
+----_NmP-b5af515526b422c2-Part_1--

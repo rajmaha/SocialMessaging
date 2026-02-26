@@ -1,21 +1,25 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import MainHeader from "@/components/MainHeader";
+import { authAPI } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
+import AdminNav from '@/components/AdminNav';
 
 interface User {
   id: number;
   username: string;
   email: string;
   full_name: string;
+  display_name?: string;
   role: 'admin' | 'user';
   is_active: boolean;
   created_at: string;
 }
 
 export default function AdminUsers() {
+  const user = authAPI.getUser();
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +29,7 @@ export default function AdminUsers() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
     full_name: '',
+    display_name: '',
     email: '',
     role: 'user' as 'admin' | 'user',
     is_active: true
@@ -36,6 +41,7 @@ export default function AdminUsers() {
     email: '',
     password: '',
     full_name: '',
+    display_name: '',
     role: 'user' as 'admin' | 'user'
   });
 
@@ -77,6 +83,7 @@ export default function AdminUsers() {
     setEditingUserId(user.id);
     setEditFormData({
       full_name: user.full_name,
+      display_name: user.display_name || '',
       email: user.email,
       role: user.role,
       is_active: user.is_active
@@ -157,6 +164,7 @@ export default function AdminUsers() {
         email: '',
         password: '',
         full_name: '',
+        display_name: '',
         role: 'user'
       });
       setShowCreateForm(false);
@@ -230,18 +238,9 @@ export default function AdminUsers() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <nav className="bg-blue-700 text-white p-4">
-        <div className="max-w-7xl mx-auto flex flex-wrap gap-3 justify-between items-center">
-          <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin" className="hover:bg-blue-600 px-3 py-2 rounded text-sm whitespace-nowrap">Dashboard</Link>
-            <Link href="/admin/users" className="hover:bg-blue-600 px-3 py-2 rounded text-sm whitespace-nowrap">Users</Link>
-            <Link href="/admin/settings" className="hover:bg-blue-600 px-3 py-2 rounded text-sm whitespace-nowrap">Settings</Link>
-            <Link href="/dashboard" className="hover:bg-blue-600 px-3 py-2 rounded text-sm whitespace-nowrap">Messaging</Link>
-          </div>
-        </div>
-      </nav>
+    <div className="ml-60 pt-14 min-h-screen bg-gray-100">
+      <MainHeader user={user!} />
+      <AdminNav />
       <main className="max-w-7xl mx-auto p-6">
         <div className="mb-8 flex flex-wrap gap-4 justify-between items-center">
           <div>
@@ -266,6 +265,10 @@ export default function AdminUsers() {
                 <div>
                   <label className="block text-gray-700 text-sm font-bold mb-2">Full Name</label>
                   <input type="text" required value={formData.full_name} onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="John Doe" />
+                </div>
+                <div>
+                  <label className="block text-gray-700 text-sm font-bold mb-2">Chat Nickname <span className="font-normal text-gray-400">(shown to visitors)</span></label>
+                  <input type="text" value={formData.display_name} onChange={(e) => setFormData({ ...formData, display_name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="e.g. Alex (optional)" />
                 </div>
                 <div>
                   <label className="block text-gray-700 text-sm font-bold mb-2">Username</label>
@@ -293,47 +296,50 @@ export default function AdminUsers() {
         )}
         <div className="bg-white rounded-lg shadow">
           <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
-                      <p className="text-sm text-gray-500">@{user.username}</p>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.email}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <select value={user.role} onChange={(e) => handleChangeRole(user.id, e.target.value)} className="text-sm border border-gray-300 rounded px-2 py-1" disabled={editModalOpen}>
-                      <option value="user">User</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{user.is_active ? 'Active' : 'Inactive'}</span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(user.created_at).toLocaleDateString()}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button onClick={() => handleEditClick(user)} className="text-blue-600 hover:text-blue-900 mr-2">Edit</button>
-                    {user.is_active && (
-                      <button onClick={() => handleDeactivateUser(user.id)} className="text-red-600 hover:text-red-900">Deactivate</button>
-                    )}
-                  </td>
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {users.map((user) => (
+                  <tr key={user.id}>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
+                        {user.display_name && (
+                          <p className="text-xs text-blue-600">nickname: {user.display_name}</p>
+                        )}
+                        <p className="text-sm text-gray-500">@{user.username}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.email}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <select value={user.role} onChange={(e) => handleChangeRole(user.id, e.target.value)} className="text-sm border border-gray-300 rounded px-2 py-1" disabled={editModalOpen}>
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{user.is_active ? 'Active' : 'Inactive'}</span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(user.created_at).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button onClick={() => handleEditClick(user)} className="text-blue-600 hover:text-blue-900 mr-2">Edit</button>
+                      {user.is_active && (
+                        <button onClick={() => handleDeactivateUser(user.id)} className="text-red-600 hover:text-red-900">Deactivate</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
         {users.length === 0 && (
@@ -352,6 +358,10 @@ export default function AdminUsers() {
                 <div className="mb-4">
                   <label className="block text-gray-700 text-sm font-bold mb-2">Full Name</label>
                   <input type="text" name="full_name" value={editFormData.full_name} onChange={handleEditChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" required />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">Chat Nickname <span className="font-normal text-gray-400">(shown to visitors)</span></label>
+                  <input type="text" name="display_name" value={editFormData.display_name} onChange={handleEditChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="e.g. Alex (optional — leave blank to use real name)" />
                 </div>
                 <div className="mb-4">
                   <label className="block text-gray-700 text-sm font-bold mb-2">Email</label>
@@ -378,3 +388,4 @@ export default function AdminUsers() {
     </div>
   );
 }
+

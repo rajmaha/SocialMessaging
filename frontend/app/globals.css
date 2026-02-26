@@ -124,15 +124,30 @@ body {
   font-size: 1.25em;
 }
 
-.ProseMirror ul,
+.ProseMirror ul {
+  padding: 0 1.5rem;
+  margin: 0.5em 0;
+  list-style-type: disc;
+}
+
 .ProseMirror ol {
   padding: 0 1.5rem;
   margin: 0.5em 0;
+  list-style-type: decimal;
 }
 
 .ProseMirror ul li,
 .ProseMirror ol li {
   margin-bottom: 0.25em;
+  display: list-item;
+}
+
+.ProseMirror ul ul {
+  list-style-type: circle;
+}
+
+.ProseMirror ul ul ul {
+  list-style-type: square;
 }
 
 .ProseMirror strong {
@@ -174,6 +189,32 @@ body {
   font-family: monospace;
 }
 
+/* Email body viewer — restore list markers stripped by Tailwind preflight */
+.email-body ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin: 0.5em 0;
+}
+
+.email-body ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin: 0.5em 0;
+}
+
+.email-body ul ul {
+  list-style-type: circle;
+}
+
+.email-body ul ul ul {
+  list-style-type: square;
+}
+
+.email-body li {
+  display: list-item;
+  margin-bottom: 0.25em;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -187,4 +228,16 @@ body {
 
 .animate-fade-in {
   animation: fadeIn 0.3s ease-in-out forwards;
+}
+
+/* Blockquote styling — email read view and compose editor */
+.email-body blockquote,
+.ProseMirror blockquote {
+  border-left: 4px solid #60a5fa;
+  background: #f8fafc;
+  padding: 8px 12px 8px 16px;
+  margin: 8px 0 8px 8px;
+  border-radius: 0 4px 4px 0;
+  color: #4b5563;
+  font-style: normal !important;
 }

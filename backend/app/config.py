@@ -8,8 +8,11 @@ class Settings(BaseSettings):
     # API Keys
     WHATSAPP_API_KEY: Optional[str] = None
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
+    WHATSAPP_VERIFY_TOKEN: Optional[str] = None   # chosen by you when registering webhook
     FACEBOOK_ACCESS_TOKEN: Optional[str] = None
     FACEBOOK_PAGE_ID: Optional[str] = None
+    FACEBOOK_VERIFY_TOKEN: Optional[str] = None   # chosen by you when registering webhook
+    FACEBOOK_APP_SECRET: Optional[str] = None     # from Meta app dashboard
     VIBER_BOT_TOKEN: Optional[str] = None
     LINKEDIN_ACCESS_TOKEN: Optional[str] = None
     LINKEDIN_ORGANIZATION_ID: Optional[str] = None

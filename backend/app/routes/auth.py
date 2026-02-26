@@ -274,6 +274,7 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
 
 class ProfileUpdate(BaseModel):
     full_name: Optional[str] = None
+    display_name: Optional[str] = None   # Public nickname shown to visitors
     phone: Optional[str] = None
     bio: Optional[str] = None
     social_twitter: Optional[str] = None
@@ -302,6 +303,7 @@ def update_profile(
     return {
         "status": "success",
         "full_name": user.full_name,
+        "display_name": user.display_name,
         "phone": user.phone,
         "bio": user.bio,
         "avatar_url": user.avatar_url,

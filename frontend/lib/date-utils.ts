@@ -14,7 +14,11 @@ export function formatDateWithTimezone(
   options?: Intl.DateTimeFormatOptions
 ): string {
   try {
-    const date = new Date(dateString)
+    // Backend stores naive UTC datetimes — append 'Z' so JS treats them as UTC
+    const normalized = dateString && !dateString.endsWith('Z') && !dateString.includes('+') && !dateString.includes('-', 10)
+      ? dateString + 'Z'
+      : dateString
+    const date = new Date(normalized)
     
     const defaultOptions: Intl.DateTimeFormatOptions = {
       year: 'numeric',

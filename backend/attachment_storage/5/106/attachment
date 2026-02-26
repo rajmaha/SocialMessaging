@@ -1,0 +1,42 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id DA862181033
+	for <rajendra@podamibe.net>; Tue, 17 Feb 2026 23:25:27 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1771350027;
+ h=from:subject:date:message-id:to:mime-version:content-type;
+	bh=3Yq0Xp3ogGNdAhnUpZGw9ahKA13+Y1wm40/vzRT3qjE=;
+	b=e/MehyVK69GFBR8Uxe/glyzmSLQCWPVrymiLz7iNASVhJR9prn1OmcpCMtTcIrpR/dOK3a
+	B3fX3kemRMaZjB89S/kKmQ/G7rkL8DnNXHLKtbt3+uOv4S4wsIZtdvsjH9Aj/vW+V4AFAI
+	+tN0vFDO/mRr/8Us4FLBxpo7AIJyIRCMR9bI3u1ejIcbIKt7UrHm/4GFCLqS6k4gL1pu4i
+	tu4mQt7ljkT+InARHAO2FVjABOr7zi7rzOpACBga8fQPUMyx/9/kkZ60edFHhmv6GzWiZ5
+	zNSELmke+JbInVk7lR7/a0mk0uPzUCQqi3VcfT7oGZCsZlw1Rhwmk88DMJ+yjw==
+From: noreply@saraloms.com
+To: rajendra@podamibe.net
+Subject: Verify Your Job Application - OTP
+Message-ID: <36926f0d-ef94-d0b1-64d8-b3f4a3ce0075@saraloms.com>
+Date: Tue, 17 Feb 2026 17:40:27 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="--_NmP-88920709142135ff-Part_1"
+X-Last-TLS-Session-Version: TLSv1.3
+
+----_NmP-88920709142135ff-Part_1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hello raj,
+
+Your verification code is: 666072
+
+This code will expire in 10 minutes.
+
+If you didn't submit an application, please ignore this email.
+----_NmP-88920709142135ff-Part_1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<p>Hello raj,</p><p>Your verification code is: <strong>666072</strong></p><=
+p>This code will expire in 10 minutes.</p><p>If you didn't submit an =
+application, please ignore this email.</p>
+----_NmP-88920709142135ff-Part_1--

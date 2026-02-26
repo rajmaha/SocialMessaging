@@ -1,0 +1,49 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id 45E551804A4
+	for <mail@rajednram.com.np>; Thu, 19 Feb 2026 21:18:12 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1771515193;
+ h=from:subject:date:message-id:to:mime-version:content-type;
+	bh=rhw7OCmQ7769lwbUfzcEh5U73q+dKZ8gyPUQgl7MWI8=;
+	b=fwnS7oamX8MPeZslboo2CfLwaL/2Fz776sn2kExA2R6xufoqpxKt20HEe9l047csWhZHpP
+	oPWUUoZxSjdQx4lW8JdSllx9TnD4HItWOZTIQoyTmzAwlEdZhlXVF9VGb4liSXsf8O+oHG
+	YeAw4NDjA2x335xoiXbLCUWjQVrTjCtw1q6c9SAPM2UiiffA44idvPeUyu3ftCK2PKjxSm
+	OfIGoJvRXapi0Sl/dBfUlc7E3o/sMCET3/6eZiKgQTnIuB8EHgAnxRSB+383oMlmKID4BG
+	q0odQPcsbxcofOqW8rJYcFQ0HTObvQXYxh/qnKxwkEThBHs4St/XYtLfnTJeVQ==
+From: noreply@saraloms.com
+To: mail@rajednram.com.np
+Subject: Verify Your Demo Request - OTP
+Message-ID: <42479b98-609b-1682-5b0b-a63d83055570@saraloms.com>
+Date: Thu, 19 Feb 2026 15:33:11 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="--_NmP-4ed8d8e558d99556-Part_1"
+X-Last-TLS-Session-Version: TLSv1.3
+
+----_NmP-4ed8d8e558d99556-Part_1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hello Rajendra M,
+
+Your OTP is: 216144
+
+This will expire in 10 minutes.
+----_NmP-4ed8d8e558d99556-Part_1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+
+            <h2>Verify Your Demo Request</h2>
+            <p>Hello =
+Rajendra M,</p>
+            <p>Your One-Time Password (OTP) is:</p>
+            <h1 style=3D"font-size: 32px; letter-spacing: 4px; color: =
+#007bff;">216144</h1>
+            <p>This OTP will expire in 10 minutes.=
+</p>
+            <p>If you didn't request this, please ignore this email.=
+</p>
+         =20
+----_NmP-4ed8d8e558d99556-Part_1--

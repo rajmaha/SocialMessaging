@@ -9,7 +9,15 @@ from email.mime.multipart import MIMEMultipart
 from app.config import settings
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone as _tz
+
+def _to_utc(dt):
+    """Convert a timezone-aware datetime to naive UTC. Leave naive datetimes unchanged (assumed UTC)."""
+    if dt is None:
+        return None
+    if getattr(dt, 'tzinfo', None) is not None:
+        return dt.astimezone(_tz.utc).replace(tzinfo=None)
+    return dt
 
 # Directory where attachment files are stored on disk
 ATTACHMENT_STORAGE_DIR = os.path.join(
@@ -337,7 +345,7 @@ class EmailService:
                                 bcc=", ".join([str(addr) for addr in msg.bcc]) if msg.bcc else None,
                                 body_text=msg.text or "",
                                 body_html=msg.html or "",
-                                received_at=msg.date,
+                                received_at=_to_utc(msg.date),
                                 is_read=False,  # Always treat newly synced emails as unread
                                 in_reply_to=getattr(msg, 'in_reply_to', None),
                                 references=getattr(msg, 'references', None),
@@ -345,7 +353,42 @@ class EmailService:
                             
                             db.add(email)
                             db.flush()
-                            
+
+                            # --- Thread assignment by normalized subject ---
+                            try:
+                                from app.models.email import EmailThread as _EThread
+                                norm_subj = re.sub(
+                                    r'^\s*(Re|Fwd|Fw|RE|FW|FWD)\s*:\s*', '',
+                                    msg.subject or '', flags=re.IGNORECASE
+                                ).strip() or '(No Subject)'
+                                existing_thread = db.query(_EThread).filter(
+                                    _EThread.account_id == account.id,
+                                    _EThread.subject == norm_subj,
+                                    _EThread.is_archived == False,
+                                ).first()
+                                if existing_thread:
+                                    email.thread_id = existing_thread.id
+                                    existing_thread.last_email_at = email.received_at
+                                    existing_thread.reply_count = (_EThread.reply_count or 0) + 1
+                                    existing_thread.has_unread = True
+                                else:
+                                    new_thread = _EThread(
+                                        account_id=account.id,
+                                        subject=norm_subj,
+                                        thread_key=norm_subj,
+                                        from_address=email.from_address,
+                                        to_addresses=email.to_address or '',
+                                        first_email_at=email.received_at,
+                                        last_email_at=email.received_at,
+                                        reply_count=0,
+                                    )
+                                    db.add(new_thread)
+                                    db.flush()
+                                    email.thread_id = new_thread.id
+                            except Exception as _te:
+                                logger.warning(f'Thread assignment failed: {_te}')
+                            # --- end thread assignment ---
+
                             # Store attachments
                             for attachment in msg.attachments:
                                 # Save payload to disk
@@ -370,8 +413,135 @@ class EmailService:
                                     file_path=saved_path,
                                 )
                                 db.add(email_attachment)
-                            
+
+                            # --- Bridge incoming email to unified conversation inbox ---
+                            # Only bridge if this account has chat integration enabled
+                            # AND only update existing open/pending conversations (never auto-create new ones)
+                            # This preserves privacy: new senders who haven't raised a ticket won't appear in chat
+                            try:
+                                if getattr(account, 'chat_integration_enabled', True):
+                                    from email.utils import parseaddr as _parse_addr
+                                    from app.models.conversation import Conversation
+                                    from app.models.message import Message as ConvMsg
+                                    import time as _time
+
+                                    raw_from = str(msg.from_) if msg.from_ else ""
+                                    contact_display, contact_email = _parse_addr(raw_from)
+                                    if not contact_email:
+                                        contact_email = raw_from.strip()
+                                    contact_email = contact_email.lower()
+                                    contact_name = contact_display or contact_email
+
+                                    # Only bridge emails received from others (not our own sent copies)
+                                    if contact_email and contact_email != account.email_address.lower():
+                                        # Find an EXISTING open/pending email conversation for this sender
+                                        # We do NOT create a new conversation here — the sender must have
+                                        # already raised a ticket (opened a conversation) for emails to appear in chat.
+                                        conv = db.query(Conversation).filter(
+                                            Conversation.platform == 'email',
+                                            Conversation.contact_id == contact_email,
+                                            Conversation.status.in_(['open', 'pending'])
+                                        ).first()
+
+                                        if conv:
+                                            # Existing conversation found — update it with the new email message
+                                            conv.unread_count = (conv.unread_count or 0) + 1
+                                            conv.last_message = email.subject or '(No Subject)'
+                                            conv.last_message_time = email.received_at
+
+                                            conv_msg = ConvMsg(
+                                                conversation_id=conv.id,
+                                                sender_id=contact_email,
+                                                sender_name=contact_name,
+                                                receiver_id=account.email_address,
+                                                receiver_name=account.display_name or account.email_address,
+                                                message_text=email.body_text or '',
+                                                message_type='email',
+                                                platform='email',
+                                                is_sent=0,
+                                                subject=email.subject,
+                                                email_id=email.id,
+                                            )
+                                            db.add(conv_msg)
+                                        # else: no existing ticket — silently skip, email is in email inbox only
+                            except Exception as _bridge_err:
+                                logger.error(f"⚠️ Failed to bridge email to conversation: {_bridge_err}")
+                            # ----------------------------------------------------------
+
+                            # --- Auto-reply logic ------------------------------------------
+                            try:
+                                from app.models.email import EmailAutoReply as _AutoReply
+                                auto_reply = db.query(_AutoReply).filter(
+                                    _AutoReply.user_id == account.user_id,
+                                    _AutoReply.is_enabled == True,
+                                ).first()
+
+                                if auto_reply:
+                                    # Check skip list (comma-separated emails / @domains)
+                                    skip_raw = (auto_reply.skip_if_from or "").lower()
+                                    skip_list = [s.strip() for s in skip_raw.split(",") if s.strip()]
+                                    sender_lower = email.from_address.lower()
+                                    skip_hit = any(
+                                        sender_lower == s or sender_lower.endswith(s)
+                                        for s in skip_list
+                                    )
+
+                                    # Check we haven't already replied to this message
+                                    replied_ids = auto_reply.replied_message_ids or []
+                                    already_replied = email.message_id in replied_ids
+
+                                    # Don't auto-reply to ourselves
+                                    is_self = account.email_address.lower() in sender_lower
+
+                                    if not skip_hit and not already_replied and not is_self:
+                                        subject = f"{auto_reply.subject_prefix or 'Re: '}{email.subject}"
+                                        reply_body = auto_reply.reply_body or ""
+
+                                        if auto_reply.mode == "ai" and auto_reply.ai_system_prompt:
+                                            try:
+                                                import os as _os
+                                                groq_key = _os.getenv("GROQ_API_KEY", "")
+                                                if groq_key:
+                                                    import httpx as _httpx
+                                                    ai_resp = _httpx.post(
+                                                        "https://api.groq.com/openai/v1/chat/completions",
+                                                        headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                                                        json={
+                                                            "model": "llama3-8b-8192",
+                                                            "messages": [
+                                                                {"role": "system", "content": auto_reply.ai_system_prompt},
+                                                                {"role": "user", "content": f"Email subject: {email.subject}\n\nEmail body:\n{email.body_text or email.body_html or ''}"},
+                                                            ],
+                                                            "max_tokens": 512,
+                                                        },
+                                                        timeout=15,
+                                                    )
+                                                    ai_data = ai_resp.json()
+                                                    ai_text = ai_data["choices"][0]["message"]["content"]
+                                                    reply_body = f"<p>{ai_text.replace(chr(10), '<br>')}</p>"
+                                                else:
+                                                    logger.warning("AI auto-reply: GROQ_API_KEY not set, falling back to fixed reply body")
+                                            except Exception as _ai_err:
+                                                logger.warning(f"AI auto-reply generation failed: {_ai_err}, falling back to fixed body")
+
+                                        if reply_body:
+                                            self.send_email_from_account(
+                                                account,
+                                                email.from_address,
+                                                subject,
+                                                reply_body,
+                                                in_reply_to=email.message_id,
+                                            )
+                                            # Mark as replied
+                                            auto_reply.replied_message_ids = replied_ids + [email.message_id]
+                                            db.add(auto_reply)
+                                            logger.info(f"🤖 Auto-replied to {email.from_address} re: {email.subject}")
+                            except Exception as _ar_err:
+                                logger.warning(f"Auto-reply failed for message {email.message_id}: {_ar_err}")
+                            # --- end auto-reply -------------------------------------------
+
                             synced_count += 1
+
                 
                 if db:
                     db.commit()

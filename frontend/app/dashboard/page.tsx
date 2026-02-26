@@ -1,16 +1,32 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+
+function playNotificationSound() {
+  try {
+    const ctx = new ((window as any).AudioContext || (window as any).webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, ctx.currentTime)
+    osc.frequency.setValueAtTime(660, ctx.currentTime + 0.08)
+    gain.gain.setValueAtTime(0.28, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.3)
+  } catch { }
+}
 import axios from 'axios'
 import { authAPI, type User } from '@/lib/auth'
+import MainHeader from '@/components/MainHeader'
 import ConversationList from '@/components/ConversationList'
 import ChatWindow from '@/components/ChatWindow'
 import PlatformFilter from '@/components/PlatformFilter'
-import ProfileDropdown from '@/components/ProfileDropdown'
 import { useBranding } from '@/lib/branding-context'
-import { useEvents } from '@/lib/events-context'
-import { FiMessageSquare, FiMail } from 'react-icons/fi'
+import { useEvents, type EventMessage } from '@/lib/events-context'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -23,22 +39,37 @@ interface Conversation {
   last_message_time: string | null
   unread_count: number
   contact_avatar: string | null
+  status?: string
+  assigned_to?: number | null
+  assigned_to_name?: string | null
 }
 
 export default function DashboardPage() {
   const router = useRouter()
   const brandingCtx = useBranding()
-  const branding = brandingCtx?.branding
   const { subscribe } = useEvents()
   const [user, setUser] = useState<User | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [selectedPlatform, setSelectedPlatform] = useState('all')
   const [loading, setLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<'messaging' | 'email'>('email')
-  const [localLogo, setLocalLogo] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState<'messaging' | 'email'>(
+    (searchParams.get('tab') as 'messaging' | 'email') || 'email'
+  )
+  const [toasts, setToasts] = useState<{ id: number; text: string }[]>([])
+  const [activeConvIds, setActiveConvIds] = useState<Set<number>>(new Set())
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [mineOnly, setMineOnly] = useState(false)
+  const [unassignedOnly, setUnassignedOnly] = useState(false)
   const userRef = useRef<User | null>(null)
   const platformRef = useRef<string>('all')
+  const statusFilterRef = useRef<string>('all')
+  const mineOnlyRef = useRef(false)
+  const unassignedOnlyRef = useRef(false)
+  const toastIdRef = useRef(0)
+  const selectedConvRef = useRef<Conversation | null>(null)
+  const activeTabRef = useRef<'messaging' | 'email'>('email')
 
   useEffect(() => {
     const currentUser = authAPI.getUser()
@@ -49,19 +80,25 @@ export default function DashboardPage() {
     setUser(currentUser)
     userRef.current = currentUser
     fetchConversations(currentUser.user_id)
-    const saved = localStorage.getItem('companyLogo')
-    if (saved) setLocalLogo(saved)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Fetch currently online webchat visitors
+    axios.get(`${API_URL}/webchat/online-conversation-ids`)
+      .then((r) => setActiveConvIds(new Set<number>(r.data.ids)))
+      .catch(() => { })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
-  const logoSrc = branding?.logo_url || localLogo
-
-  const fetchConversations = useCallback(async (userId: number, platform?: string) => {
+  const fetchConversations = useCallback(async (userId: number, platform?: string, status?: string, mine?: boolean, unassigned?: boolean) => {
     const plat = platform ?? platformRef.current
+    const stat = status ?? statusFilterRef.current
+    const myOnly = mine ?? mineOnlyRef.current
+    const unassOnly = unassigned ?? unassignedOnlyRef.current
     setLoading(true)
     try {
       const params: any = { user_id: userId }
       if (plat !== 'all') params.platform = plat
+      if (stat !== 'all') params.status = stat
+      if (unassOnly) params.assigned_to = 'none'
+      else if (myOnly) params.assigned_to = userId
       const response = await axios.get(`${API_URL}/conversations/`, { params })
       setConversations(response.data)
     } catch (error) {
@@ -71,10 +108,52 @@ export default function DashboardPage() {
     }
   }, [])
 
-  // Auto-refresh conversation list on new incoming messages
+  // Keep refs in sync with state for use inside event callbacks
+  useEffect(() => { selectedConvRef.current = selectedConversation }, [selectedConversation])
+  useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
+
+  // Track which webchat visitors are currently online
+  useEffect(() => {
+    const unsubOn = subscribe('webchat_visitor_online', (ev) => {
+      setActiveConvIds((prev) => { const s = new Set(prev); s.add(ev.data.conversation_id); return s })
+    })
+    const unsubOff = subscribe('webchat_visitor_offline', (ev) => {
+      setActiveConvIds((prev) => { const s = new Set(prev); s.delete(ev.data.conversation_id); return s })
+    })
+    // Re-sync on every backend reconnect (backend restart wipes connections without sending offline events)
+    const unsubReconnect = subscribe('connection_established', () => {
+      if (userRef.current) fetchConversations(userRef.current.user_id)
+      axios.get(`${API_URL}/webchat/online-conversation-ids`)
+        .then((r) => setActiveConvIds(new Set<number>(r.data.ids)))
+        .catch(() => { })
+    })
+    // Periodic safety-net poll every 30s to catch any missed events
+    const pollInterval = setInterval(() => {
+      axios.get(`${API_URL}/webchat/online-conversation-ids`)
+        .then((r) => setActiveConvIds(new Set<number>(r.data.ids)))
+        .catch(() => { })
+    }, 30000)
+    return () => { unsubOn(); unsubOff(); unsubReconnect(); clearInterval(pollInterval) }
+  }, [subscribe, fetchConversations])
+
+  // Auto-refresh + sound/toast on new incoming messages
   useEffect(() => {
     const refresh = () => { if (userRef.current) fetchConversations(userRef.current.user_id) }
-    const unsubReceived = subscribe('message_received', refresh)
+    const notify = (ev: EventMessage) => {
+      refresh()
+      const incomingConvId = ev.data?.conversation_id
+      const isViewing =
+        activeTabRef.current === 'messaging' &&
+        selectedConvRef.current?.id === incomingConvId
+      if (!isViewing) {
+        playNotificationSound()
+        const name = ev.data?.visitor_name || ev.data?.sender_name || 'Someone'
+        const id = ++toastIdRef.current
+        setToasts((prev) => [...prev, { id, text: `New message from ${name}` }])
+        setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000)
+      }
+    }
+    const unsubReceived = subscribe('message_received', notify)
     const unsubWebchat = subscribe('webchat_visitor_online', refresh)
     return () => { unsubReceived(); unsubWebchat() }
   }, [subscribe, fetchConversations])
@@ -83,6 +162,28 @@ export default function DashboardPage() {
     setSelectedPlatform(platform)
     platformRef.current = platform
     if (user) fetchConversations(user.user_id, platform)
+  }
+
+  const handleStatusFilter = (status: string) => {
+    setStatusFilter(status)
+    statusFilterRef.current = status
+    if (user) fetchConversations(user.user_id, undefined, status)
+  }
+
+  const handleMineToggle = () => {
+    const next = !mineOnly
+    setMineOnly(next)
+    mineOnlyRef.current = next
+    if (next) { setUnassignedOnly(false); unassignedOnlyRef.current = false }
+    if (user) fetchConversations(user.user_id, undefined, undefined, next, false)
+  }
+
+  const handleUnassignedToggle = () => {
+    const next = !unassignedOnly
+    setUnassignedOnly(next)
+    unassignedOnlyRef.current = next
+    if (next) { setMineOnly(false); mineOnlyRef.current = false }
+    if (user) fetchConversations(user.user_id, undefined, undefined, false, next)
   }
 
   if (!user) {
@@ -98,56 +199,28 @@ export default function DashboardPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Top bar */}
-      <header className="bg-white border-b border-gray-200 flex items-center justify-between px-6 h-14 flex-shrink-0">
-        {/* Left: brand + tabs */}
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            {logoSrc ? (
-              <img src={logoSrc} alt="Company logo" className="h-7 w-auto object-contain" />
-            ) : (
-              <span className="text-xl">📬</span>
-            )}
-            <span className="text-lg font-bold text-gray-800 tracking-tight">
-              {branding?.company_name || 'WorkSpace'}
-            </span>
-          </div>
-
-          {/* Tabs */}
-          <nav className="flex items-center gap-1">
-            <button
-              onClick={() => setActiveTab('email')}
-              className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${
-                activeTab === 'email'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
+      {/* Toast notifications (bottom-left) */}
+      {toasts.length > 0 && (
+        <div className="fixed bottom-6 left-6 z-50 flex flex-col gap-2 pointer-events-none">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className="pointer-events-auto flex items-center gap-3 bg-gray-900 text-white px-4 py-3 rounded-xl shadow-lg text-sm max-w-xs"
             >
-              <FiMail size={15} />
-              Email
-            </button>
-            <button
-              onClick={() => setActiveTab('messaging')}
-              className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${
-                activeTab === 'messaging'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <FiMessageSquare size={15} />
-              Messaging
-            </button>
-          </nav>
+              <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0 animate-pulse" />
+              <span className="flex-1">{t.text}</span>
+              <button
+                onClick={() => setToasts((prev) => prev.filter((t2) => t2.id !== t.id))}
+                className="text-gray-400 hover:text-white ml-1"
+              >✕</button>
+            </div>
+          ))}
         </div>
-
-        {/* Right: profile dropdown */}
-        <div className="flex items-center">
-          <ProfileDropdown user={user} />
-        </div>
-      </header>
+      )}
+      <MainHeader user={user} activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Tab content */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden pt-14">
         {activeTab === 'email' ? (
           // Email: full-screen iframe so the email page renders with all its functionality
           <iframe
@@ -164,11 +237,63 @@ export default function DashboardPage() {
                 selectedPlatform={selectedPlatform}
                 onPlatformChange={handlePlatformChange}
               />
+              {/* Filters */}
+              <div className="border-b bg-white">
+                {/* Assignment filter row */}
+                <div className="px-3 pt-2 pb-1 flex gap-1">
+                  <button
+                    onClick={() => { if (mineOnly || unassignedOnly) { setMineOnly(false); mineOnlyRef.current = false; setUnassignedOnly(false); unassignedOnlyRef.current = false; if (user) fetchConversations(user.user_id, undefined, undefined, false, false) } }}
+                    className={`flex-1 text-xs py-1.5 rounded font-semibold transition ${!mineOnly && !unassignedOnly ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                  >
+                    All agents
+                  </button>
+                  <button
+                    onClick={handleMineToggle}
+                    className={`flex-1 text-xs py-1.5 rounded font-semibold transition ${mineOnly ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                  >
+                    Mine
+                  </button>
+                  <button
+                    onClick={handleUnassignedToggle}
+                    className={`flex-1 text-xs py-1.5 rounded font-semibold transition flex items-center justify-center gap-1 ${unassignedOnly ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                  >
+                    Unassigned
+                    {(() => {
+                      const n = conversations.filter(c => !c.assigned_to && c.unread_count > 0).length
+                      return n > 0 ? (
+                        <span className={`text-[10px] font-bold px-1 rounded-full ${unassignedOnly ? 'bg-white text-orange-600' : 'bg-orange-500 text-white'}`}>{n}</span>
+                      ) : null
+                    })()}
+                  </button>
+                </div>
+                {/* Status filter */}
+                <div className="px-3 pb-2 flex gap-1">
+                  {(['all', 'open', 'pending', 'resolved'] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => handleStatusFilter(s)}
+                      className={`flex-1 text-xs py-1 rounded font-medium capitalize transition ${statusFilter === s
+                        ? s === 'open' ? 'bg-blue-500 text-white'
+                          : s === 'pending' ? 'bg-amber-500 text-white'
+                            : s === 'resolved' ? 'bg-green-500 text-white'
+                              : 'bg-gray-700 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                    >
+                      {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <ConversationList
                 conversations={conversations}
                 selectedConversation={selectedConversation}
                 onSelectConversation={setSelectedConversation}
                 loading={loading}
+                activeConvIds={activeConvIds}
               />
             </div>
             {/* Chat */}

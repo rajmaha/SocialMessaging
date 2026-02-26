@@ -11,6 +11,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password_hash = Column(String)
     full_name = Column(String)
+    display_name = Column(String, nullable=True)   # Public-facing nickname shown to visitors
     role = Column(String, default="user")  # "admin" or "user"
     is_active = Column(Boolean, default=True)
     created_by = Column(Integer, default=None)  # Admin who created this user
@@ -34,7 +35,10 @@ class User(Base):
     social_youtube = Column(String, nullable=True)
 
     # Relationships
-    email_account = relationship("UserEmailAccount", back_populates="user", uselist=False)  # One per user
+    email_accounts = relationship("UserEmailAccount", back_populates="user")  # Multiple per user
     email_signature = relationship("EmailSignature", back_populates="user", uselist=False)  # One per user
     email_templates = relationship("EmailTemplate", back_populates="user")  # Multiple templates
     contacts = relationship("Contact", back_populates="user", cascade="all, delete-orphan")  # Multiple contacts
+    email_rules = relationship("EmailRule", back_populates="user", cascade="all, delete-orphan")
+    email_auto_reply = relationship("EmailAutoReply", back_populates="user", uselist=False)  # One per user
+

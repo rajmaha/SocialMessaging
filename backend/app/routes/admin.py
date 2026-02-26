@@ -99,6 +99,7 @@ class UserCreate(BaseModel):
     email: str
     password: str
     full_name: str
+    display_name: str | None = None   # Public nickname shown to visitors
     role: str = "user"  # "admin" or "user"
 
 class UserResponse(BaseModel):
@@ -106,6 +107,7 @@ class UserResponse(BaseModel):
     username: str
     email: str
     full_name: str
+    display_name: str | None = None   # Public nickname shown to visitors
     role: str
     is_active: bool
     created_at: datetime
@@ -115,6 +117,7 @@ class UserResponse(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: str | None = None
+    display_name: str | None = None   # Public nickname shown to visitors
     email: str | None = None
     is_active: bool | None = None
 
@@ -156,6 +159,7 @@ async def create_user(
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
         full_name=user_data.full_name,
+        display_name=user_data.display_name,
         role=user_data.role,
         created_by=current_user.get("user_id"),
         is_active=True
@@ -200,6 +204,8 @@ async def update_user(
         )
     if user_update.full_name is not None:
         user.full_name = user_update.full_name
+    if user_update.display_name is not None:
+        user.display_name = user_update.display_name if user_update.display_name.strip() else None
     if user_update.email is not None:
         # Check for email conflict
         existing = db.query(User).filter(User.email == user_update.email, User.id != user_id).first()
@@ -467,23 +473,9 @@ async def create_user_email_account(
             detail="User not found"
         )
     
-    # Check if user already has email account
-    existing = db.query(UserEmailAccount).filter(UserEmailAccount.user_id == user_id).first()
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User already has an email account configured"
-        )
+    # Remove restriction on number of accounts per user
     
-    # Check email doesn't already exist
-    email_exists = db.query(UserEmailAccount).filter(
-        UserEmailAccount.email_address == account_data.email_address
-    ).first()
-    if email_exists:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email address already configured for another user"
-        )
+    # Email uniqueness is handled by DB unique constraint on email_address column
     
     # Create email account
     db_account = UserEmailAccount(
@@ -499,7 +491,8 @@ async def create_user_email_account(
         smtp_port=account_data.smtp_port,
         smtp_username=account_data.smtp_username,
         smtp_password=account_data.smtp_password,
-        is_active=True
+        is_active=True,
+        chat_integration_enabled=account_data.chat_integration_enabled,
     )
     
     db.add(db_account)
@@ -607,6 +600,8 @@ async def update_email_account(
         account.smtp_password = account_update.smtp_password
     if account_update.smtp_security is not None:
         account.smtp_security = account_update.smtp_security
+    if account_update.chat_integration_enabled is not None:
+        account.chat_integration_enabled = account_update.chat_integration_enabled
     
     account.updated_at = datetime.utcnow()
     db.commit()
@@ -706,3 +701,52 @@ async def test_email_credentials(
             status_code=400,
             detail=f"Error testing credentials: {str(e)}"
         )
+
+
+# ============ CORS ALLOWED ORIGINS (ADMIN) ============
+
+class CorsSettingsUpdate(BaseModel):
+    origins: list[str]
+
+
+@router.get("/cors")
+async def get_cors_settings(
+    current_user: dict = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get the list of admin-configured CORS allowed origins (admin only)"""
+    from sqlalchemy import text
+    row = db.execute(text("SELECT cors_allowed_origins FROM branding_settings LIMIT 1")).fetchone()
+    origins = []
+    if row and row[0]:
+        origins = row[0] if isinstance(row[0], list) else []
+    return {"origins": origins}
+
+
+@router.put("/cors")
+async def update_cors_settings(
+    body: CorsSettingsUpdate,
+    current_user: dict = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Update the list of admin-configured CORS allowed origins (admin only)"""
+    import json as _json
+    from sqlalchemy import text
+
+    # Validate origins are non-empty strings
+    cleaned = [o.strip().rstrip("/") for o in body.origins if o.strip()]
+
+    # Check if branding_settings row exists
+    row = db.execute(text("SELECT id FROM branding_settings LIMIT 1")).fetchone()
+    if row:
+        db.execute(
+            text("UPDATE branding_settings SET cors_allowed_origins = :val WHERE id = :id"),
+            {"val": _json.dumps(cleaned), "id": row[0]}
+        )
+    else:
+        db.execute(
+            text("INSERT INTO branding_settings (cors_allowed_origins) VALUES (:val)"),
+            {"val": _json.dumps(cleaned)}
+        )
+    db.commit()
+    return {"status": "success", "origins": cleaned}

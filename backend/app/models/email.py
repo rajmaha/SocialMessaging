@@ -9,7 +9,7 @@ class UserEmailAccount(Base):
     __tablename__ = "user_email_accounts"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)  # One account per user
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # Multiple accounts per user
     
     # Email account info
     email_address = Column(String, unique=True, index=True, nullable=False)
@@ -34,12 +34,15 @@ class UserEmailAccount(Base):
     # Account status
     is_active = Column(Boolean, default=True)
     last_sync = Column(DateTime, nullable=True)
+    # Controls whether incoming emails for this account are bridged into the chat/conversation inbox
+    # When False, emails arrive in the email inbox only and do NOT create/update chat conversations
+    chat_integration_enabled = Column(Boolean, default=True, nullable=False, server_default='1')
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    user = relationship("User", back_populates="email_account", uselist=False)
+    user = relationship("User", back_populates="email_accounts")
     emails = relationship("Email", back_populates="account", cascade="all, delete-orphan")
     
     def __repr__(self):
@@ -76,7 +79,14 @@ class Email(Base):
     
     # Labels/Tags (stores list of label IDs)
     labels = Column(JSON, default=list, nullable=False)
-    
+
+    # Scheduled send
+    scheduled_at = Column(DateTime, nullable=True)  # None = send immediately
+    is_scheduled = Column(Boolean, default=False)   # True while waiting to send
+
+    # Snooze
+    snoozed_until = Column(DateTime, nullable=True)  # Hide from inbox until this time
+
     # Sorting
     received_at = Column(DateTime, nullable=False)
     
@@ -183,6 +193,30 @@ class EmailTemplate(Base):
         return f"<EmailTemplate({self.name})>"
 
 
+class EmailRule(Base):
+    """User-defined inbox rules: auto-label/move/star emails on arrival"""
+    __tablename__ = "email_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    name = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    # Conditions: [{"field": "from"|"subject"|"to", "op": "contains"|"equals", "value": "..."}]
+    conditions = Column(JSON, default=list)
+    # Actions: [{"type": "label"|"move"|"star"|"mark_read", "value": "..."}]
+    actions = Column(JSON, default=list)
+    match_all = Column(Boolean, default=True)  # True=AND, False=OR
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="email_rules")
+
+    def __repr__(self):
+        return f"<EmailRule({self.name})>"
+
+
 class EmailThread(Base):
     """Group related emails in a conversation"""
     __tablename__ = "email_threads"
@@ -218,3 +252,33 @@ class EmailThread(Base):
     
     def __repr__(self):
         return f"<EmailThread(subject={self.subject})>"
+
+
+class EmailAutoReply(Base):
+    """Per-user auto-reply / out-of-office configuration"""
+    __tablename__ = "email_auto_replies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+
+    is_enabled = Column(Boolean, default=False)
+    # "fixed" = always send reply_body | "ai" = AI-generated from email content
+    mode = Column(String, default="fixed")
+    subject_prefix = Column(String, default="Re: ")
+    reply_body = Column(Text, nullable=True)          # used for fixed mode
+    ai_system_prompt = Column(Text, nullable=True)    # used for AI mode
+
+    # Comma-separated list of email addresses / domains to NEVER auto-reply to
+    # e.g. "noreply@example.com, @mailchimp.com"
+    skip_if_from = Column(Text, nullable=True)
+
+    # Track which message IDs we already auto-replied to (JSON list)
+    replied_message_ids = Column(JSON, default=list)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="email_auto_reply")
+
+    def __repr__(self):
+        return f"<EmailAutoReply(user_id={self.user_id}, enabled={self.is_enabled})>"
