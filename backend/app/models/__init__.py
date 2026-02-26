@@ -6,5 +6,6 @@ from .team import Team
 from .email import UserEmailAccount, Email, EmailAttachment, EmailTemplate, EmailSignature, Contact, EmailThread
 from .user_permission import UserPermission
 from .organization import Organization, OrganizationContact, Subscription
+from .cloudpanel_server import CloudPanelServer
 
-__all__ = ["User", "Conversation", "Message", "PlatformAccount", "Team", "UserEmailAccount", "Email", "EmailAttachment", "EmailTemplate", "EmailSignature", "Contact", "EmailThread", "UserPermission", "Organization", "OrganizationContact", "Subscription"]
+__all__ = ["User", "Conversation", "Message", "PlatformAccount", "Team", "UserEmailAccount", "Email", "EmailAttachment", "EmailTemplate", "EmailSignature", "Contact", "EmailThread", "UserPermission", "Organization", "OrganizationContact", "Subscription", "CloudPanelServer"]

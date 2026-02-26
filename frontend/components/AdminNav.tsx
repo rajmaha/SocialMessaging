@@ -50,6 +50,7 @@ const sidebarGroups = [
             { href: '/admin/tickets', label: 'All Tickets', icon: '📋' },
             { href: '/admin/organizations', label: 'Organizations', icon: '🏢' },
             { href: '/admin/subscription-modules', label: 'Subscription Modules', icon: '📦' },
+            { href: '/admin/cloudpanel', label: 'CloudPanel Setup', icon: '☁️' },
         ],
     },
 ]
