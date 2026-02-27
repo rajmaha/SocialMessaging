@@ -5,12 +5,18 @@ export default function TicketForm({
     activeNumber,
     appType,
     onTicketSaved,
-    parentTicketId = null
+    parentTicketId = null,
+    onContextChange,
+    callerContext,
+    onEndCall
 }: {
     activeNumber: string;
     appType: string;
     onTicketSaved: () => void;
     parentTicketId?: number | null;
+    onContextChange?: (context: { found: boolean, caller_name?: string, organization_name?: string, organization_id?: number | null }) => void;
+    callerContext?: any;
+    onEndCall?: () => void;
 }) {
     const [saving, setSaving] = useState(false);
 
@@ -22,6 +28,7 @@ export default function TicketForm({
     const [category, setCategory] = useState('');
     const [forwardTarget, setForwardTarget] = useState('');
     const [forwardReason, setForwardReason] = useState('');
+    const [organizationId, setOrganizationId] = useState<number | null>(null);
 
     // Success Tracking
     const [lastSavedTicket, setLastSavedTicket] = useState<any | null>(null);
@@ -100,7 +107,7 @@ export default function TicketForm({
         fetchFields();
     }, [appType]);
 
-    // Reset Core State when phone number changes
+    // Reset Core State when phone number changes and fetch context
     useEffect(() => {
         setStatus('pending');
         setPriority('normal');
@@ -109,6 +116,8 @@ export default function TicketForm({
         setCategory('');
         setForwardTarget('');
         setForwardReason('');
+        setOrganizationId(null);
+        if (onContextChange) onContextChange({ found: false });
         if (!parentTicketId) setSelectedParentId('');
 
         // Reset dynamic data arrays/strings
@@ -119,6 +128,37 @@ export default function TicketForm({
             });
             return reset;
         });
+
+        // Auto-fetch context from number
+        if (activeNumber) {
+            const fetchContext = async () => {
+                try {
+                    const token = getAuthToken();
+                    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/context/${encodeURIComponent(activeNumber)}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (onContextChange) {
+                            onContextChange(data);
+                        }
+                        if (data.found) {
+                            if (data.organization_id) {
+                                setOrganizationId(data.organization_id);
+                            }
+                            if (data.organization_name) {
+                                setCustomerName(data.organization_name);
+                            } else if (data.caller_name && data.caller_name !== "Valued Customer") {
+                                setCustomerName(data.caller_name);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to load caller context", e);
+                }
+            };
+            fetchContext();
+        }
     }, [activeNumber]);
 
     const handleDynamicFieldChange = (fieldName: string, value: any) => {
@@ -192,7 +232,8 @@ export default function TicketForm({
                     status: status,
                     priority: priority,
                     app_type_data: appData,
-                    parent_ticket_id: finalParentId
+                    parent_ticket_id: finalParentId,
+                    organization_id: organizationId
                 })
             });
             if (response.ok) {
@@ -218,6 +259,8 @@ export default function TicketForm({
         setManualTicketNo('');
         setShowManualLink(false);
         setSelectedParentId('');
+        setOrganizationId(null);
+        if (onContextChange) onContextChange({ found: false });
         // Dynamic reset logic is already in the useEffect, but we'll trigger a refresh
         setAppData(prev => {
             const reset = { ...prev };
@@ -267,70 +310,85 @@ export default function TicketForm({
 
     return (
         <form onSubmit={handleSubmit} className="bg-white border text-gray-900 border-indigo-100 shadow-sm rounded-xl p-6 h-full flex flex-col overflow-y-auto">
-            <div className="flex justify-between items-center mb-6 pb-4 border-b">
-                <div>
-                    <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                        Issue Tracker
-                        <span className="text-sm font-normal px-2 py-0.5 bg-gray-100 text-gray-600 rounded-lg">
-                            {activeNumber}
-                        </span>
-                    </h3>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Application Context: <span className="capitalize font-medium text-gray-700">{appType.replace('_', ' ')}</span>
-                    </p>
-                </div>
-                {selectedParentId && (
-                    <span className="bg-indigo-50 text-indigo-700 text-xs px-3 py-1.5 rounded-lg font-bold border border-indigo-200 shadow-sm flex items-center gap-2">
-                        <span className="text-indigo-400">↳</span>
-                        Follow-up to: {history.find(t => t.id === selectedParentId)?.ticket_number || `#${selectedParentId}`}
-                    </span>
-                )}
-            </div>
-
-            {/* ---------- TICKET LINKING ---------- */}
-            <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
-                    <span className="text-indigo-600">🔗</span> Link to Previous Ticket
-                </label>
-                <p className="text-xs text-gray-500 mb-3">Does this call relate to a previous unresolved issue?</p>
-                {history.length > 0 ? (
-                    <select
-                        value={selectedParentId}
-                        onChange={(e) => setSelectedParentId(e.target.value ? Number(e.target.value) : '')}
-                        className="w-full px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                    >
-                        <option value="">-- No, this is a new unrelated issue --</option>
-                        {history.map(t => (
-                            <option key={t.id} value={t.id}>
-                                #{t.ticket_number} - {t.customer_name || 'Unknown'} ({t.status.toUpperCase()})
-                            </option>
-                        ))}
-                    </select>
-                ) : (
-                    <div className="text-xs text-gray-400 italic py-1 px-1">
-                        No previous history found for this caller to link with.
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 pb-4 border-b gap-4">
+                {/* 1. Active Call & Context */}
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center animate-pulse shrink-0">
+                        <span className="text-lg">📞</span>
                     </div>
-                )}
+                    <div>
+                        <h2 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                            {activeNumber}
+                            <span className="text-xs font-bold px-2 py-0.5 bg-blue-100 text-blue-700 rounded uppercase tracking-wider">
+                                {appType.replace('_', ' ')}
+                            </span>
+                        </h2>
+                        <div className="mt-1">
+                            {callerContext?.organization_name || callerContext?.caller_name ? (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-md text-sm font-bold shadow-sm">
+                                    {callerContext.organization_name && <span>🏢 {callerContext.organization_name}</span>}
+                                    {callerContext.organization_name && callerContext.caller_name && <span className="text-indigo-300">|</span>}
+                                    {callerContext.caller_name && <span>👤 Contact: {callerContext.caller_name}</span>}
+                                </span>
+                            ) : (
+                                <span className="text-sm text-gray-500 italic">Unknown Caller</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
 
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                    <button
-                        type="button"
-                        onClick={() => setShowManualLink(!showManualLink)}
-                        className="text-[10px] font-bold text-gray-400 hover:text-indigo-600 uppercase tracking-widest transition-colors"
-                    >
-                        {showManualLink ? '✕ Cancel Manual Link' : '↳ Link by Ticket # Manually'}
-                    </button>
+                {/* 2. Link Ticket & End Call */}
+                <div className="flex flex-col items-end gap-2 w-full xl:w-auto">
+                    <div className="flex items-center gap-2 w-full xl:w-auto justify-end">
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 flex items-center gap-2 w-full xl:w-80">
+                            <span className="text-gray-400 text-sm shrink-0" title="Link to previous ticket">🔗</span>
+                            {history.length > 0 ? (
+                                <select
+                                    value={selectedParentId}
+                                    onChange={(e) => setSelectedParentId(e.target.value ? Number(e.target.value) : '')}
+                                    className="w-full bg-transparent border-none text-sm text-gray-700 py-1 focus:ring-0 cursor-pointer"
+                                >
+                                    <option value="">New Unrelated Issue</option>
+                                    {history.map(t => (
+                                        <option key={t.id} value={t.id}>
+                                            Follow-up #{t.ticket_number}
+                                        </option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <span className="text-xs text-gray-400 flex-1">No history to link</span>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => setShowManualLink(!showManualLink)}
+                                className="text-gray-400 hover:text-indigo-600 shrink-0 p-1 rounded transition-colors"
+                                title="Manual Link"
+                            >
+                                ⌨️
+                            </button>
+                        </div>
+
+                        {onEndCall && (
+                            <button
+                                type="button"
+                                onClick={onEndCall}
+                                className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-2 font-medium text-sm border border-red-100 shrink-0"
+                                title="End Call"
+                            >
+                                ✕ End
+                            </button>
+                        )}
+                    </div>
 
                     {showManualLink && (
-                        <div className="mt-3 animate-in slide-in-from-top-2 duration-200">
+                        <div className="w-full xl:w-80 animate-in slide-in-from-top-2 duration-200">
                             <input
                                 type="text"
                                 value={manualTicketNo}
                                 onChange={(e) => setManualTicketNo(e.target.value)}
                                 placeholder="Enter Ticket # (e.g. TCK-2026...)"
-                                className="w-full px-3 py-2 border text-gray-900 border-indigo-200 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm font-mono"
+                                className="w-full px-3 py-1.5 border text-gray-900 border-indigo-200 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm font-mono"
                             />
-                            <p className="text-[10px] text-indigo-400 mt-1 italic">We will verify this ticket number on submission.</p>
                         </div>
                     )}
                 </div>

@@ -15,6 +15,7 @@ class TicketBase(BaseModel):
     forward_reason: Optional[str] = None
     app_type_data: Optional[Dict[str, Any]] = None
     parent_ticket_id: Optional[int] = None
+    organization_id: Optional[int] = None
 
 class TicketCreate(TicketBase):
     pass
@@ -30,6 +31,7 @@ class TicketUpdate(BaseModel):
     forward_reason: Optional[str] = None
     app_type_data: Optional[Dict[str, Any]] = None
     parent_ticket_id: Optional[int] = None
+    organization_id: Optional[int] = None
 
 class TicketResponse(TicketBase):
     id: int

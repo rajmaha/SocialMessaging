@@ -15,9 +15,11 @@ export default function AdminTicketViewer() {
     const [tickets, setTickets] = useState<any[]>([]);
     const [agents, setAgents] = useState<any[]>([]);
     const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
+    const [organizations, setOrganizations] = useState<any[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [agentFilter, setAgentFilter] = useState('all');
+    const [orgFilter, setOrgFilter] = useState('all');
     const [dateFilter, setDateFilter] = useState('');
 
     useEffect(() => {
@@ -27,6 +29,7 @@ export default function AdminTicketViewer() {
         }
         fetchAllTickets();
         fetchAgents();
+        fetchOrganizations();
     }, []);
 
     const fetchAgents = async () => {
@@ -41,6 +44,21 @@ export default function AdminTicketViewer() {
             }
         } catch (e) {
             console.error('Error fetching agents:', e);
+        }
+    };
+
+    const fetchOrganizations = async () => {
+        try {
+            const token = getAuthToken();
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/organizations`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setOrganizations(data);
+            }
+        } catch (e) {
+            console.error('Error fetching organizations:', e);
         }
     };
 
@@ -74,6 +92,7 @@ export default function AdminTicketViewer() {
     const filteredTickets = tickets.filter(t => {
         const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
         const matchesAgent = agentFilter === 'all' || String(t.assigned_to) === String(agentFilter);
+        const matchesOrg = orgFilter === 'all' || String(t.organization_id) === String(orgFilter);
 
         let matchesDate = true;
         if (dateFilter) {
@@ -87,7 +106,7 @@ export default function AdminTicketViewer() {
             (t.phone_number && t.phone_number.toLowerCase().includes(searchInput)) ||
             (t.customer_name && t.customer_name.toLowerCase().includes(searchInput));
 
-        return matchesStatus && matchesSearch && matchesAgent && matchesDate;
+        return matchesStatus && matchesSearch && matchesAgent && matchesDate && matchesOrg;
     });
 
     if (!user) return null;
@@ -147,6 +166,21 @@ export default function AdminTicketViewer() {
                                         {agents.map(agent => (
                                             <option key={agent.id} value={agent.id}>
                                                 {agent.full_name || agent.username}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={orgFilter}
+                                        onChange={(e) => setOrgFilter(e.target.value)}
+                                        className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-indigo-500"
+                                    >
+                                        <option value="all">All Organizations</option>
+                                        {organizations.map(org => (
+                                            <option key={org.id} value={org.id}>
+                                                {org.organization_name}
                                             </option>
                                         ))}
                                     </select>

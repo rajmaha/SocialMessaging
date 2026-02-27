@@ -13,6 +13,7 @@ class CallRecordingBase(BaseModel):
     recording_file: Optional[str] = None
     recording_url: Optional[str] = None
     pbx_call_id: Optional[str] = None
+    organization_id: Optional[int] = None
 
 class CallRecordingCreate(CallRecordingBase):
     pass
@@ -21,5 +22,7 @@ class CallRecordingResponse(CallRecordingBase):
     id: int
     created_at: datetime
     has_audio: bool = False   # True if recording_file or recording_url exists
+    ticket_number: Optional[str] = None
+    customer_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

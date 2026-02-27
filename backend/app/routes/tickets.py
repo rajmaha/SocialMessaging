@@ -61,6 +61,61 @@ def get_ticket_history(
     ).order_by(Ticket.created_at.desc()).all()
     return tickets
 
+@router.get("/context/{phone_number}")
+def get_ticket_context(
+    phone_number: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve caller name and organization name by phone number for auto-filling the ticket form."""
+    from app.models.organization import Organization, OrganizationContact
+    from app.models.email import Contact
+    from sqlalchemy import cast, String
+
+    clean_phone = "".join(filter(str.isdigit, phone_number))
+    search_term = [phone_number]
+    if clean_phone and clean_phone != phone_number:
+        search_term.append(clean_phone)
+
+    caller_name = None
+    organization_name = None
+
+    for term in search_term:
+        if caller_name:
+            break
+
+        # 1. Search Organization Contacts
+        org_contact = db.query(OrganizationContact).filter(
+            cast(OrganizationContact.phone_no, String).ilike(f"%{term}%")
+        ).first()
+
+        if org_contact:
+            caller_name = org_contact.full_name
+            if org_contact.organization:
+                organization_name = org_contact.organization.organization_name
+            break
+
+        # 2. Search Organizations directly
+        org = db.query(Organization).filter(
+            cast(Organization.contact_numbers, String).ilike(f"%{term}%")
+        ).first()
+        if org:
+            organization_name = org.organization_name
+            caller_name = "Valued Customer"
+            break
+
+        # 3. Search Users Contacts
+        contact = db.query(Contact).filter(Contact.phone.ilike(f"%{term}%")).first()
+        if contact:
+            caller_name = contact.name
+            break
+
+    return {
+        "found": bool(caller_name or organization_name),
+        "caller_name": caller_name,
+        "organization_name": organization_name
+    }
+
 @router.put("/{ticket_id}", response_model=TicketResponse)
 def update_ticket(
     ticket_id: int,
@@ -80,6 +135,68 @@ def update_ticket(
     db.commit()
     db.refresh(ticket)
     return ticket
+
+from pydantic import BaseModel
+
+class TicketNoteCreate(BaseModel):
+    note: Optional[str] = None
+    action_taken: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+
+@router.post("/{ticket_number}/notes", response_model=TicketResponse)
+def add_ticket_note(
+    ticket_number: str,
+    note_data: TicketNoteCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Add a follow-up note to a ticket and optionally update its status/priority.
+    This creates a new child ticket linked to the original.
+    """
+    parent_ticket = db.query(Ticket).filter(Ticket.ticket_number == ticket_number).first()
+    if not parent_ticket:
+        raise HTTPException(status_code=404, detail="Parent ticket not found")
+
+    # 1. Update Parent Ticket if status/priority changed
+    if note_data.status and note_data.status != parent_ticket.status:
+        parent_ticket.status = note_data.status
+    if note_data.priority and note_data.priority != parent_ticket.priority:
+        parent_ticket.priority = note_data.priority
+
+    db.commit()
+    db.refresh(parent_ticket)
+
+    # 2. If a note or action was provided, create a child ticket to log it in history
+    if note_data.note or note_data.action_taken:
+        import datetime
+        timestamp_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        child_number = f"FLW-{timestamp_str}"
+        
+        app_data = {}
+        if note_data.note:
+            app_data["follow_up_note"] = note_data.note
+        if note_data.action_taken:
+            app_data["action_taken"] = note_data.action_taken
+        
+        child = Ticket(
+            ticket_number=child_number,
+            phone_number=parent_ticket.phone_number,
+            organization_id=parent_ticket.organization_id,
+            customer_name=parent_ticket.customer_name,
+            customer_gender=parent_ticket.customer_gender,
+            category=parent_ticket.category,
+            status=parent_ticket.status,
+            priority=parent_ticket.priority,
+            assigned_to=current_user.id,
+            parent_ticket_id=parent_ticket.id,
+            app_type_data=app_data
+        )
+        db.add(child)
+        db.commit()
+
+    return parent_ticket
 
 @router.get("/my-tickets", response_model=List[TicketResponse])
 def get_my_tickets(
@@ -118,6 +235,7 @@ def list_tickets(
     limit: int = 100,
     status: Optional[TicketStatus] = None,
     priority: Optional[TicketPriority] = None,
+    organization_id: Optional[int] = Query(None, description="Filter by organization ID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -128,6 +246,8 @@ def list_tickets(
         query = query.filter(Ticket.status == status)
     if priority:
         query = query.filter(Ticket.priority == priority)
+    if organization_id:
+        query = query.filter(Ticket.organization_id == organization_id)
         
     return query.order_by(Ticket.created_at.desc()).offset(skip).limit(limit).all()
 

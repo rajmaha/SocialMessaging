@@ -30,8 +30,10 @@ export default function OrganizationDetailPage() {
             router.push('/dashboard')
             return
         }
-        fetchOrganization()
-    }, [id, user, router])
+        if (user) {
+            fetchOrganization()
+        }
+    }, [id, user?.user_id, user?.role, router])
 
     const fetchOrganization = async () => {
         try {

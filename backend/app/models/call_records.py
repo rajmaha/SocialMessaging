@@ -10,6 +10,7 @@ class CallRecording(Base):
     agent_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     agent_name = Column(String, nullable=True)        # Cached for display even if agent deleted
     phone_number = Column(String, nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
     direction = Column(String, default="inbound")     # inbound or outbound
     disposition = Column(String, default="ANSWERED")  # ANSWERED, NO ANSWER, BUSY, FAILED
     duration_seconds = Column(Integer, default=0)

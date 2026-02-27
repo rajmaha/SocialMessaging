@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import MainHeader from "@/components/MainHeader";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
-import { Phone, Clock, PhoneMissed, PhoneCall, Headphones, X } from 'lucide-react';
+import { Phone, Clock, PhoneCall, Headphones } from 'lucide-react';
 import TicketForm from "@/components/TicketForm";
 import TicketHistory from "@/components/TicketHistory";
 
@@ -13,7 +13,6 @@ export default function Workspace() {
     const [isMounted, setIsMounted] = useState(false);
     const router = useRouter();
 
-    const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState({
         total_calls_today: 0,
         avg_call_duration_seconds: 0,
@@ -25,9 +24,12 @@ export default function Workspace() {
 
     // Ticketing Simulation State
     const [activeNumber, setActiveNumber] = useState<string | null>(null);
+    const [callerContext, setCallerContext] = useState<any>(null);
     const [reloadHistory, setReloadHistory] = useState(0);
     const [parentTicketId, setParentTicketId] = useState<number | null>(null);
     const [myTickets, setMyTickets] = useState<any[]>([]);
+    const [simulateNumber, setSimulateNumber] = useState('');
+    const [filterType, setFilterType] = useState<'all' | 'forwarded'>('all');
 
     useEffect(() => {
         setIsMounted(true);
@@ -90,8 +92,6 @@ export default function Workspace() {
             }
         } catch (error) {
             console.error('Failed to fetch workspace stats:', error);
-        } finally {
-            setLoading(false);
         }
     };
 
@@ -120,11 +120,35 @@ export default function Workspace() {
     };
 
     const simulateIncomingCall = () => {
-        // Generates a mock phone number
-        const numbers = ['+15551234567', '+15559876543', '+447911123456'];
-        const num = numbers[Math.floor(Math.random() * numbers.length)];
-        setActiveNumber(num);
+        if (simulateNumber.trim()) {
+            setActiveNumber(simulateNumber.trim());
+        } else {
+            // Generates a mock phone number if input is empty
+            const numbers = ['+15551234567', '+15559876543', '+447911123456'];
+            const num = numbers[Math.floor(Math.random() * numbers.length)];
+            setActiveNumber(num);
+        }
         setParentTicketId(null);
+        setCallerContext(null);
+    };
+
+    const initiateCall = async (phone: string) => {
+        try {
+            const token = getAuthToken();
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/calls/originate`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ phone_number: phone })
+            });
+            if (!response.ok) {
+                console.error("Failed to initiate call");
+            }
+        } catch (e) {
+            console.error("Error initiating call:", e);
+        }
     };
 
     if (!isMounted) return null;
@@ -137,7 +161,7 @@ export default function Workspace() {
             <main className="flex-1 w-full mx-auto p-4 md:p-6 flex flex-col lg:flex-row gap-6">
 
                 {/* Left/Main Column: Dashboard & Ticketing Form */}
-                <div className="flex-1 space-y-6 flex flex-col max-w-5xl">
+                <div className="flex-1 space-y-6 flex flex-col">
 
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
                         <div>
@@ -148,12 +172,21 @@ export default function Workspace() {
                         </div>
                         <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
                             {process.env.NODE_ENV !== 'production' && (
-                                <button
-                                    onClick={simulateIncomingCall}
-                                    className="px-4 py-2 bg-indigo-100 text-indigo-700 font-medium rounded-lg hover:bg-indigo-200 transition text-sm flex items-center gap-2"
-                                >
-                                    <PhoneCall className="w-4 h-4" /> Simulate Call
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Phone # (optional)"
+                                        value={simulateNumber}
+                                        onChange={(e) => setSimulateNumber(e.target.value)}
+                                        className="w-36 text-sm border border-gray-300 rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                                    />
+                                    <button
+                                        onClick={simulateIncomingCall}
+                                        className="px-4 py-2 bg-indigo-100 text-indigo-700 font-medium rounded-lg hover:bg-indigo-200 transition text-sm flex items-center gap-2"
+                                    >
+                                        <PhoneCall className="w-4 h-4" /> Simulate Call
+                                    </button>
+                                </div>
                             )}
                             <div className="relative inline-block w-40">
                                 <select
@@ -208,31 +241,15 @@ export default function Workspace() {
                     <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden min-h-[400px]">
                         {activeNumber ? (
                             <div className="h-full flex flex-col">
-                                <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 text-white p-4 flex justify-between items-center">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center animate-pulse">
-                                            <PhoneCall className="w-5 h-5 text-white" />
-                                        </div>
-                                        <div>
-                                            <h2 className="font-semibold text-lg">Active Call: {activeNumber}</h2>
-                                            <p className="text-indigo-100 text-xs">Fill ticket details below</p>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => { setActiveNumber(null); setParentTicketId(null); }}
-                                        className="p-2 hover:bg-white/10 rounded-full transition"
-                                        title="End Call"
-                                    >
-                                        <X className="w-5 h-5" />
-                                    </button>
-                                </div>
-
                                 <div className="p-6 bg-gray-50 flex-1">
                                     <TicketForm
                                         activeNumber={activeNumber}
                                         appType={appType}
                                         parentTicketId={parentTicketId}
                                         onTicketSaved={() => setReloadHistory(prev => prev + 1)}
+                                        onContextChange={(ctx) => setCallerContext(ctx)}
+                                        callerContext={callerContext}
+                                        onEndCall={() => { setActiveNumber(null); setParentTicketId(null); setCallerContext(null); }}
                                     />
                                 </div>
                             </div>
@@ -249,9 +266,24 @@ export default function Workspace() {
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                         <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                             <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                                Inbox: My Open Tickets
+                                Inbox
                                 <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-0.5 rounded-full">{myTickets.length}</span>
                             </h3>
+
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setFilterType('all')}
+                                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${filterType === 'all' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'}`}
+                                >
+                                    My Open Tickets
+                                </button>
+                                <button
+                                    onClick={() => setFilterType('forwarded')}
+                                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${filterType === 'forwarded' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'}`}
+                                >
+                                    Forwarded to Me
+                                </button>
+                            </div>
                         </div>
                         <div className="p-0">
                             {myTickets.length === 0 ? (
@@ -267,35 +299,53 @@ export default function Workspace() {
                                                 <th className="px-6 py-3 font-medium text-gray-900">Customer</th>
                                                 <th className="px-6 py-3 font-medium text-gray-900">Status</th>
                                                 <th className="px-6 py-3 font-medium text-gray-900">Date</th>
+                                                <th className="px-6 py-3 font-medium text-gray-900 text-right">Action</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
-                                            {myTickets.map(ticket => (
-                                                <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
-                                                    <td className="px-6 py-4 font-medium text-indigo-600">
-                                                        {ticket.ticket_number}
-                                                        {ticket.parent_ticket_id && (
-                                                            <span title={`Follow up to #${ticket.parent_ticket_id}`} className="ml-2 inline-block w-2 h-2 rounded-full bg-blue-400"></span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="font-medium text-gray-900">{ticket.customer_name || 'Unknown'}</div>
-                                                        <div className="text-xs text-gray-500">{ticket.phone_number}</div>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <span className={`text-xs px-2 py-1 rounded-md font-medium ${ticket.status === 'forwarded' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'
-                                                            }`}>
-                                                            {ticket.status.toUpperCase()}
-                                                        </span>
-                                                        <span className="ml-2 text-xs text-gray-500 truncate inline-block max-w-[100px] align-bottom">
-                                                            P: {ticket.priority}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-4 text-xs text-gray-500 whitespace-nowrap">
-                                                        {new Date(ticket.created_at).toLocaleDateString()}
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {myTickets
+                                                .filter(t => filterType === 'all' || t.status === 'forwarded')
+                                                .map(ticket => (
+                                                    <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="px-6 py-4 font-medium text-indigo-600">
+                                                            {ticket.ticket_number}
+                                                            {ticket.parent_ticket_id && (
+                                                                <span title={`Follow up to #${ticket.parent_ticket_id}`} className="ml-2 inline-block w-2 h-2 rounded-full bg-blue-400"></span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <div className="font-medium text-gray-900">{ticket.customer_name || 'Unknown'}</div>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); initiateCall(ticket.phone_number); }}
+                                                                className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 mt-1 font-medium transition-colors"
+                                                                title="Click to call"
+                                                            >
+                                                                <Phone className="w-3 h-3" />
+                                                                {ticket.phone_number}
+                                                            </button>
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <span className={`text-xs px-2 py-1 rounded-md font-medium ${ticket.status === 'forwarded' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'
+                                                                }`}>
+                                                                {ticket.status.toUpperCase()}
+                                                            </span>
+                                                            <span className="ml-2 text-xs text-gray-500 truncate inline-block max-w-[100px] align-bottom">
+                                                                P: {ticket.priority}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-6 py-4 text-xs text-gray-500 whitespace-nowrap">
+                                                            {new Date(ticket.created_at).toLocaleDateString()}
+                                                        </td>
+                                                        <td className="px-6 py-4 text-right">
+                                                            <button
+                                                                onClick={() => router.push(`/workspace/tickets/${ticket.ticket_number}`)}
+                                                                className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-xs font-semibold transition-colors"
+                                                            >
+                                                                Follow Up
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
                                         </tbody>
                                     </table>
                                 </div>

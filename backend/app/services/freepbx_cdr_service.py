@@ -167,6 +167,9 @@ class FreePBXCDRService:
         from app.models.call_records import CallRecording
         from app.models.agent_extension import AgentExtension
         from app.models.user import User
+        from app.models.organization import Organization, OrganizationContact
+        from app.models.email import Contact
+        from sqlalchemy import cast, String
 
         cdrs = self.fetch_recent_cdrs(db, since_minutes=15)
         if not cdrs:
@@ -230,6 +233,31 @@ class FreePBXCDRService:
                 except Exception:
                     call_dt = datetime.utcnow()
 
+                # Attempt to link to an Organization
+                organization_id = None
+                if phone_number:
+                    clean_phone = "".join(filter(str.isdigit, phone_number))
+                    search_term = [phone_number]
+                    if clean_phone and clean_phone != phone_number:
+                        search_term.append(clean_phone)
+
+                    for term in search_term:
+                        org_contact = db.query(OrganizationContact).filter(
+                            cast(OrganizationContact.phone_no, String).ilike(f"%{term}%")
+                        ).first()
+
+                        if org_contact and org_contact.organization_id:
+                            organization_id = org_contact.organization_id
+                            break
+
+                        org = db.query(Organization).filter(
+                            cast(Organization.contact_numbers, String).ilike(f"%{term}%")
+                        ).first()
+                        
+                        if org:
+                            organization_id = org.id
+                            break
+
                 record = CallRecording(
                     agent_id=agent_id,
                     agent_name=agent_name,
@@ -241,6 +269,7 @@ class FreePBXCDRService:
                     pbx_call_id=pbx_call_id,
                     disposition=disposition,
                     created_at=call_dt,
+                    organization_id=organization_id,
                 )
                 db.add(record)
                 inserted += 1

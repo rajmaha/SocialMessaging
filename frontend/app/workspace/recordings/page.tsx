@@ -19,24 +19,33 @@ export default function MyRecordings() {
     const [loading, setLoading] = useState(true);
     const [recordings, setRecordings] = useState<any[]>([]);
     const [total, setTotal] = useState(0);
+    const [organizations, setOrganizations] = useState<any[]>([]);
     const [playingId, setPlayingId] = useState<number | null>(null);
 
     // Filters
     const [phone, setPhone] = useState('');
     const [direction, setDirection] = useState('');
+    const [organizationId, setOrganizationId] = useState('');
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
+
+    // Ticket Filters
+    const [ticketStatus, setTicketStatus] = useState('');
+    const [ticketPriority, setTicketPriority] = useState('');
+    const [ticketCategory, setTicketCategory] = useState('');
+
     const [page, setPage] = useState(0);
     const limit = 20;
 
     useEffect(() => {
         const token = getAuthToken();
         if (!token) { router.push('/login'); return; }
+        fetchOrganizations();
     }, []);
 
     useEffect(() => {
         fetchRecordings();
-    }, [phone, direction, dateFrom, dateTo, page]);
+    }, [phone, direction, dateFrom, dateTo, organizationId, ticketStatus, ticketPriority, ticketCategory, page]);
 
     const buildParams = () => {
         const p = new URLSearchParams();
@@ -44,8 +53,12 @@ export default function MyRecordings() {
         p.set('limit', String(limit));
         if (phone) p.set('phone', phone);
         if (direction) p.set('direction', direction);
+        if (organizationId) p.set('organization_id', organizationId);
         if (dateFrom) p.set('date_from', dateFrom);
         if (dateTo) p.set('date_to', dateTo);
+        if (ticketStatus) p.set('ticket_status', ticketStatus);
+        if (ticketPriority) p.set('ticket_priority', ticketPriority);
+        if (ticketCategory) p.set('ticket_category', ticketCategory);
         return p.toString();
     };
 
@@ -65,6 +78,16 @@ export default function MyRecordings() {
         finally { setLoading(false); }
     };
 
+    const fetchOrganizations = async () => {
+        try {
+            const token = getAuthToken();
+            const res = await fetch(`${API}/organizations`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) setOrganizations(await res.json());
+        } catch (e) { }
+    };
+
     const togglePlay = (rec: any) => {
         if (playingId === rec.id) {
             audioRef.current?.pause();
@@ -77,6 +100,8 @@ export default function MyRecordings() {
     const clearFilters = () => {
         setPhone(''); setDirection('');
         setDateFrom(''); setDateTo('');
+        setOrganizationId('');
+        setTicketStatus(''); setTicketPriority(''); setTicketCategory('');
         setPage(0);
     };
 
@@ -91,7 +116,7 @@ export default function MyRecordings() {
         `${API}/calls/recordings/${id}/stream?token=${getAuthToken()}`;
 
     const totalPages = Math.ceil(total / limit);
-    const hasActiveFilters = phone || direction || dateFrom || dateTo;
+    const hasActiveFilters = phone || direction || dateFrom || dateTo || organizationId || ticketStatus || ticketPriority || ticketCategory;
 
     if (!user) return null;
 
@@ -142,6 +167,16 @@ export default function MyRecordings() {
                             />
                         </div>
                         <select
+                            value={organizationId}
+                            onChange={e => { setOrganizationId(e.target.value); setPage(0); }}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="">All Organizations</option>
+                            {organizations.map(o => (
+                                <option key={o.id} value={o.id}>{o.organization_name}</option>
+                            ))}
+                        </select>
+                        <select
                             value={direction}
                             onChange={e => { setDirection(e.target.value); setPage(0); }}
                             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
@@ -162,6 +197,44 @@ export default function MyRecordings() {
                             onChange={e => { setDateTo(e.target.value); setPage(0); }}
                             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                         />
+
+                        {/* Ticket Status */}
+                        <select
+                            value={ticketStatus}
+                            onChange={e => { setTicketStatus(e.target.value); setPage(0); }}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="">All Ticket Statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="solved">Solved</option>
+                            <option value="forwarded">Forwarded</option>
+                        </select>
+
+                        {/* Ticket Priority */}
+                        <select
+                            value={ticketPriority}
+                            onChange={e => { setTicketPriority(e.target.value); setPage(0); }}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="">All Ticket Priorities</option>
+                            <option value="low">Low</option>
+                            <option value="normal">Normal</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                        </select>
+
+                        {/* Ticket Category */}
+                        <select
+                            value={ticketCategory}
+                            onChange={e => { setTicketCategory(e.target.value); setPage(0); }}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="">All Ticket Categories</option>
+                            <option value="Technical Support">Technical Support</option>
+                            <option value="Billing / Finance">Billing / Finance</option>
+                            <option value="Sales / Renewal">Sales / Renewal</option>
+                            <option value="General Inquiry">General Inquiry</option>
+                        </select>
                     </div>
                 </div>
 

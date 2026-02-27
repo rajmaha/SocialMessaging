@@ -409,6 +409,13 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
         return response
 
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins for general API access (or configure as needed)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(DynamicCORSMiddleware)
 
 # Include routes

@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import MainHeader from "@/components/MainHeader";
 import AdminNav from '@/components/AdminNav';
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
 import {
     PhoneCall, PhoneIncoming, PhoneOutgoing, Clock, Play, Pause,
-    Download, Search, RefreshCw, Filter, X, Users, Calendar, Hash
+    Download, Search, RefreshCw, Filter, X, User as UserIcon, Calendar, Hash
 } from 'lucide-react';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
@@ -23,6 +24,7 @@ export default function Recordings() {
     const [total, setTotal] = useState(0);
     const [stats, setStats] = useState<any>(null);
     const [agents, setAgents] = useState<any[]>([]);
+    const [organizations, setOrganizations] = useState<any[]>([]);
     const [playingId, setPlayingId] = useState<number | null>(null);
 
     // Filters
@@ -32,6 +34,13 @@ export default function Recordings() {
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [hasRecording, setHasRecording] = useState('');
+    const [organizationId, setOrganizationId] = useState('');
+
+    // Ticket Filters
+    const [ticketStatus, setTicketStatus] = useState('');
+    const [ticketPriority, setTicketPriority] = useState('');
+    const [ticketCategory, setTicketCategory] = useState('');
+
     const [page, setPage] = useState(0);
     const limit = 25;
 
@@ -39,12 +48,13 @@ export default function Recordings() {
         const token = getAuthToken();
         if (!token) { router.push('/login'); return; }
         fetchAgents();
+        fetchOrganizations();
     }, []);
 
     useEffect(() => {
         fetchRecordings();
         fetchStats();
-    }, [phone, agentId, direction, dateFrom, dateTo, hasRecording, page]);
+    }, [phone, agentId, direction, dateFrom, dateTo, hasRecording, organizationId, ticketStatus, ticketPriority, ticketCategory, page]);
 
     const buildParams = () => {
         const p = new URLSearchParams();
@@ -56,6 +66,10 @@ export default function Recordings() {
         if (dateFrom) p.set('date_from', dateFrom);
         if (dateTo) p.set('date_to', dateTo);
         if (hasRecording !== '') p.set('has_recording', hasRecording);
+        if (organizationId) p.set('organization_id', organizationId);
+        if (ticketStatus) p.set('ticket_status', ticketStatus);
+        if (ticketPriority) p.set('ticket_priority', ticketPriority);
+        if (ticketCategory) p.set('ticket_category', ticketCategory);
         return p.toString();
     };
 
@@ -80,6 +94,7 @@ export default function Recordings() {
             const token = getAuthToken();
             const p = new URLSearchParams();
             if (agentId) p.set('agent_id', agentId);
+            if (organizationId) p.set('organization_id', organizationId);
             if (dateFrom) p.set('date_from', dateFrom);
             if (dateTo) p.set('date_to', dateTo);
             const res = await fetch(`${API}/calls/recordings/stats?${p.toString()}`, {
@@ -96,6 +111,16 @@ export default function Recordings() {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) setAgents(await res.json());
+        } catch (e) { }
+    };
+
+    const fetchOrganizations = async () => {
+        try {
+            const token = getAuthToken();
+            const res = await fetch(`${API}/organizations`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) setOrganizations(await res.json());
         } catch (e) { }
     };
 
@@ -128,6 +153,8 @@ export default function Recordings() {
     const clearFilters = () => {
         setPhone(''); setAgentId(''); setDirection('');
         setDateFrom(''); setDateTo(''); setHasRecording('');
+        setOrganizationId('');
+        setTicketStatus(''); setTicketPriority(''); setTicketCategory('');
         setPage(0);
     };
 
@@ -142,7 +169,7 @@ export default function Recordings() {
         `${API}/calls/recordings/${id}/stream?token=${getAuthToken()}`;
 
     const totalPages = Math.ceil(total / limit);
-    const hasActiveFilters = phone || agentId || direction || dateFrom || dateTo || hasRecording !== '';
+    const hasActiveFilters = phone || agentId || direction || dateFrom || dateTo || hasRecording !== '' || organizationId || ticketStatus || ticketPriority || ticketCategory;
 
     return (
         <div className="ml-60 pt-14 min-h-screen bg-gray-50">
@@ -235,6 +262,18 @@ export default function Recordings() {
                             </select>
                         )}
 
+                        {/* Organization filter */}
+                        <select
+                            value={organizationId}
+                            onChange={e => { setOrganizationId(e.target.value); setPage(0); }}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="">All Organizations</option>
+                            {organizations.map(o => (
+                                <option key={o.id} value={o.id}>{o.organization_name}</option>
+                            ))}
+                        </select>
+
                         {/* Direction */}
                         <select
                             value={direction}
@@ -272,6 +311,45 @@ export default function Recordings() {
                             <option value="true">With Audio</option>
                             <option value="false">No Audio</option>
                         </select>
+
+                        {/* Ticket Status */}
+                        <select
+                            value={ticketStatus}
+                            onChange={e => { setTicketStatus(e.target.value); setPage(0); }}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="">Any Ticket Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="solved">Solved</option>
+                            <option value="forwarded">Forwarded</option>
+                        </select>
+
+                        {/* Ticket Priority */}
+                        <select
+                            value={ticketPriority}
+                            onChange={e => { setTicketPriority(e.target.value); setPage(0); }}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="">Any Ticket Priority</option>
+                            <option value="low">Low</option>
+                            <option value="normal">Normal</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                        </select>
+
+                        {/* Ticket Category */}
+                        <select
+                            value={ticketCategory}
+                            onChange={e => { setTicketCategory(e.target.value); setPage(0); }}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="">Any Ticket Category</option>
+                            <option value="Technical Support">Technical Support</option>
+                            <option value="Billing / Finance">Billing / Finance</option>
+                            <option value="Sales / Renewal">Sales / Renewal</option>
+                            <option value="General Inquiry">General Inquiry</option>
+                        </select>
+
                     </div>
                 </div>
 
@@ -316,9 +394,11 @@ export default function Recordings() {
                             <thead className="bg-gray-50">
                                 <tr>
                                     <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Direction</th>
-                                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer Phone</th>
+                                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer Name</th>
+                                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Caller Number</th>
                                     <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent</th>
                                     <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date & Time</th>
+                                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Ticket</th>
                                     <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Duration</th>
                                     <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Playback</th>
                                 </tr>
@@ -338,13 +418,25 @@ export default function Recordings() {
                                             )}
                                         </td>
                                         <td className="px-5 py-3.5 whitespace-nowrap">
-                                            <span className="text-sm font-semibold text-gray-900 font-mono">{rec.phone_number}</span>
+                                            <span className="text-sm font-semibold text-gray-900">{rec.customer_name || '—'}</span>
+                                        </td>
+                                        <td className="px-5 py-3.5 whitespace-nowrap">
+                                            <span className="text-sm text-gray-600 font-mono">{rec.phone_number}</span>
                                         </td>
                                         <td className="px-5 py-3.5 whitespace-nowrap">
                                             <span className="text-sm text-gray-700">{rec.agent_name || '—'}</span>
                                         </td>
                                         <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-500">
                                             {rec.created_at ? new Date(rec.created_at).toLocaleString() : '—'}
+                                        </td>
+                                        <td className="px-5 py-3.5 whitespace-nowrap">
+                                            {rec.ticket_number ? (
+                                                <Link href={`/workspace/tickets/${rec.ticket_number}`} className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 transition-colors">
+                                                    <Hash className="w-3 h-3" /> {rec.ticket_number}
+                                                </Link>
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">—</span>
+                                            )}
                                         </td>
                                         <td className="px-5 py-3.5 whitespace-nowrap">
                                             <div className="flex items-center gap-1.5 text-sm text-gray-600">
@@ -392,6 +484,27 @@ export default function Recordings() {
                                 ))}
                             </tbody>
                         </table>
+                    )}
+                    {/* Pagination Footer */}
+                    {!loading && totalPages > 1 && recordings.length > 0 && (
+                        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-white">
+                            <span className="text-sm text-gray-500">
+                                Showing {page * limit + 1} to {Math.min((page + 1) * limit, total)} of {total} results
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                                    disabled={page === 0}
+                                    className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-md disabled:opacity-40 hover:bg-gray-50 transition-colors"
+                                >← Previous</button>
+                                <span className="text-sm font-medium text-gray-700 px-2">Page {page + 1} of {totalPages}</span>
+                                <button
+                                    onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                                    disabled={page >= totalPages - 1}
+                                    className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-md disabled:opacity-40 hover:bg-gray-50 transition-colors"
+                                >Next →</button>
+                            </div>
+                        </div>
                     )}
                 </div>
             </main>

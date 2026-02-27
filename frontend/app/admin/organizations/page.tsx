@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import AdminNav from '@/components/AdminNav'
 import MainHeader from '@/components/MainHeader'
-import { Plus, Search, Building2, Hash, Phone, Mail, ChevronRight } from 'lucide-react'
+import { Plus, Search, Building2, Hash, Phone, ChevronRight } from 'lucide-react'
 import axios from 'axios'
 import { useRouter } from 'next/navigation'
 import { useAuth, getAuthToken } from '@/lib/auth'
@@ -37,8 +37,10 @@ export default function OrganizationsPage() {
             router.push('/dashboard')
             return
         }
-        fetchOrganizations()
-    }, [user, router])
+        if (user) {
+            fetchOrganizations()
+        }
+    }, [user?.user_id, user?.role, router])
 
 
     const fetchOrganizations = async () => {

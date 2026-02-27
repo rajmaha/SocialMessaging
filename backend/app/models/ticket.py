@@ -21,6 +21,7 @@ class Ticket(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticket_number = Column(String, index=True, unique=True, nullable=False)
     phone_number = Column(String, index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
     
     # Core Fields
     customer_name = Column(String, nullable=True)
