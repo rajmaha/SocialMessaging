@@ -13,16 +13,21 @@ from app.schemas.organization import (
     SubscriptionCreate, SubscriptionUpdate, SubscriptionResponse,
     SubscriptionModuleCreate, SubscriptionModuleUpdate, SubscriptionModuleResponse
 )
-from app.routes.admin import verify_admin
+from app.dependencies import get_current_user, require_module, require_admin_feature
+from app.models.user import User
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
+
+require_orgs = require_module("module_organizations")
+require_contacts = require_module("module_contacts")
+require_subs = require_module("module_subscriptions")
 
 # Subscription Module CRUD
 @router.post("/subscription-modules", response_model=SubscriptionModuleResponse)
 def create_subscription_module(
     module: SubscriptionModuleCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_subs)
 ):
     db_module = SubscriptionModule(**module.model_dump())
     db.add(db_module)
@@ -33,7 +38,7 @@ def create_subscription_module(
 @router.get("/subscription-modules", response_model=List[SubscriptionModuleResponse])
 def list_subscription_modules(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_subs)
 ):
     return db.query(SubscriptionModule).all()
 
@@ -41,7 +46,7 @@ def list_subscription_modules(
 def get_subscription_module(
     module_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_subs)
 ):
     db_module = db.query(SubscriptionModule).filter(SubscriptionModule.id == module_id).first()
     if not db_module:
@@ -53,7 +58,7 @@ def update_subscription_module(
     module_id: int,
     module_update: SubscriptionModuleUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_subs)
 ):
     db_module = db.query(SubscriptionModule).filter(SubscriptionModule.id == module_id).first()
     if not db_module:
@@ -71,7 +76,7 @@ def update_subscription_module(
 def delete_subscription_module(
     module_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_subs)
 ):
     db_module = db.query(SubscriptionModule).filter(SubscriptionModule.id == module_id).first()
     if not db_module:
@@ -86,7 +91,7 @@ def delete_subscription_module(
 def create_organization(
     org: OrganizationCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_orgs)
 ):
     db_org = Organization(**org.model_dump())
     db.add(db_org)
@@ -100,7 +105,7 @@ def list_organizations(
     limit: int = 100,
     search: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_orgs)
 ):
     query = db.query(Organization)
     if search:
@@ -111,7 +116,7 @@ def list_organizations(
 def get_organization(
     org_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_orgs)
 ):
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:
@@ -123,7 +128,7 @@ def update_organization(
     org_id: int,
     org_update: OrganizationUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_orgs)
 ):
     db_org = db.query(Organization).filter(Organization.id == org_id).first()
     if not db_org:
@@ -141,7 +146,7 @@ def update_organization(
 def delete_organization(
     org_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_orgs)
 ):
     db_org = db.query(Organization).filter(Organization.id == org_id).first()
     if not db_org:
@@ -158,7 +163,7 @@ async def upload_org_logo(
     org_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_orgs)
 ):
     db_org = db.query(Organization).filter(Organization.id == org_id).first()
     if not db_org:
@@ -187,7 +192,7 @@ def create_organization_contact(
     org_id: int,
     contact: ContactCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_contacts)
 ):
     if contact.organization_id != org_id:
         raise HTTPException(status_code=400, detail="Invalid organization ID in contact data")
@@ -202,7 +207,7 @@ def create_organization_contact(
 def list_organization_contacts(
     org_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_contacts)
 ):
     return db.query(OrganizationContact).filter(OrganizationContact.organization_id == org_id).all()
 
@@ -211,7 +216,7 @@ def update_contact(
     contact_id: int,
     contact_update: ContactUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_contacts)
 ):
     db_contact = db.query(OrganizationContact).filter(OrganizationContact.id == contact_id).first()
     if not db_contact:
@@ -229,7 +234,7 @@ def update_contact(
 def delete_contact(
     contact_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_contacts)
 ):
     db_contact = db.query(OrganizationContact).filter(OrganizationContact.id == contact_id).first()
     if not db_contact:
@@ -245,7 +250,7 @@ def create_subscription(
     org_id: int,
     sub: SubscriptionCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_subs)
 ):
     if sub.organization_id != org_id:
         raise HTTPException(status_code=400, detail="Invalid organization ID in subscription data")
@@ -260,7 +265,7 @@ def create_subscription(
 def list_organization_subscriptions(
     org_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_subs)
 ):
     return db.query(Subscription).filter(Subscription.organization_id == org_id).all()
 
@@ -269,7 +274,7 @@ def update_subscription(
     sub_id: int,
     sub_update: SubscriptionUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_subs)
 ):
     db_sub = db.query(Subscription).filter(Subscription.id == sub_id).first()
     if not db_sub:
@@ -287,7 +292,7 @@ def update_subscription(
 def delete_subscription(
     sub_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(verify_admin)
+    admin_user: User = Depends(require_subs)
 ):
     db_sub = db.query(Subscription).filter(Subscription.id == sub_id).first()
     if not db_sub:

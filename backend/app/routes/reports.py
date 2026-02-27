@@ -17,9 +17,23 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 ISSUE_CATEGORIES = ["General", "Billing", "Technical Support", "Sales", "Complaint", "Other"]
 
 
-def _require_admin(current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
+from app.models.user_permission import UserPermission
+
+def _require_admin_or_reports_permission(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role == "admin":
+        return current_user
+        
+    # Check for specific module_reports permission
+    perm = db.query(UserPermission).filter(
+        UserPermission.user_id == current_user.id,
+        UserPermission.permission_key == "module_reports"
+    ).first()
+    
+    if not perm:
+        raise HTTPException(status_code=403, detail="Permission denied")
     return current_user
 
 
@@ -57,7 +71,7 @@ def get_summary(
     visitor: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(_require_admin),
+    current_user: User = Depends(_require_admin_or_reports_permission),
 ):
     """Aggregate stats filtered by date, agent, team, visitor, category."""
     convs = _base_query(db, date_from, date_to, agent_id, team_id, visitor, None, category).all()
@@ -149,7 +163,7 @@ def get_agent_stats(
     date_to: Optional[date] = Query(None),
     team_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(_require_admin),
+    current_user: User = Depends(_require_admin_or_reports_permission),
 ):
     """Per-agent breakdown: claimed, open, pending, resolved, forwarded, response times."""
     agents = db.query(User).filter(User.is_active == True).all()
@@ -217,7 +231,7 @@ def get_conversations_report(
     page: int = Query(1, ge=1),
     limit: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(_require_admin),
+    current_user: User = Depends(_require_admin_or_reports_permission),
 ):
     """Paginated, filterable conversation detail list."""
     q = _base_query(db, date_from, date_to, agent_id, team_id, visitor, status, category)
@@ -269,7 +283,7 @@ def get_handovers_report(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(_require_admin),
+    current_user: User = Depends(_require_admin_or_reports_permission),
 ):
     """List of all handover/forwarding events with details and pagination."""
     q = db.query(MessageModel, Conversation).join(
@@ -330,7 +344,7 @@ def get_email_agent_summary(
     date_to: Optional[date] = Query(None),
     agent_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(_require_admin)
+    current_user: User = Depends(_require_admin_or_reports_permission)
 ):
     """Aggregate email stats by agent."""
     q = db.query(Email, UserEmailAccount, User).join(
@@ -387,7 +401,7 @@ def get_emails_report(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(_require_admin),
+    current_user: User = Depends(_require_admin_or_reports_permission),
 ):
     """List of detailed emails grouped by thread with pagination."""
     q = db.query(Email, UserEmailAccount, User).join(
@@ -473,7 +487,7 @@ def get_emails_report(
 def get_report_email_thread(
     thread_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(_require_admin)
+    current_user: User = Depends(_require_admin_or_reports_permission)
 ):
     """Admin endpoint to get all emails in a thread regardless of account ownership."""
     emails = (
@@ -492,7 +506,7 @@ def get_report_email_thread(
 def get_report_email_single(
     email_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(_require_admin)
+    current_user: User = Depends(_require_admin_or_reports_permission)
 ):
     """Admin endpoint to get a single email regardless of account ownership."""
     email = db.query(Email).filter(Email.id == email_id).first()

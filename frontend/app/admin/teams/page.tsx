@@ -101,13 +101,13 @@ export default function AdminTeams() {
       <MainHeader user={user!} />
       <AdminNav />
 
-      <div className="max-w-3xl mx-auto py-8 px-4">
+      <div className="w-full py-8 px-4">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Teams</h1>
             <p className="text-sm text-gray-500 mt-0.5">Group agents into teams so conversations can be forwarded to a whole team at once.</p>
           </div>
-          <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition">
+          <button onClick={openCreate} className="px-4 py-2 text-white text-sm font-semibold rounded-lg transition" style={{ backgroundColor: 'var(--button-primary)' }}>
             + New Team
           </button>
         </div>
@@ -125,7 +125,7 @@ export default function AdminTeams() {
           <div className="space-y-3">
             {teams.map(team => (
               <div key={team.id} className="bg-white border rounded-xl px-5 py-4 flex items-start gap-4">
-                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-lg font-bold flex-shrink-0">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-lg font-bold flex-shrink-0" style={{ backgroundColor: 'var(--primary-color)' }}>
                   {team.name[0].toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -205,7 +205,7 @@ export default function AdminTeams() {
               <button onClick={() => setModal({ open: false, team: null })} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition">
                 Cancel
               </button>
-              <button onClick={save} disabled={saving || !formName.trim()} className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-semibold transition">
+              <button onClick={save} disabled={saving || !formName.trim()} className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 font-semibold transition" style={{ backgroundColor: 'var(--button-primary)' }}>
                 {saving ? 'Saving…' : modal.team ? 'Save changes' : 'Create team'}
               </button>
             </div>

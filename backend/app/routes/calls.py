@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import date, datetime, timedelta
 import io
 from app.database import get_db
-from app.dependencies import get_current_user, get_admin_user
+from app.dependencies import get_current_user, require_module
 from app.models.user import User
 from app.models.call_records import CallRecording
 from app.schemas.call_records import CallRecordingCreate, CallRecordingResponse
@@ -16,6 +16,8 @@ router = APIRouter(
     tags=["calls"],
     responses={404: {"description": "Not found"}},
 )
+
+require_calls = require_module("module_calls")
 
 
 def _enrich(rec: CallRecording) -> dict:
@@ -62,7 +64,7 @@ def get_call_recordings(
     query = db.query(CallRecording)
 
     # Role-based scoping
-    if current_user.role != "admin":
+    if not current_user.role == "admin":
         query = query.filter(CallRecording.agent_id == current_user.id)
     elif agent_id is not None:
         query = query.filter(CallRecording.agent_id == agent_id)
@@ -160,7 +162,7 @@ def stream_recording_audio(
         raise HTTPException(status_code=404, detail="Recording not found")
 
     # Access control
-    if current_user.role != "admin" and rec.agent_id != current_user.id:
+    if not current_user.role == "admin" and rec.agent_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     # If we have a direct public URL, redirect to it
@@ -217,7 +219,7 @@ def create_call_recording_log(
 @router.post("/recordings/sync-from-freepbx")
 def manual_sync_from_freepbx(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_calls)
 ):
     """Manually trigger a CDR sync from FreePBX (admin only)."""
     from app.services.freepbx_cdr_service import freepbx_cdr_service
@@ -234,7 +236,7 @@ def get_agents_for_filter(
     current_user: User = Depends(get_current_user)
 ):
     """Returns a list of agents for the filter dropdown (agents who have any recordings)."""
-    if current_user.role != "admin":
+    if not current_user.role == "admin":
         return [{"id": current_user.id, "name": current_user.display_name or current_user.full_name or current_user.email}]
 
     rows = (

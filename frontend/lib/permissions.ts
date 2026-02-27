@@ -63,3 +63,17 @@ export function hasChannelAccess(channelKey: string): boolean {
 export function hasAdminFeature(featureKey: string): boolean {
     return hasPermission(`feature_${featureKey}`);
 }
+
+/**
+ * Check if the user has ANY administrative or module permission
+ */
+export function hasAnyAdminPermission(): boolean {
+    try {
+        const stored = localStorage.getItem('user_permissions');
+        if (!stored) return false;
+        const permissions = JSON.parse(stored);
+        return permissions.some((p: string) => p.startsWith('module_') || p.startsWith('feature_'));
+    } catch {
+        return false;
+    }
+}

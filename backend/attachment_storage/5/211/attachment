@@ -1,0 +1,51 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id DE270181029
+	for <admin_test@gmail.com>; Thu, 26 Feb 2026 15:27:05 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1772098928; h=from:subject:to:mime-version:content-type;
+	bh=aYaFWUk8NfD4uKHbSoba0V87Kr7r20BpHDyWVvhkWbM=;
+	b=FQE+1TqkCjL1wVY/aA7TXKk2dkJnDMb5z9iK7td44/BHqF16KJp+K0mVMQGYEKVWhefOLv
+	CB6Y7Tp22WE9Tl5ls1UzGEoh+RSoSLEvI/SMQPVv9C7J8W4X62kBjdcttmhNNcvqdPwBpQ
+	AjYlzWWh05kGMVDJxayY7QSdJY5xDdMb6OxupxzfTIYc5VvNEvIfs43D2dSmH98hLk88Jb
+	+nj8kJIKcq28eCgsxboIgLnN1KLabWoyMF/ddGA4Q8OUCunowXc32KVqIzElVNd9Fb6iVc
+	qvdRclveljLEiMt2YV5fb10FE3IE2DCjoVMrOo3lSFrG28GRisE6VFzv5qIkiA==
+Content-Type: multipart/alternative;
+ boundary="===============1587485505714217595=="
+MIME-Version: 1.0
+Subject: Your verification code - Social Media Messenger
+From: noreply@saraloms.com
+To: admin_test@gmail.com
+X-Last-TLS-Session-Version: TLSv1.3
+
+--===============1587485505714217595==
+Content-Type: text/html; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+
+CiAgICAgICAgICAgIDxodG1sPgogICAgICAgICAgICAgICAgPGJvZHkgc3R5bGU9ImZvbnQtZmFt
+aWx5OiBBcmlhbCwgc2Fucy1zZXJpZjsgbGluZS1oZWlnaHQ6IDEuNjsgY29sb3I6ICMzMzM7Ij4K
+ICAgICAgICAgICAgICAgICAgICA8ZGl2IHN0eWxlPSJtYXgtd2lkdGg6IDYwMHB4OyBtYXJnaW46
+IDAgYXV0bzsgcGFkZGluZzogMjBweDsiPgogICAgICAgICAgICAgICAgICAgICAgICA8aDIgc3R5
+bGU9ImNvbG9yOiAjMjU2M2ViOyI+VmVyaWZpY2F0aW9uIENvZGU8L2gyPgogICAgICAgICAgICAg
+ICAgICAgICAgICA8cD5IaSBBZG1pbiw8L3A+CiAgICAgICAgICAgICAgICAgICAgICAgIDxwPlVz
+ZSB0aGUgY29kZSBiZWxvdyB0byB2ZXJpZnkgeW91ciBlbWFpbCBhZGRyZXNzLiBUaGUgY29kZSBl
+eHBpcmVzIGluIDxzdHJvbmc+MTAgbWludXRlczwvc3Ryb25nPi48L3A+CiAgICAgICAgICAgICAg
+ICAgICAgICAgIDxkaXYgc3R5bGU9Im1hcmdpbjogMzBweCAwOyB0ZXh0LWFsaWduOiBjZW50ZXI7
+Ij4KICAgICAgICAgICAgICAgICAgICAgICAgICAgIDxzcGFuIHN0eWxlPSJmb250LXNpemU6IDQw
+cHg7IGZvbnQtd2VpZ2h0OiBib2xkOyBsZXR0ZXItc3BhY2luZzogMTJweDsgY29sb3I6ICMxZDRl
+ZDg7IGJhY2tncm91bmQ6ICNlZmY2ZmY7IHBhZGRpbmc6IDE2cHggMzJweDsgYm9yZGVyLXJhZGl1
+czogOHB4OyBkaXNwbGF5OiBpbmxpbmUtYmxvY2s7Ij4KICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICA2OTgwOTAKICAgICAgICAgICAgICAgICAgICAgICAgICAgIDwvc3Bhbj4KICAgICAg
+ICAgICAgICAgICAgICAgICAgPC9kaXY+CiAgICAgICAgICAgICAgICAgICAgICAgIDxwIHN0eWxl
+PSJjb2xvcjogI2VmNDQ0NDsiPkRvIG5vdCBzaGFyZSB0aGlzIGNvZGUgd2l0aCBhbnlvbmUuPC9w
+PgogICAgICAgICAgICAgICAgICAgICAgICA8cCBzdHlsZT0iY29sb3I6ICM2NjY7Ij5JZiB5b3Ug
+ZGlkIG5vdCByZXF1ZXN0IHRoaXMgY29kZSwgcGxlYXNlIGlnbm9yZSB0aGlzIGVtYWlsLjwvcD4K
+ICAgICAgICAgICAgICAgICAgICAgICAgPGhyIHN0eWxlPSJib3JkZXI6IG5vbmU7IGJvcmRlci10
+b3A6IDFweCBzb2xpZCAjZGRkOyBtYXJnaW46IDMwcHggMDsiPgogICAgICAgICAgICAgICAgICAg
+ICAgICA8cCBzdHlsZT0iZm9udC1zaXplOiAxMnB4OyBjb2xvcjogIzk5OTsiPsKpIDIwMjYgU29j
+aWFsIE1lZGlhIE1lc3Nlbmdlci4gQWxsIHJpZ2h0cyByZXNlcnZlZC48L3A+CiAgICAgICAgICAg
+ICAgICAgICAgPC9kaXY+CiAgICAgICAgICAgICAgICA8L2JvZHk+CiAgICAgICAgICAgIDwvaHRt
+bD4KICAgICAgICAgICAg
+
+--===============1587485505714217595==--

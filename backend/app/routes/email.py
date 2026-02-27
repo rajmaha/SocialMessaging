@@ -6,8 +6,9 @@ from datetime import datetime
 import os
 
 from app.database import get_db
-from app.dependencies import get_current_user
-from app.models import User, UserEmailAccount, Email
+from app.dependencies import get_current_user, require_module
+from app.models.user import User
+from app.models import UserEmailAccount, Email
 from app.models.email import EmailSignature, Contact, EmailThread, EmailAttachment
 from app.schemas.email import (
     EmailAccountResponse, SendEmailRequest, SendEmailReplyRequest,
@@ -20,6 +21,11 @@ from app.services.email_service import email_service
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/email", tags=["email"])
+
+require_email = require_module("module_email")
+
+# Add the dependency to the router after it's defined
+router.dependencies.append(Depends(require_email))
 
 
 def get_user_email_account(db: Session, user_id: int, account_id: Optional[int] = None):

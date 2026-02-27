@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.database import get_db
-from app.dependencies import get_admin_user, get_current_user
+from app.dependencies import get_current_user, require_admin_feature
 from app.models.user import User
 from app.models.dynamic_field import DynamicField
 from app.schemas.dynamic_field import DynamicFieldCreate, DynamicFieldUpdate, DynamicFieldResponse
@@ -14,11 +14,13 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+require_dynamic_fields = require_admin_feature("feature_manage_dynamic_fields")
+
 @router.post("", response_model=DynamicFieldResponse)
 def create_dynamic_field(
     field_in: DynamicFieldCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_dynamic_fields)
 ):
     """Create a new dynamic field configuration for a specific application type."""
     new_field = DynamicField(**field_in.model_dump())
@@ -44,7 +46,7 @@ def update_dynamic_field(
     field_id: int,
     field_update: DynamicFieldUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_dynamic_fields)
 ):
     """Update an existing dynamic field."""
     field = db.query(DynamicField).filter(DynamicField.id == field_id).first()
@@ -63,7 +65,7 @@ def update_dynamic_field(
 def delete_dynamic_field(
     field_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_dynamic_fields)
 ):
     """Delete a dynamic field."""
     field = db.query(DynamicField).filter(DynamicField.id == field_id).first()

@@ -5,13 +5,17 @@ from typing import List, Optional
 
 from app.database import get_db
 from app.models.bot import BotSettings, BotQA, AISettings
-from app.dependencies import get_current_user
-from app.models.user import User
+from app.models import User
+from app.dependencies import get_current_user, require_admin_feature
 
 router = APIRouter(prefix="/bot", tags=["bot"])
 
+require_bot = require_admin_feature("feature_manage_bot")
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
+# ... (rest of schemas)
+# I'll just replace the imports and the usages.
+# Wait, let's just do a clean replace of the middle section.
 
 class BotSettingsUpdate(BaseModel):
     enabled: Optional[bool] = None
@@ -38,7 +42,7 @@ class BotQAUpdate(BaseModel):
 # ── Admin endpoints ───────────────────────────────────────────────────────────
 
 @router.get("/config")
-def get_bot_config(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_bot_config(db: Session = Depends(get_db), _: User = Depends(require_bot)):
     cfg = db.query(BotSettings).first()
     if not cfg:
         cfg = BotSettings()
@@ -77,7 +81,7 @@ def _qa_dict(r):
 
 
 @router.get("/qa")
-def list_qa(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_qa(db: Session = Depends(get_db), _: User = Depends(require_bot)):
     rows = db.query(BotQA).order_by(BotQA.order, BotQA.id).all()
     return [_qa_dict(r) for r in rows]
 
@@ -134,7 +138,7 @@ class AISettingsUpdate(BaseModel):
 
 
 @router.get("/ai-config")
-def get_ai_config(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_ai_config(db: Session = Depends(get_db), _: User = Depends(require_bot)):
     cfg = db.query(AISettings).first()
     if not cfg:
         cfg = AISettings()

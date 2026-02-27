@@ -10,6 +10,7 @@ import SubscriptionManagement from '@/components/SubscriptionManagement'
 import { User, CreditCard, ChevronLeft, LayoutDashboard, Settings } from 'lucide-react'
 import axios from 'axios'
 import { useAuth, getAuthToken } from '@/lib/auth'
+import { hasModuleAccess } from '@/lib/permissions'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -24,8 +25,13 @@ export default function OrganizationDetailPage() {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
+        // Enforce base permission
+        if (user && user.role !== 'admin' && !hasModuleAccess('organizations')) {
+            router.push('/dashboard')
+            return
+        }
         fetchOrganization()
-    }, [id])
+    }, [id, user, router])
 
     const fetchOrganization = async () => {
         try {
@@ -55,11 +61,17 @@ export default function OrganizationDetailPage() {
         )
     }
 
-    const tabs = [
-        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-        { id: 'contacts', label: 'Contacts', icon: User },
-        { id: 'subscriptions', label: 'Subscriptions', icon: CreditCard },
+    const allTabs = [
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard, permission: () => true },
+        { id: 'contacts', label: 'Contacts', icon: User, permission: () => hasModuleAccess('contacts') },
+        { id: 'subscriptions', label: 'Subscriptions', icon: CreditCard, permission: () => hasModuleAccess('subscriptions') },
     ]
+
+    const tabs = allTabs.filter(tab => {
+        if (!user) return false;
+        if (user.role === 'admin') return true;
+        return tab.permission();
+    })
 
     return (
         <div className="flex flex-col h-screen bg-gray-50">
@@ -69,7 +81,7 @@ export default function OrganizationDetailPage() {
                 <AdminNav />
 
                 <main className="flex-1 overflow-y-auto p-4 md:p-8">
-                    <div className="max-w-6xl mx-auto">
+                    <div className="w-full">
                         {/* Header Area */}
                         <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
                             <div className="flex items-center gap-4">
@@ -99,9 +111,10 @@ export default function OrganizationDetailPage() {
                                         key={tab.id}
                                         onClick={() => setActiveTab(tab.id as TabType)}
                                         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
-                                            ? 'bg-indigo-600 text-white shadow-md'
-                                            : 'text-gray-500 hover:text-indigo-600 hover:bg-gray-50'
+                                            ? 'text-white shadow-md'
+                                            : 'text-gray-500 hover:bg-gray-50'
                                             }`}
+                                        style={activeTab === tab.id ? { backgroundColor: 'var(--button-primary)' } : {}}
                                     >
                                         <tab.icon className="w-4 h-4" />
                                         {tab.label}

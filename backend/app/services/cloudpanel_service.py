@@ -74,15 +74,30 @@ class CloudPanelService:
         sys_user = data.sysUser or data.domainName.replace(".", "")[:16]
         sys_pass = data.sysUserPassword or ''.join(secrets.choice(string.ascii_letters + string.digits) for i in range(16))
 
-        cmd_site = f"clpctl site:add:php --domainName={data.domainName} --phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} --sysUser={sys_user} --sysUserPassword='{sys_pass}'"
+        # Determine remote directory and document root based on whether it's a subdomain
+        parts = data.domainName.split('.')
+        is_subdomain = len(parts) > 2
+        
+        if is_subdomain:
+            root_domain = ".".join(parts[-2:])
+            subdomain_part = ".".join(parts[:-2])
+            remote_dir = f"/home/{sys_user}/htdocs/{root_domain}/public/{subdomain_part}"
+            doc_root = f"{root_domain}/public/{subdomain_part}"
+        else:
+            remote_dir = f"/home/{sys_user}/htdocs/{data.domainName}"
+            doc_root = data.domainName
+            
+        cmd_site = f"clpctl site:add:php --domainName={data.domainName} --phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} --sysUser={sys_user} --sysUserPassword='{sys_pass}' --documentRoot='{doc_root}'"
         self._execute(cmd_site)
 
         cmd_db = f"clpctl db:add --domainName={data.domainName} --databaseName={db_name} --databaseUserName={db_user} --databaseUserPassword='{db_pass}'"
         self._execute(cmd_db)
 
         sftp = self.client.open_sftp()
-        template_dir = os.path.join(os.path.dirname(__file__), "..", "..", "templates", "default_site")
-        remote_dir = f"/home/{sys_user}/htdocs/{data.domainName}"
+        template_name = data.templateName or "default_site"
+        template_dir = os.path.join(os.path.dirname(__file__), "..", "..", "templates", template_name)
+        # Ensure remote directory exists
+        self._execute(f"mkdir -p {remote_dir}")
         
         has_sql = False
         if os.path.exists(template_dir):

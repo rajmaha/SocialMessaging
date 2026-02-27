@@ -241,7 +241,7 @@ export default function AdminUsers() {
     <div className="ml-60 pt-14 min-h-screen bg-gray-100">
       <MainHeader user={user!} />
       <AdminNav />
-      <main className="max-w-7xl mx-auto p-6">
+      <main className="w-full p-6">
         <div className="mb-8 flex flex-wrap gap-4 justify-between items-center">
           <div>
             <h2 className="text-3xl font-bold text-gray-900">User Management</h2>
@@ -249,7 +249,8 @@ export default function AdminUsers() {
           </div>
           <button
             onClick={() => setShowCreateForm(!showCreateForm)}
-            className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition"
+            className="text-white font-semibold py-2 px-4 rounded-lg transition"
+            style={{ backgroundColor: 'var(--button-primary)' }}
           >
             {showCreateForm ? 'Cancel' : 'Create User'}
           </button>
@@ -314,7 +315,7 @@ export default function AdminUsers() {
                       <div>
                         <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
                         {user.display_name && (
-                          <p className="text-xs text-blue-600">nickname: {user.display_name}</p>
+                          <p className="text-xs" style={{ color: 'var(--primary-color)' }}>nickname: {user.display_name}</p>
                         )}
                         <p className="text-sm text-gray-500">@{user.username}</p>
                       </div>
@@ -331,7 +332,7 @@ export default function AdminUsers() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(user.created_at).toLocaleDateString()}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button onClick={() => handleEditClick(user)} className="text-blue-600 hover:text-blue-900 mr-2">Edit</button>
+                      <button onClick={() => handleEditClick(user)} className="hover:opacity-80 mr-2" style={{ color: 'var(--primary-color)' }}>Edit</button>
                       {user.is_active && (
                         <button onClick={() => handleDeactivateUser(user.id)} className="text-red-600 hover:text-red-900">Deactivate</button>
                       )}
@@ -379,7 +380,7 @@ export default function AdminUsers() {
                   <input type="checkbox" name="is_active" checked={editFormData.is_active} onChange={handleEditChange} className="mr-2" />
                   <span>{editFormData.is_active ? 'Active' : 'Inactive'}</span>
                 </div>
-                <button type="submit" className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg transition mt-4">Save Changes</button>
+                <button type="submit" className="text-white font-semibold py-2 px-6 rounded-lg transition mt-4" style={{ backgroundColor: 'var(--button-primary)' }}>Save Changes</button>
               </form>
             </div>
           </div>

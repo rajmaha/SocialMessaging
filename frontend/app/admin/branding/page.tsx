@@ -19,6 +19,11 @@ interface BrandingData {
   primary_color: string
   secondary_color: string
   accent_color: string
+  button_primary_color: string
+  button_primary_hover_color: string
+  sidebar_text_color: string
+  header_bg_color: string
+  layout_bg_color: string
   support_url: string
   privacy_url: string
   terms_url: string
@@ -56,6 +61,11 @@ export default function BrandingAdmin() {
     primary_color: '#2563eb',
     secondary_color: '#1e40af',
     accent_color: '#3b82f6',
+    button_primary_color: '#2563eb',
+    button_primary_hover_color: '#1e40af',
+    sidebar_text_color: '#ffffff',
+    header_bg_color: '#ffffff',
+    layout_bg_color: '#f5f5f5',
     support_url: '',
     privacy_url: '',
     terms_url: '',
@@ -114,6 +124,11 @@ export default function BrandingAdmin() {
           admin_email: data.admin_email || '',
           allowed_file_types: data.allowed_file_types || ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'],
           max_file_size_mb: data.max_file_size_mb || 10,
+          button_primary_color: data.button_primary_color || '#2563eb',
+          button_primary_hover_color: data.button_primary_hover_color || '#1e40af',
+          sidebar_text_color: data.sidebar_text_color || '#ffffff',
+          header_bg_color: data.header_bg_color || '#ffffff',
+          layout_bg_color: data.layout_bg_color || '#f5f5f5',
         })
 
         setSmtp({
@@ -242,7 +257,7 @@ export default function BrandingAdmin() {
       <MainHeader user={user!} />
       <AdminNav />
 
-      <main className="max-w-4xl mx-auto px-6 py-8">
+      <main className="w-full px-6 py-8">
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
             {error}
@@ -457,6 +472,106 @@ export default function BrandingAdmin() {
                   />
                 </div>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Button Primary Color
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={branding.button_primary_color}
+                    onChange={(e) => handleBrandingChange('button_primary_color', e.target.value)}
+                    className="w-20 h-10 rounded border border-gray-300 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={branding.button_primary_color}
+                    onChange={(e) => handleBrandingChange('button_primary_color', e.target.value)}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Button Hover Color
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={branding.button_primary_hover_color}
+                    onChange={(e) => handleBrandingChange('button_primary_hover_color', e.target.value)}
+                    className="w-20 h-10 rounded border border-gray-300 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={branding.button_primary_hover_color}
+                    onChange={(e) => handleBrandingChange('button_primary_hover_color', e.target.value)}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Sidebar Text Color
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={branding.sidebar_text_color}
+                    onChange={(e) => handleBrandingChange('sidebar_text_color', e.target.value)}
+                    className="w-20 h-10 rounded border border-gray-300 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={branding.sidebar_text_color}
+                    onChange={(e) => handleBrandingChange('sidebar_text_color', e.target.value)}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Header Background
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={branding.header_bg_color}
+                    onChange={(e) => handleBrandingChange('header_bg_color', e.target.value)}
+                    className="w-20 h-10 rounded border border-gray-300 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={branding.header_bg_color}
+                    onChange={(e) => handleBrandingChange('header_bg_color', e.target.value)}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Layout Background
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={branding.layout_bg_color}
+                    onChange={(e) => handleBrandingChange('layout_bg_color', e.target.value)}
+                    className="w-20 h-10 rounded border border-gray-300 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={branding.layout_bg_color}
+                    onChange={(e) => handleBrandingChange('layout_bg_color', e.target.value)}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="p-4 bg-gray-50 rounded-lg">
@@ -476,6 +591,21 @@ export default function BrandingAdmin() {
                   className="w-24 h-24 rounded-lg border border-gray-300"
                   style={{ backgroundColor: branding.accent_color }}
                   title="Accent"
+                />
+                <div
+                  className="w-24 h-24 rounded-lg border border-gray-300"
+                  style={{ backgroundColor: branding.button_primary_color }}
+                  title="Button"
+                />
+                <div
+                  className="w-24 h-24 rounded-lg border border-gray-300"
+                  style={{ backgroundColor: branding.header_bg_color }}
+                  title="Header"
+                />
+                <div
+                  className="w-24 h-24 rounded-lg border border-gray-300 shadow-inner"
+                  style={{ backgroundColor: branding.layout_bg_color }}
+                  title="Layout"
                 />
               </div>
             </div>

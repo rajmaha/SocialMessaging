@@ -7,7 +7,7 @@ import { FiMessageSquare, FiMail, FiBarChart2, FiGrid, FiHeadphones } from 'reac
 import ProfileDropdown from '@/components/ProfileDropdown'
 import { useBranding } from '@/lib/branding-context'
 import type { User } from '@/lib/auth'
-import { hasModuleAccess } from '@/lib/permissions'
+import { hasModuleAccess, hasAnyAdminPermission } from '@/lib/permissions'
 import { useState, useEffect } from 'react'
 
 interface MainHeaderProps {
@@ -34,22 +34,34 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
     const [canAccessEmail, setCanAccessEmail] = useState(true)
     const [canAccessMessaging, setCanAccessMessaging] = useState(true)
     const [canAccessWorkspace, setCanAccessWorkspace] = useState(true)
+    const [canAccessAdmin, setCanAccessAdmin] = useState(true)
+    const [canAccessReports, setCanAccessReports] = useState(true)
 
     useEffect(() => {
-        if (user && user.role !== 'admin') {
-            setCanAccessEmail(hasModuleAccess('email'))
-            // Logic for messaging: if they have any channel or a specific messaging module (we removed messaging module, it's channels now)
-            // Let's assume if they have WhatsApp or Messenger or any channel, they can access messaging
-            import('@/lib/permissions').then(({ hasChannelAccess }) => {
-                setCanAccessMessaging(
-                    hasChannelAccess('whatsapp') ||
-                    hasChannelAccess('viber') ||
-                    hasChannelAccess('linkedin') ||
-                    hasChannelAccess('messenger') ||
-                    hasChannelAccess('webchat')
-                )
-            });
-            setCanAccessWorkspace(hasModuleAccess('workspace'))
+        if (user) {
+            if (user.role === 'admin') {
+                setCanAccessEmail(true)
+                setCanAccessMessaging(true)
+                setCanAccessWorkspace(true)
+                setCanAccessAdmin(true)
+                setCanAccessReports(true)
+            } else {
+                setCanAccessEmail(hasModuleAccess('email'))
+                setCanAccessWorkspace(hasModuleAccess('workspace'))
+                setCanAccessAdmin(hasAnyAdminPermission())
+                setCanAccessReports(hasModuleAccess('reports'))
+
+                // Logic for messaging: if they have any channel or a specific messaging module
+                import('@/lib/permissions').then(({ hasChannelAccess }) => {
+                    setCanAccessMessaging(
+                        hasChannelAccess('whatsapp') ||
+                        hasChannelAccess('viber') ||
+                        hasChannelAccess('linkedin') ||
+                        hasChannelAccess('messenger') ||
+                        hasChannelAccess('webchat')
+                    )
+                });
+            }
         }
     }, [user])
 
@@ -63,7 +75,9 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
     }
 
     return (
-        <header className="bg-white border-b border-gray-200 flex items-center justify-between px-6 h-14 fixed top-0 left-0 right-0 z-[60]">
+        <header className="border-b border-gray-200 flex items-center justify-between px-6 h-14 fixed top-0 left-0 right-0 z-[60]"
+            style={{ backgroundColor: 'var(--header-bg)' }}
+        >
             {/* Left: brand + tabs */}
             <div className="flex items-center gap-6">
                 <Link href="/dashboard" className="flex items-center gap-2">
@@ -89,9 +103,10 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
                                 }
                             }}
                             className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isEmailActive
-                                ? 'bg-blue-600 text-white shadow-sm'
+                                ? 'text-white shadow-sm'
                                 : 'text-gray-600 hover:bg-gray-100'
                                 }`}
+                            style={isEmailActive ? { backgroundColor: 'var(--primary-color)' } : {}}
                         >
                             <FiMail size={15} />
                             Email
@@ -107,9 +122,10 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
                                 }
                             }}
                             className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isMessagingActive
-                                ? 'bg-blue-600 text-white shadow-sm'
+                                ? 'text-white shadow-sm'
                                 : 'text-gray-600 hover:bg-gray-100'
                                 }`}
+                            style={isMessagingActive ? { backgroundColor: 'var(--primary-color)' } : {}}
                         >
                             <FiMessageSquare size={15} />
                             Messaging
@@ -119,39 +135,44 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
                         <Link
                             href="/workspace"
                             className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isWorkspaceActive
-                                ? 'bg-blue-600 text-white shadow-sm'
+                                ? 'text-white shadow-sm'
                                 : 'text-gray-600 hover:bg-gray-100'
                                 }`}
+                            style={isWorkspaceActive ? { backgroundColor: 'var(--primary-color)' } : {}}
                         >
                             <FiHeadphones size={15} />
                             Workspace
                         </Link>
                     )}
 
-                    {user?.role === 'admin' && (
+                    {(user?.role === 'admin' || canAccessAdmin) && (
                         <>
                             <div className="h-6 w-px bg-gray-200 mx-2" />
                             <Link
                                 href="/admin"
                                 className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isDashboardActive
-                                    ? 'bg-indigo-600 text-white shadow-sm'
+                                    ? 'text-white shadow-sm'
                                     : 'text-gray-600 hover:bg-gray-100'
                                     }`}
+                                style={isDashboardActive ? { backgroundColor: 'var(--primary-color)' } : {}}
                             >
                                 <FiGrid size={15} />
                                 Dashboard
                             </Link>
-                            <Link
-                                href="/admin/reports"
-                                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isReportsActive
-                                    ? 'bg-indigo-600 text-white shadow-sm'
-                                    : 'text-gray-600 hover:bg-gray-100'
-                                    }`}
-                            >
-                                <FiBarChart2 size={15} />
-                                Reports
-                            </Link>
                         </>
+                    )}
+                    {(user?.role === 'admin' || canAccessReports) && (
+                        <Link
+                            href="/admin/reports"
+                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isReportsActive
+                                ? 'text-white shadow-sm'
+                                : 'text-gray-600 hover:bg-gray-100'
+                                }`}
+                            style={isReportsActive ? { backgroundColor: 'var(--primary-color)' } : {}}
+                        >
+                            <FiBarChart2 size={15} />
+                            Reports
+                        </Link>
                     )}
                 </nav>
             </div>

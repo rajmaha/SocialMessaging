@@ -46,7 +46,6 @@ interface Conversation {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const brandingCtx = useBranding()
   const { subscribe } = useEvents()
   const [user, setUser] = useState<User | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -190,7 +189,7 @@ export default function DashboardPage() {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto mb-3"></div>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 mx-auto mb-3" style={{ borderBottomColor: 'var(--primary-color)' }}></div>
           <p className="text-gray-500 text-sm">Loading...</p>
         </div>
       </div>
@@ -250,8 +249,8 @@ export default function DashboardPage() {
                   </button>
                   <button
                     onClick={handleMineToggle}
-                    className={`flex-1 text-xs py-1.5 rounded font-semibold transition ${mineOnly ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
+                    className={`flex-1 text-xs py-1.5 rounded font-semibold transition ${mineOnly ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    style={mineOnly ? { backgroundColor: 'var(--button-primary)' } : {}}
                   >
                     Mine
                   </button>
@@ -275,13 +274,8 @@ export default function DashboardPage() {
                     <button
                       key={s}
                       onClick={() => handleStatusFilter(s)}
-                      className={`flex-1 text-xs py-1 rounded font-medium capitalize transition ${statusFilter === s
-                        ? s === 'open' ? 'bg-blue-500 text-white'
-                          : s === 'pending' ? 'bg-amber-500 text-white'
-                            : s === 'resolved' ? 'bg-green-500 text-white'
-                              : 'bg-gray-700 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
+                      className={`flex-1 text-xs py-1 rounded font-medium capitalize transition ${statusFilter === s ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                      style={statusFilter === s ? { backgroundColor: s === 'open' ? 'var(--primary-color)' : s === 'pending' ? 'var(--accent-color)' : s === 'resolved' ? 'var(--secondary-color)' : 'var(--sidebar-bg)' } : {}}
                     >
                       {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
                     </button>

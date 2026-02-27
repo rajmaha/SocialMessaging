@@ -18,6 +18,13 @@ class BrandingSettings(Base):
     secondary_color = Column(String, default="#1e40af")  # Darker Blue
     accent_color = Column(String, default="#3b82f6")  # Light Blue
     
+    # Advanced UI Colors
+    button_primary_color = Column(String, default="#2563eb")
+    button_primary_hover_color = Column(String, default="#1e40af")
+    sidebar_text_color = Column(String, default="#ffffff")
+    header_bg_color = Column(String, default="#ffffff")
+    layout_bg_color = Column(String, default="#f5f5f5")
+    
     # SMTP Configuration
     smtp_server = Column(String, default="smtp.gmail.com")
     smtp_port = Column(Integer, default=587)

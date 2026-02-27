@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
-from app.dependencies import get_current_user, get_admin_user
+from app.dependencies import get_current_user, require_admin_feature
 from app.models.user import User
 from app.models.agent_extension import AgentExtension
 from app.schemas.agent_extension import AgentExtensionCreate, AgentExtensionUpdate, AgentExtensionResponse
@@ -14,6 +14,8 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+require_extensions = require_admin_feature("feature_manage_extensions")
+
 
 def _get_user_display(user: User) -> str:
     return user.display_name or user.full_name or user.email.split("@")[0]
@@ -22,7 +24,7 @@ def _get_user_display(user: User) -> str:
 @router.get("", response_model=List[dict])
 def get_user_extensions(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_extensions)
 ):
     """Get all users and their assigned SIP extensions (with FreePBX sync status)."""
     users = db.query(User).all()
@@ -56,7 +58,7 @@ def get_user_extensions(
 def assign_extension(
     data: AgentExtensionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_extensions)
 ):
     """Assign or update a SIP extension for a user and auto-create it in FreePBX."""
     # Check user exists
@@ -112,7 +114,7 @@ def assign_extension(
 def remove_extension(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_extensions)
 ):
     """Remove a SIP extension assignment from a user and delete it from FreePBX."""
     ext_record = db.query(AgentExtension).filter(AgentExtension.user_id == user_id).first()
@@ -135,7 +137,7 @@ def remove_extension(
 def toggle_extension(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_extensions)
 ):
     """Enable or disable an agent's extension (both in DB and FreePBX)."""
     ext_record = db.query(AgentExtension).filter(AgentExtension.user_id == user_id).first()
@@ -165,7 +167,7 @@ def toggle_extension(
 def sync_extension_to_freepbx(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_extensions)
 ):
     """Manually re-push an agent's extension to FreePBX (useful after connectivity issues)."""
     ext_record = db.query(AgentExtension).filter(AgentExtension.user_id == user_id).first()

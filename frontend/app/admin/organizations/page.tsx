@@ -8,6 +8,7 @@ import { Plus, Search, Building2, Hash, Phone, Mail, ChevronRight } from 'lucide
 import axios from 'axios'
 import { useRouter } from 'next/navigation'
 import { useAuth, getAuthToken } from '@/lib/auth'
+import { hasModuleAccess } from '@/lib/permissions'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -31,8 +32,14 @@ export default function OrganizationsPage() {
     const router = useRouter()
 
     useEffect(() => {
+        // Enforce permission
+        if (user && user.role !== 'admin' && !hasModuleAccess('organizations')) {
+            router.push('/dashboard')
+            return
+        }
         fetchOrganizations()
-    }, [])
+    }, [user, router])
+
 
     const fetchOrganizations = async () => {
         try {
@@ -65,7 +72,7 @@ export default function OrganizationsPage() {
                 <AdminNav />
 
                 <main className="flex-1 overflow-y-auto p-8">
-                    <div className="max-w-6xl mx-auto">
+                    <div className="w-full">
                         <div className="flex justify-between items-center mb-8">
                             <div>
                                 <h1 className="text-2xl font-bold text-gray-900">Organizations</h1>
@@ -73,7 +80,8 @@ export default function OrganizationsPage() {
                             </div>
                             <Link
                                 href="/admin/organizations/new"
-                                className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors font-medium shadow-sm"
+                                className="inline-flex items-center gap-2 text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-sm"
+                                style={{ backgroundColor: 'var(--button-primary)' }}
                             >
                                 <Plus className="w-4 h-4" />
                                 New Organization
@@ -183,7 +191,8 @@ export default function OrganizationsPage() {
                                 <p className="text-gray-500 mb-6 font-light">Get started by creating your first organization</p>
                                 <Link
                                     href="/admin/organizations/new"
-                                    className="inline-flex items-center gap-2 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors font-medium shadow-sm"
+                                    className="inline-flex items-center gap-2 text-white px-6 py-2 rounded-lg transition-colors font-medium shadow-sm"
+                                    style={{ backgroundColor: 'var(--button-primary)' }}
                                 >
                                     <Plus className="w-4 h-4" />
                                     Create Organization

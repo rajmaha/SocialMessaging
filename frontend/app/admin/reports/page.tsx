@@ -437,7 +437,7 @@ export default function ReportsPage() {
       <MainHeader user={user!} />
       <AdminNav />
 
-      <main className="max-w-7xl mx-auto p-6">
+      <main className="w-full p-6">
         <div className="mb-6">
           <h2 className="text-3xl font-bold text-gray-900">Conversation Reports</h2>
           <p className="text-gray-500 mt-1 text-sm">Filter by date, agent, team, visitor or issue type to drill into performance metrics.</p>
@@ -498,7 +498,9 @@ export default function ReportsPage() {
           </div>
           <div className="flex gap-2 mt-3">
             <button onClick={handleApply}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition">
+              className="px-4 py-2 text-white text-sm font-medium rounded transition"
+              style={{ backgroundColor: 'var(--button-primary)' }}
+            >
               Apply Filters
             </button>
             <button onClick={handleReset}
@@ -522,7 +524,7 @@ export default function ReportsPage() {
           <>
             {/* --- Performance Highlights --- */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl shadow-xl p-6 text-white overflow-hidden relative group">
+              <div className="rounded-2xl shadow-xl p-6 text-white overflow-hidden relative group" style={{ background: 'linear-gradient(to bottom right, var(--primary-color), var(--secondary-color))' }}>
                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
                   <div className="text-6xl font-black italic uppercase tracking-tighter">Win</div>
                 </div>
@@ -536,7 +538,7 @@ export default function ReportsPage() {
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-2xl shadow-xl p-6 text-white overflow-hidden relative group">
+              <div className="rounded-2xl shadow-xl p-6 text-white overflow-hidden relative group" style={{ background: 'linear-gradient(to bottom right, var(--secondary-color), var(--primary-color))' }}>
                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
                   <div className="text-6xl font-black italic uppercase tracking-tighter">Fast</div>
                 </div>

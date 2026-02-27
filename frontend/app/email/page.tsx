@@ -1640,19 +1640,44 @@ export default function EmailPage() {
     }
   }
 
-  const handleDelete = (emailId: number) => {
-    requestDelete('Move this email to Trash?', async () => {
+  const handleDelete = (target: EmailThread | number) => {
+    const isThread = typeof target !== 'number';
+    const emailIds = isThread ? target.emails.map(e => e.id) : [target as number];
+    const primaryId = isThread ? target.emails[0].id : target;
+
+    const isDrafts = currentFolder === 'drafts';
+    const isTrash = currentFolder === 'trash';
+    const msg = isDrafts ? 'Permanently delete this thread?' : isTrash ? 'Permanently delete this thread?' : 'Move this to Trash?';
+    requestDelete(msg, async () => {
       try {
         const token = getAuthToken()
-        await axios.put(`${API_URL}/email/emails/${emailId}/trash`, {}, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        if (isDrafts || isTrash) {
+          if (emailIds.length > 1) {
+            await axios.post(`${API_URL}/email/bulk-delete-permanent`, emailIds, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+          } else {
+            await axios.delete(`${API_URL}/email/emails/${primaryId}/permanent`, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+          }
+        } else {
+          if (emailIds.length > 1) {
+            await axios.post(`${API_URL}/email/bulk-trash`, emailIds, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+          } else {
+            await axios.put(`${API_URL}/email/emails/${primaryId}/trash`, {}, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+          }
+        }
         setSelectedThread(null)
         fetchEmails()
-        showToast('✓ Email deleted')
+        showToast(isDrafts ? '✓ Draft thread deleted' : isTrash ? '✓ Thread permanently deleted' : '✓ Thread deleted')
       } catch (error) {
         console.error('Error deleting email:', error)
-        showToast('Failed to delete email', 'error')
+        showToast('Failed to delete', 'error')
       }
     })
   }
@@ -1745,19 +1770,37 @@ export default function EmailPage() {
   }
 
   const handleBulkMoveToTrash = async () => {
+    const isDrafts = currentFolder === 'drafts';
+    const isTrash = currentFolder === 'trash';
     const ids = Array.from(selectedThreadIds)
-    const emailIds = threads.filter(t => ids.includes(t.id)).map(t => t.emails[0].id)
+    // Send all email IDs in the selected threads so the entire thread gets trashed/deleted
+    const emailIds = threads
+      .filter(t => ids.includes(t.id))
+      .flatMap(t => t.emails.map(e => e.id))
+
     const token = getAuthToken()
     try {
-      await axios.post(`${API_URL}/email/bulk-trash`, emailIds, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      if (isDrafts || isTrash) {
+        await axios.post(`${API_URL}/email/bulk-delete-permanent`, emailIds, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      } else {
+        await axios.post(`${API_URL}/email/bulk-trash`, emailIds, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      }
       setSelectedThreadIds(new Set())
       fetchEmails()
-      showToast(`✓ Moved ${emailIds.length} email${emailIds.length > 1 ? 's' : ''} to trash`)
+      if (isDrafts) {
+        showToast(`✓ Deleted ${ids.length} draft thread${ids.length > 1 ? 's' : ''}`)
+      } else if (isTrash) {
+        showToast(`✓ Permanently deleted ${ids.length} thread${ids.length > 1 ? 's' : ''}`)
+      } else {
+        showToast(`✓ Moved ${ids.length} thread${ids.length > 1 ? 's' : ''} to trash`)
+      }
     } catch (e) {
-      console.error('Bulk trash failed:', e)
-      showToast('Bulk move to trash failed', 'error')
+      console.error((isDrafts || isTrash) ? 'Bulk permanent delete failed:' : 'Bulk trash failed:', e)
+      showToast((isDrafts || isTrash) ? 'Bulk delete failed' : 'Bulk move to trash failed', 'error')
     }
   }
 
@@ -2576,15 +2619,18 @@ export default function EmailPage() {
                       e.currentTarget.style.opacity = '1'
                     }}
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm transition flex items-center gap-2 ${currentFolder === folder.id
-                      ? 'bg-blue-500 text-white font-semibold shadow-sm'
+                      ? 'text-white font-semibold shadow-sm'
                       : 'hover:bg-gray-100 text-gray-700'
                       }`}
+                    style={currentFolder === folder.id ? { backgroundColor: 'var(--button-primary)' } : {}}
                   >
                     <span className="text-lg">{folder.icon}</span>
                     <span className="flex-1">{folder.label}</span>
                     {(unreadCounts[folder.id] ?? 0) > 0 && (
-                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.2rem] text-center ${currentFolder === folder.id ? 'bg-white text-blue-600' : 'bg-blue-500 text-white'
-                        }`}>
+                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.2rem] text-center ${currentFolder === folder.id ? 'bg-white' : 'text-white'
+                        }`}
+                        style={currentFolder === folder.id ? { color: 'var(--button-primary)' } : { backgroundColor: 'var(--button-primary)' }}
+                      >
                         {unreadCounts[folder.id]}
                       </span>
                     )}
@@ -2618,9 +2664,10 @@ export default function EmailPage() {
                       e.currentTarget.style.opacity = '1'
                     }}
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm transition flex items-center gap-2 ${currentFolder === folder.id
-                      ? 'bg-purple-500 text-white font-semibold shadow-sm'
+                      ? 'text-white font-semibold shadow-sm'
                       : 'hover:bg-gray-100 text-gray-700'
                       }`}
+                    style={currentFolder === folder.id ? { backgroundColor: 'var(--primary-color)' } : {}}
                   >
                     <span className="text-lg">{folder.icon}</span>
                     <span className="flex-1">{folder.label}</span>
@@ -3060,7 +3107,7 @@ export default function EmailPage() {
                           <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
                         </button>
                         <button
-                          onClick={() => handleDelete(thread.emails[0].id)}
+                          onClick={() => handleDelete(thread)}
                           title="Delete"
                           className="w-6 h-6 rounded flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition flex-shrink-0"
                         >

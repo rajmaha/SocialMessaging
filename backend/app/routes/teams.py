@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models.team import Team
 from app.models.user import User
 from app.dependencies import get_current_user
+from app.routes.admin import check_permission
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -38,9 +39,7 @@ def list_teams(db: Session = Depends(get_db), current_user: User = Depends(get_c
 
 
 @router.post("/")
-def create_team(body: TeamCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+def create_team(body: TeamCreate, db: Session = Depends(get_db), current_user: dict = Depends(check_permission("feature_manage_teams"))):
     if db.query(Team).filter(Team.name == body.name).first():
         raise HTTPException(status_code=400, detail="Team name already exists")
     members = db.query(User).filter(User.id.in_(body.member_ids), User.is_active == True).all() if body.member_ids else []
@@ -52,9 +51,7 @@ def create_team(body: TeamCreate, db: Session = Depends(get_db), current_user: U
 
 
 @router.put("/{team_id}")
-def update_team(team_id: int, body: TeamUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+def update_team(team_id: int, body: TeamUpdate, db: Session = Depends(get_db), current_user: dict = Depends(check_permission("feature_manage_teams"))):
     team = db.query(Team).filter(Team.id == team_id).first()
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
@@ -70,9 +67,7 @@ def update_team(team_id: int, body: TeamUpdate, db: Session = Depends(get_db), c
 
 
 @router.delete("/{team_id}")
-def delete_team(team_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+def delete_team(team_id: int, db: Session = Depends(get_db), current_user: dict = Depends(check_permission("feature_manage_teams"))):
     team = db.query(Team).filter(Team.id == team_id).first()
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")

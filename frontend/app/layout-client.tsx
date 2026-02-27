@@ -10,7 +10,8 @@ import { fetchMyPermissions } from '@/lib/permissions'
 
 export function LayoutClient({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    if (getAuthToken()) {
+    const token = getAuthToken()
+    if (token) {
       fetchMyPermissions()
     }
   }, [])

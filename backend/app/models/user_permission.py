@@ -26,10 +26,14 @@ class UserPermission(Base):
 
 AVAILABLE_MODULES = [
     ("module_email", "Email", "Access to the internal email client"),
-    ("module_workspace", "Workspace", "Access to the telephony/call center workspace"),
+    ("module_workspace", "Call Center", "Access to the telephony/call center workspace"),
     ("module_reports", "Reports", "Access to view analytics reports"),
     ("module_reminders", "Reminders", "Access to the reminder calls interface"),
     ("module_notifications", "Notifications", "Access to voice notification campaigns"),
+    ("module_organizations", "Organizations", "Access to manage organizations/customers"),
+    ("module_contacts", "Contacts", "Access to manage organization contacts"),
+    ("module_subscriptions", "Subscriptions", "Access to manage product subscriptions"),
+    ("module_calls", "Call Records", "Access to call recording logs"),
 ]
 
 AVAILABLE_CHANNELS = [
@@ -42,10 +46,23 @@ AVAILABLE_CHANNELS = [
 
 AVAILABLE_FEATURES = [
     ("feature_manage_users", "Manage Users", "Create, edit, and deactivate agent accounts"),
+    ("feature_manage_teams", "Manage Teams", "Create, edit, and manage agent teams"),
     ("feature_manage_email_accounts", "Manage Email Accounts", "Configure system-wide IMAP/SMTP accounts"),
+    ("feature_manage_messenger_config", "Messenger Config", "Configure Facebook, WhatsApp, Viber, etc."),
     ("feature_manage_agents", "Manage Agents", "Manage agent workspace configurations and statuses"),
+    ("feature_manage_telephony", "Manage Telephony (VoIP)", "Access Telephony/VoIP configuration"),
     ("feature_manage_extensions", "Manage Extensions", "Manage SIP extensions and PBX assignments"),
+    ("feature_deploy_site", "Deploy New Site", "Ability to deploy new sites from templates"),
+    ("feature_manage_branding", "Manage Branding", "Update company name, logo, and theme colors"),
+    ("feature_manage_roles", "Manage Roles", "Configure granular permissions for other users"),
+    ("feature_manage_cors", "Manage CORS", "Configure allowed origins for the web widget"),
+    ("feature_manage_bot", "Manage Chat Bot", "Configure AI bot settings and training data"),
+    ("feature_manage_tickets", "Manage Tickets", "Configure ticket fields and view all tickets"),
+    ("feature_manage_cloudpanel", "Manage CloudPanel", "Manage CloudPanel servers, templates, and SSL"),
+    ("feature_manage_dynamic_fields", "Manage Dynamic Fields", "Configure dynamic fields and custom metadata"),
+    ("feature_manage_ssl", "SSL Monitor", "Access to view and manage SSL certificate monitoring"),
 ]
+
 
 def get_all_permission_keys():
     """Returns a flat list of all valid permission keys"""

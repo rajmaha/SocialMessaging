@@ -198,7 +198,7 @@ export default function AdminSettings() {
             <AdminNav />
 
             {/* Main Content */}
-            <main className="max-w-7xl mx-auto p-6">
+            <main className="w-full p-6">
                 {/* Header */}
                 <div className="mb-8">
                     <h2 className="text-3xl font-bold text-gray-900">Platform Configuration</h2>
@@ -255,7 +255,8 @@ export default function AdminSettings() {
 
                                     <button
                                         onClick={() => handlePlatformSelect(platform)}
-                                        className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition"
+                                        className="w-full text-white font-semibold py-2 px-4 rounded-lg transition"
+                                        style={{ backgroundColor: 'var(--button-primary)' }}
                                     >
                                         Configure
                                     </button>

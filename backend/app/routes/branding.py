@@ -12,46 +12,12 @@ from typing import Optional, List
 
 router = APIRouter(prefix="/branding", tags=["branding"])
 
-def get_current_user(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)) -> User:
-    """Extract user from Authorization header"""
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header required"
-        )
-    
-    try:
-        parts = authorization.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authorization header"
-            )
-        
-        user_id = int(parts[1])
-        user = db.query(User).filter(User.id == user_id).first()
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found"
-            )
-        
-        return user
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization token"
-        )
+from app.dependencies import get_current_user, get_db, require_admin_feature
 
-def verify_admin(user: User = Depends(get_current_user)) -> User:
-    """Verify user is admin"""
-    if user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
-    return user
+router = APIRouter(prefix="/branding", tags=["branding"])
+
+# Define specific permission dependencies
+require_branding = require_admin_feature("feature_manage_branding")
 
 class BrandingUpdate(BaseModel):
     company_name: Optional[str] = None
@@ -68,6 +34,11 @@ class BrandingUpdate(BaseModel):
     admin_email: Optional[str] = None
     allowed_file_types: Optional[List[str]] = None
     max_file_size_mb: Optional[int] = None
+    button_primary_color: Optional[str] = None
+    button_primary_hover_color: Optional[str] = None
+    sidebar_text_color: Optional[str] = None
+    header_bg_color: Optional[str] = None
+    layout_bg_color: Optional[str] = None
 
 class SmtpUpdate(BaseModel):
     smtp_server: Optional[str] = None
@@ -101,12 +72,17 @@ def get_branding_public(db: Session = Depends(get_db)):
             "admin_email": branding_obj.admin_email,
             "allowed_file_types": branding_obj.allowed_file_types,
             "max_file_size_mb": branding_obj.max_file_size_mb or 10,
+            "button_primary_color": branding_obj.button_primary_color,
+            "button_primary_hover_color": branding_obj.button_primary_hover_color,
+            "sidebar_text_color": branding_obj.sidebar_text_color,
+            "header_bg_color": branding_obj.header_bg_color,
+            "layout_bg_color": branding_obj.layout_bg_color,
         }
     }
 
 @router.get("/admin")
 def get_branding_admin(
-    user: User = Depends(verify_admin),
+    user: User = Depends(require_branding),
     db: Session = Depends(get_db)
 ):
     """Get full branding settings (admin only)"""
@@ -138,6 +114,11 @@ def get_branding_admin(
             "admin_email": branding.admin_email,
             "allowed_file_types": branding.allowed_file_types,
             "max_file_size_mb": branding.max_file_size_mb or 10,
+            "button_primary_color": branding.button_primary_color,
+            "button_primary_hover_color": branding.button_primary_hover_color,
+            "sidebar_text_color": branding.sidebar_text_color,
+            "header_bg_color": branding.header_bg_color,
+            "layout_bg_color": branding.layout_bg_color,
             "created_at": branding.created_at,
             "updated_at": branding.updated_at,
         }
@@ -146,7 +127,7 @@ def get_branding_admin(
 @router.post("/update")
 def update_branding(
     update_data: BrandingUpdate,
-    user: User = Depends(verify_admin),
+    user: User = Depends(require_branding),
     db: Session = Depends(get_db)
 ):
     """Update branding settings (admin only)"""
@@ -168,7 +149,7 @@ def update_branding(
 @router.post("/smtp")
 def update_smtp(
     smtp_data: SmtpUpdate,
-    user: User = Depends(verify_admin),
+    user: User = Depends(require_branding),
     db: Session = Depends(get_db)
 ):
     """Update SMTP settings (admin only)"""
@@ -189,7 +170,7 @@ def update_smtp(
 
 @router.post("/test-smtp")
 def test_smtp(
-    user: User = Depends(verify_admin),
+    user: User = Depends(require_branding),
     db: Session = Depends(get_db)
 ):
     """Send test SMTP email (admin only)"""

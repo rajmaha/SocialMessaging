@@ -13,6 +13,11 @@ interface BrandingSettings {
   primary_color: string
   secondary_color: string
   accent_color: string
+  button_primary_color: string
+  button_primary_hover_color: string
+  sidebar_text_color: string
+  header_bg_color: string
+  layout_bg_color: string
   support_url: string | null
   privacy_url: string | null
   terms_url: string | null
@@ -33,16 +38,29 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const applyBrandingColors = (settings: BrandingSettings) => {
+    if (typeof document === 'undefined') return
+
+    const root = document.documentElement
+    root.style.setProperty('--primary-color', settings.primary_color)
+    root.style.setProperty('--secondary-color', settings.secondary_color)
+    root.style.setProperty('--accent-color', settings.accent_color)
+    root.style.setProperty('--button-primary', settings.button_primary_color)
+    root.style.setProperty('--button-hover', settings.button_primary_hover_color)
+    root.style.setProperty('--sidebar-text', settings.sidebar_text_color)
+    root.style.setProperty('--header-bg', settings.header_bg_color)
+    root.style.setProperty('--layout-bg', settings.layout_bg_color)
+  }
+
   const fetchBranding = async () => {
     setLoading(true)
     setError(null)
     try {
-      console.log('Fetching branding from:', `${API_URL}/branding/`)
       const response = await axios.get(`${API_URL}/branding/`)
-      console.log('Branding response:', response.data)
       if (response.data && response.data.data) {
-        console.log('Setting branding from API response')
         setBranding(response.data.data)
+        applyBrandingColors(response.data.data)
+
         // Update favicon if available
         if (response.data.data.favicon_url) {
           const favicon = document.querySelector('link[rel="icon"]') as HTMLLinkElement
@@ -51,21 +69,18 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } else {
-        console.warn('No branding data in response, using defaults')
         setBranding(getDefaultBranding())
       }
     } catch (err) {
       console.error('Error fetching branding:', err)
       setError('Failed to load branding settings')
-      // Use default branding if fetch fails
-      console.log('Falling back to default branding')
       setBranding(getDefaultBranding())
     } finally {
       setLoading(false)
     }
   }
-  
-  const getDefaultBranding = () => ({
+
+  const getDefaultBranding = (): BrandingSettings => ({
     company_name: 'Social Media Messenger',
     company_description: 'Unified messaging platform',
     logo_url: null,
@@ -73,6 +88,11 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
     primary_color: '#2563eb',
     secondary_color: '#1e40af',
     accent_color: '#3b82f6',
+    button_primary_color: '#2563eb',
+    button_primary_hover_color: '#1e40af',
+    sidebar_text_color: '#ffffff',
+    header_bg_color: '#ffffff',
+    layout_bg_color: '#f5f5f5',
     support_url: null,
     privacy_url: null,
     terms_url: null,
@@ -82,6 +102,12 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     fetchBranding()
   }, [])
+
+  useEffect(() => {
+    if (branding) {
+      applyBrandingColors(branding)
+    }
+  }, [branding])
 
   return (
     <BrandingContext.Provider value={{ branding, loading, error, refetch: fetchBranding }}>

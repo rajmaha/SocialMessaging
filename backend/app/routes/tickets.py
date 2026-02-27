@@ -7,7 +7,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.database import get_db
-from app.dependencies import get_current_user, get_admin_user
+from app.dependencies import get_current_user, require_module, require_admin_feature
 from app.models.user import User
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.schemas.ticket import TicketCreate, TicketUpdate, TicketResponse
@@ -95,7 +95,7 @@ def get_my_tickets(
 @router.get("/all", response_model=List[TicketResponse])
 def get_all_tickets_admin(
     db: Session = Depends(get_db),
-    admin_user: User = Depends(get_admin_user)
+    admin_user: User = Depends(require_admin_feature("feature_manage_tickets"))
 ):
     """Retrieve all tickets in the system for admin viewing."""
     return db.query(Ticket).order_by(Ticket.created_at.desc()).all()

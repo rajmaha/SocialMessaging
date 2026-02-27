@@ -22,10 +22,14 @@ interface PermissionToggle {
 
 const MODULES: PermissionToggle[] = [
     { key: 'module_email', label: 'Email' },
-    { key: 'module_workspace', label: 'Workspace' },
+    { key: 'module_workspace', label: 'Call Center' },
     { key: 'module_reports', label: 'Reports' },
     { key: 'module_reminders', label: 'Reminders' },
     { key: 'module_notifications', label: 'Notifications' },
+    { key: 'module_organizations', label: 'Organizations' },
+    { key: 'module_contacts', label: 'Contacts' },
+    { key: 'module_subscriptions', label: 'Subscriptions' },
+    { key: 'module_calls', label: 'Call Records' },
 ]
 
 const CHANNELS: PermissionToggle[] = [
@@ -37,10 +41,22 @@ const CHANNELS: PermissionToggle[] = [
 ]
 
 const FEATURES: PermissionToggle[] = [
-    { key: 'feature_manage_users', label: 'Manage Users' },
-    { key: 'feature_manage_email_accounts', label: 'Manage Emails' },
+    { key: 'feature_manage_users', label: 'Users' },
+    { key: 'feature_manage_teams', label: 'Teams' },
+    { key: 'feature_manage_email_accounts', label: 'Email Account Management' },
     { key: 'feature_manage_agents', label: 'Manage Agents' },
+    { key: 'feature_manage_messenger_config', label: 'Messenger Config' },
+    { key: 'feature_manage_telephony', label: 'Telephony (VoIP)' },
     { key: 'feature_manage_extensions', label: 'Manage Extensions' },
+    { key: 'feature_deploy_site', label: 'Deploy Site' },
+    { key: 'feature_manage_branding', label: 'Branding' },
+    { key: 'feature_manage_roles', label: 'Roles' },
+    { key: 'feature_manage_cors', label: 'CORS' },
+    { key: 'feature_manage_bot', label: 'Bot' },
+    { key: 'feature_manage_tickets', label: 'Tickets' },
+    { key: 'feature_manage_cloudpanel', label: 'CloudPanel' },
+    { key: 'feature_manage_dynamic_fields', label: 'Fields' },
+    { key: 'feature_manage_ssl', label: 'SSL' },
 ]
 
 export default function RolePermissionsPage() {
@@ -161,7 +177,7 @@ export default function RolePermissionsPage() {
                 <AdminNav />
 
                 <main className="flex-1 ml-60 p-8 overflow-auto">
-                    <div className="max-w-[1600px] mx-auto">
+                    <div className="w-full">
                         <div className="mb-8">
                             <h1 className="text-2xl font-bold text-gray-900 mb-2">User Permissions Grid</h1>
                             <p className="text-gray-500">

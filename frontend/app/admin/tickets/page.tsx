@@ -100,7 +100,7 @@ export default function AdminTicketViewer() {
                 <AdminNav />
 
                 <main className="flex-1 overflow-y-auto p-8 relative">
-                    <div className="max-w-6xl mx-auto space-y-6">
+                    <div className="w-full space-y-6">
 
                         <div className="flex justify-between items-center">
                             <div>
@@ -192,7 +192,7 @@ export default function AdminTicketViewer() {
                                         <tbody className="divide-y divide-gray-100">
                                             {filteredTickets.map(ticket => (
                                                 <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
-                                                    <td className="px-6 py-4 font-medium text-indigo-600">
+                                                    <td className="px-6 py-4 font-medium" style={{ color: 'var(--primary-color)' }}>
                                                         {ticket.ticket_number}
                                                     </td>
                                                     <td className="px-6 py-4">
@@ -221,7 +221,8 @@ export default function AdminTicketViewer() {
                                                     <td className="px-6 py-4 text-right">
                                                         <button
                                                             onClick={() => setSelectedTicket(ticket)}
-                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-semibold transition"
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                                                            style={{ backgroundColor: 'var(--accent-color)', color: 'white' }}
                                                         >
                                                             <Eye className="w-3.5 h-3.5" /> View
                                                         </button>

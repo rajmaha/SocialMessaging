@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.dependencies import get_current_user, get_admin_user
+from app.dependencies import get_current_user, require_admin_feature
 from app.models.user import User
 from app.models.telephony import TelephonySettings
 from app.schemas.telephony import TelephonySettingsResponse, TelephonySettingsUpdate
@@ -12,11 +12,13 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+require_telephony = require_admin_feature("feature_manage_telephony")
+
 
 @router.get("/settings", response_model=TelephonySettingsResponse)
 def get_telephony_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_telephony)
 ):
     """Get the current telephony settings."""
     settings = db.query(TelephonySettings).first()
@@ -32,7 +34,7 @@ def get_telephony_settings(
 def update_telephony_settings(
     settings_update: TelephonySettingsUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_telephony)
 ):
     """Update telephony settings including FreePBX REST API credentials."""
     settings = db.query(TelephonySettings).first()
@@ -67,7 +69,7 @@ def update_telephony_settings(
 @router.post("/test-freepbx")
 def test_freepbx_connection(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_admin_user)
+    current_user: User = Depends(require_telephony)
 ):
     """Test the FreePBX REST API connection using stored credentials."""
     from app.services.freepbx_service import freepbx_service

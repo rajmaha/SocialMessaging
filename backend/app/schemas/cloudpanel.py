@@ -34,6 +34,7 @@ class CloudPanelSiteCreate(BaseModel):
     domainName: str
     phpVersion: str = "8.2"
     vhostTemplate: str = "Generic"
+    templateName: Optional[str] = "default_site"
     dbName: Optional[str] = None
     dbUser: Optional[str] = None
     dbPassword: Optional[str] = None

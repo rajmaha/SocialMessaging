@@ -94,6 +94,56 @@ def verify_admin(current_user: dict = Depends(get_current_user)) -> dict:
         )
     return current_user
 
+from app.models.user_permission import UserPermission
+
+def has_permission(user_id: int, permission_key: str, db: Session) -> bool:
+    """Helper to check if a user has a specific permission key"""
+    # Admins have all permissions
+    user = db.query(User).filter(User.id == user_id).first()
+    if user and user.role == "admin":
+        return True
+        
+    perm = db.query(UserPermission).filter(
+        UserPermission.user_id == user_id,
+        UserPermission.permission_key == permission_key
+    ).first()
+    return perm is not None
+
+def check_permission(permission_key: str):
+    """Dependency factory to check for a specific permission"""
+    async def permission_dependency(
+        current_user: dict = Depends(get_current_user),
+        db: Session = Depends(get_db)
+    ):
+        if current_user.get("role") == "admin":
+            return current_user
+            
+        if not has_permission(current_user["user_id"], permission_key, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required permission: {permission_key}"
+            )
+        return current_user
+    return permission_dependency
+
+def verify_admin_or_has_any_permission(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Allow access if user is admin OR has any module/feature permission"""
+    if current_user.get("role") == "admin":
+        return current_user
+        
+    # Check if user has ANY module_ or feature_ permission
+    any_perm = db.query(UserPermission).filter(
+        UserPermission.user_id == current_user["user_id"],
+        (UserPermission.permission_key.like("module_%")) | (UserPermission.permission_key.like("feature_%"))
+    ).first()
+    
+    if not any_perm:
+         raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access or specific permission required"
+        )
+    return current_user
+
 class UserCreate(BaseModel):
     username: str
     email: str
@@ -122,7 +172,7 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
 
 @router.get("/users", response_model=list[UserResponse])
-async def list_users(current_user: dict = Depends(verify_admin), db: Session = Depends(get_db)):
+async def list_users(current_user: dict = Depends(check_permission("feature_manage_users")), db: Session = Depends(get_db)):
     """List all users (admin only)"""
     users = db.query(User).all()
     return users
@@ -130,7 +180,7 @@ async def list_users(current_user: dict = Depends(verify_admin), db: Session = D
 @router.post("/users", response_model=UserResponse)
 async def create_user(
     user_data: UserCreate,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_users")),
     db: Session = Depends(get_db)
 ):
     """Create new user (admin only)"""
@@ -174,7 +224,7 @@ async def create_user(
 @router.get("/users/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: int,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_users")),
     db: Session = Depends(get_db)
 ):
     """Get user details (admin only)"""
@@ -192,7 +242,7 @@ async def get_user(
 async def update_user(
     user_id: int,
     user_update: UserUpdate,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_users")),
     db: Session = Depends(get_db)
 ):
     """Update user info (admin only)"""
@@ -302,7 +352,7 @@ class PlatformSettingUpdate(BaseModel):
     config: dict = None
 
 @router.get("/platforms")
-async def get_platform_settings(current_user: dict = Depends(verify_admin), db: Session = Depends(get_db)):
+async def get_platform_settings(current_user: dict = Depends(check_permission("feature_manage_messenger_config")), db: Session = Depends(get_db)):
     """Get all platform settings (admin only)"""
     
     platforms = db.query(PlatformSettings).all()
@@ -320,7 +370,7 @@ async def get_platform_settings(current_user: dict = Depends(verify_admin), db: 
 @router.get("/platforms/{platform}")
 async def get_platform_setting(
     platform: str,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_messenger_config")),
     db: Session = Depends(get_db)
 ):
     """Get specific platform setting (admin only)"""
@@ -353,7 +403,7 @@ async def get_platform_setting(
 async def update_platform_setting(
     platform: str,
     settings: PlatformSettingUpdate,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_messenger_config")),
     db: Session = Depends(get_db)
 ):
     """Update platform settings (admin only)"""
@@ -398,7 +448,7 @@ async def update_platform_setting(
 @router.post("/platforms/{platform}/verify")
 async def verify_platform_setting(
     platform: str,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_messenger_config")),
     db: Session = Depends(get_db)
 ):
     """Mark platform as verified (admin only)"""
@@ -427,7 +477,7 @@ async def verify_platform_setting(
 # ============ ADMIN DASHBOARD ============
 
 @router.get("/dashboard")
-async def admin_dashboard(current_user: dict = Depends(verify_admin), db: Session = Depends(get_db)):
+async def admin_dashboard(current_user: dict = Depends(verify_admin_or_has_any_permission), db: Session = Depends(get_db)):
     """Get admin dashboard data"""
     
     total_users = db.query(User).count()
@@ -460,7 +510,7 @@ async def admin_dashboard(current_user: dict = Depends(verify_admin), db: Sessio
 async def create_user_email_account(
     user_id: int = Query(..., description="ID of user to create email account for"),
     account_data: EmailAccountCreate = Body(...),
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_email_accounts")),
     db: Session = Depends(get_db)
 ):
     """Create email account for a user (admin only)"""
@@ -505,7 +555,7 @@ async def create_user_email_account(
 @router.get("/email-accounts", response_model=list[EmailAccountResponse])
 async def list_email_accounts(
     user_id: int = None,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_email_accounts")),
     db: Session = Depends(get_db)
 ):
     """List email accounts (admin only) - optionally filter by user"""
@@ -557,7 +607,7 @@ async def get_email_account_full(
 async def update_email_account(
     account_id: int,
     account_update: EmailAccountUpdate,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_email_accounts")),
     db: Session = Depends(get_db)
 ):
     """Update email account (admin only)"""
@@ -711,7 +761,7 @@ class CorsSettingsUpdate(BaseModel):
 
 @router.get("/cors")
 async def get_cors_settings(
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_cors")),
     db: Session = Depends(get_db)
 ):
     """Get the list of admin-configured CORS allowed origins (admin only)"""
@@ -726,7 +776,7 @@ async def get_cors_settings(
 @router.put("/cors")
 async def update_cors_settings(
     body: CorsSettingsUpdate,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_cors")),
     db: Session = Depends(get_db)
 ):
     """Update the list of admin-configured CORS allowed origins (admin only)"""
@@ -762,7 +812,7 @@ from app.models.user_permission import (
 )
 
 @router.get("/user-permissions")
-async def get_all_user_permissions(current_user: dict = Depends(verify_admin), db: Session = Depends(get_db)):
+async def get_all_user_permissions(current_user: dict = Depends(check_permission("feature_manage_roles")), db: Session = Depends(get_db)):
     """List all permission keys available to be granted (admin only)"""
     return {
         "modules": [{"key": k[0], "label": k[1], "description": k[2]} for k in AVAILABLE_MODULES],
@@ -773,7 +823,7 @@ async def get_all_user_permissions(current_user: dict = Depends(verify_admin), d
 @router.get("/user-permissions/{user_target_id}")
 async def list_user_permissions(
     user_target_id: int,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_roles")),
     db: Session = Depends(get_db)
 ):
     """List all granted permissions for a specific user (admin only)"""
@@ -790,7 +840,7 @@ async def list_user_permissions(
 async def grant_user_permission(
     user_target_id: int,
     permission_key: str = Body(..., embed=True),
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_roles")),
     db: Session = Depends(get_db)
 ):
     """Grant a single permission key to a user (admin only)"""
@@ -822,7 +872,7 @@ async def grant_user_permission(
 async def revoke_user_permission(
     user_target_id: int,
     permission_key: str,
-    current_user: dict = Depends(verify_admin),
+    current_user: dict = Depends(check_permission("feature_manage_roles")),
     db: Session = Depends(get_db)
 ):
     """Revoke a permission key from a user (admin only)"""

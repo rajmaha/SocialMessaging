@@ -6,6 +6,8 @@ import MainHeader from '@/components/MainHeader'
 import { Plus, Search, Layers, Edit2, Trash2, X, Check, AlertCircle } from 'lucide-react'
 import axios from 'axios'
 import { useAuth, getAuthToken } from '@/lib/auth'
+import { hasModuleAccess } from '@/lib/permissions'
+import { useRouter } from 'next/navigation'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -19,6 +21,7 @@ interface SubscriptionModule {
 
 export default function SubscriptionModulesPage() {
     const { user } = useAuth()
+    const router = useRouter()
     const [modules, setModules] = useState<SubscriptionModule[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
@@ -27,8 +30,14 @@ export default function SubscriptionModulesPage() {
     const [saving, setSaving] = useState(false)
 
     useEffect(() => {
+        // Enforce permission
+        if (user && user.role !== 'admin' && !hasModuleAccess('subscriptions')) {
+            router.push('/dashboard')
+            return
+        }
         fetchModules()
-    }, [])
+    }, [user, router])
+
 
     const fetchModules = async () => {
         try {
