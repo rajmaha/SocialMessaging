@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { authAPI, getAuthToken } from '@/lib/auth'
-import { API_URL } from '@/lib/config'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 import MainHeader from '@/components/MainHeader'
 import ReminderShareModal from '@/components/ReminderShareModal'
 import SocialShareButtons from '@/components/SocialShareButtons'

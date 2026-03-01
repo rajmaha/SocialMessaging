@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { getAuthToken } from '@/lib/auth'
-import { API_URL } from '@/lib/config'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 import { FiX, FiSearch, FiCheck } from 'react-icons/fi'
 
 interface InternalUser {
