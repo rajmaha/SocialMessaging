@@ -124,3 +124,6 @@ class EventTypes:
     EMAIL_RECEIVED = "email_received"
     EMAIL_SENT = "email_sent"
     SYSTEM_NOTIFICATION = "system_notification"
+    REMINDER_SHARED = "reminder_shared"
+    REMINDER_COMMENT = "reminder_comment"
+    REMINDER_DUE = "reminder_due"

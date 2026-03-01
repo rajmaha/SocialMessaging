@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from app.database import Base, engine, SessionLocal
 from app.config import settings
 from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat, bot, webhooks, teams, reports, call_center, telephony, calls, extensions, agent_workspace, reminders, notifications, tickets, dynamic_fields, organizations, cloudpanel, cloudpanel_templates
+from app.routes import todos as todo_routes, calendar as calendar_routes
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -323,6 +324,55 @@ def _run_inline_migrations():
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         """))
+        # Todos / Reminders module
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS todos (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title VARCHAR NOT NULL,
+                description TEXT,
+                priority VARCHAR NOT NULL DEFAULT 'as_usual',
+                status VARCHAR NOT NULL DEFAULT 'scheduled',
+                due_date TIMESTAMP WITH TIME ZONE,
+                original_due_date TIMESTAMP WITH TIME ZONE,
+                google_event_id VARCHAR,
+                microsoft_event_id VARCHAR,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS reminder_shares (
+                id SERIAL PRIMARY KEY,
+                reminder_id INTEGER NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+                shared_by INTEGER NOT NULL REFERENCES users(id),
+                shared_with INTEGER NOT NULL REFERENCES users(id),
+                is_seen BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS reminder_comments (
+                id SERIAL PRIMARY KEY,
+                reminder_id INTEGER NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                content TEXT NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS user_calendar_connections (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                provider VARCHAR NOT NULL,
+                access_token TEXT,
+                refresh_token TEXT,
+                token_expires_at TIMESTAMP WITH TIME ZONE,
+                calendar_id VARCHAR,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        """))
         conn.commit()
 
 try:
@@ -444,6 +494,8 @@ app.include_router(dynamic_fields.router)
 app.include_router(organizations.router)
 app.include_router(cloudpanel.router)
 app.include_router(cloudpanel_templates.router)
+app.include_router(todo_routes.router)
+app.include_router(calendar_routes.router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
@@ -751,6 +803,49 @@ async def startup_event():
             except Exception as e:
                 logger.error("Notification call scheduler error: %s", e)
         scheduler.add_job(run_notification_calls, 'interval', minutes=1, id='notification_calls')
+        # Check for overdue reminders every minute
+        def check_overdue_reminders():
+            try:
+                from app.models.todo import Reminder
+                from app.services.events_service import events_service
+                import asyncio
+                db = SessionLocal()
+                now = datetime.utcnow()
+                overdue = db.query(Reminder).filter(
+                    Reminder.status == "scheduled",
+                    Reminder.due_date != None,
+                    Reminder.due_date <= now,
+                ).all()
+                for r in overdue:
+                    r.status = "pending"
+                    if _event_loop and not _event_loop.is_closed():
+                        asyncio.run_coroutine_threadsafe(
+                            events_service.broadcast_to_user(r.user_id, {
+                                "type": "reminder_due",
+                                "reminder_id": r.id,
+                                "title": r.title,
+                            }),
+                            _event_loop,
+                        )
+                if overdue:
+                    db.commit()
+                    logger.info("Marked %d reminder(s) as pending (overdue)", len(overdue))
+                db.close()
+            except Exception as e:
+                logger.error("Overdue reminders check error: %s", e)
+        scheduler.add_job(check_overdue_reminders, 'interval', minutes=1, id='check_overdue_reminders')
+        # Refresh expiring calendar tokens every 30 minutes
+        def refresh_calendar_tokens():
+            try:
+                from app.services.calendar_service import calendar_service
+                db = SessionLocal()
+                count = calendar_service.refresh_all_expiring_tokens(db)
+                if count > 0:
+                    logger.info("Refreshed %d calendar token(s)", count)
+                db.close()
+            except Exception as e:
+                logger.error("Calendar token refresh error: %s", e)
+        scheduler.add_job(refresh_calendar_tokens, 'interval', minutes=30, id='refresh_calendar_tokens')
         scheduler.start()
         logger.info("✅ Email auto-sync scheduler started (every 5 minutes)")
         logger.info("✅ Scheduled-email sender started (every minute)")
