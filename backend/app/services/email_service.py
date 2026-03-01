@@ -179,6 +179,118 @@ class EmailService:
             traceback.print_exc()
             return True
 
+    def send_reminder_share_notification(self, to_email: str, sharer_name: str, reminder, db=None):
+        """Send notification email with .ics attachment when a reminder is shared."""
+        try:
+            from app.services.branding_service import branding_service
+            smtp_config = branding_service.get_smtp_config(db) if db else {
+                "smtp_server": self.smtp_server,
+                "smtp_port": self.smtp_port,
+                "smtp_username": self.sender_email,
+                "smtp_password": self.sender_password,
+                "smtp_from_email": self.sender_email,
+                "smtp_from_name": "Social Media Messenger",
+                "smtp_use_tls": True,
+            }
+
+            if not smtp_config.get("smtp_password"):
+                print(f"Dev mode: would send reminder share email to {to_email}")
+                return True
+
+            subject = f"{sharer_name} shared a reminder: {reminder.title}"
+            due_str = reminder.due_date.strftime("%Y-%m-%d %H:%M") if reminder.due_date else "No due date"
+            priority_label = (reminder.priority or "as_usual").replace("_", " ").title()
+            app_url = os.getenv("APP_URL", "http://localhost:3000")
+
+            html_body = f"""
+            <html>
+                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                        <h2 style="color: #2563eb;">Reminder Shared With You</h2>
+                        <p><strong>{sharer_name}</strong> shared a reminder with you:</p>
+                        <div style="background-color: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                            <h3 style="margin: 0 0 8px 0;">{reminder.title}</h3>
+                            {f'<p style="margin: 4px 0; color: #555;">{reminder.description}</p>' if reminder.description else ''}
+                            <p style="margin: 4px 0;"><strong>Priority:</strong> {priority_label}</p>
+                            <p style="margin: 4px 0;"><strong>Due:</strong> {due_str}</p>
+                        </div>
+                        <p>
+                            <a href="{app_url}/reminders" style="background-color: #2563eb; color: white; padding: 10px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                                View in App
+                            </a>
+                        </p>
+                    </div>
+                </body>
+            </html>
+            """
+
+            message = MIMEMultipart("mixed")
+            message["Subject"] = subject
+            message["From"] = smtp_config.get("smtp_from_email", self.sender_email)
+            message["To"] = to_email
+
+            # HTML body
+            html_part = MIMEMultipart("alternative")
+            html_part.attach(MIMEText(html_body, "html"))
+            message.attach(html_part)
+
+            # .ics attachment
+            if reminder.due_date:
+                from email.mime.base import MIMEBase
+                from email import encoders
+                ics_content = self._generate_ics(reminder, sharer_name)
+                ics_part = MIMEBase("text", "calendar", method="PUBLISH")
+                ics_part.set_payload(ics_content.encode("utf-8"))
+                encoders.encode_base64(ics_part)
+                ics_part.add_header("Content-Disposition", "attachment", filename="reminder.ics")
+                message.attach(ics_part)
+
+            with smtplib.SMTP(smtp_config["smtp_server"], int(smtp_config["smtp_port"])) as server:
+                if smtp_config.get("smtp_use_tls", True):
+                    server.starttls()
+                server.login(smtp_config["smtp_username"], smtp_config["smtp_password"])
+                server.sendmail(smtp_config["smtp_from_email"], to_email, message.as_string())
+
+            logger.info("Reminder share email sent to %s", to_email)
+            return True
+        except Exception as e:
+            logger.error("Failed to send reminder share email to %s: %s", to_email, e)
+            return False
+
+    def _generate_ics(self, reminder, organizer_name: str) -> str:
+        """Generate a VCALENDAR/VEVENT string for a reminder."""
+        from datetime import timedelta
+        start = reminder.due_date
+        end = start + timedelta(hours=1)
+        uid = f"reminder-{reminder.id}@socialmedia"
+        now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        dtstart = start.strftime("%Y%m%dT%H%M%SZ")
+        dtend = end.strftime("%Y%m%dT%H%M%SZ")
+        summary = reminder.title.replace(",", "\\,")
+        description = (reminder.description or "").replace("\n", "\\n").replace(",", "\\,")
+
+        return (
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//SocialMedia//Reminders//EN\r\n"
+            "METHOD:PUBLISH\r\n"
+            "BEGIN:VEVENT\r\n"
+            f"UID:{uid}\r\n"
+            f"DTSTAMP:{now}\r\n"
+            f"DTSTART:{dtstart}\r\n"
+            f"DTEND:{dtend}\r\n"
+            f"SUMMARY:{summary}\r\n"
+            f"DESCRIPTION:{description}\r\n"
+            f"ORGANIZER:CN={organizer_name}\r\n"
+            "BEGIN:VALARM\r\n"
+            "TRIGGER:-PT15M\r\n"
+            "ACTION:DISPLAY\r\n"
+            "DESCRIPTION:Reminder\r\n"
+            "END:VALARM\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n"
+        )
+
     def send_email_account_request(self, admin_email: str, requester_name: str, requester_email: str, message: str, db=None):
         """Send an email account setup request notification to the admin"""
         try:
