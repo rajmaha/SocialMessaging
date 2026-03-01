@@ -3,11 +3,14 @@
 import React from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { FiMessageSquare, FiMail, FiBarChart2, FiGrid, FiHeadphones } from 'react-icons/fi'
+import { FiMessageSquare, FiMail, FiBarChart2, FiGrid, FiHeadphones, FiCheckSquare } from 'react-icons/fi'
 import ProfileDropdown from '@/components/ProfileDropdown'
 import { useBranding } from '@/lib/branding-context'
 import type { User } from '@/lib/auth'
+import { getAuthToken } from '@/lib/auth'
 import { hasModuleAccess, hasAnyAdminPermission } from '@/lib/permissions'
+import { useEvents } from '@/lib/events-context'
+import { API_URL } from '@/lib/config'
 import { useState, useEffect } from 'react'
 
 interface MainHeaderProps {
@@ -64,6 +67,35 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
             }
         }
     }, [user])
+
+    // Unseen shared reminders badge count
+    const [unseenCount, setUnseenCount] = useState(0)
+    const eventsCtx = useEvents()
+
+    useEffect(() => {
+        const fetchUnseenCount = async () => {
+            try {
+                const token = getAuthToken()
+                if (!token) return
+                const res = await fetch(`${API_URL}/api/todos/shared-with-me/unseen-count`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                })
+                if (res.ok) {
+                    const data = await res.json()
+                    setUnseenCount(data.unseen_count || 0)
+                }
+            } catch {}
+        }
+        fetchUnseenCount()
+    }, [])
+
+    useEffect(() => {
+        if (!eventsCtx) return
+        const unsubscribe = eventsCtx.subscribe('reminder_shared', () => {
+            setUnseenCount(prev => prev + 1)
+        })
+        return unsubscribe
+    }, [eventsCtx])
 
     const [isMounted, setIsMounted] = useState(false)
     useEffect(() => setIsMounted(true), [])
@@ -177,8 +209,16 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
                 </nav>
             </div>
 
-            {/* Right: profile dropdown */}
-            <div className="flex items-center">
+            {/* Right: reminders badge + profile dropdown */}
+            <div className="flex items-center gap-3">
+                <Link href="/reminders" className="relative p-2 text-gray-600 hover:text-gray-900 transition">
+                    <FiCheckSquare size={20} />
+                    {unseenCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                            {unseenCount > 99 ? '99+' : unseenCount}
+                        </span>
+                    )}
+                </Link>
                 <ProfileDropdown user={user} />
             </div>
         </header>
