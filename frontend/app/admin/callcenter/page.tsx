@@ -5,6 +5,7 @@ import MainHeader from "@/components/MainHeader";
 import AdminNav from '@/components/AdminNav';
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
+import { API_URL } from '@/lib/config';
 
 export default function CallCenterSettings() {
     const user = authAPI.getUser();
@@ -33,7 +34,7 @@ export default function CallCenterSettings() {
                 return;
             }
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/callcenter/settings`, {
+            const response = await fetch(`${API_URL}/admin/callcenter/settings`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -62,7 +63,7 @@ export default function CallCenterSettings() {
 
         try {
             const token = getAuthToken();
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/callcenter/settings`, {
+            const response = await fetch(`${API_URL}/admin/callcenter/settings`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,

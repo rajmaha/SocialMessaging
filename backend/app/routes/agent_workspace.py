@@ -7,6 +7,7 @@ from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.agent_status import AgentStatus
 from app.models.call_records import CallRecording
+from app.models.ticket import Ticket
 from app.schemas.agent_status import AgentStatusUpdate, AgentStatusResponse, WorkspaceStatsResponse
 
 router = APIRouter(
@@ -44,9 +45,24 @@ def get_workspace_stats(
         total_duration = sum(c.duration_seconds for c in today_calls if c.duration_seconds)
         avg_duration = int(total_duration / total_calls)
 
+    # 3. Count today's follow-ups and forwarded tickets for this agent
+    follow_up_count = db.query(func.count(Ticket.id)).filter(
+        Ticket.assigned_to == current_user.id,
+        Ticket.parent_ticket_id.isnot(None),
+        Ticket.created_at >= today_start
+    ).scalar() or 0
+
+    forwarded_count = db.query(func.count(Ticket.id)).filter(
+        Ticket.assigned_to == current_user.id,
+        Ticket.status == "forwarded",
+        Ticket.created_at >= today_start
+    ).scalar() or 0
+
     return {
         "total_calls_today": total_calls,
         "avg_call_duration_seconds": avg_duration,
+        "follow_up_count": follow_up_count,
+        "forwarded_count": forwarded_count,
         "status": status_record
     }
 

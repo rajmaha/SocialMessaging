@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import MainHeader from '@/components/MainHeader'
 import AdminNav from '@/components/AdminNav'
 import { getAuthToken, type User } from '@/lib/auth'
+import { API_URL } from '@/lib/config';
 
 interface AgentUser {
     id: number
@@ -95,7 +96,7 @@ export default function RolePermissionsPage() {
             const token = getAuthToken()
 
             // Fetch users
-            const usersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/users`, {
+            const usersRes = await fetch(`${API_URL}/admin/users`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             if (!usersRes.ok) throw new Error('Failed to fetch users')
@@ -108,7 +109,7 @@ export default function RolePermissionsPage() {
             // Fetch permissions for each agent
             const permsMap: Record<number, string[]> = {}
             await Promise.all(agents.map(async (agent) => {
-                const pRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/user-permissions/${agent.id}`, {
+                const pRes = await fetch(`${API_URL}/admin/user-permissions/${agent.id}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 })
                 if (pRes.ok) {
@@ -132,8 +133,8 @@ export default function RolePermissionsPage() {
             const token = getAuthToken()
             const method = currentlyGranted ? 'DELETE' : 'POST'
             const url = currentlyGranted
-                ? `${process.env.NEXT_PUBLIC_API_URL}/admin/user-permissions/${userId}/${permissionKey}`
-                : `${process.env.NEXT_PUBLIC_API_URL}/admin/user-permissions/${userId}`
+                ? `${API_URL}/admin/user-permissions/${userId}/${permissionKey}`
+                : `${API_URL}/admin/user-permissions/${userId}`
 
             const options: RequestInit = {
                 method,

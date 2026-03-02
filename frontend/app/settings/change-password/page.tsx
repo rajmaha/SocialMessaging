@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getAuthToken, authAPI } from '@/lib/auth';
+import { API_URL } from '@/lib/config';
 
 export default function ChangePasswordPage() {
   const router = useRouter();
@@ -58,7 +59,7 @@ export default function ChangePasswordPage() {
         return;
       }
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/change-password`, {
+      const response = await fetch(`${API_URL}/auth/change-password`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

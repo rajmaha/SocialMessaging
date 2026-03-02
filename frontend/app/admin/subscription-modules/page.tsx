@@ -8,8 +8,7 @@ import axios from 'axios'
 import { useAuth, getAuthToken } from '@/lib/auth'
 import { hasModuleAccess } from '@/lib/permissions'
 import { useRouter } from 'next/navigation'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 interface SubscriptionModule {
     id: number
@@ -36,7 +35,8 @@ export default function SubscriptionModulesPage() {
             return
         }
         fetchModules()
-    }, [user, router])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
 
     const fetchModules = async () => {

@@ -6,8 +6,8 @@ import { authAPI } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
 import AdminNav from '@/components/AdminNav';
+import { API_URL } from '@/lib/config';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface Summary {
   total: number;

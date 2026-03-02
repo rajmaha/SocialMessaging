@@ -26,8 +26,7 @@ const StyledBlockquote = Blockquote.extend({
 import { useBranding } from '@/lib/branding-context'
 import { getAuthToken } from '@/lib/auth'
 import { useEvents } from '@/lib/events-context'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 interface Email {
   id: number
@@ -1642,7 +1641,6 @@ export default function EmailPage() {
 
   const handleDelete = (target: EmailThread | number) => {
     const isThread = typeof target !== 'number';
-    const emailIds = isThread ? target.emails.map(e => e.id) : [target as number];
     const primaryId = isThread ? target.emails[0].id : target;
 
     const isDrafts = currentFolder === 'drafts';
@@ -1652,25 +1650,15 @@ export default function EmailPage() {
       try {
         const token = getAuthToken()
         if (isDrafts || isTrash) {
-          if (emailIds.length > 1) {
-            await axios.post(`${API_URL}/email/bulk-delete-permanent`, emailIds, {
-              headers: { Authorization: `Bearer ${token}` }
-            })
-          } else {
-            await axios.delete(`${API_URL}/email/emails/${primaryId}/permanent`, {
-              headers: { Authorization: `Bearer ${token}` }
-            })
-          }
+          // Single-email permanent delete cascades to the full thread via thread_id on the backend
+          await axios.delete(`${API_URL}/email/emails/${primaryId}/permanent`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
         } else {
-          if (emailIds.length > 1) {
-            await axios.post(`${API_URL}/email/bulk-trash`, emailIds, {
-              headers: { Authorization: `Bearer ${token}` }
-            })
-          } else {
-            await axios.put(`${API_URL}/email/emails/${primaryId}/trash`, {}, {
-              headers: { Authorization: `Bearer ${token}` }
-            })
-          }
+          // Single-email trash cascades to the full thread via thread_id on the backend
+          await axios.put(`${API_URL}/email/emails/${primaryId}/trash`, {}, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
         }
         setSelectedThread(null)
         fetchEmails()
@@ -2160,7 +2148,7 @@ export default function EmailPage() {
       const scheduledId = res.data?.email_id || res.data?.id
       const sentDraftId = currentDraftIdRef.current
       resetCompose()
-      if (sentDraftId) deleteDraft(sentDraftId)
+      // Don't delete draft yet — wait until undo window expires so user can undo
 
       // Start undo countdown
       let countdown = 5
@@ -2172,6 +2160,7 @@ export default function EmailPage() {
           clearInterval(timer)
           setUndoSendState(null)
           undoSendRef.current = null
+          if (sentDraftId) deleteDraft(sentDraftId)  // delete draft only after send is confirmed
           fetchEmails()
         }
       }, 1000)
@@ -2351,7 +2340,7 @@ export default function EmailPage() {
   }
 
   return (
-    <div className="h-screen bg-gray-100 flex">
+    <div className="h-screen bg-gray-100 flex flex-col">
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white font-semibold z-50 animate-fade-in ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
@@ -2407,14 +2396,6 @@ export default function EmailPage() {
           </div>
         </div>
       )}
-      {/* Undo Send Banner */}
-      {undoSendState && (
-        <div className="flex-shrink-0 flex items-center justify-center bg-gray-900 text-white text-sm px-4 py-2.5 gap-3">
-          <span>Sending in {undoSendState.countdown}s&hellip;</span>
-          <button onClick={handleUndoSend} className="bg-amber-400 hover:bg-amber-300 text-gray-900 font-bold px-4 py-1 rounded-full transition text-sm">&#x21a9; Undo</button>
-        </div>
-      )}
-
       {/* Notification Panel */}
       {showNotificationPanel && (
         <>
@@ -2815,7 +2796,7 @@ export default function EmailPage() {
                   setShowMobileSidebar(false)
                   // Fetch current config on open
                   const token = localStorage.getItem('access_token')
-                  fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/email/auto-reply`, {
+                  fetch(`${API_URL || 'http://localhost:8000'}/email/auto-reply`, {
                     headers: { Authorization: `Bearer ${token}` }
                   }).then(r => r.json()).then(d => setAutoReplyConfig({
                     is_enabled: d.is_enabled ?? false,
@@ -2838,7 +2819,7 @@ export default function EmailPage() {
         </div>
 
         {/* Email List Column */}
-        <div className={`${mobileView === 'detail' ? 'hidden' : 'flex'} w-full md:w-80 md:flex bg-white border-r border-gray-200 overflow-y-auto flex flex-col flex-shrink-0`}>
+        <div className={`${mobileView === 'detail' ? 'hidden' : 'flex'} w-full md:w-80 md:flex bg-white border-r border-gray-200 flex flex-col flex-shrink-0`}>
           <div className="p-4 border-b border-gray-200">
             <div className="mb-3">
               <input
@@ -3059,6 +3040,30 @@ export default function EmailPage() {
                             }, 50)
                             return
                           }
+                          if (currentFolder === 'drafts') {
+                            // Open draft in compose view for editing
+                            const email = thread.emails[0]
+                            resetCompose()
+                            setComposeData({
+                              to: email.to_address || '',
+                              cc: email.cc || '',
+                              bcc: '',
+                              subject: email.subject || '',
+                              message: email.body_html || email.body_text || '',
+                              attachments: [],
+                            })
+                            setCurrentDraftId(email.id)
+                            currentDraftIdRef.current = email.id
+                            setShowCompose(true)
+                            setMobileView('detail')
+                            setTimeout(() => {
+                              if (editor) {
+                                editor.commands.setContent(email.body_html || email.body_text || '')
+                                editor.commands.focus('start')
+                              }
+                            }, 50)
+                            return
+                          }
                           if (showCompose) {
                             resetCompose()
                           }
@@ -3151,6 +3156,13 @@ export default function EmailPage() {
               </div>
             )}
           </div>
+          {/* Undo Send Banner - bottom of email list */}
+          {undoSendState && (
+            <div className="flex-shrink-0 flex items-center justify-center bg-gray-900 text-white text-sm px-4 py-2.5 gap-3 border-t border-gray-700">
+              <span>Sending in {undoSendState.countdown}s&hellip;</span>
+              <button onClick={handleUndoSend} className="bg-amber-400 hover:bg-amber-300 text-gray-900 font-bold px-4 py-1 rounded-full transition text-sm">&#x21a9; Undo</button>
+            </div>
+          )}
         </div>
 
         {/* Email Detail Column */}
@@ -4202,7 +4214,7 @@ export default function EmailPage() {
                   setAutoReplyTestStatus('sending')
                   try {
                     const token = localStorage.getItem('access_token')
-                    const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/email/auto-reply/test`, {
+                    const r = await fetch(`${API_URL || 'http://localhost:8000'}/email/auto-reply/test`, {
                       method: 'POST',
                       headers: { Authorization: `Bearer ${token}` }
                     })
@@ -4225,7 +4237,7 @@ export default function EmailPage() {
                     setAutoReplySaving(true)
                     try {
                       const token = localStorage.getItem('access_token')
-                      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/email/auto-reply`, {
+                      await fetch(`${API_URL || 'http://localhost:8000'}/email/auto-reply`, {
                         method: 'POST',
                         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify(autoReplyConfig)

@@ -6,6 +6,7 @@ import AdminNav from '@/components/AdminNav';
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
 import { Phone, Edit2, Check, X, Server, RefreshCw, ToggleLeft, ToggleRight, CheckCircle, AlertCircle, Wifi } from 'lucide-react';
+import { API_URL } from '@/lib/config';
 
 export default function PBXSetup() {
     const user = authAPI.getUser();
@@ -33,7 +34,7 @@ export default function PBXSetup() {
             const token = getAuthToken();
             if (!token) return router.push('/login');
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/extensions`, {
+            const response = await fetch(`${API_URL}/admin/extensions`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -73,7 +74,7 @@ export default function PBXSetup() {
         }
         try {
             const token = getAuthToken();
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/extensions`, {
+            const response = await fetch(`${API_URL}/admin/extensions`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -109,7 +110,7 @@ export default function PBXSetup() {
 
         try {
             const token = getAuthToken();
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/extensions/${userId}`, {
+            const response = await fetch(`${API_URL}/admin/extensions/${userId}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -127,7 +128,7 @@ export default function PBXSetup() {
         setToggling(userId);
         try {
             const token = getAuthToken();
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/extensions/${userId}/toggle`, {
+            const response = await fetch(`${API_URL}/admin/extensions/${userId}/toggle`, {
                 method: 'PATCH',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -151,7 +152,7 @@ export default function PBXSetup() {
         setSyncing(userId);
         try {
             const token = getAuthToken();
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/extensions/${userId}/sync`, {
+            const response = await fetch(`${API_URL}/admin/extensions/${userId}/sync`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });

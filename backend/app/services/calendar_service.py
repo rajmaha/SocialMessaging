@@ -13,25 +13,31 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
-MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID", "")
-MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET", "")
-MICROSOFT_TENANT_ID = os.getenv("MICROSOFT_TENANT_ID", "common")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 
 class CalendarService:
 
+    def _get_settings(self, db: Session):
+        from app.models.calendar_settings import CalendarIntegrationSettings
+        row = db.query(CalendarIntegrationSettings).first()
+        if not row:
+            row = CalendarIntegrationSettings()
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+        return row
+
     # ── Google Calendar ──────────────────────────────────────────────────
 
-    def get_google_auth_url(self, user_id: int) -> str:
+    def get_google_auth_url(self, user_id: int, db: Session) -> str:
+        s = self._get_settings(db)
         redirect_uri = f"{BACKEND_URL}/api/calendar/callback/google"
         scope = "https://www.googleapis.com/auth/calendar.events"
         return (
             f"https://accounts.google.com/o/oauth2/v2/auth"
-            f"?client_id={GOOGLE_CLIENT_ID}"
+            f"?client_id={s.google_client_id}"
             f"&redirect_uri={redirect_uri}"
             f"&response_type=code"
             f"&scope={scope}"
@@ -40,23 +46,25 @@ class CalendarService:
             f"&state={user_id}"
         )
 
-    def exchange_google_code(self, code: str) -> dict:
+    def exchange_google_code(self, code: str, db: Session) -> dict:
+        s = self._get_settings(db)
         redirect_uri = f"{BACKEND_URL}/api/calendar/callback/google"
         resp = requests.post("https://oauth2.googleapis.com/token", data={
             "code": code,
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
+            "client_id": s.google_client_id,
+            "client_secret": s.google_client_secret,
             "redirect_uri": redirect_uri,
             "grant_type": "authorization_code",
         })
         resp.raise_for_status()
         return resp.json()
 
-    def refresh_google_token(self, refresh_token: str) -> dict:
+    def refresh_google_token(self, refresh_token: str, db: Session) -> dict:
+        s = self._get_settings(db)
         resp = requests.post("https://oauth2.googleapis.com/token", data={
             "refresh_token": refresh_token,
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
+            "client_id": s.google_client_id,
+            "client_secret": s.google_client_secret,
             "grant_type": "refresh_token",
         })
         resp.raise_for_status()
@@ -103,26 +111,30 @@ class CalendarService:
 
     # ── Microsoft Graph ──────────────────────────────────────────────────
 
-    def get_microsoft_auth_url(self, user_id: int) -> str:
+    def get_microsoft_auth_url(self, user_id: int, db: Session) -> str:
+        s = self._get_settings(db)
+        tenant = s.microsoft_tenant_id or "common"
         redirect_uri = f"{BACKEND_URL}/api/calendar/callback/microsoft"
         scope = "Calendars.ReadWrite offline_access"
         return (
-            f"https://login.microsoftonline.com/{MICROSOFT_TENANT_ID}/oauth2/v2.0/authorize"
-            f"?client_id={MICROSOFT_CLIENT_ID}"
+            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize"
+            f"?client_id={s.microsoft_client_id}"
             f"&redirect_uri={redirect_uri}"
             f"&response_type=code"
             f"&scope={scope}"
             f"&state={user_id}"
         )
 
-    def exchange_microsoft_code(self, code: str) -> dict:
+    def exchange_microsoft_code(self, code: str, db: Session) -> dict:
+        s = self._get_settings(db)
+        tenant = s.microsoft_tenant_id or "common"
         redirect_uri = f"{BACKEND_URL}/api/calendar/callback/microsoft"
         resp = requests.post(
-            f"https://login.microsoftonline.com/{MICROSOFT_TENANT_ID}/oauth2/v2.0/token",
+            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
             data={
                 "code": code,
-                "client_id": MICROSOFT_CLIENT_ID,
-                "client_secret": MICROSOFT_CLIENT_SECRET,
+                "client_id": s.microsoft_client_id,
+                "client_secret": s.microsoft_client_secret,
                 "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
                 "scope": "Calendars.ReadWrite offline_access",
@@ -131,13 +143,15 @@ class CalendarService:
         resp.raise_for_status()
         return resp.json()
 
-    def refresh_microsoft_token(self, refresh_token: str) -> dict:
+    def refresh_microsoft_token(self, refresh_token: str, db: Session) -> dict:
+        s = self._get_settings(db)
+        tenant = s.microsoft_tenant_id or "common"
         resp = requests.post(
-            f"https://login.microsoftonline.com/{MICROSOFT_TENANT_ID}/oauth2/v2.0/token",
+            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
             data={
                 "refresh_token": refresh_token,
-                "client_id": MICROSOFT_CLIENT_ID,
-                "client_secret": MICROSOFT_CLIENT_SECRET,
+                "client_id": s.microsoft_client_id,
+                "client_secret": s.microsoft_client_secret,
                 "grant_type": "refresh_token",
                 "scope": "Calendars.ReadWrite offline_access",
             },
@@ -199,9 +213,9 @@ class CalendarService:
             return conn.access_token
 
         if conn.provider == "google":
-            data = self.refresh_google_token(conn.refresh_token)
+            data = self.refresh_google_token(conn.refresh_token, db)
         else:
-            data = self.refresh_microsoft_token(conn.refresh_token)
+            data = self.refresh_microsoft_token(conn.refresh_token, db)
 
         conn.access_token = data["access_token"]
         conn.token_expires_at = now + timedelta(seconds=data.get("expires_in", 3600))

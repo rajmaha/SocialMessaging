@@ -6,6 +6,7 @@ import { authAPI } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
 import AdminNav from '@/components/AdminNav';
+import { API_URL } from '@/lib/config';
 
 interface PlatformSetting {
     id: number;
@@ -64,7 +65,7 @@ export default function AdminSettings() {
                 router.push('/login');
                 return;
             }
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/platforms`, {
+            const response = await fetch(`${API_URL}/admin/platforms`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
@@ -98,7 +99,7 @@ export default function AdminSettings() {
                 return;
             }
             const response = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL}/admin/platforms/${platform}`,
+                `${API_URL}/admin/platforms/${platform}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -160,7 +161,7 @@ export default function AdminSettings() {
             const platformData = formData[platformKey];
 
             const response = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL}/admin/platforms/${platform}`,
+                `${API_URL}/admin/platforms/${platform}`,
                 {
                     method: 'PUT',
                     headers: {

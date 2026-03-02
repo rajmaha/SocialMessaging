@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react'
 import { Building2, Save, X, Upload, Phone, Mail, MapPin, Hash, Plus, Edit2 } from 'lucide-react'
 import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 interface OrganizationFormProps {
     initialData?: any

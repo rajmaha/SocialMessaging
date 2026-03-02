@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { Suspense } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { FiMessageSquare, FiMail, FiBarChart2, FiGrid, FiHeadphones, FiCheckSquare } from 'react-icons/fi'
@@ -20,7 +20,15 @@ interface MainHeaderProps {
     setActiveTab?: (tab: 'messaging' | 'email') => void
 }
 
-export default function MainHeader({ user, activeTab: propActiveTab, setActiveTab }: MainHeaderProps) {
+export default function MainHeader(props: MainHeaderProps) {
+    return (
+        <Suspense fallback={<header className="bg-white border-b border-gray-200 flex items-center justify-between px-6 h-14 fixed top-0 left-0 right-0 z-[60]" />}>
+            <MainHeaderInner {...props} />
+        </Suspense>
+    )
+}
+
+function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainHeaderProps) {
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const brandingCtx = useBranding()
@@ -34,6 +42,7 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
     const isDashboardActive = pathname === '/admin'
     const isReportsActive = pathname === '/admin/reports'
     const isWorkspaceActive = pathname === '/workspace'
+    const isRemindersActive = pathname === '/reminders'
 
     const [canAccessEmail, setCanAccessEmail] = useState(true)
     const [canAccessMessaging, setCanAccessMessaging] = useState(true)
@@ -177,6 +186,18 @@ export default function MainHeader({ user, activeTab: propActiveTab, setActiveTa
                             Workspace
                         </Link>
                     )}
+
+                    <Link
+                        href="/reminders"
+                        className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isRemindersActive
+                            ? 'text-white shadow-sm'
+                            : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                        style={isRemindersActive ? { backgroundColor: 'var(--primary-color)' } : {}}
+                    >
+                        <FiCheckSquare size={15} />
+                        My Todos
+                    </Link>
 
                     {(user?.role === 'admin' || canAccessAdmin) && (
                         <>

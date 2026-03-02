@@ -26,6 +26,9 @@ class Ticket(Base):
     # Core Fields
     customer_name = Column(String, nullable=True)
     customer_gender = Column(String, nullable=True)  # Male, Female, Other
+    customer_type = Column(String, nullable=True)  # individual / organization
+    contact_person = Column(String, nullable=True)
+    customer_email = Column(String, nullable=True)
     category = Column(String, nullable=True)
     
     # Forwarding Tracking
@@ -50,3 +53,11 @@ class Ticket(Base):
     # Relationships
     parent_ticket = relationship("Ticket", remote_side=[id], backref="child_tickets")
     assignee = relationship("User", backref="assigned_tickets")
+
+    @property
+    def assignee_name(self) -> str | None:
+        return self.assignee.full_name if self.assignee else None
+
+    @property
+    def parent_ticket_number(self) -> str | None:
+        return self.parent_ticket.ticket_number if self.parent_ticket else None

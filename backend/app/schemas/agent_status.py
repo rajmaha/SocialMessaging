@@ -18,4 +18,6 @@ class AgentStatusResponse(AgentStatusBase):
 class WorkspaceStatsResponse(BaseModel):
     total_calls_today: int
     avg_call_duration_seconds: int
+    follow_up_count: int = 0
+    forwarded_count: int = 0
     status: AgentStatusResponse

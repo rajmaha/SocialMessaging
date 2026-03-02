@@ -52,6 +52,7 @@ class Subscription(Base):
     subscribed_product = Column(String, nullable=True)
     modules = Column(JSON, default=list)  # Multiple modules in JSON format
     system_url = Column(String, nullable=True)
+    company_logo_url = Column(String, nullable=True)
     subscribed_on_date = Column(Date, nullable=True)
     billed_from_date = Column(Date, nullable=True)
     expire_date = Column(Date, nullable=True)

@@ -6,8 +6,7 @@ import { FiSend, FiPaperclip, FiX, FiFile, FiSearch } from 'react-icons/fi'
 import { getAuthToken, authAPI } from '@/lib/auth'
 import { useEvents } from '@/lib/events-context'
 import { useBranding } from '@/lib/branding-context'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 interface Message {
   id: number

@@ -6,6 +6,7 @@ import { authAPI } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
 import AdminNav from '@/components/AdminNav';
+import { API_URL } from '@/lib/config';
 
 interface User {
   id: number;
@@ -56,7 +57,7 @@ export default function AdminUsers() {
         router.push('/login');
         return;
       }
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/users`, {
+      const response = await fetch(`${API_URL}/admin/users`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -112,7 +113,7 @@ export default function AdminUsers() {
         setError('Not authenticated');
         return;
       }
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/users/${editingUserId}`, {
+      const response = await fetch(`${API_URL}/admin/users/${editingUserId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -145,7 +146,7 @@ export default function AdminUsers() {
         setError('Not authenticated');
         return;
       }
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/users`, {
+      const response = await fetch(`${API_URL}/admin/users`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -181,7 +182,7 @@ export default function AdminUsers() {
         setError('Not authenticated');
         return;
       }
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/users/${userId}/role`, {
+      const response = await fetch(`${API_URL}/admin/users/${userId}/role`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -211,7 +212,7 @@ export default function AdminUsers() {
         setError('Not authenticated');
         return;
       }
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/users/${userId}`, {
+      const response = await fetch(`${API_URL}/admin/users/${userId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

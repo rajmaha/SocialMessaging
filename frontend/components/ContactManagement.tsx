@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react'
 import { Plus, User, Mail, Phone, Trash2, Edit2, X, AlertCircle } from 'lucide-react'
 import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 interface Contact {
     id: number

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { FiSend, FiMessageCircle, FiPaperclip } from 'react-icons/fi'
+import { API_URL } from '@/lib/config';
 
 // Singleton AudioContext — created on first user gesture; reused for all sounds
 let _audioCtx: AudioContext | null = null
@@ -37,7 +38,6 @@ async function playNotificationSound() {
   } catch {}
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const WS_URL = API_URL.replace(/^http/, 'ws')
 const SESSION_KEY = 'webchat_session_id'
 const NAME_KEY   = 'webchat_visitor_name'

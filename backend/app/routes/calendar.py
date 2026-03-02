@@ -27,9 +27,9 @@ def connect_calendar(
 ):
     """Initiate OAuth flow for Google or Microsoft calendar."""
     if provider == "google":
-        url = calendar_service.get_google_auth_url(current_user.id)
+        url = calendar_service.get_google_auth_url(current_user.id, db)
     elif provider == "microsoft":
-        url = calendar_service.get_microsoft_auth_url(current_user.id)
+        url = calendar_service.get_microsoft_auth_url(current_user.id, db)
     else:
         raise HTTPException(400, "Provider must be 'google' or 'microsoft'")
     return {"auth_url": url}
@@ -47,7 +47,7 @@ def google_callback(
     except ValueError:
         raise HTTPException(400, "Invalid state parameter")
 
-    token_data = calendar_service.exchange_google_code(code)
+    token_data = calendar_service.exchange_google_code(code, db)
 
     # Upsert connection
     conn = db.query(UserCalendarConnection).filter(
@@ -79,7 +79,7 @@ def microsoft_callback(
     except ValueError:
         raise HTTPException(400, "Invalid state parameter")
 
-    token_data = calendar_service.exchange_microsoft_code(code)
+    token_data = calendar_service.exchange_microsoft_code(code, db)
 
     conn = db.query(UserCalendarConnection).filter(
         UserCalendarConnection.user_id == user_id,

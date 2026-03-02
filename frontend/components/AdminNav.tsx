@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useBranding } from '@/lib/branding-context'
@@ -38,6 +38,7 @@ const sidebarGroups = [
             { href: '/admin/bot', label: 'Chat Bot', icon: '🤖', permission: () => hasAdminFeature('manage_bot') },
             { href: '/admin/reminders', label: 'Reminder Calls', icon: '📅', permission: () => hasModuleAccess('reminders') },
             { href: '/admin/notifications', label: 'Notifications', icon: '🔔', permission: () => hasModuleAccess('notifications') },
+            { href: '/admin/calendar-settings', label: 'Calendar Integration', icon: '📆', permission: () => hasAdminFeature('manage_branding') },
         ],
     },
     {
@@ -60,16 +61,26 @@ const sidebarGroups = [
             { href: '/admin/ticket-fields', label: 'Ticket Config', icon: '📝', permission: () => hasAdminFeature('manage_tickets') },
             { href: '/admin/tickets', label: 'All Tickets', icon: '📋', permission: () => hasAdminFeature('manage_tickets') },
             { href: '/admin/organizations', label: 'Organizations', icon: '🏢', permission: () => hasModuleAccess('organizations') },
+            { href: '/admin/individuals', label: 'Individuals', icon: '👤', permission: () => hasModuleAccess('individuals') },
             { href: '/admin/subscription-modules', label: 'Subscription Modules', icon: '📦', permission: () => hasModuleAccess('subscriptions') },
             { href: '/admin/cloudpanel/servers', label: 'CloudPanel Servers', icon: '☁️', permission: () => hasAdminFeature('manage_cloudpanel') },
             { href: '/admin/cloudpanel/templates', label: 'Site Templates', icon: '📁', permission: () => hasAdminFeature('manage_cloudpanel') },
             { href: '/admin/cloudpanel/deploy', label: 'Deploy New Site', icon: '🚀', permission: () => hasAdminFeature('deploy_site') },
+            { href: '/admin/cloudpanel/sites', label: 'Manage Sites', icon: '🌐', permission: () => hasAdminFeature('manage_cloudpanel') },
             { href: '/admin/cloudpanel/ssl', label: 'SSL Monitor', icon: '🔒', permission: () => hasAdminFeature('manage_ssl') },
         ],
     },
 ]
 
 export default function AdminNav() {
+    return (
+        <Suspense fallback={<aside className="fixed left-0 bottom-0 flex flex-col border-r border-gray-700 z-40" style={{ top: 56, width: 240, backgroundColor: 'var(--secondary-color)' }} />}>
+            <AdminNavInner />
+        </Suspense>
+    )
+}
+
+function AdminNavInner() {
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const brandingCtx = useBranding()

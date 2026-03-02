@@ -6,6 +6,7 @@ import AdminNav from '@/components/AdminNav';
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
 import { Wifi, CheckCircle, XCircle } from 'lucide-react';
+import { API_URL } from '@/lib/config';
 
 export default function TelephonySettings() {
     const user = authAPI.getUser();
@@ -38,7 +39,7 @@ export default function TelephonySettings() {
             const token = getAuthToken();
             if (!token) { router.push('/login'); return; }
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/telephony/settings`, {
+            const response = await fetch(`${API_URL}/admin/telephony/settings`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -70,7 +71,7 @@ export default function TelephonySettings() {
 
         try {
             const token = getAuthToken();
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/telephony/settings`, {
+            const response = await fetch(`${API_URL}/admin/telephony/settings`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -94,7 +95,7 @@ export default function TelephonySettings() {
         setTestResult(null);
         try {
             const token = getAuthToken();
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/telephony/test-freepbx`, {
+            const response = await fetch(`${API_URL}/admin/telephony/test-freepbx`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });

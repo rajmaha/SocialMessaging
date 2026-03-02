@@ -1,16 +1,37 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import MainHeader from "@/components/MainHeader";
 import TicketHistory from "@/components/TicketHistory";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { ArrowLeft, Save, Phone } from 'lucide-react';
+import { API_URL } from '@/lib/config';
 
-export default function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
+export default function TicketFollowUpWrapper({ params }: { params: { ticket_number: string } }) {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div></div>}>
+            <TicketFollowUp params={params} />
+        </Suspense>
+    )
+}
+
+function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
     const { ticket_number } = params;
     const router = useRouter();
+    const searchParams = useSearchParams();
     const user = authAPI.getUser();
+
+    // Navigate back to the correct origin page:
+    // - workspace inbox passes ?from=workspace → force a fresh push so myTickets refreshes
+    // - all other pages (call records, admin tickets, etc.) → regular browser back
+    const handleBack = () => {
+        if (searchParams.get('from') === 'workspace') {
+            router.push('/workspace');
+        } else {
+            router.back();
+        }
+    };
 
     const [ticket, setTicket] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -31,7 +52,7 @@ export default function TicketFollowUp({ params }: { params: { ticket_number: st
     const fetchTicket = async () => {
         try {
             const token = getAuthToken();
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/find?number=${ticket_number}`, {
+            const res = await fetch(`${API_URL}/api/tickets/find?number=${ticket_number}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -54,7 +75,7 @@ export default function TicketFollowUp({ params }: { params: { ticket_number: st
         setSaving(true);
         try {
             const token = getAuthToken();
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/${ticket_number}/notes`, {
+            const res = await fetch(`${API_URL}/api/tickets/${ticket_number}/notes`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -84,7 +105,7 @@ export default function TicketFollowUp({ params }: { params: { ticket_number: st
     const initiateCall = async (phone: string) => {
         try {
             const token = getAuthToken();
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/calls/originate`, {
+            const response = await fetch(`${API_URL}/calls/originate`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -110,7 +131,7 @@ export default function TicketFollowUp({ params }: { params: { ticket_number: st
             {/* Top Navigation */}
             <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-4">
                 <button
-                    onClick={() => router.back()}
+                    onClick={handleBack}
                     className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600"
                 >
                     <ArrowLeft className="w-5 h-5" />
@@ -166,6 +187,25 @@ export default function TicketFollowUp({ params }: { params: { ticket_number: st
                             <p className="text-xs font-bold text-gray-700 uppercase">Created</p>
                             <p className="text-sm text-gray-600 mt-1">{new Date(ticket.created_at).toLocaleString()}</p>
                         </div>
+
+                        {/* Dynamic / application-specific fields from ticket creation */}
+                        {ticket.app_type_data && Object.keys(ticket.app_type_data).length > 0 && (
+                            <div className="border-t border-gray-100 pt-4">
+                                <p className="text-xs font-bold text-gray-700 uppercase mb-3">Application Data</p>
+                                <div className="space-y-3">
+                                    {Object.entries(ticket.app_type_data as Record<string, any>).map(([k, v]) => {
+                                        if (v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) return null;
+                                        const displayValue = Array.isArray(v) ? v.join(', ') : String(v);
+                                        return (
+                                            <div key={k}>
+                                                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-tight">{k.replace(/_/g, ' ')}</p>
+                                                <p className="text-sm text-gray-900 mt-0.5 font-medium break-words">{displayValue}</p>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                     <div className="p-4 border-t border-gray-100 bg-gray-50 mt-auto">
                         <button
@@ -191,10 +231,8 @@ export default function TicketFollowUp({ params }: { params: { ticket_number: st
                                     className="w-full border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500"
                                 >
                                     <option value="pending">Pending</option>
-                                    <option value="open">Open</option>
                                     <option value="forwarded">Forwarded</option>
                                     <option value="solved">Solved</option>
-                                    <option value="closed">Closed</option>
                                 </select>
                             </div>
                             <div>

@@ -1,4 +1,5 @@
 import { getAuthToken } from './auth';
+import { API_URL } from '@/lib/config';
 
 /**
  * Fetches all of the user's granted permissions and stores them in localStorage.
@@ -9,7 +10,7 @@ export async function fetchMyPermissions(): Promise<string[]> {
     if (!token) return [];
 
     try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/my-permissions`, {
+        const response = await fetch(`${API_URL}/admin/my-permissions`, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }

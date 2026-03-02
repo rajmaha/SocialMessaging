@@ -8,8 +8,7 @@ import axios from 'axios'
 import { useBranding } from '@/lib/branding-context'
 import { getAuthToken } from '@/lib/auth'
 import AdminNav from '@/components/AdminNav'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 interface User {
   id: number

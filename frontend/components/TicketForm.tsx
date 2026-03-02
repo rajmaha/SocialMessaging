@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getAuthToken } from "@/lib/auth";
+import { API_URL } from '@/lib/config';
 
 export default function TicketForm({
     activeNumber,
@@ -29,6 +30,9 @@ export default function TicketForm({
     const [forwardTarget, setForwardTarget] = useState('');
     const [forwardReason, setForwardReason] = useState('');
     const [organizationId, setOrganizationId] = useState<number | null>(null);
+    const [customerType, setCustomerType] = useState('');
+    const [contactPerson, setContactPerson] = useState('');
+    const [customerEmail, setCustomerEmail] = useState('');
 
     // Success Tracking
     const [lastSavedTicket, setLastSavedTicket] = useState<any | null>(null);
@@ -59,7 +63,7 @@ export default function TicketForm({
         const fetchHistory = async () => {
             try {
                 const token = getAuthToken();
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/history/${activeNumber}`, {
+                const res = await fetch(`${API_URL}/api/tickets/history/${activeNumber}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (res.ok) {
@@ -80,7 +84,7 @@ export default function TicketForm({
             setLoadingFields(true);
             try {
                 const token = getAuthToken();
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/dynamic-fields/${appType}`, {
+                const res = await fetch(`${API_URL}/api/admin/dynamic-fields/${appType}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (res.ok) {
@@ -117,6 +121,9 @@ export default function TicketForm({
         setForwardTarget('');
         setForwardReason('');
         setOrganizationId(null);
+        setCustomerType('');
+        setContactPerson('');
+        setCustomerEmail('');
         if (onContextChange) onContextChange({ found: false });
         if (!parentTicketId) setSelectedParentId('');
 
@@ -134,7 +141,7 @@ export default function TicketForm({
             const fetchContext = async () => {
                 try {
                     const token = getAuthToken();
-                    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/context/${encodeURIComponent(activeNumber)}`, {
+                    const res = await fetch(`${API_URL}/api/tickets/context/${encodeURIComponent(activeNumber)}`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
                     if (res.ok) {
@@ -143,12 +150,15 @@ export default function TicketForm({
                             onContextChange(data);
                         }
                         if (data.found) {
-                            if (data.organization_id) {
-                                setOrganizationId(data.organization_id);
-                            }
-                            if (data.organization_name) {
-                                setCustomerName(data.organization_name);
-                            } else if (data.caller_name && data.caller_name !== "Valued Customer") {
+                            if (data.organization_id) setOrganizationId(data.organization_id);
+                            if (data.customer_type) setCustomerType(data.customer_type);
+                            if (data.customer_name) setCustomerName(data.customer_name);
+                            if (data.contact_person) setContactPerson(data.contact_person);
+                            if (data.gender) setCustomerGender(data.gender);
+                            if (data.email) setCustomerEmail(data.email);
+
+                            // Fallback for legacy: if no customer_name but has caller_name
+                            if (!data.customer_name && data.caller_name && data.caller_name !== "Valued Customer") {
                                 setCustomerName(data.caller_name);
                             }
                         }
@@ -198,7 +208,7 @@ export default function TicketForm({
         if (showManualLink && manualTicketNo) {
             try {
                 const token = getAuthToken();
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/find?number=${manualTicketNo}`, {
+                const res = await fetch(`${API_URL}/api/tickets/find?number=${manualTicketNo}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (res.ok) {
@@ -216,7 +226,7 @@ export default function TicketForm({
         setSaving(true);
         try {
             const token = getAuthToken();
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets`, {
+            const response = await fetch(`${API_URL}/api/tickets`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -226,6 +236,9 @@ export default function TicketForm({
                     phone_number: activeNumber,
                     customer_name: customerName,
                     customer_gender: customerGender,
+                    customer_type: customerType,
+                    contact_person: contactPerson,
+                    customer_email: customerEmail,
                     category: category,
                     forward_target: forwardTarget,
                     forward_reason: forwardReason,
@@ -253,6 +266,10 @@ export default function TicketForm({
     const resetForm = () => {
         setLastSavedTicket(null);
         setCustomerName('');
+        setCustomerGender('');
+        setCustomerType('');
+        setContactPerson('');
+        setCustomerEmail('');
         setForwardTarget('');
         setForwardReason('');
         setCategory('');
@@ -401,13 +418,47 @@ export default function TicketForm({
                     <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3">Customer Identifier</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Customer Type</label>
+                            <select
+                                value={customerType}
+                                onChange={(e) => setCustomerType(e.target.value)}
+                                className="w-full h-10 px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                            >
+                                <option value="">Select type...</option>
+                                <option value="individual">Individual</option>
+                                <option value="organization">Organization</option>
+                            </select>
+                        </div>
+                        <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
                             <input
                                 type="text"
                                 value={customerName}
                                 onChange={(e) => setCustomerName(e.target.value)}
                                 placeholder="Enter caller name"
-                                className="w-full px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                className="w-full h-10 px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                            />
+                        </div>
+                        {customerType === 'organization' && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                                <input
+                                    type="text"
+                                    value={contactPerson}
+                                    onChange={(e) => setContactPerson(e.target.value)}
+                                    placeholder="Contact person name"
+                                    className="w-full h-10 px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                />
+                            </div>
+                        )}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                            <input
+                                type="email"
+                                value={customerEmail}
+                                onChange={(e) => setCustomerEmail(e.target.value)}
+                                placeholder="Customer email"
+                                className="w-full h-10 px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                             />
                         </div>
                         <div>
@@ -415,7 +466,7 @@ export default function TicketForm({
                             <select
                                 value={customerGender}
                                 onChange={(e) => setCustomerGender(e.target.value)}
-                                className="w-full px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                className="w-full h-10 px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                             >
                                 <option value="">Select gender...</option>
                                 <option value="Male">Male</option>
@@ -435,7 +486,7 @@ export default function TicketForm({
                             <select
                                 value={status}
                                 onChange={(e) => setStatus(e.target.value)}
-                                className="w-full px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                className="w-full h-10 px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                             >
                                 <option value="pending">Pending</option>
                                 <option value="solved">Solved</option>
@@ -447,7 +498,7 @@ export default function TicketForm({
                             <select
                                 value={priority}
                                 onChange={(e) => setPriority(e.target.value)}
-                                className="w-full px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                className="w-full h-10 px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                             >
                                 <option value="low">Low</option>
                                 <option value="normal">Normal</option>
@@ -460,7 +511,7 @@ export default function TicketForm({
                             <select
                                 value={category}
                                 onChange={(e) => setCategory(e.target.value)}
-                                className="w-full px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                className="w-full h-10 px-3 py-2 border text-gray-900 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                             >
                                 <option value="">Select Category...</option>
                                 <option value="Technical Support">Technical Support</option>
@@ -488,7 +539,7 @@ export default function TicketForm({
                                     value={forwardTarget}
                                     placeholder="e.g. L2 Technician Team, Admin Desk"
                                     onChange={(e) => setForwardTarget(e.target.value)}
-                                    className="w-full px-3 py-2 border border-orange-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
+                                    className="w-full h-10 px-3 py-2 border border-orange-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
                                     required={status === 'forwarded'}
                                 />
                             </div>
@@ -533,7 +584,7 @@ export default function TicketForm({
                                             type="text"
                                             value={appData[field.field_name] || ''}
                                             onChange={(e) => handleDynamicFieldChange(field.field_name, e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-900 shadow-sm"
+                                            className="w-full h-10 px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-900 shadow-sm"
                                         />
                                     )}
 
@@ -552,7 +603,7 @@ export default function TicketForm({
                                         <select
                                             value={appData[field.field_name] || ''}
                                             onChange={(e) => handleDynamicFieldChange(field.field_name, e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-900 shadow-sm"
+                                            className="w-full h-10 px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-900 shadow-sm"
                                         >
                                             <option value="">Select option...</option>
                                             {(field.options || []).map((opt: string) => (
@@ -587,7 +638,7 @@ export default function TicketForm({
                                             type="date"
                                             value={appData[field.field_name] || ''}
                                             onChange={(e) => handleDynamicFieldChange(field.field_name, e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-900 shadow-sm"
+                                            className="w-full h-10 px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-900 shadow-sm"
                                         />
                                     )}
 
@@ -597,7 +648,7 @@ export default function TicketForm({
                                             type="time"
                                             value={appData[field.field_name] || ''}
                                             onChange={(e) => handleDynamicFieldChange(field.field_name, e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-900 shadow-sm"
+                                            className="w-full h-10 px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-900 shadow-sm"
                                         />
                                     )}
 

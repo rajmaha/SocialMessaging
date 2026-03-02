@@ -4,12 +4,13 @@ import { useState, useEffect, useRef } from 'react';
 import MainHeader from "@/components/MainHeader";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
+import { API_URL } from '@/lib/config';
 import {
     PhoneCall, PhoneIncoming, PhoneOutgoing, Clock, Play, Pause,
     Download, Search, X, Filter
 } from 'lucide-react';
 
-const API = process.env.NEXT_PUBLIC_API_URL;
+const API = API_URL;
 
 export default function MyRecordings() {
     const user = authAPI.getUser();

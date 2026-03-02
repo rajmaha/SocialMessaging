@@ -33,13 +33,50 @@ def _enrich(rec: CallRecording, db: Optional[Session] = None) -> dict:
         agent_name = rec.agent.display_name or rec.agent.full_name or rec.agent.email.split("@")[0]
 
     ticket_number = None
+    ticket_id = None
     customer_name = None
+    parent_ticket_number = None
     if db:
         from app.models.ticket import Ticket
-        latest_ticket = db.query(Ticket).filter(Ticket.phone_number == rec.phone_number).order_by(Ticket.created_at.desc()).first()
-        if latest_ticket:
-            ticket_number = latest_ticket.ticket_number
-            customer_name = latest_ticket.customer_name
+        from datetime import timedelta
+        # Prefer the ticket_number stored directly on the record (set at creation).
+        # This correctly shows TCK-... for initial calls and FLW-... for follow-ups.
+        stored_number = getattr(rec, 'ticket_number', None)
+        if stored_number:
+            linked = db.query(Ticket).filter(Ticket.ticket_number == stored_number).first()
+            if linked:
+                ticket_number = linked.ticket_number
+                ticket_id = linked.id
+                customer_name = linked.customer_name
+                if linked.parent_ticket_id and linked.parent_ticket:
+                    parent_ticket_number = linked.parent_ticket.ticket_number
+        else:
+            # Fallback for records that pre-date the ticket_number column:
+            # find the closest origin ticket by timestamp and persist the link.
+            origin_q = db.query(Ticket).filter(
+                Ticket.phone_number == rec.phone_number,
+                Ticket.parent_ticket_id == None  # noqa: E711
+            )
+            if rec.created_at:
+                window = timedelta(hours=24)
+                origin_ticket = origin_q.filter(
+                    Ticket.created_at >= rec.created_at - window,
+                    Ticket.created_at <= rec.created_at + window
+                ).order_by(Ticket.created_at.desc()).first()
+                if not origin_ticket:
+                    origin_ticket = origin_q.order_by(Ticket.created_at.desc()).first()
+            else:
+                origin_ticket = origin_q.order_by(Ticket.created_at.desc()).first()
+            if origin_ticket:
+                ticket_number = origin_ticket.ticket_number
+                ticket_id = origin_ticket.id
+                customer_name = origin_ticket.customer_name
+                # Persist so fallback doesn't re-run
+                rec.ticket_number = origin_ticket.ticket_number
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
 
     return {
         "id": rec.id,
@@ -56,7 +93,9 @@ def _enrich(rec: CallRecording, db: Optional[Session] = None) -> dict:
         "has_audio": bool(getattr(rec, "recording_file", None) or rec.recording_url),
         "created_at": rec.created_at.isoformat() if rec.created_at else None,
         "ticket_number": ticket_number,
+        "ticket_id": ticket_id,
         "customer_name": customer_name,
+        "parent_ticket_number": parent_ticket_number,
     }
 
 

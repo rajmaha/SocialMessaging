@@ -9,8 +9,7 @@ import axios from 'axios'
 import { useRouter } from 'next/navigation'
 import { useAuth, getAuthToken } from '@/lib/auth'
 import { hasModuleAccess } from '@/lib/permissions'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 interface Organization {
     id: number

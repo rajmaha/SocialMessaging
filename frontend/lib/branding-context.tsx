@@ -2,8 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import axios from 'axios'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 interface BrandingSettings {
   company_name: string

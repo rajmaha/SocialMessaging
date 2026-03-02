@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Phone, Clock, PhoneCall, Headphones } from 'lucide-react';
 import TicketForm from "@/components/TicketForm";
 import TicketHistory from "@/components/TicketHistory";
+import { API_URL } from '@/lib/config';
 
 export default function Workspace() {
     const [user, setUser] = useState<any>(null);
@@ -16,6 +17,8 @@ export default function Workspace() {
     const [stats, setStats] = useState({
         total_calls_today: 0,
         avg_call_duration_seconds: 0,
+        follow_up_count: 0,
+        forwarded_count: 0,
         status: { status: 'offline' }
     });
 
@@ -48,7 +51,7 @@ export default function Workspace() {
     const fetchMyTickets = async () => {
         try {
             const token = getAuthToken();
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/my-tickets`, {
+            const res = await fetch(`${API_URL}/api/tickets/my-tickets`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -63,7 +66,7 @@ export default function Workspace() {
     const fetchAppType = async () => {
         try {
             const token = getAuthToken();
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/callcenter/settings`, {
+            const res = await fetch(`${API_URL}/admin/callcenter/settings`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -82,7 +85,7 @@ export default function Workspace() {
             const token = getAuthToken();
             if (!token) return router.push('/login');
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/workspace/stats`, {
+            const response = await fetch(`${API_URL}/workspace/stats`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -100,7 +103,7 @@ export default function Workspace() {
             setStats({ ...stats, status: { ...stats.status, status: newStatus } });
 
             const token = getAuthToken();
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/workspace/status`, {
+            await fetch(`${API_URL}/workspace/status`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -135,7 +138,7 @@ export default function Workspace() {
     const initiateCall = async (phone: string) => {
         try {
             const token = getAuthToken();
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/calls/originate`, {
+            const response = await fetch(`${API_URL}/calls/originate`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -211,6 +214,10 @@ export default function Workspace() {
                             <div>
                                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Calls Today</p>
                                 <h3 className="text-xl font-bold text-gray-900">{stats.total_calls_today}</h3>
+                                <div className="flex gap-3 mt-1">
+                                    <span className="text-xs text-indigo-600 font-medium">{stats.follow_up_count} follow-ups</span>
+                                    <span className="text-xs text-orange-600 font-medium">{stats.forwarded_count} forwarded</span>
+                                </div>
                             </div>
                         </div>
 
@@ -338,7 +345,7 @@ export default function Workspace() {
                                                         </td>
                                                         <td className="px-6 py-4 text-right">
                                                             <button
-                                                                onClick={() => router.push(`/workspace/tickets/${ticket.ticket_number}`)}
+                                                                onClick={() => router.push(`/workspace/tickets/${ticket.ticket_number}?from=workspace`)}
                                                                 className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-xs font-semibold transition-colors"
                                                             >
                                                                 Follow Up

@@ -30,6 +30,11 @@ class CloudPanelServerResponse(CloudPanelServerBase):
     class Config:
         from_attributes = True
 
+class CloudPanelServerDetailResponse(CloudPanelServerResponse):
+    """Includes credentials for editing - only used on single-server GET."""
+    ssh_password: Optional[str] = None
+    ssh_key: Optional[str] = None
+
 class CloudPanelSiteCreate(BaseModel):
     domainName: str
     phpVersion: str = "8.2"
@@ -45,3 +50,23 @@ class CloudPanelSiteCreate(BaseModel):
     custom_ssl_cert: Optional[str] = None
     custom_ssl_key: Optional[str] = None
     custom_ssl_chain: Optional[str] = None
+    company_logo_local_path: Optional[str] = None  # Temp file path for logo to copy to deployed site
+
+class CloudPanelSiteResponse(BaseModel):
+    id: int
+    server_id: int
+    domain_name: str
+    php_version: Optional[str] = None
+    site_user: Optional[str] = None
+    db_name: Optional[str] = None
+    db_user: Optional[str] = None
+    template_name: Optional[str] = None
+    created_at: datetime
+    server_name: Optional[str] = None
+    server_host: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class CloudPanelSiteDelete(BaseModel):
+    password: str

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 function playNotificationSound() {
@@ -27,8 +27,7 @@ import ChatWindow from '@/components/ChatWindow'
 import PlatformFilter from '@/components/PlatformFilter'
 import { useBranding } from '@/lib/branding-context'
 import { useEvents, type EventMessage } from '@/lib/events-context'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 interface Conversation {
   id: number
@@ -44,7 +43,15 @@ interface Conversation {
   assigned_to_name?: string | null
 }
 
-export default function DashboardPage() {
+export default function DashboardPageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div></div>}>
+      <DashboardPage />
+    </Suspense>
+  )
+}
+
+function DashboardPage() {
   const router = useRouter()
   const { subscribe } = useEvents()
   const [user, setUser] = useState<User | null>(null)

@@ -1,14 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import axios from 'axios'
 import Link from 'next/link'
 import { useBranding } from '@/lib/branding-context'
+import { API_URL } from '@/lib/config';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+export default function ResetPasswordWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div></div>}>
+      <ResetPassword />
+    </Suspense>
+  )
+}
 
-export default function ResetPassword() {
+function ResetPassword() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { branding } = useBranding()

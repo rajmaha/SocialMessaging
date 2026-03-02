@@ -6,6 +6,7 @@ import AdminNav from '@/components/AdminNav';
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2, Edit2, Save, X, GripVertical } from 'lucide-react';
+import { API_URL } from '@/lib/config';
 
 const APP_TYPES = [
     { id: 'cloud_hosting', label: 'Cloud Hosting' },
@@ -52,7 +53,7 @@ export default function TicketFieldsConfig() {
         setLoading(true);
         try {
             const token = getAuthToken();
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/dynamic-fields/${selectedAppType}`, {
+            const res = await fetch(`${API_URL}/api/admin/dynamic-fields/${selectedAppType}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -95,7 +96,7 @@ export default function TicketFieldsConfig() {
 
         try {
             const token = getAuthToken();
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/dynamic-fields/${id}`, {
+            const res = await fetch(`${API_URL}/api/admin/dynamic-fields/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -131,8 +132,8 @@ export default function TicketFieldsConfig() {
             const token = getAuthToken();
             const method = editingField ? 'PUT' : 'POST';
             const url = editingField
-                ? `${process.env.NEXT_PUBLIC_API_URL}/admin/dynamic-fields/${editingField.id}`
-                : `${process.env.NEXT_PUBLIC_API_URL}/admin/dynamic-fields`;
+                ? `${API_URL}/api/admin/dynamic-fields/${editingField.id}`
+                : `${API_URL}/api/admin/dynamic-fields`;
 
             const res = await fetch(url, {
                 method,

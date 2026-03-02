@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
 import AdminNav from '@/components/AdminNav';
+import { API_URL } from '@/lib/config';
 
 interface DashboardData {
   total_users: number;
@@ -38,7 +39,7 @@ export default function AdminDashboard() {
           return;
         }
 
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/dashboard`, {
+        const response = await fetch(`${API_URL}/admin/dashboard`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

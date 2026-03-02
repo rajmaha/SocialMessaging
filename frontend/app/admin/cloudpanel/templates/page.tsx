@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import MainHeader from "@/components/MainHeader"
 import AdminNav from '@/components/AdminNav'
-import { authAPI } from "@/lib/auth"
+import { authAPI, getAuthToken } from "@/lib/auth"
 
 export default function CloudPanelTemplatesPage() {
     const [isMounted, setIsMounted] = useState(false)
@@ -19,7 +19,9 @@ export default function CloudPanelTemplatesPage() {
     const fetchTemplates = async () => {
         setLoading(true)
         try {
-            const res = await fetch('http://localhost:8000/cloudpanel/templates')
+            const res = await fetch('http://localhost:8000/cloudpanel/templates', {
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            })
             if (res.ok) {
                 const data = await res.json()
                 setTemplates(data)
@@ -58,6 +60,7 @@ export default function CloudPanelTemplatesPage() {
         try {
             const res = await fetch('http://localhost:8000/cloudpanel/templates', {
                 method: 'POST',
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` },
                 body: formData
             })
 
@@ -87,7 +90,8 @@ export default function CloudPanelTemplatesPage() {
 
         try {
             const res = await fetch(`http://localhost:8000/cloudpanel/templates/${name}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
             })
             if (res.ok) {
                 setMessage({ type: 'success', text: `Template '${name}' deleted.` })

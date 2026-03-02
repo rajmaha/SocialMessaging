@@ -8,10 +8,12 @@ import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
 import {
     PhoneCall, PhoneIncoming, PhoneOutgoing, Clock, Play, Pause,
-    Download, Search, RefreshCw, Filter, X, User as UserIcon, Calendar, Hash
+    Download, Search, RefreshCw, Filter, X, User as UserIcon, Calendar, Hash, Eye
 } from 'lucide-react';
+import TicketHistory from '@/components/TicketHistory';
+import { API_URL } from '@/lib/config';
 
-const API = process.env.NEXT_PUBLIC_API_URL;
+const API = API_URL;
 
 export default function Recordings() {
     const user = authAPI.getUser();
@@ -26,6 +28,7 @@ export default function Recordings() {
     const [agents, setAgents] = useState<any[]>([]);
     const [organizations, setOrganizations] = useState<any[]>([]);
     const [playingId, setPlayingId] = useState<number | null>(null);
+    const [selectedRec, setSelectedRec] = useState<any | null>(null);
 
     // Filters
     const [phone, setPhone] = useState('');
@@ -400,6 +403,7 @@ export default function Recordings() {
                                     <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date & Time</th>
                                     <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Ticket</th>
                                     <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Duration</th>
+                                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Thread</th>
                                     <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Playback</th>
                                 </tr>
                             </thead>
@@ -431,9 +435,29 @@ export default function Recordings() {
                                         </td>
                                         <td className="px-5 py-3.5 whitespace-nowrap">
                                             {rec.ticket_number ? (
-                                                <Link href={`/workspace/tickets/${rec.ticket_number}`} className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 transition-colors">
-                                                    <Hash className="w-3 h-3" /> {rec.ticket_number}
-                                                </Link>
+                                                <div className="flex flex-col gap-1">
+                                                    {rec.parent_ticket_number && (
+                                                        <Link
+                                                            href={`/workspace/tickets/${rec.parent_ticket_number}`}
+                                                            className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 hover:text-indigo-600 hover:underline"
+                                                        >
+                                                            <Hash className="w-2.5 h-2.5" /> {rec.parent_ticket_number}
+                                                        </Link>
+                                                    )}
+                                                    <Link
+                                                        href={`/workspace/tickets/${rec.ticket_number}`}
+                                                        className={`inline-flex items-center gap-1 text-xs font-bold hover:underline px-2 py-0.5 rounded-md border transition-colors ${
+                                                            rec.ticket_number.startsWith('FLW-')
+                                                                ? 'text-orange-700 hover:text-orange-900 bg-orange-50 border-orange-200'
+                                                                : 'text-indigo-600 hover:text-indigo-800 bg-indigo-50 border-indigo-100'
+                                                        }`}
+                                                    >
+                                                        <Hash className="w-3 h-3" /> {rec.ticket_number}
+                                                    </Link>
+                                                    {rec.ticket_number.startsWith('FLW-') && (
+                                                        <span className="text-[10px] font-bold text-orange-500 uppercase tracking-wide">&crarr; Follow-Up</span>
+                                                    )}
+                                                </div>
                                             ) : (
                                                 <span className="text-xs text-gray-400 italic">—</span>
                                             )}
@@ -443,6 +467,18 @@ export default function Recordings() {
                                                 <Clock className="w-3.5 h-3.5 text-gray-400" />
                                                 {formatDuration(rec.duration_seconds)}
                                             </div>
+                                        </td>
+                                        <td className="px-5 py-3.5 whitespace-nowrap">
+                                            {rec.ticket_id ? (
+                                                <button
+                                                    onClick={() => setSelectedRec(rec)}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                                                >
+                                                    <Eye className="w-3.5 h-3.5" /> View
+                                                </button>
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">—</span>
+                                            )}
                                         </td>
                                         <td className="px-5 py-3.5 whitespace-nowrap text-right">
                                             {rec.has_audio ? (
@@ -508,6 +544,35 @@ export default function Recordings() {
                     )}
                 </div>
             </main>
+
+            {/* Threaded Ticket Side Panel */}
+            {selectedRec && (
+                <div className="fixed top-0 right-0 bottom-0 w-[520px] bg-white shadow-2xl z-50 border-l border-gray-200 flex flex-col animate-in slide-in-from-right">
+                    <div className="shrink-0 bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center">
+                        <div>
+                            <h2 className="text-lg font-bold text-gray-900 leading-none">Ticket Thread</h2>
+                            <p className="text-sm text-gray-500 mt-1">{selectedRec.customer_name || selectedRec.phone_number}</p>
+                        </div>
+                        <button
+                            onClick={() => setSelectedRec(null)}
+                            className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-full transition"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-hidden [&>div]:max-h-full [&>div]:rounded-none [&>div]:border-0 [&>div]:shadow-none">
+                        <TicketHistory
+                            activeNumber={selectedRec.phone_number}
+                            reloadKey={0}
+                            onFollowUpClick={() => {}}
+                            ticketId={selectedRec.ticket_id}
+                        />
+                    </div>
+                </div>
+            )}
+            {selectedRec && (
+                <div className="fixed inset-0 bg-gray-900/20 backdrop-blur-[2px] z-40" onClick={() => setSelectedRec(null)}></div>
+            )}
         </div>
     );
 }

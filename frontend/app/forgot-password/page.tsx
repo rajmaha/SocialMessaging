@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import Link from 'next/link'
 import { useBranding } from '@/lib/branding-context'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 export default function ForgotPassword() {
   const router = useRouter()

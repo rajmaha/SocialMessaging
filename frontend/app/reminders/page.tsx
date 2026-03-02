@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { authAPI, getAuthToken } from '@/lib/auth'
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -76,9 +76,18 @@ const STATUS_LABELS: Record<string, string> = {
     completed: 'Completed',
 }
 
-export default function RemindersPage() {
+export default function RemindersPageWrapper() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div></div>}>
+            <RemindersPage />
+        </Suspense>
+    )
+}
+
+function RemindersPage() {
     const router = useRouter()
-    const user = authAPI.getUser()
+    const [user, setUser] = useState<any>(null)
+    const [isMounted, setIsMounted] = useState(false)
     const { subscribe } = useEvents()
 
     const [activeTab, setActiveTab] = useState<'my' | 'shared'>('my')
@@ -110,7 +119,10 @@ export default function RemindersPage() {
     const [rescheduleDate, setRescheduleDate] = useState('')
 
     useEffect(() => {
-        if (!user) { router.push('/login'); return }
+        setIsMounted(true)
+        const userData = authAPI.getUser()
+        if (!userData) { router.push('/login'); return }
+        setUser(userData)
         fetchReminders()
         fetchSharedReminders()
     }, [])
@@ -270,10 +282,12 @@ export default function RemindersPage() {
 
     const formatDate = (dateStr: string | null) => {
         if (!dateStr) return 'No due date'
-        return new Date(dateStr).toLocaleString()
+        const d = new Date(dateStr)
+        // Use fixed format to avoid server/client locale mismatch
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
     }
 
-    if (!user) return null
+    if (!isMounted || !user) return null
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -282,41 +296,38 @@ export default function RemindersPage() {
                 <main className="max-w-5xl mx-auto p-6">
                     {/* Header */}
                     <div className="flex items-center justify-between mb-6">
-                        <h1 className="text-2xl font-bold text-gray-800">Reminders</h1>
+                        <h1 className="text-2xl font-bold text-gray-800">My Todos</h1>
                         <button
                             onClick={() => { setShowCreateModal(true); setForm({ title: '', description: '', priority: 'as_usual', due_date: '', status: 'scheduled' }) }}
                             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
                         >
-                            <FiPlus size={16} /> New Reminder
+                            <FiPlus size={16} /> New Todo
                         </button>
                     </div>
 
-                    {/* Tabs */}
-                    <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit">
-                        <button
-                            onClick={() => setActiveTab('my')}
-                            className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'my' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
-                        >
-                            My Reminders
-                        </button>
-                        <button
-                            onClick={() => { setActiveTab('shared'); fetchSharedReminders() }}
-                            className={`px-4 py-2 rounded-md text-sm font-medium transition relative ${activeTab === 'shared' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
-                        >
-                            Shared With Me
-                            {sharedReminders.filter(s => !s.is_seen).length > 0 && (
-                                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                                    {sharedReminders.filter(s => !s.is_seen).length}
-                                </span>
-                            )}
-                        </button>
-                    </div>
-
-                    {/* My Reminders Tab */}
-                    {activeTab === 'my' && (
-                        <>
-                            {/* Filters */}
-                            <div className="flex gap-3 mb-4">
+                    {/* Tabs + Filters in one row */}
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                            <button
+                                onClick={() => setActiveTab('my')}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'my' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                My Todos
+                            </button>
+                            <button
+                                onClick={() => { setActiveTab('shared'); fetchSharedReminders() }}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition relative ${activeTab === 'shared' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                Shared With Me
+                                {sharedReminders.filter(s => !s.is_seen).length > 0 && (
+                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                                        {sharedReminders.filter(s => !s.is_seen).length}
+                                    </span>
+                                )}
+                            </button>
+                        </div>
+                        {activeTab === 'my' && (
+                            <div className="flex gap-2">
                                 <select
                                     value={filterStatus}
                                     onChange={e => setFilterStatus(e.target.value)}
@@ -339,6 +350,12 @@ export default function RemindersPage() {
                                     <option value="urgent">Urgent</option>
                                 </select>
                             </div>
+                        )}
+                    </div>
+
+                    {/* My Todos Tab */}
+                    {activeTab === 'my' && (
+                        <>
 
                             {loading ? (
                                 <div className="text-center py-12 text-gray-500">Loading...</div>

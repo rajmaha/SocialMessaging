@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import MainHeader from "@/components/MainHeader"
 import AdminNav from '@/components/AdminNav'
-import { authAPI } from "@/lib/auth"
+import { authAPI, getAuthToken } from "@/lib/auth"
 
 interface CloudPanelServer {
     id: number
@@ -22,9 +22,13 @@ export default function CloudPanelSSLPage() {
     const [loadingReport, setLoadingReport] = useState(false)
     const [renewingDomain, setRenewingDomain] = useState<string | null>(null)
 
+    function authHeaders(): Record<string, string> {
+        return { 'Authorization': `Bearer ${getAuthToken()}` }
+    }
+
     const fetchServers = async () => {
         try {
-            const res = await fetch('http://localhost:8000/cloudpanel/servers')
+            const res = await fetch('http://localhost:8000/cloudpanel/servers', { headers: authHeaders() })
             if (res.ok) {
                 const data = await res.json()
                 setServers(data)
@@ -47,7 +51,7 @@ export default function CloudPanelSSLPage() {
         }
         setLoadingReport(true)
         try {
-            const res = await fetch(`http://localhost:8000/cloudpanel/servers/${serverId}/ssl-report`)
+            const res = await fetch(`http://localhost:8000/cloudpanel/servers/${serverId}/ssl-report`, { headers: authHeaders() })
             if (res.ok) {
                 const data = await res.json()
                 setSslReports(data)
@@ -66,7 +70,8 @@ export default function CloudPanelSSLPage() {
         setRenewingDomain(domain)
         try {
             const res = await fetch(`http://localhost:8000/cloudpanel/servers/${selectedMonitorServerId}/sites/${domain}/renew-ssl`, {
-                method: 'POST'
+                method: 'POST',
+                headers: authHeaders()
             })
             if (res.ok) {
                 setMessage({ type: 'success', text: `SSL renewed for ${domain}` })

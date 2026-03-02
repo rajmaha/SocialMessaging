@@ -1,17 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, CreditCard, Globe, Trash2, Edit2, X, CheckCircle2 } from 'lucide-react'
+import { Plus, CreditCard, Globe, Trash2, Edit2, X, CheckCircle2, Upload, Image, Server, FileCode } from 'lucide-react'
 import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config';
 
 interface Subscription {
     id: number
     subscribed_product: string | null
     modules: string[]
     system_url: string | null
+    company_logo_url: string | null
     subscribed_on_date: string | null
     billed_from_date: string | null
     expire_date: string | null
@@ -24,9 +24,36 @@ interface SubscriptionModule {
     is_active: number
 }
 
+interface CloudPanelServer {
+    id: number
+    name: string
+    host: string
+}
+
+interface SiteTemplate {
+    name: string
+    has_files: boolean
+}
+
+interface DeployStep {
+    id: string
+    label: string
+    status: 'pending' | 'done' | 'skipped' | 'error' | 'in_progress'
+}
+
 interface SubscriptionManagementProps {
     organizationId: number
 }
+
+const DEPLOY_STEPS = [
+    { id: 'creating_site', label: 'Creating Site' },
+    { id: 'creating_ssl', label: 'Creating SSL' },
+    { id: 'deploying_files', label: 'Deploying Template Files' },
+    { id: 'copying_logo', label: 'Copying Company Logo' },
+    { id: 'running_script', label: 'Running Auto Script' },
+    { id: 'creating_database', label: 'Creating Database' },
+    { id: 'importing_database', label: 'Importing Database' },
+]
 
 export default function SubscriptionManagement({ organizationId }: SubscriptionManagementProps) {
     const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
@@ -36,10 +63,22 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
     const [saving, setSaving] = useState(false)
     const [isReadOnly, setIsReadOnly] = useState(false)
     const [availableModules, setAvailableModules] = useState<SubscriptionModule[]>([])
+    const [logoFile, setLogoFile] = useState<File | null>(null)
+    const [logoPreview, setLogoPreview] = useState<string | null>(null)
+
+    // CloudPanel deployment state
+    const [servers, setServers] = useState<CloudPanelServer[]>([])
+    const [templates, setTemplates] = useState<SiteTemplate[]>([])
+    const [selectedServerId, setSelectedServerId] = useState('')
+    const [selectedTemplate, setSelectedTemplate] = useState('default_site')
+    const [deploying, setDeploying] = useState(false)
+    const [deploySteps, setDeploySteps] = useState<DeployStep[]>([])
+    const [deployError, setDeployError] = useState('')
 
     useEffect(() => {
         fetchSubscriptions()
         fetchAvailableModules()
+        fetchServersAndTemplates()
     }, [organizationId])
 
     const fetchAvailableModules = async () => {
@@ -49,7 +88,6 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
             const res = await axios.get(`${API_URL}/organizations/subscription-modules`, {
                 headers: { Authorization: authHeader }
             })
-            // Only show active modules in the selection list
             setAvailableModules(res.data.filter((m: SubscriptionModule) => m.is_active === 1))
         } catch (error) {
             console.error('Error fetching available modules:', error)
@@ -72,20 +110,43 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
         }
     }
 
+    const fetchServersAndTemplates = async () => {
+        try {
+            const token = getAuthToken()
+            const headers = { Authorization: `Bearer ${token}` }
+            const [serversRes, templatesRes] = await Promise.all([
+                axios.get(`${API_URL}/cloudpanel/servers`, { headers }),
+                axios.get(`${API_URL}/cloudpanel/templates`, { headers })
+            ])
+            setServers(serversRes.data)
+            setTemplates(templatesRes.data)
+        } catch (error) {
+            console.error('Error fetching servers/templates:', error)
+        }
+    }
+
     const handleOpenModal = (sub: Subscription | null = null) => {
+        setLogoFile(null)
+        setDeploySteps([])
+        setDeployError('')
+        setSelectedServerId('')
+        setSelectedTemplate('default_site')
         if (sub) {
             setCurrentSub({ ...sub })
+            setLogoPreview(sub.company_logo_url ? `${API_URL}${sub.company_logo_url}` : null)
             setIsReadOnly(true)
         } else {
             setCurrentSub({
                 subscribed_product: '',
                 modules: [],
                 system_url: '',
+                company_logo_url: null,
                 subscribed_on_date: new Date().toISOString().split('T')[0],
                 billed_from_date: new Date().toISOString().split('T')[0],
                 expire_date: '',
                 organization_id: organizationId
             })
+            setLogoPreview(null)
             setIsReadOnly(false)
         }
         setIsModalOpen(true)
@@ -96,27 +157,133 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
         if (!currentSub) return
 
         setSaving(true)
+        setDeployError('')
+
         try {
             const token = getAuthToken()
             const authHeader = token ? `Bearer ${token}` : ''
 
-            const payload = { ...currentSub }
-
+            // For editing existing subscriptions, use the old flow (no deployment)
             if (currentSub.id) {
+                const payload = { ...currentSub }
                 await axios.put(`${API_URL}/organizations/subscriptions/${currentSub.id}`, payload, {
                     headers: { Authorization: authHeader }
                 })
-            } else {
-                await axios.post(`${API_URL}/organizations/${organizationId}/subscriptions`, payload, {
-                    headers: { Authorization: authHeader }
-                })
+
+                // Upload company logo if a new file was selected
+                if (logoFile) {
+                    const logoData = new FormData()
+                    logoData.append('file', logoFile)
+                    await axios.post(`${API_URL}/organizations/subscriptions/${currentSub.id}/company-logo`, logoData, {
+                        headers: { Authorization: authHeader, 'Content-Type': 'multipart/form-data' }
+                    })
+                }
+
+                setIsModalOpen(false)
+                fetchSubscriptions()
+                return
             }
-            setIsModalOpen(false)
-            fetchSubscriptions()
+
+            // For new subscriptions: deploy site first, then create subscription
+            if (!selectedServerId) {
+                alert('Please select a server for deployment.')
+                setSaving(false)
+                return
+            }
+
+            if (!currentSub.system_url) {
+                alert('System URL is required for site deployment.')
+                setSaving(false)
+                return
+            }
+
+            // Start deployment via SSE
+            setDeploying(true)
+            setDeploySteps(DEPLOY_STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'in_progress' : 'pending' })))
+
+            const formData = new FormData()
+            formData.append('server_id', selectedServerId)
+            formData.append('subscribed_product', currentSub.subscribed_product || '')
+            formData.append('modules', JSON.stringify(currentSub.modules || []))
+            formData.append('system_url', currentSub.system_url || '')
+            formData.append('template_name', selectedTemplate)
+            formData.append('subscribed_on_date', currentSub.subscribed_on_date || '')
+            formData.append('billed_from_date', currentSub.billed_from_date || '')
+            formData.append('expire_date', currentSub.expire_date || '')
+            if (logoFile) {
+                formData.append('company_logo', logoFile)
+            }
+
+            const res = await fetch(`${API_URL}/organizations/${organizationId}/subscriptions/deploy-and-create`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            })
+
+            if (!res.ok) {
+                const errData = await res.json()
+                setDeployError(errData.detail || 'Failed to start deployment.')
+                setDeploying(false)
+                setSaving(false)
+                return
+            }
+
+            const reader = res.body?.getReader()
+            const decoder = new TextDecoder()
+            let buffer = ''
+
+            while (reader) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                buffer += decoder.decode(value, { stream: true })
+                const lines = buffer.split('\n')
+                buffer = lines.pop() || ''
+
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue
+                    const eventData = JSON.parse(line.slice(6))
+
+                    if (eventData.step === 'error') {
+                        setDeployError(eventData.message || 'Deployment failed.')
+                        setDeploySteps(prev => prev.map(s => s.status === 'in_progress' ? { ...s, status: 'error' } : s))
+                        setDeploying(false)
+                        setSaving(false)
+                        return
+                    }
+
+                    if (eventData.step === 'subscription_created') {
+                        // Deployment + subscription creation succeeded
+                        setDeploying(false)
+                        setSaving(false)
+                        fetchSubscriptions()
+                        // Don't close modal yet — let user see the success state and close manually
+                    } else if (eventData.step === 'complete') {
+                        // Site deployment complete, subscription creation follows
+                        setDeploySteps(prev => prev.map(s =>
+                            s.status === 'in_progress' ? { ...s, status: 'done' } : s
+                        ))
+                    } else {
+                        // Mark completed step and set next step as in_progress
+                        setDeploySteps(prev => {
+                            const updated = prev.map(s =>
+                                s.id === eventData.step ? { ...s, status: eventData.status as DeployStep['status'] } : s
+                            )
+                            const doneIdx = updated.findIndex(s => s.id === eventData.step)
+                            if (doneIdx >= 0 && doneIdx + 1 < updated.length && updated[doneIdx + 1].status === 'pending') {
+                                updated[doneIdx + 1] = { ...updated[doneIdx + 1], status: 'in_progress' }
+                            }
+                            return updated
+                        })
+                    }
+                }
+            }
         } catch (error) {
             console.error('Error saving subscription:', error)
-            alert('Failed to save subscription')
+            setDeployError('Network error during deployment.')
+            setDeploySteps(prev => prev.map(s => s.status === 'in_progress' ? { ...s, status: 'error' } : s))
         } finally {
+            setDeploying(false)
             setSaving(false)
         }
     }
@@ -238,10 +405,85 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                 </div>
             )}
 
+            {/* Deployment Progress Modal */}
+            {deploySteps.length > 0 && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/30">
+                            <h3 className="text-lg font-bold text-gray-900 text-center">Deploying Site</h3>
+                        </div>
+                        <div className="p-6">
+                            <ul className="space-y-3">
+                                {deploySteps.map((step) => (
+                                    <li key={step.id} className="flex items-center gap-3">
+                                        {step.status === 'done' && (
+                                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
+                                                <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            </span>
+                                        )}
+                                        {step.status === 'in_progress' && (
+                                            <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+                                                <svg className="animate-spin w-5 h-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                                </svg>
+                                            </span>
+                                        )}
+                                        {step.status === 'pending' && (
+                                            <span className="flex-shrink-0 w-6 h-6 rounded-full border-2 border-gray-300" />
+                                        )}
+                                        {step.status === 'skipped' && (
+                                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center">
+                                                <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+                                                </svg>
+                                            </span>
+                                        )}
+                                        {step.status === 'error' && (
+                                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-red-100 flex items-center justify-center">
+                                                <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </span>
+                                        )}
+                                        <span className={`text-sm font-medium ${step.status === 'done' ? 'text-green-700' : step.status === 'in_progress' ? 'text-blue-700' : step.status === 'error' ? 'text-red-700' : step.status === 'skipped' ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            {step.label}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+
+                            {deployError && (
+                                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                                    {deployError}
+                                </div>
+                            )}
+
+                            {!deploying && !deployError && deploySteps.every(s => s.status === 'done' || s.status === 'skipped') && (
+                                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                                    <p className="font-semibold">Site deployed & subscription created successfully!</p>
+                                </div>
+                            )}
+
+                            {!deploying && (
+                                <button
+                                    onClick={() => { setDeploySteps([]); setDeployError(''); setIsModalOpen(false) }}
+                                    className="mt-5 w-full py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+                                >
+                                    Close
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Subscription Modal */}
             {isModalOpen && currentSub && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
                             <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                                 {currentSub.id ? (isReadOnly ? 'Subscription Details' : 'Edit Subscription') : 'New Subscription'}
@@ -261,23 +503,25 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                                 </button>
                             </div>
                         </div>
-                        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Product Name *</label>
+                        <form onSubmit={handleSubmit} className="p-6 space-y-3 max-h-[70vh] overflow-y-auto">
+                            {/* Product Name */}
+                            <div className="flex items-center gap-4">
+                                <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">Product Name *</label>
                                 <input
                                     required
                                     disabled={isReadOnly}
                                     type="text"
-                                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                    className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
                                     placeholder="e.g. Social CRM Pro"
                                     value={currentSub.subscribed_product || ''}
                                     onChange={(e) => setCurrentSub({ ...currentSub, subscribed_product: e.target.value })}
                                 />
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Enabled Modules</label>
-                                <div className="grid grid-cols-2 gap-2">
+                            {/* Enabled Modules */}
+                            <div className="flex gap-4">
+                                <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider pt-2">Modules</label>
+                                <div className="flex-1 grid grid-cols-2 gap-2">
                                     {availableModules.length > 0 ? (
                                         availableModules.map(mod => (
                                             <button
@@ -301,50 +545,151 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">System URL</label>
-                                <input
-                                    disabled={isReadOnly}
-                                    type="text"
-                                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
-                                    placeholder="https://customer-app.example.com"
-                                    value={currentSub.system_url || ''}
-                                    onChange={(e) => setCurrentSub({ ...currentSub, system_url: e.target.value })}
-                                />
-                            </div>
+                            {/* Server dropdown — only for new subscriptions */}
+                            {!currentSub.id && (
+                                <div className="flex items-center gap-4">
+                                    <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1">
+                                        <Server className="w-3.5 h-3.5" />
+                                        Server *
+                                    </label>
+                                    <select
+                                        required
+                                        disabled={isReadOnly}
+                                        className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                        value={selectedServerId}
+                                        onChange={(e) => setSelectedServerId(e.target.value)}
+                                    >
+                                        <option value="">-- Select a Server --</option>
+                                        {servers.map(s => (
+                                            <option key={s.id} value={s.id}>{s.name} ({s.host})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Subscribed On</label>
-                                    <input
-                                        disabled={isReadOnly}
-                                        type="date"
-                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
-                                        value={currentSub.subscribed_on_date || ''}
-                                        onChange={(e) => setCurrentSub({ ...currentSub, subscribed_on_date: e.target.value })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Billed From</label>
-                                    <input
-                                        disabled={isReadOnly}
-                                        type="date"
-                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
-                                        value={currentSub.billed_from_date || ''}
-                                        onChange={(e) => setCurrentSub({ ...currentSub, billed_from_date: e.target.value })}
-                                    />
-                                </div>
-                                <div className="col-span-2 text-center py-1">
-                                    <label className="block text-xs font-extrabold text-red-600 uppercase tracking-wider mb-1">Expiration Date *</label>
+                            {/* System URL */}
+                            <div className="flex items-start gap-4">
+                                <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider pt-2.5">System URL *</label>
+                                <div className="flex-1">
                                     <input
                                         required
                                         disabled={isReadOnly}
-                                        type="date"
-                                        className={`w-full px-4 py-2 border-2 rounded-lg outline-none font-bold disabled:bg-gray-50 disabled:text-gray-500 ${isReadOnly ? 'border-gray-100' : 'border-red-100 focus:ring-4 focus:ring-red-50/50 focus:border-red-400'}`}
-                                        value={currentSub.expire_date || ''}
-                                        onChange={(e) => setCurrentSub({ ...currentSub, expire_date: e.target.value })}
+                                        type="text"
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                        placeholder="https://customer-app.example.com"
+                                        value={currentSub.system_url || ''}
+                                        onChange={(e) => setCurrentSub({ ...currentSub, system_url: e.target.value })}
                                     />
+                                    {!currentSub.id && (
+                                        <p className="text-[10px] text-gray-400 mt-1">The domain/subdomain from this URL will be used to deploy the site.</p>
+                                    )}
                                 </div>
+                            </div>
+
+                            {/* Site Template dropdown — only for new subscriptions */}
+                            {!currentSub.id && (
+                                <div className="flex items-center gap-4">
+                                    <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1">
+                                        <FileCode className="w-3.5 h-3.5" />
+                                        Site Template
+                                    </label>
+                                    <select
+                                        disabled={isReadOnly}
+                                        className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                        value={selectedTemplate}
+                                        onChange={(e) => setSelectedTemplate(e.target.value)}
+                                    >
+                                        {templates.length > 0 ? templates.map(t => (
+                                            <option key={t.name} value={t.name}>
+                                                {t.name === 'default_site' ? 'default_site (System default)' : `${t.name}${t.has_files ? '' : ' (Empty)'}`}
+                                            </option>
+                                        )) : <option value="default_site">default_site (System default)</option>}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Company Logo */}
+                            <div className="flex items-center gap-4">
+                                <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">Company Logo</label>
+                                <div className="flex-1 flex items-center gap-4">
+                                    {logoPreview ? (
+                                        <div className="relative w-14 h-14 rounded-lg border border-gray-200 overflow-hidden bg-gray-50 flex-shrink-0">
+                                            <img src={logoPreview} alt="Company logo" className="w-full h-full object-contain" />
+                                            {!isReadOnly && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setLogoFile(null); setLogoPreview(null); }}
+                                                    className="absolute -top-0 -right-0 bg-red-500 text-white rounded-full p-0.5"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="w-14 h-14 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center bg-gray-50 flex-shrink-0">
+                                            <Image className="w-5 h-5 text-gray-300" />
+                                        </div>
+                                    )}
+                                    {!isReadOnly && (
+                                        <div>
+                                            <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition-colors">
+                                                <Upload className="w-4 h-4" />
+                                                {logoPreview ? 'Change Logo' : 'Upload Logo'}
+                                                <input
+                                                    type="file"
+                                                    className="hidden"
+                                                    accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml"
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0]
+                                                        if (!file) return
+                                                        if (file.size > 200 * 1024) {
+                                                            alert('File too large. Maximum size is 200KB.')
+                                                            return
+                                                        }
+                                                        setLogoFile(file)
+                                                        setLogoPreview(URL.createObjectURL(file))
+                                                    }}
+                                                />
+                                            </label>
+                                            <p className="text-[10px] text-gray-400 mt-1">Max 200KB. JPEG, PNG, GIF, WebP, SVG</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Date fields */}
+                            <div className="flex items-center gap-4">
+                                <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">Subscribed On</label>
+                                <input
+                                    disabled={isReadOnly}
+                                    type="date"
+                                    className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                    value={currentSub.subscribed_on_date || ''}
+                                    onChange={(e) => setCurrentSub({ ...currentSub, subscribed_on_date: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                                <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">Billed From</label>
+                                <input
+                                    disabled={isReadOnly}
+                                    type="date"
+                                    className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                    value={currentSub.billed_from_date || ''}
+                                    onChange={(e) => setCurrentSub({ ...currentSub, billed_from_date: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                                <label className="w-36 flex-shrink-0 text-xs font-extrabold text-red-600 uppercase tracking-wider">Expiration *</label>
+                                <input
+                                    required
+                                    disabled={isReadOnly}
+                                    type="date"
+                                    className={`flex-1 px-4 py-2 border-2 rounded-lg outline-none font-bold disabled:bg-gray-50 disabled:text-gray-500 ${isReadOnly ? 'border-gray-100' : 'border-red-100 focus:ring-4 focus:ring-red-50/50 focus:border-red-400'}`}
+                                    value={currentSub.expire_date || ''}
+                                    onChange={(e) => setCurrentSub({ ...currentSub, expire_date: e.target.value })}
+                                />
                             </div>
 
                             <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">
@@ -362,7 +707,7 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                                         className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-50 inline-flex items-center gap-2"
                                     >
                                         {saving && <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                                        {saving ? 'Saving...' : 'Activate Subscription'}
+                                        {saving ? (currentSub.id ? 'Saving...' : 'Deploying...') : 'Activate Subscription'}
                                     </button>
                                 )}
                             </div>

@@ -50,9 +50,9 @@ echo -e "${GREEN}Backend started (PID: $BACKEND_PID) → $BACKEND_LOG${NC}"
 
 # Wait for backend to be ready
 echo -n "Waiting for backend..."
-for i in {1..15}; do
-  sleep 1
-  if curl -s http://localhost:8000/ > /dev/null 2>&1; then
+for i in {1..30}; do
+  sleep 2
+  if curl -s --max-time 2 http://localhost:8000/health > /dev/null 2>&1; then
     echo -e " ${GREEN}ready!${NC}"
     break
   fi

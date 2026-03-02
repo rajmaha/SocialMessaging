@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import MainHeader from '@/components/MainHeader'
 import AdminNav from '@/components/AdminNav'
 import { authAPI } from '@/lib/auth'
+import { API_URL } from '@/lib/config';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const API = API_URL
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface ReminderSchedule {

@@ -3,8 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.database import Base, engine, SessionLocal
 from app.config import settings
-from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat, bot, webhooks, teams, reports, call_center, telephony, calls, extensions, agent_workspace, reminders, notifications, tickets, dynamic_fields, organizations, cloudpanel, cloudpanel_templates
-from app.routes import todos as todo_routes, calendar as calendar_routes
+from app.models.cloudpanel_site import CloudPanelSite  # noqa: F401 — ensures table creation
+from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat, bot, webhooks, teams, reports, call_center, telephony, calls, extensions, agent_workspace, reminders, notifications, tickets, dynamic_fields, organizations, cloudpanel, cloudpanel_templates, individuals
+from app.routes import todos as todo_routes, calendar as calendar_routes, calendar_settings as calendar_settings_routes
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -111,6 +112,8 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS agent_name VARCHAR"))
         conn.execute(text("ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS disposition VARCHAR DEFAULT 'ANSWERED'"))
         conn.execute(text("ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS recording_file VARCHAR"))
+        conn.execute(text("ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS ticket_number VARCHAR"))
+        conn.execute(text("ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id) ON DELETE SET NULL"))
         # Agent Extensions tracking table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS agent_extensions (
@@ -309,6 +312,28 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS forward_target VARCHAR"))
         conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS forward_reason VARCHAR"))
         
+        # Ticket new columns for customer type, contact person, email
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_type VARCHAR"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS contact_person VARCHAR"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_email VARCHAR"))
+        # Subscription company logo
+        conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS company_logo_url VARCHAR"))
+        # Individuals table (created by SQLAlchemy create_all, but belt-and-suspenders)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS individuals (
+                id SERIAL PRIMARY KEY,
+                full_name VARCHAR NOT NULL,
+                gender VARCHAR NOT NULL,
+                dob DATE,
+                phone_numbers JSON DEFAULT '[]',
+                address TEXT,
+                email VARCHAR,
+                social_media JSON DEFAULT '[]',
+                is_active INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
         # Dynamic Fields configuration table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS dynamic_fields (
@@ -373,6 +398,21 @@ def _run_inline_migrations():
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
         """))
+        # Calendar integration settings (admin-configurable OAuth credentials)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS calendar_integration_settings (
+                id SERIAL PRIMARY KEY,
+                google_enabled BOOLEAN DEFAULT FALSE,
+                google_client_id VARCHAR,
+                google_client_secret VARCHAR,
+                microsoft_enabled BOOLEAN DEFAULT FALSE,
+                microsoft_client_id VARCHAR,
+                microsoft_client_secret VARCHAR,
+                microsoft_tenant_id VARCHAR DEFAULT 'common',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        """))
         conn.commit()
 
 try:
@@ -380,6 +420,80 @@ try:
 except Exception as _mig_err:
     import logging as _log
     _log.getLogger(__name__).warning("Inline migration skipped: %s", _mig_err)
+
+def _backfill_call_records_for_tickets():
+    """
+    One-time backfill: ensure every origin ticket (no parent_ticket_id)
+    has at least one call record pointing to it via ticket_number.
+    Also fix call records that have ticket_number=None by matching
+    them to the closest origin ticket by timestamp.
+    """
+    from app.models.ticket import Ticket
+    from app.models.call_records import CallRecording
+    from datetime import timedelta
+    db = SessionLocal()
+    try:
+        # 1. Fix call records with ticket_number=None
+        orphan_calls = db.query(CallRecording).filter(
+            CallRecording.ticket_number == None  # noqa: E711
+        ).all()
+        for call in orphan_calls:
+            closest = db.query(Ticket).filter(
+                Ticket.phone_number == call.phone_number,
+                Ticket.parent_ticket_id == None,  # noqa: E711
+                Ticket.created_at >= call.created_at - timedelta(minutes=30),
+                Ticket.created_at <= call.created_at + timedelta(minutes=30),
+            ).order_by(Ticket.created_at).first()
+            if closest:
+                # Only link if no other call record already points to this ticket
+                already_linked = db.query(CallRecording).filter(
+                    CallRecording.ticket_number == closest.ticket_number
+                ).first()
+                if not already_linked:
+                    call.ticket_number = closest.ticket_number
+                    logger.info("Backfill: linked call %d -> ticket %s", call.id, closest.ticket_number)
+                else:
+                    # Orphan call is a duplicate; remove it
+                    db.delete(call)
+                    logger.info("Backfill: removed orphan call %d (ticket %s already covered)", call.id, closest.ticket_number)
+
+        db.flush()
+
+        # 2. Create missing call records for origin tickets that have none
+        origin_tickets = db.query(Ticket).filter(
+            Ticket.parent_ticket_id == None  # noqa: E711
+        ).all()
+        for ticket in origin_tickets:
+            existing = db.query(CallRecording).filter(
+                CallRecording.ticket_number == ticket.ticket_number
+            ).first()
+            if not existing:
+                new_call = CallRecording(
+                    agent_id=ticket.assigned_to,
+                    agent_name=None,
+                    phone_number=ticket.phone_number,
+                    organization_id=ticket.organization_id,
+                    direction="inbound",
+                    disposition="ANSWERED",
+                    duration_seconds=0,
+                    ticket_number=ticket.ticket_number,
+                )
+                db.add(new_call)
+                db.flush()
+                new_call.created_at = ticket.created_at
+                logger.info("Backfill: created call record for ticket %s", ticket.ticket_number)
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning("Backfill call records skipped: %s", e)
+    finally:
+        db.close()
+
+try:
+    _backfill_call_records_for_tickets()
+except Exception as _bf_err:
+    logger.warning("Backfill skipped: %s", _bf_err)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -494,8 +608,10 @@ app.include_router(dynamic_fields.router)
 app.include_router(organizations.router)
 app.include_router(cloudpanel.router)
 app.include_router(cloudpanel_templates.router)
+app.include_router(individuals.router)
 app.include_router(todo_routes.router)
 app.include_router(calendar_routes.router)
+app.include_router(calendar_settings_routes.router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
@@ -516,6 +632,11 @@ app.mount("/attachments/messages", StaticFiles(directory=MSG_ATTACH_DIR), name="
 LOGO_DIR = os.path.join(os.path.dirname(__file__), "logo_storage")
 os.makedirs(LOGO_DIR, exist_ok=True)
 app.mount("/logos", StaticFiles(directory=LOGO_DIR), name="logos")
+
+# Serve subscription company logos
+SUB_LOGO_DIR = os.path.join(os.path.dirname(__file__), "subscription_logo_storage")
+os.makedirs(SUB_LOGO_DIR, exist_ok=True)
+app.mount("/subscription-logos", StaticFiles(directory=SUB_LOGO_DIR), name="subscription_logos")
 
 # Auto-sync scheduler
 scheduler = None
