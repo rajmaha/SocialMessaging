@@ -510,8 +510,95 @@ def get_report_email_single(
 ):
     """Admin endpoint to get a single email regardless of account ownership."""
     email = db.query(Email).filter(Email.id == email_id).first()
-    
+
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
-        
+
     return email
+
+
+@router.get("/dashboard-summary")
+def get_dashboard_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Unified dashboard summary: messaging + CRM + agents."""
+    from datetime import datetime, timedelta
+    from app.models.crm import Lead, Deal, LeadStatus
+    from sqlalchemy import func
+
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = datetime.utcnow() - timedelta(days=7)
+
+    # --- Conversations ---
+    total_today = db.query(Conversation).filter(Conversation.created_at >= today_start).count()
+    open_count = db.query(Conversation).filter(Conversation.status == "open").count()
+    pending_count = db.query(Conversation).filter(Conversation.status == "pending").count()
+    resolved_count = db.query(Conversation).filter(Conversation.status == "resolved").count()
+
+    # Avg first response time (minutes) - all time
+    from app.models.conversation import Conversation as Conv
+    avg_response = db.query(func.avg(
+        func.extract('epoch', Conv.first_response_at - Conv.created_at) / 60
+    )).filter(Conv.first_response_at.isnot(None)).scalar()
+
+    avg_rating = db.query(func.avg(Conv.rating)).filter(Conv.rating.isnot(None)).scalar()
+
+    # --- CRM ---
+    new_leads_week = db.query(Lead).filter(Lead.created_at >= week_start).count()
+    total_leads = db.query(Lead).count()
+    converted_leads = db.query(Lead).filter(Lead.status == "converted").count()
+
+    pipeline_value = db.query(func.sum(Deal.amount)).filter(
+        Deal.stage.notin_(["won", "lost"])
+    ).scalar() or 0
+
+    won_deals = db.query(Deal).filter(Deal.stage == "won").count()
+    total_closed = db.query(Deal).filter(Deal.stage.in_(["won", "lost"])).count()
+    win_rate = round((won_deals / total_closed * 100) if total_closed else 0, 1)
+
+    # Pipeline by stage
+    from app.models.crm import DealStage
+    pipeline_by_stage = {}
+    for stage in ["prospect", "qualified", "proposal", "negotiation", "close", "won", "lost"]:
+        count = db.query(Deal).filter(Deal.stage == stage).count()
+        value = db.query(func.sum(Deal.amount)).filter(Deal.stage == stage).scalar() or 0
+        pipeline_by_stage[stage] = {"count": count, "value": float(value)}
+
+    # --- Agent leaderboard (resolved today) ---
+    from app.models.user import User as UserModel
+    agents = db.query(UserModel).filter(UserModel.role.in_(["admin", "agent"])).all()
+    leaderboard = []
+    for agent in agents:
+        resolved_today = db.query(Conv).filter(
+            Conv.assigned_to == agent.id,
+            Conv.status == "resolved",
+            Conv.resolved_at >= today_start,
+        ).count()
+        if resolved_today > 0:
+            leaderboard.append({
+                "id": agent.id,
+                "name": agent.full_name or agent.email,
+                "resolved_today": resolved_today,
+            })
+    leaderboard.sort(key=lambda x: x["resolved_today"], reverse=True)
+
+    return {
+        "conversations": {
+            "total_today": total_today,
+            "open": open_count,
+            "pending": pending_count,
+            "resolved": resolved_count,
+            "avg_response_min": round(float(avg_response), 1) if avg_response else None,
+            "avg_rating": round(float(avg_rating), 2) if avg_rating else None,
+        },
+        "crm": {
+            "new_leads_week": new_leads_week,
+            "total_leads": total_leads,
+            "converted_leads": converted_leads,
+            "pipeline_value": float(pipeline_value),
+            "win_rate": win_rate,
+            "pipeline_by_stage": pipeline_by_stage,
+        },
+        "leaderboard": leaderboard[:5],
+    }

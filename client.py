@@ -121,6 +121,18 @@ class SocialMediaAPI:
         
         return result
     
+    def create_checkout_session(self, price_id: str, organization_id: int) -> Dict[str, Any]:
+        """Request a Stripe checkout session for a subscription"""
+        payload = {"price_id": price_id, "organization_id": organization_id}
+        response = requests.post(f"{self.base_url}/billing/create-checkout-session", json=payload)
+        return response.json()
+    
+    def record_usage_event(self, event_type: str, data: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Log a usage event for analytics"""
+        payload = {"event_type": event_type, "data": data or {}}
+        response = requests.post(f"{self.base_url}/billing/usage-events", json=payload)
+        return response.json()
+    
     def search_conversations(self, query: str) -> Dict[str, Any]:
         """Search conversations"""
         if not self.user_id:

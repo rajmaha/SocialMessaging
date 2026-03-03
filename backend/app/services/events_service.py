@@ -127,3 +127,7 @@ class EventTypes:
     REMINDER_SHARED = "reminder_shared"
     REMINDER_COMMENT = "reminder_comment"
     REMINDER_DUE = "reminder_due"
+    # CRM events
+    CRM_LEAD_ASSIGNED = "crm_lead_assigned"
+    CRM_DEAL_STAGE_CHANGED = "crm_deal_stage_changed"
+    CRM_TASK_OVERDUE = "crm_task_overdue"

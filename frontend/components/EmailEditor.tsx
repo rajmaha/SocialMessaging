@@ -7,7 +7,7 @@ import TextAlign from '@tiptap/extension-text-align'
 import { TextStyleKit } from '@tiptap/extension-text-style'
 import Image from '@tiptap/extension-image'
 import { TableKit } from '@tiptap/extension-table'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import MediaLibraryModal from './MediaLibraryModal'
 import { CustomTableCell, CustomTableHeader } from './tiptap-table-cells'
 
@@ -51,10 +51,6 @@ function ToolBtn({ onClick, active, title, children }: {
 }
 
 export default function EmailEditor({ content, onChange }: EmailEditorProps) {
-  const textColorRef  = useRef<HTMLInputElement>(null)
-  const bgColorRef    = useRef<HTMLInputElement>(null)
-  const cellBgRef     = useRef<HTMLInputElement>(null)
-  const cellBorderRef = useRef<HTMLInputElement>(null)
   const [mediaOpen, setMediaOpen] = useState(false)
 
   const editor = useEditor({
@@ -146,28 +142,22 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
           <Divider />
 
           {/* Text color */}
-          <div className="relative flex-shrink-0" title="Text color">
-            <button type="button" onClick={() => textColorRef.current?.click()}
-              className="flex flex-col items-center px-1.5 py-0.5 rounded hover:bg-gray-100">
-              <span className="text-xs font-bold leading-tight" style={{ color: editor.getAttributes('textStyle').color || '#000' }}>A</span>
-              <span className="w-4 h-1 rounded-sm mt-0.5" style={{ backgroundColor: editor.getAttributes('textStyle').color || '#000' }} />
-            </button>
-            <input ref={textColorRef} type="color" defaultValue="#000000"
-              className="absolute opacity-0 w-0 h-0 pointer-events-none"
+          <label className="relative flex-shrink-0 flex flex-col items-center px-1.5 py-0.5 rounded hover:bg-gray-100 cursor-pointer" title="Text color">
+            <span className="text-xs font-bold leading-tight" style={{ color: editor.getAttributes('textStyle').color || '#000' }}>A</span>
+            <span className="w-4 h-1 rounded-sm mt-0.5" style={{ backgroundColor: editor.getAttributes('textStyle').color || '#000' }} />
+            <input type="color" defaultValue="#000000"
+              className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
               onChange={e => editor.chain().focus().setColor(e.target.value).run()} />
-          </div>
+          </label>
 
           {/* Highlight color */}
-          <div className="relative flex-shrink-0" title="Highlight / background color">
-            <button type="button" onClick={() => bgColorRef.current?.click()}
-              className="flex flex-col items-center px-1.5 py-0.5 rounded hover:bg-gray-100">
-              <span className="text-xs font-bold leading-tight text-gray-700">A̲</span>
-              <span className="w-4 h-1 rounded-sm mt-0.5 border border-gray-300" style={{ backgroundColor: '#FBBF24' }} />
-            </button>
-            <input ref={bgColorRef} type="color" defaultValue="#FBBF24"
-              className="absolute opacity-0 w-0 h-0 pointer-events-none"
+          <label className="relative flex-shrink-0 flex flex-col items-center px-1.5 py-0.5 rounded hover:bg-gray-100 cursor-pointer" title="Highlight / background color">
+            <span className="text-xs font-bold leading-tight text-gray-700">A̲</span>
+            <span className="w-4 h-1 rounded-sm mt-0.5 border border-gray-300" style={{ backgroundColor: '#FBBF24' }} />
+            <input type="color" defaultValue="#FBBF24"
+              className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
               onChange={e => editor.chain().focus().setBackgroundColor(e.target.value).run()} />
-          </div>
+          </label>
 
           <Divider />
 
@@ -202,26 +192,32 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
             <span className="text-xs font-semibold text-amber-700 mr-1 flex-shrink-0">⊞ Table:</span>
 
             {/* Cell background color */}
-            <div className="relative flex-shrink-0" title="Cell background color">
-              <button type="button" onClick={() => cellBgRef.current?.click()}
-                className="flex items-center gap-1 px-2 py-0.5 border border-amber-300 rounded bg-white hover:bg-amber-50 text-amber-800 text-xs font-medium">
-                🎨 Cell BG
-              </button>
-              <input ref={cellBgRef} type="color" defaultValue="#fffde7"
-                className="absolute opacity-0 w-0 h-0 pointer-events-none"
+            <label className="relative flex-shrink-0 flex items-center gap-1 px-2 py-0.5 border border-amber-300 rounded bg-white hover:bg-amber-50 text-amber-800 text-xs font-medium cursor-pointer" title="Cell background color">
+              🎨 Cell BG
+              <input type="color" defaultValue="#fffde7"
+                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                 onChange={e => editor.chain().focus().setCellAttribute('backgroundColor', e.target.value).run()} />
-            </div>
+            </label>
 
             {/* Cell border color */}
-            <div className="relative flex-shrink-0" title="Cell border color">
-              <button type="button" onClick={() => cellBorderRef.current?.click()}
-                className="flex items-center gap-1 px-2 py-0.5 border border-amber-300 rounded bg-white hover:bg-amber-50 text-amber-800 text-xs font-medium">
-                🖊 Cell Border
-              </button>
-              <input ref={cellBorderRef} type="color" defaultValue="#94a3b8"
-                className="absolute opacity-0 w-0 h-0 pointer-events-none"
+            <label className="relative flex-shrink-0 flex items-center gap-1 px-2 py-0.5 border border-amber-300 rounded bg-white hover:bg-amber-50 text-amber-800 text-xs font-medium cursor-pointer" title="Cell border color">
+              🖊 Border Color
+              <input type="color" defaultValue="#94a3b8"
+                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                 onChange={e => editor.chain().focus().setCellAttribute('borderColor', e.target.value).run()} />
-            </div>
+            </label>
+
+            {/* Cell border size */}
+            <select title="Cell border size"
+              defaultValue="1"
+              onChange={e => editor.chain().focus().setCellAttribute('borderWidth', e.target.value).run()}
+              className="text-xs border border-amber-300 rounded px-1 py-0.5 bg-white text-amber-800 focus:outline-none focus:ring-1 focus:ring-amber-400">
+              <option value="1">1px</option>
+              <option value="2">2px</option>
+              <option value="3">3px</option>
+              <option value="4">4px</option>
+              <option value="5">5px</option>
+            </select>
 
             <span className="w-px h-4 bg-amber-200 mx-0.5" />
 

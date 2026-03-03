@@ -83,6 +83,12 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
   const [searchResults, setSearchResults] = useState<Message[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [assignModal, setAssignModal] = useState<{ show: boolean; targetId: number | null; targetTeamId: number | null; targetName: string; note: string }>({ show: false, targetId: null, targetTeamId: null, targetName: '', note: '' })
+  const [showLeadModal, setShowLeadModal] = useState(false)
+  const [leadForm, setLeadForm] = useState({ first_name: '', last_name: '', email: '', phone: '', company: '' })
+  const [leadLoading, setLeadLoading] = useState(false)
+  const [leadCreated, setLeadCreated] = useState(false)
+  const [crmLead, setCrmLead] = useState<any>(null)
+  const [crmCardOpen, setCrmCardOpen] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [allowedTypes, setAllowedTypes] = useState<string[]>([])
   const [maxFileMb, setMaxFileMb] = useState(10)
@@ -114,6 +120,11 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
       setAssignedTo(conversation.assigned_to ?? null)
       setAssignedTeamId((conversation as any).assigned_team_id ?? null)
       fetchMessages(conversation.id)
+      // record usage analytics event
+      axios.post(`${API_URL}/billing/usage-events`,
+        { event_type: "open_conversation", data: { conversation_id: conversation.id } },
+        { headers: { Authorization: getAuthToken() || "" } }
+      ).catch(() => {})
       // For webchat, immediately check whether visitor is currently connected
       if (conversation.platform === 'webchat') {
         setVisitorOnline(false)
@@ -282,6 +293,18 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
     axios.get(`${API_URL}/teams/`, { headers }).then((r) => setTeams(r.data)).catch(() => {})
   }, [])
 
+  // Fetch linked CRM lead whenever conversation changes
+  useEffect(() => {
+    if (!conversation?.id) { setCrmLead(null); return }
+    const token = getAuthToken()
+    fetch(`${API_URL}/crm/leads/by-conversation/${conversation.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => setCrmLead(data))
+      .catch(() => setCrmLead(null))
+  }, [conversation?.id])
+
   const handleStatusChange = async (newStatus: string) => {
     if (!conversation) return
     const token = getAuthToken()
@@ -345,6 +368,12 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
   const handleSendMessage = async () => {
     if (!messageText.trim() && !pendingFile) return
     if (!conversation) return
+
+    // analytics event - message sent
+    axios.post(`${API_URL}/billing/usage-events`,
+      { event_type: "send_message", data: { conversation_id: conversation.id } },
+      { headers: { Authorization: getAuthToken() || "" } }
+    ).catch(() => {})
 
     setSending(true)
     try {
@@ -431,6 +460,25 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
   }
 
   const CATEGORIES = ['General', 'Billing', 'Technical Support', 'Sales', 'Complaint', 'Other']
+
+  const handleConvertToLead = async () => {
+    if (!leadForm.first_name.trim()) return
+    setLeadLoading(true)
+    try {
+      const token = getAuthToken()
+      await fetch(`${API_URL}/crm/leads/from-conversation/${conversation.id}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...leadForm, source: 'conversation' }),
+      })
+      setLeadCreated(true)
+      setShowLeadModal(false)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLeadLoading(false)
+    }
+  }
 
   const handleCategoryChange = async (cat: string) => {
     if (!conversation) return
@@ -546,6 +594,29 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
               </select>
             </div>
           )}
+          {/* Convert to Lead */}
+          {!leadCreated ? (
+            <button
+              onClick={() => {
+                const nameParts = (conversation.contact_name || '').trim().split(' ')
+                setLeadForm({
+                  first_name: nameParts[0] || '',
+                  last_name: nameParts.slice(1).join(' '),
+                  email: '',
+                  phone: '',
+                  company: '',
+                })
+                setShowLeadModal(true)
+              }}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition"
+              title="Convert this conversation to a CRM lead"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+              Convert to Lead
+            </button>
+          ) : (
+            <span className="text-xs text-green-600 font-medium">✓ Lead created</span>
+          )}
           {/* Search toggle */}
           <button
             onClick={() => setShowSearch((s) => !s)}
@@ -556,6 +627,74 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
           </button>
         </div>
       </div>
+
+      {/* CRM Contact Card — shown when this conversation is linked to a lead */}
+      {crmLead && (
+        <div className="border-b bg-purple-50 px-6 py-2 flex items-center justify-between gap-3">
+          <button
+            onClick={() => setCrmCardOpen(o => !o)}
+            className="flex items-center gap-2 text-sm font-medium text-purple-800 hover:text-purple-900"
+          >
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            <span>{crmLead.first_name} {crmLead.last_name || ''}</span>
+            {crmLead.company && <span className="text-purple-500 font-normal">· {crmLead.company}</span>}
+            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+              crmLead.status === 'new' ? 'bg-blue-100 text-blue-700' :
+              crmLead.status === 'contacted' ? 'bg-yellow-100 text-yellow-700' :
+              crmLead.status === 'qualified' ? 'bg-green-100 text-green-700' :
+              crmLead.status === 'converted' ? 'bg-purple-100 text-purple-700' :
+              'bg-red-100 text-red-700'
+            }`}>{crmLead.status}</span>
+            <span className="text-xs text-purple-400">Score: {crmLead.score}</span>
+            <svg className={`w-3 h-3 ml-1 transition-transform ${crmCardOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <a
+            href={`/admin/crm/leads/${crmLead.id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-purple-600 hover:text-purple-800 font-medium whitespace-nowrap"
+          >
+            View Lead →
+          </a>
+        </div>
+      )}
+
+      {/* CRM expanded card */}
+      {crmLead && crmCardOpen && (
+        <div className="border-b bg-white px-6 py-3 grid grid-cols-3 gap-4 text-sm">
+          <div>
+            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Contact</p>
+            {crmLead.email && <p className="text-gray-700">📧 {crmLead.email}</p>}
+            {crmLead.phone && <p className="text-gray-700">📞 {crmLead.phone}</p>}
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Active Deals</p>
+            {crmLead.deals && crmLead.deals.length > 0 ? (
+              crmLead.deals.slice(0, 2).map((d: any) => (
+                <p key={d.id} className="text-gray-700 truncate">
+                  {d.name} <span className="text-xs text-gray-400">({d.stage})</span>
+                </p>
+              ))
+            ) : (
+              <p className="text-gray-400 text-xs">No deals</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Open Tasks</p>
+            {crmLead.tasks && crmLead.tasks.filter((t: any) => t.status !== 'completed' && t.status !== 'cancelled').length > 0 ? (
+              crmLead.tasks.filter((t: any) => t.status !== 'completed' && t.status !== 'cancelled').slice(0, 2).map((t: any) => (
+                <p key={t.id} className="text-gray-700 truncate text-xs">{t.title}</p>
+              ))
+            ) : (
+              <p className="text-gray-400 text-xs">No open tasks</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Search bar */}
       {showSearch && (
@@ -869,6 +1008,82 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
           </button>
         </div>
       </div>
+
+      {/* Convert to Lead modal */}
+      {showLeadModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100]" onClick={() => setShowLeadModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-1">Convert to CRM Lead</h2>
+            <p className="text-sm text-gray-500 mb-4">Create a lead record from this conversation.</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">First name *</label>
+                  <input
+                    type="text"
+                    value={leadForm.first_name}
+                    onChange={e => setLeadForm({ ...leadForm, first_name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="First"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Last name</label>
+                  <input
+                    type="text"
+                    value={leadForm.last_name}
+                    onChange={e => setLeadForm({ ...leadForm, last_name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="Last"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={leadForm.email}
+                  onChange={e => setLeadForm({ ...leadForm, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="email@example.com"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
+                  <input
+                    type="text"
+                    value={leadForm.phone}
+                    onChange={e => setLeadForm({ ...leadForm, phone: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="+1 555 0000"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Company</label>
+                  <input
+                    type="text"
+                    value={leadForm.company}
+                    onChange={e => setLeadForm({ ...leadForm, company: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="Acme Inc."
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setShowLeadModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+              <button
+                onClick={handleConvertToLead}
+                disabled={!leadForm.first_name.trim() || leadLoading}
+                className="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+              >
+                {leadLoading ? "Creating…" : "Create Lead"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Forward-to-agent modal — captures handover reason before confirming assignment */}
       {assignModal.show && (

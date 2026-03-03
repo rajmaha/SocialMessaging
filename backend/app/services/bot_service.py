@@ -14,8 +14,10 @@ and resets on any successful reply.
 import re
 import asyncio
 import logging
+import os
 from datetime import datetime
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.models.bot import BotSettings, BotQA
 from app.models.message import Message
@@ -181,6 +183,25 @@ async def handle_incoming(
     if ai_resp:
         await _reply(ai_resp)
         return
+
+    # KB article fallback — search published articles for relevant content
+    try:
+        from app.models.kb import KBArticle
+        kb_results = db.query(KBArticle).filter(
+            KBArticle.published == True,
+            or_(
+                KBArticle.title.ilike(f"%{text}%"),
+                KBArticle.content_html.ilike(f"%{text}%"),
+            )
+        ).limit(2).all()
+
+        if kb_results:
+            base_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+            links = "\n".join([f"• {a.title}: {base_url}/help/{a.slug}" for a in kb_results])
+            await _reply(f"I found some relevant help articles:\n{links}")
+            return
+    except Exception as _kb_err:
+        logger.debug("KB fallback error: %s", _kb_err)
 
     # AI also failed / disabled — handoff tracking
     if cfg.handoff_after and cfg.handoff_after > 0:

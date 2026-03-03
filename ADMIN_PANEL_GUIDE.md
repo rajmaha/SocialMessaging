@@ -184,6 +184,23 @@ The system supports configuration for:
 
 ---
 
+
+## Business & Billing
+
+### Pricing Plans
+
+Location: `/admin/pricing`
+
+Admins can view and manage the set of subscription tiers offered to organizations. Each plan shows a name, price, currency, interval (monthly/yearly), and description. Plans are used by the frontend billing flow when customers subscribe via Stripe.
+
+### Usage Analytics
+
+Location: `/admin/usage`
+
+This page surfaces collected usage events (e.g. conversation opened, message sent) that the system logs during normal operation. Events are useful for understanding customer activity and for implementing metered billing.
+
+Events can be generated from frontend components by posting to the `/billing/usage-events` API (see developer docs or the Python client example).
+
 ## Access Control
 
 ### Role-Based Permissions

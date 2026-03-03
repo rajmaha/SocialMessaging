@@ -1,234 +1,202 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from "react";
+import { authAPI, getAuthToken } from "@/lib/auth";
+import { API_URL } from "@/lib/config";
 import MainHeader from "@/components/MainHeader";
-import { authAPI } from "@/lib/auth";
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { getAuthToken } from '@/lib/auth';
-import AdminNav from '@/components/AdminNav';
-import { API_URL } from '@/lib/config';
+import AdminNav from "@/components/AdminNav";
 
-interface DashboardData {
-  total_users: number;
-  active_users: number;
-  admin_users: number;
-  regular_users: number;
-  platforms: {
-    [key: string]: {
-      is_configured: number;
-      webhook_registered: number;
-    };
+const STAGE_COLORS: Record<string, string> = {
+  prospect:    "bg-blue-100 text-blue-700",
+  qualified:   "bg-cyan-100 text-cyan-700",
+  proposal:    "bg-yellow-100 text-yellow-700",
+  negotiation: "bg-orange-100 text-orange-700",
+  close:       "bg-purple-100 text-purple-700",
+  won:         "bg-green-100 text-green-700",
+  lost:        "bg-red-100 text-red-700",
+};
+
+function KpiCard({ label, value, sub, color = "blue" }: { label: string; value: string | number; sub?: string; color?: string }) {
+  const colors: Record<string, string> = {
+    blue:   "border-blue-500   bg-blue-50   text-blue-900",
+    green:  "border-green-500  bg-green-50  text-green-900",
+    amber:  "border-amber-500  bg-amber-50  text-amber-900",
+    purple: "border-purple-500 bg-purple-50 text-purple-900",
+    red:    "border-red-500    bg-red-50    text-red-900",
   };
-  timestamp: string;
+  const cls = colors[color] || colors.blue;
+  return (
+    <div className={`rounded-xl border-t-4 p-5 shadow-sm ${cls}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide opacity-60">{label}</p>
+      <p className="text-3xl font-bold mt-1">{value ?? "—"}</p>
+      {sub && <p className="text-xs mt-1 opacity-50">{sub}</p>}
+    </div>
+  );
 }
 
 export default function AdminDashboard() {
   const user = authAPI.getUser();
-  const router = useRouter();
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`${API_URL}/reports/dashboard-summary`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setData(await res.json());
+        setLastUpdated(new Date());
+      }
+    } catch {}
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    const fetchDashboard = async () => {
-      try {
-        const token = getAuthToken();
-        if (!token) {
-          router.push('/login');
-          return;
-        }
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
-        const response = await fetch(`${API_URL}/admin/dashboard`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (response.status === 403) {
-          router.push('/dashboard');
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch dashboard data');
-        }
-
-        const data = await response.json();
-        setDashboardData(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboard();
-  }, [router]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-red-600">Error: {error}</div>
-      </div>
-    );
-  }
+  const conv = data?.conversations;
+  const crm = data?.crm;
+  const leaderboard = data?.leaderboard ?? [];
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-100">
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
       <MainHeader user={user!} />
       <AdminNav />
-      {/* Admin Navigation */}
+      <main className="w-full px-6 py-8 space-y-8">
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto p-6">
         {/* Header */}
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900">Dashboard</h2>
-          <p className="text-gray-600 mt-2">System overview and statistics</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Executive Dashboard</h1>
+            <p className="text-sm text-gray-400 mt-0.5">
+              {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Loading…"} · auto-refreshes every 30s
+            </p>
+          </div>
+          <button
+            onClick={fetchData}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 text-gray-600"
+          >
+            ↻ Refresh
+          </button>
         </div>
 
-        {/* Statistics Grid */}
-        {dashboardData && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {/* Total Users */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm font-medium">Total Users</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
-                    {dashboardData.total_users}
-                  </p>
-                </div>
-                <div className="bg-blue-100 rounded-full p-3">
-                  <svg className="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            {/* Active Users */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm font-medium">Active Users</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
-                    {dashboardData.active_users}
-                  </p>
-                </div>
-                <div className="bg-green-100 rounded-full p-3">
-                  <svg className="w-8 h-8 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            {/* Admin Users */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm font-medium">Admin Users</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
-                    {dashboardData.admin_users}
-                  </p>
-                </div>
-                <div className="bg-purple-100 rounded-full p-3">
-                  <svg className="w-8 h-8 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v2h8v-2zM16 15v2h4v-2z" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            {/* Regular Users */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm font-medium">Regular Users</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
-                    {dashboardData.regular_users}
-                  </p>
-                </div>
-                <div className="bg-orange-100 rounded-full p-3">
-                  <svg className="w-8 h-8 text-orange-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M10.5 1.5H19a1 1 0 011 1v15a1 1 0 01-1 1h-17a1 1 0 01-1-1v-15a1 1 0 011-1h8.5m0 0V1a1 1 0 011-1h0a1 1 0 011 1v1.5m0 0h-4V1a1 1 0 011-1h0a1 1 0 011 1v1.5" />
-                  </svg>
-                </div>
-              </div>
-            </div>
+        {loading ? (
+          <div className="flex justify-center py-24">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500" />
           </div>
-        )}
+        ) : (
+          <>
+            {/* Messaging KPIs */}
+            <section>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">Conversations</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <KpiCard label="Today" value={conv?.total_today ?? 0} color="blue" />
+                <KpiCard label="Open" value={conv?.open ?? 0} color="amber" />
+                <KpiCard label="Pending" value={conv?.pending ?? 0} color="amber" />
+                <KpiCard label="Resolved" value={conv?.resolved ?? 0} color="green" />
+                <KpiCard
+                  label="Avg Response"
+                  value={conv?.avg_response_min != null ? `${conv.avg_response_min}m` : "—"}
+                  color="blue"
+                />
+                <KpiCard
+                  label="Avg Rating"
+                  value={conv?.avg_rating != null ? `${conv.avg_rating} ★` : "—"}
+                  color="purple"
+                />
+              </div>
+            </section>
 
-        {/* Platforms Status */}
-        {dashboardData && (
-          <div className="bg-white rounded-lg shadow p-6 mb-8">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">Platform Status</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {Object.entries(dashboardData.platforms).map(([platform, status]) => (
-                <div key={platform} className="border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 capitalize mb-2">{platform}</h4>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Configuration:</span>
-                      <span className={`font-medium ${status.is_configured === 0 ? 'text-red-600' :
-                        status.is_configured === 1 ? 'text-yellow-600' :
-                          'text-green-600'
-                        }`}>
-                        {status.is_configured === 0 ? 'Not Setup' :
-                          status.is_configured === 1 ? 'Configured' :
-                            'Verified'}
+            {/* CRM KPIs */}
+            <section>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">CRM</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <KpiCard label="New Leads (7d)" value={crm?.new_leads_week ?? 0} color="blue" />
+                <KpiCard label="Total Leads" value={crm?.total_leads ?? 0} color="blue" />
+                <KpiCard
+                  label="Pipeline Value"
+                  value={crm?.pipeline_value != null ? `$${Number(crm.pipeline_value).toLocaleString()}` : "—"}
+                  color="green"
+                />
+                <KpiCard label="Win Rate" value={crm?.win_rate != null ? `${crm.win_rate}%` : "—"} color="purple" />
+              </div>
+            </section>
+
+            {/* Pipeline by Stage + Agent Leaderboard */}
+            <div className="grid grid-cols-3 gap-6">
+              {/* Pipeline */}
+              <div className="col-span-2 bg-white rounded-xl shadow p-6">
+                <h2 className="text-sm font-semibold text-gray-700 mb-4">Pipeline by Stage</h2>
+                <div className="space-y-2">
+                  {crm?.pipeline_by_stage && Object.entries(crm.pipeline_by_stage).map(([stage, info]: [string, any]) => (
+                    <div key={stage} className="flex items-center gap-3">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${STAGE_COLORS[stage] || "bg-gray-100 text-gray-600"}`} style={{ minWidth: 90, textAlign: "center" }}>
+                        {stage}
                       </span>
+                      <div className="flex-1 bg-gray-100 rounded-full h-2">
+                        <div
+                          className="bg-indigo-500 h-2 rounded-full transition-all"
+                          style={{ width: `${Math.min((info.count / Math.max(crm.total_leads, 1)) * 100, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium text-gray-700 w-6 text-right">{info.count}</span>
+                      <span className="text-xs text-gray-400 w-20 text-right">${info.value.toLocaleString()}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Webhook:</span>
-                      <span className={`font-medium ${status.webhook_registered === 1 ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                        {status.webhook_registered === 1 ? 'Registered' : 'Not Registered'}
-                      </span>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              </div>
 
-        {/* Quick Actions */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-xl font-bold text-gray-900 mb-6">Quick Actions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link
-              href="/admin/users"
-              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition"
-            >
-              Manage Users
-            </Link>
-            <Link
-              href="/admin/branding"
-              className="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-3 px-6 rounded-lg transition"
-            >
-              Branding Settings
-            </Link>
-            <Link
-              href="/admin/cors"
-              className="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-3 px-6 rounded-lg transition"
-            >
-              🌐 CORS / Widget Origins
-            </Link>
-          </div>
-        </div>
+              {/* Agent Leaderboard */}
+              <div className="bg-white rounded-xl shadow p-6">
+                <h2 className="text-sm font-semibold text-gray-700 mb-4">Agent Leaderboard (today)</h2>
+                {leaderboard.length === 0 ? (
+                  <p className="text-gray-400 text-sm">No resolved conversations today.</p>
+                ) : (
+                  <ol className="space-y-3">
+                    {leaderboard.map((agent: any, i: number) => (
+                      <li key={agent.id} className="flex items-center gap-3">
+                        <span className={`text-sm font-bold w-6 ${i === 0 ? "text-yellow-500" : i === 1 ? "text-gray-400" : i === 2 ? "text-amber-600" : "text-gray-300"}`}>
+                          #{i + 1}
+                        </span>
+                        <span className="flex-1 text-sm text-gray-800 truncate">{agent.name}</span>
+                        <span className="text-sm font-semibold text-indigo-600">{agent.resolved_today}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            </div>
+
+            {/* Quick links */}
+            <section>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">Quick Links</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { href: "/admin/reports", label: "Full Reports", icon: "📊" },
+                  { href: "/admin/crm/leads", label: "Leads", icon: "👥" },
+                  { href: "/admin/crm/analytics", label: "CRM Analytics", icon: "📈" },
+                  { href: "/admin/users", label: "Manage Users", icon: "👤" },
+                ].map(link => (
+                  <a
+                    key={link.href}
+                    href={link.href}
+                    className="flex items-center gap-2 bg-white rounded-lg shadow px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                  >
+                    <span className="text-lg">{link.icon}</span>
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
       </main>
     </div>
-  )
+  );
 }

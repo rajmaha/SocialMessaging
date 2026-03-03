@@ -61,6 +61,8 @@ AVAILABLE_FEATURES = [
     ("feature_manage_cloudpanel", "Manage CloudPanel", "Manage CloudPanel servers, templates, and SSL"),
     ("feature_manage_dynamic_fields", "Manage Dynamic Fields", "Configure dynamic fields and custom metadata"),
     ("feature_manage_ssl", "SSL Monitor", "Access to view and manage SSL certificate monitoring"),
+    ("feature_manage_billing", "Manage Billing", "Configure pricing plans and view usage analytics"),
+    ("feature_manage_crm", "Manage CRM", "Access to leads, deals, tasks, and sales pipeline"),
 ]
 
 

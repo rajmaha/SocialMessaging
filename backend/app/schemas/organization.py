@@ -42,6 +42,11 @@ class SubscriptionBase(BaseModel):
     billed_from_date: Optional[date] = None
     expire_date: Optional[date] = None
 
+    # Stripe information
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
+    status: Optional[str] = None  # active, past_due, cancelled
+
 class SubscriptionCreate(SubscriptionBase):
     organization_id: int
 
@@ -100,6 +105,47 @@ class SubscriptionModuleBase(BaseModel):
     name: str
     description: Optional[str] = None
     is_active: int = 1
+
+# Pricing plan schema for product tiers
+class PricingPlanBase(BaseModel):
+    name: str
+    stripe_price_id: Optional[str] = None
+    amount_cents: int
+    currency: str = "usd"
+    interval: str = "month"
+    description: Optional[str] = None
+
+class PricingPlanCreate(PricingPlanBase):
+    pass
+
+class PricingPlanResponse(PricingPlanBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+# Usage event schema for analytics
+class UsageEventBase(BaseModel):
+    event_type: str
+    data: Optional[Any] = {}
+
+class UsageEventCreate(UsageEventBase):
+    user_id: Optional[int] = None
+
+class UsageEventResponse(UsageEventBase):
+    id: int
+    user_id: Optional[int]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class UsageEventResponse(UsageEventBase):
+    id: int
+    user_id: Optional[int]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 class SubscriptionModuleCreate(SubscriptionModuleBase):
     pass

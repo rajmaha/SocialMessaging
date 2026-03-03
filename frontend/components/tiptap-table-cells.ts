@@ -24,6 +24,14 @@ export const CustomTableCell = TableCell.extend({
           return { style: `border-color: ${attributes.borderColor}; border-style: solid;` }
         },
       },
+      borderWidth: {
+        default: null,
+        parseHTML: element => element.style.borderWidth ? element.style.borderWidth.replace('px', '') : null,
+        renderHTML: attributes => {
+          if (!attributes.borderWidth) return {}
+          return { style: `border-width: ${attributes.borderWidth}px; border-style: solid;` }
+        },
+      },
     }
   },
 })
@@ -46,6 +54,14 @@ export const CustomTableHeader = TableHeader.extend({
         renderHTML: attributes => {
           if (!attributes.borderColor) return {}
           return { style: `border-color: ${attributes.borderColor}; border-style: solid;` }
+        },
+      },
+      borderWidth: {
+        default: null,
+        parseHTML: element => element.style.borderWidth ? element.style.borderWidth.replace('px', '') : null,
+        renderHTML: attributes => {
+          if (!attributes.borderWidth) return {}
+          return { style: `border-width: ${attributes.borderWidth}px; border-style: solid;` }
         },
       },
     }

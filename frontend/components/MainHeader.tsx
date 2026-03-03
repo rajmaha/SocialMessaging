@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { FiMessageSquare, FiMail, FiBarChart2, FiGrid, FiHeadphones, FiCheckSquare } from 'react-icons/fi'
 import ProfileDropdown from '@/components/ProfileDropdown'
+import TodosSidebar from '@/components/TodosSidebar'
 import { useBranding } from '@/lib/branding-context'
 import type { User } from '@/lib/auth'
 import { getAuthToken } from '@/lib/auth'
@@ -107,8 +108,42 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
         return unsubscribe
     }, [eventsCtx])
 
+    const [todosSidebarOpen, setTodosSidebarOpen] = useState(false)
+    const [crmToasts, setCrmToasts] = useState<Array<{id: number; message: string; link: string}>>([])
+
     const [isMounted, setIsMounted] = useState(false)
     useEffect(() => setIsMounted(true), [])
+
+    // CRM real-time notification toasts
+    useEffect(() => {
+        if (!eventsCtx) return
+        const addToast = (message: string, link: string) => {
+            const id = Date.now()
+            setCrmToasts(prev => [...prev, { id, message, link }])
+            setTimeout(() => {
+                setCrmToasts(prev => prev.filter(t => t.id !== id))
+            }, 6000)
+        }
+        const unsub1 = eventsCtx.subscribe('crm_lead_assigned', (data: any) => {
+            addToast(
+                `🎯 Lead assigned to you: ${data?.lead_name || 'Unknown'}`,
+                `/admin/crm/leads/${data?.lead_id || ''}`
+            )
+        })
+        const unsub2 = eventsCtx.subscribe('crm_deal_stage_changed', (data: any) => {
+            addToast(
+                `💼 Deal "${data?.deal_name || ''}" → ${data?.new_stage || ''}`,
+                `/admin/crm/deals/${data?.deal_id || ''}`
+            )
+        })
+        const unsub3 = eventsCtx.subscribe('crm_task_overdue', (data: any) => {
+            addToast(
+                `⚠️ Overdue task: ${data?.task_title || 'Unknown'}`,
+                `/admin/crm/tasks`
+            )
+        })
+        return () => { unsub1(); unsub2(); unsub3() }
+    }, [eventsCtx])
 
     const logoSrc = branding?.logo_url
 
@@ -189,7 +224,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
 
                     <Link
                         href="/reminders"
-                        className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isRemindersActive
+                        className={`relative flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isRemindersActive
                             ? 'text-white shadow-sm'
                             : 'text-gray-600 hover:bg-gray-100'
                             }`}
@@ -197,6 +232,11 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                     >
                         <FiCheckSquare size={15} />
                         My Todos
+                        {unseenCount > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center leading-none">
+                                {unseenCount > 99 ? '99+' : unseenCount}
+                            </span>
+                        )}
                     </Link>
 
                     {(user?.role === 'admin' || canAccessAdmin) && (
@@ -231,18 +271,38 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                 </nav>
             </div>
 
-            {/* Right: reminders badge + profile dropdown */}
+            {/* Right: todos icon + profile dropdown */}
             <div className="flex items-center gap-3">
-                <Link href="/reminders" className="relative p-2 text-gray-600 hover:text-gray-900 transition">
+                <button
+                    onClick={() => setTodosSidebarOpen(prev => !prev)}
+                    className="relative p-2 text-gray-600 hover:text-gray-900 transition rounded-lg hover:bg-gray-100"
+                    title="My Todos"
+                >
                     <FiCheckSquare size={20} />
                     {unseenCount > 0 && (
                         <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                             {unseenCount > 99 ? '99+' : unseenCount}
                         </span>
                     )}
-                </Link>
+                </button>
                 <ProfileDropdown user={user} />
             </div>
+            <TodosSidebar isOpen={todosSidebarOpen} onClose={() => setTodosSidebarOpen(false)} />
+            {/* CRM notification toasts */}
+            {crmToasts.length > 0 && (
+                <div className="fixed bottom-4 right-4 z-[200] flex flex-col gap-2 pointer-events-none">
+                    {crmToasts.map(toast => (
+                        <a
+                            key={toast.id}
+                            href={toast.link}
+                            className="pointer-events-auto flex items-center gap-3 bg-gray-900 text-white text-sm px-4 py-3 rounded-xl shadow-xl hover:bg-gray-800 transition max-w-sm"
+                        >
+                            <span className="flex-1">{toast.message}</span>
+                            <span className="text-gray-400 text-xs whitespace-nowrap">View →</span>
+                        </a>
+                    ))}
+                </div>
+            )}
         </header>
     )
 }

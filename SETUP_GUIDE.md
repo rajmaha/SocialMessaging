@@ -265,6 +265,14 @@ chmod +x start.sh
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `STRIPE_SECRET_KEY` | ⚠️ | Stripe secret key for billing (or set via `backend/app/stripe_settings.py`) | 
+| `STRIPE_WEBHOOK_SECRET` | ⚠️ | Stripe webhook signing secret (or via `stripe_settings.py`) | 
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | ⚠️ | Stripe publishable key for frontend | 
+
+> Instead of editing `.env`, you can open `backend/app/stripe_settings.py` and
+> hard‑code your API key and price ids in the `API_KEY` and `PRICE_IDS`
+> dictionary. The application will prefer the module values and fall back to
+> environment variables.
 | `SECRET_KEY` | ✅ | App secret for tokens |
 | `FRONTEND_URL` | ✅ | CORS allowed origin |
 | `SMTP_HOST` | For email | SMTP server hostname |

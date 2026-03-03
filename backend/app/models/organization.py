@@ -56,6 +56,11 @@ class Subscription(Base):
     subscribed_on_date = Column(Date, nullable=True)
     billed_from_date = Column(Date, nullable=True)
     expire_date = Column(Date, nullable=True)
+
+    # Stripe integration fields
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, nullable=True)
+    status = Column(String, default="active")  # active, past_due, cancelled
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -73,3 +78,28 @@ class SubscriptionModule(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# New tables for product/business features
+class PricingPlan(Base):
+    __tablename__ = "pricing_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    stripe_price_id = Column(String, nullable=True)
+    amount_cents = Column(Integer, nullable=False)
+    currency = Column(String, default="npr")
+    interval = Column(String, default="month")  # month, year, etc.
+    description = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class UsageEvent(Base):
+    __tablename__ = "usage_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    event_type = Column(String, nullable=False)
+    data = Column(JSON, default={})  # renamed from metadata to avoid SQLAlchemy conflict
+    created_at = Column(DateTime, default=datetime.utcnow)

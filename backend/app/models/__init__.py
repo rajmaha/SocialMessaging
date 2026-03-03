@@ -7,5 +7,8 @@ from .email import UserEmailAccount, Email, EmailAttachment, EmailTemplate, Emai
 from .user_permission import UserPermission
 from .organization import Organization, OrganizationContact, Subscription
 from .cloudpanel_server import CloudPanelServer
+from .crm import Lead, Deal, Task, Activity
+from .kb import KBArticle
+from .campaign import Campaign, CampaignRecipient
 
-__all__ = ["User", "Conversation", "Message", "PlatformAccount", "Team", "UserEmailAccount", "Email", "EmailAttachment", "EmailTemplate", "EmailSignature", "Contact", "EmailThread", "UserPermission", "Organization", "OrganizationContact", "Subscription", "CloudPanelServer"]
+__all__ = ["User", "Conversation", "Message", "PlatformAccount", "Team", "UserEmailAccount", "Email", "EmailAttachment", "EmailTemplate", "EmailSignature", "Contact", "EmailThread", "UserPermission", "Organization", "OrganizationContact", "Subscription", "CloudPanelServer", "Lead", "Deal", "Task", "Activity", "KBArticle", "Campaign", "CampaignRecipient"]
