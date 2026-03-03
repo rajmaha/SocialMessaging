@@ -52,3 +52,50 @@ export const messageAPI = {
     return axios.put(`${API_URL}/messages/mark-as-read/${messageId}`)
   },
 }
+
+// ── Backups ────────────────────────────────────────────────────────────────
+
+const api = axios.create({ baseURL: API_URL })
+api.interceptors.request.use(cfg => {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('token')
+    if (token) cfg.headers = { ...cfg.headers, Authorization: `Bearer ${token}` }
+  }
+  return cfg
+})
+
+export const getBackupDestinations = () =>
+  api.get('/backups/destinations').then(r => r.data);
+
+export const createBackupDestination = (data: any) =>
+  api.post('/backups/destinations', data).then(r => r.data);
+
+export const updateBackupDestination = (id: number, data: any) =>
+  api.put(`/backups/destinations/${id}`, data).then(r => r.data);
+
+export const deleteBackupDestination = (id: number) =>
+  api.delete(`/backups/destinations/${id}`).then(r => r.data);
+
+export const testBackupDestination = (data: any) =>
+  api.post('/backups/destinations/test', data).then(r => r.data);
+
+export const getBackupJobs = () =>
+  api.get('/backups/jobs').then(r => r.data);
+
+export const createBackupJob = (data: any) =>
+  api.post('/backups/jobs', data).then(r => r.data);
+
+export const updateBackupJob = (id: number, data: any) =>
+  api.put(`/backups/jobs/${id}`, data).then(r => r.data);
+
+export const deleteBackupJob = (id: number) =>
+  api.delete(`/backups/jobs/${id}`).then(r => r.data);
+
+export const runBackupJobNow = (id: number) =>
+  api.post(`/backups/jobs/${id}/run`).then(r => r.data);
+
+export const getBackupRuns = (jobId?: number, status?: string) =>
+  api.get('/backups/runs', { params: { job_id: jobId, status } }).then(r => r.data);
+
+export const getJobBackupRuns = (jobId: number) =>
+  api.get(`/backups/jobs/${jobId}/runs`).then(r => r.data);
