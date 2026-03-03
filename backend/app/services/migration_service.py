@@ -384,7 +384,12 @@ def _upsert_job(scheduler, server_id: int, schedule):
         notify_dt = base - timedelta(hours=notify_hours)
         notify_hh = notify_dt.hour
         notify_mm = notify_dt.minute
-        notify_dow = dow  # APScheduler handles day rollover automatically for cron
+        # If subtraction crossed midnight, the notification falls on the previous day
+        day_rolled_back = notify_dt.day < base.day
+        if day_rolled_back and dow is not None:
+            notify_dow = (dow - 1) % 7
+        else:
+            notify_dow = dow
 
         scheduler.add_job(
             send_migration_notification_job,
@@ -398,7 +403,10 @@ def _upsert_job(scheduler, server_id: int, schedule):
 
 
 def remove_job(scheduler, server_id: int):
-    """Remove a migration job if it exists."""
-    job_id = f"db_migration_server_{server_id}"
-    if scheduler.get_job(job_id):
-        scheduler.remove_job(job_id)
+    """Remove migration run and notification jobs for a server."""
+    for job_id in (
+        f"db_migration_server_{server_id}",
+        f"db_migration_notify_{server_id}",
+    ):
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
