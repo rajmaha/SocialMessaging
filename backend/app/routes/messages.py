@@ -77,6 +77,36 @@ async def upload_attachment(
     }
 
 
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'}
+
+
+@router.get("/media-library")
+def list_media_library(current_user: User = Depends(get_current_user)):
+    """Return all image files in the message attachment storage, newest first."""
+    attach_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..", "attachment_storage", "messages",
+    )
+    if not os.path.exists(attach_dir):
+        return []
+    items = []
+    for fname in os.listdir(attach_dir):
+        ext = os.path.splitext(fname)[1].lower()
+        if ext not in IMAGE_EXTENSIONS:
+            continue
+        full_path = os.path.join(attach_dir, fname)
+        stat = os.stat(full_path)
+        # Strip uuid prefix for display name
+        display_name = fname.split("_", 1)[-1] if "_" in fname else fname
+        items.append({
+            "url": f"/attachments/messages/{fname}",
+            "filename": display_name,
+            "size": stat.st_size,
+            "modified": stat.st_mtime,
+        })
+    return sorted(items, key=lambda x: -x["modified"])
+
+
 @router.get("/allowed-file-types")
 def get_allowed_file_types(db: Session = Depends(get_db)):
     """Return the allowed MIME types and max file size for the current branding config."""
