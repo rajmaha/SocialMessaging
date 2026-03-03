@@ -4,14 +4,9 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import TextAlign from '@tiptap/extension-text-align'
-import TextStyle from '@tiptap/extension-text-style'
-import { Color } from '@tiptap/extension-color'
+import { TextStyleKit } from '@tiptap/extension-text-style'
 import Image from '@tiptap/extension-image'
-import FontFamily from '@tiptap/extension-font-family'
-import Table from '@tiptap/extension-table'
-import TableRow from '@tiptap/extension-table-row'
-import TableHeader from '@tiptap/extension-table-header'
-import TableCell from '@tiptap/extension-table-cell'
+import { TableKit } from '@tiptap/extension-table'
 import { useEffect, useRef } from 'react'
 
 const MERGE_TAGS = [
@@ -31,9 +26,6 @@ const FONTS = [
   { label: 'Courier', value: 'Courier New, monospace' },
 ]
 
-const TEXT_COLORS = ['#000000', '#374151', '#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#ffffff']
-const BG_COLORS   = ['#ffffff', '#F9FAFB', '#FEF3C7', '#DCFCE7', '#DBEAFE', '#EDE9FE', '#FCE7F3', '#FEE2E2', '#111827']
-
 interface EmailEditorProps {
   content: string
   onChange: (html: string) => void
@@ -43,8 +35,8 @@ function Divider() {
   return <span className="w-px h-5 bg-gray-200 mx-0.5 flex-shrink-0 self-center" />
 }
 
-function ToolBtn({ onClick, active, title, children, className = '' }: {
-  onClick: () => void; active?: boolean; title: string; children: React.ReactNode; className?: string
+function ToolBtn({ onClick, active, title, children }: {
+  onClick: () => void; active?: boolean; title: string; children: React.ReactNode
 }) {
   return (
     <button
@@ -53,7 +45,7 @@ function ToolBtn({ onClick, active, title, children, className = '' }: {
       title={title}
       className={`px-1.5 py-1 rounded text-sm font-medium transition-colors flex-shrink-0 ${
         active ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'
-      } ${className}`}
+      }`}
     >
       {children}
     </button>
@@ -69,14 +61,9 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
       StarterKit,
       Link.configure({ openOnClick: false }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      TextStyle,
-      Color,
-      FontFamily,
+      TextStyleKit,
       Image.configure({ inline: false, allowBase64: true }),
-      Table.configure({ resizable: true }),
-      TableRow,
-      TableHeader,
-      TableCell,
+      TableKit.configure({ resizable: true }),
     ],
     content: content || '<p></p>',
     immediatelyRender: false,
@@ -94,7 +81,7 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
   if (!editor) return null
 
   const insertImage = () => {
-    const url = window.prompt('Image URL (or paste a web address):')
+    const url = window.prompt('Image URL:')
     if (url) editor.chain().focus().setImage({ src: url }).run()
   }
 
@@ -121,7 +108,7 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
         ))}
       </div>
 
-      {/* ── Toolbar row 1: text formatting ── */}
+      {/* ── Toolbar ── */}
       <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-gray-200 bg-gray-50">
 
         {/* Font family */}
@@ -139,7 +126,7 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
 
         <Divider />
 
-        {/* Bold / Italic / Strike / Underline */}
+        {/* Bold / Italic / Strike */}
         <ToolBtn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title="Bold">
           <strong>B</strong>
         </ToolBtn>
@@ -159,7 +146,7 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
 
         <Divider />
 
-        {/* Align */}
+        {/* Alignment */}
         <ToolBtn onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Align left">⬅</ToolBtn>
         <ToolBtn onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="Center">≡</ToolBtn>
         <ToolBtn onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="Align right">➡</ToolBtn>
@@ -173,44 +160,35 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
 
         <Divider />
 
-        {/* Text color — native color picker */}
+        {/* Text color */}
         <div className="relative flex-shrink-0" title="Text color">
           <button
             type="button"
             onClick={() => textColorRef.current?.click()}
-            className="flex flex-col items-center px-1.5 py-0.5 rounded hover:bg-gray-100 text-xs font-medium text-gray-600"
+            className="flex flex-col items-center px-1.5 py-0.5 rounded hover:bg-gray-100"
           >
-            <span className="font-bold leading-tight" style={{ color: editor.getAttributes('textStyle').color || '#000' }}>A</span>
+            <span className="text-xs font-bold leading-tight" style={{ color: editor.getAttributes('textStyle').color || '#000' }}>A</span>
             <span className="w-4 h-1 rounded-sm mt-0.5" style={{ backgroundColor: editor.getAttributes('textStyle').color || '#000' }} />
           </button>
-          <input
-            ref={textColorRef}
-            type="color"
-            defaultValue="#000000"
+          <input ref={textColorRef} type="color" defaultValue="#000000"
             className="absolute opacity-0 w-0 h-0 pointer-events-none"
             onChange={e => editor.chain().focus().setColor(e.target.value).run()}
           />
         </div>
 
-        {/* Highlight / background color */}
+        {/* Background / highlight color */}
         <div className="relative flex-shrink-0" title="Highlight color">
           <button
             type="button"
             onClick={() => bgColorRef.current?.click()}
-            className="flex flex-col items-center px-1.5 py-0.5 rounded hover:bg-gray-100 text-xs font-medium text-gray-600"
+            className="flex flex-col items-center px-1.5 py-0.5 rounded hover:bg-gray-100"
           >
-            <span className="font-bold leading-tight">A</span>
+            <span className="text-xs font-bold leading-tight text-gray-700">A̲</span>
             <span className="w-4 h-1 rounded-sm mt-0.5 border border-gray-300" style={{ backgroundColor: '#FBBF24' }} />
           </button>
-          <input
-            ref={bgColorRef}
-            type="color"
-            defaultValue="#FBBF24"
+          <input ref={bgColorRef} type="color" defaultValue="#FBBF24"
             className="absolute opacity-0 w-0 h-0 pointer-events-none"
-            onChange={e => {
-              // Use inline style via TextStyle since we don't have Highlight extension
-              editor.chain().focus().setMark('textStyle', { backgroundColor: e.target.value }).run()
-            }}
+            onChange={e => editor.chain().focus().setBackgroundColor(e.target.value).run()}
           />
         </div>
 
@@ -222,8 +200,7 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
             const url = window.prompt('Link URL:')
             if (url) editor.chain().focus().setLink({ href: url }).run()
           }}
-          active={editor.isActive('link')}
-          title="Add link"
+          active={editor.isActive('link')} title="Add link"
         >🔗</ToolBtn>
         {editor.isActive('link') && (
           <ToolBtn onClick={() => editor.chain().focus().unsetLink().run()} title="Remove link">🔗✕</ToolBtn>
@@ -233,7 +210,7 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
         <ToolBtn onClick={insertImage} title="Insert image" active={false}>🖼</ToolBtn>
 
         {/* Table */}
-        <ToolBtn onClick={insertTable} title="Insert table (3×3)" active={editor.isActive('table')}>⊞</ToolBtn>
+        <ToolBtn onClick={insertTable} title="Insert 3×3 table" active={editor.isActive('table')}>⊞</ToolBtn>
         {editor.isActive('table') && (
           <>
             <ToolBtn onClick={() => editor.chain().focus().addColumnAfter().run()} title="Add column">+Col</ToolBtn>
@@ -263,7 +240,7 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
           '[&_.ProseMirror_a]:text-blue-600 [&_.ProseMirror_a]:underline',
           '[&_.ProseMirror_img]:max-w-full [&_.ProseMirror_img]:rounded [&_.ProseMirror_img]:my-2',
           '[&_.ProseMirror_table]:border-collapse [&_.ProseMirror_table]:w-full [&_.ProseMirror_table]:my-3',
-          '[&_.ProseMirror_td]:border [&_.ProseMirror_td]:border-gray-300 [&_.ProseMirror_td]:p-2 [&_.ProseMirror_td]:min-w-[60px]',
+          '[&_.ProseMirror_td]:border [&_.ProseMirror_td]:border-gray-300 [&_.ProseMirror_td]:p-2 [&_.ProseMirror_td]:min-w-[60px] [&_.ProseMirror_td]:align-top',
           '[&_.ProseMirror_th]:border [&_.ProseMirror_th]:border-gray-400 [&_.ProseMirror_th]:p-2 [&_.ProseMirror_th]:bg-gray-100 [&_.ProseMirror_th]:font-semibold',
           '[&_.ProseMirror_.selectedCell]:bg-indigo-50',
         ].join(' ')}

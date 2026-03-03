@@ -4,14 +4,9 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import TextAlign from '@tiptap/extension-text-align'
-import TextStyle from '@tiptap/extension-text-style'
-import { Color } from '@tiptap/extension-color'
+import { TextStyleKit } from '@tiptap/extension-text-style'
 import Image from '@tiptap/extension-image'
-import FontFamily from '@tiptap/extension-font-family'
-import Table from '@tiptap/extension-table'
-import TableRow from '@tiptap/extension-table-row'
-import TableHeader from '@tiptap/extension-table-header'
-import TableCell from '@tiptap/extension-table-cell'
+import { TableKit } from '@tiptap/extension-table'
 import { useEffect, useRef } from 'react'
 
 const FONTS = [
@@ -57,14 +52,9 @@ export default function KbEditor({ content, onChange }: KbEditorProps) {
       StarterKit,
       Link.configure({ openOnClick: false }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      TextStyle,
-      Color,
-      FontFamily,
+      TextStyleKit,
       Image.configure({ inline: false, allowBase64: true }),
-      Table.configure({ resizable: true }),
-      TableRow,
-      TableHeader,
-      TableCell,
+      TableKit.configure({ resizable: true }),
     ],
     content: content || '<p></p>',
     immediatelyRender: false,
@@ -130,7 +120,7 @@ export default function KbEditor({ content, onChange }: KbEditorProps) {
 
         <Divider />
 
-        {/* Align */}
+        {/* Alignment */}
         <ToolBtn onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Align left">⬅</ToolBtn>
         <ToolBtn onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="Center">≡</ToolBtn>
         <ToolBtn onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="Align right">➡</ToolBtn>
@@ -149,9 +139,9 @@ export default function KbEditor({ content, onChange }: KbEditorProps) {
           <button
             type="button"
             onClick={() => textColorRef.current?.click()}
-            className="flex flex-col items-center px-1.5 py-0.5 rounded hover:bg-gray-100 text-xs font-medium text-gray-600"
+            className="flex flex-col items-center px-1.5 py-0.5 rounded hover:bg-gray-100"
           >
-            <span className="font-bold leading-tight" style={{ color: editor.getAttributes('textStyle').color || '#000' }}>A</span>
+            <span className="text-xs font-bold leading-tight" style={{ color: editor.getAttributes('textStyle').color || '#000' }}>A</span>
             <span className="w-4 h-1 rounded-sm mt-0.5" style={{ backgroundColor: editor.getAttributes('textStyle').color || '#000' }} />
           </button>
           <input
@@ -178,8 +168,7 @@ export default function KbEditor({ content, onChange }: KbEditorProps) {
             const url = window.prompt('Enter URL:')
             if (url) editor.chain().focus().setLink({ href: url }).run()
           }}
-          active={editor.isActive('link')}
-          title="Add link"
+          active={editor.isActive('link')} title="Add link"
         >🔗</ToolBtn>
         {editor.isActive('link') && (
           <ToolBtn onClick={() => editor.chain().focus().unsetLink().run()} title="Remove link">🔗✕</ToolBtn>
@@ -223,7 +212,7 @@ export default function KbEditor({ content, onChange }: KbEditorProps) {
           '[&_.ProseMirror_hr]:border-gray-300 [&_.ProseMirror_hr]:my-4',
           '[&_.ProseMirror_img]:max-w-full [&_.ProseMirror_img]:rounded [&_.ProseMirror_img]:my-2',
           '[&_.ProseMirror_table]:border-collapse [&_.ProseMirror_table]:w-full [&_.ProseMirror_table]:my-3',
-          '[&_.ProseMirror_td]:border [&_.ProseMirror_td]:border-gray-300 [&_.ProseMirror_td]:p-2 [&_.ProseMirror_td]:min-w-[60px]',
+          '[&_.ProseMirror_td]:border [&_.ProseMirror_td]:border-gray-300 [&_.ProseMirror_td]:p-2 [&_.ProseMirror_td]:min-w-[60px] [&_.ProseMirror_td]:align-top',
           '[&_.ProseMirror_th]:border [&_.ProseMirror_th]:border-gray-400 [&_.ProseMirror_th]:p-2 [&_.ProseMirror_th]:bg-gray-100 [&_.ProseMirror_th]:font-semibold',
           '[&_.ProseMirror_.selectedCell]:bg-indigo-50',
         ].join(' ')}
