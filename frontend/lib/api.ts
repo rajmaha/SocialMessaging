@@ -55,7 +55,7 @@ export const messageAPI = {
 
 // ── Backups ────────────────────────────────────────────────────────────────
 
-const api = axios.create({ baseURL: API_URL })
+export const api = axios.create({ baseURL: API_URL })
 api.interceptors.request.use(cfg => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('token')
