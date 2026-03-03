@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { API_URL } from './config'
+import { getAuthToken } from './auth'
 
 export const conversationAPI = {
   getConversations: (userId: number, platform?: string) => {
@@ -57,10 +58,8 @@ export const messageAPI = {
 
 export const api = axios.create({ baseURL: API_URL })
 api.interceptors.request.use(cfg => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token')
-    if (token) cfg.headers = { ...cfg.headers, Authorization: `Bearer ${token}` }
-  }
+  const token = getAuthToken()
+  if (token) cfg.headers = { ...cfg.headers, Authorization: `Bearer ${token}` }
   return cfg
 })
 
