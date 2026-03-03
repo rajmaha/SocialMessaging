@@ -9,7 +9,9 @@ from app.routes import todos as todo_routes, calendar as calendar_routes, calend
 from app.routes.kb import router as kb_router
 from app.routes.campaigns import router as campaigns_router
 from app.routes.email_templates import router as email_templates_router
+from app.routes.db_migrations import router as db_migrations_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
+from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -705,6 +707,48 @@ def _run_inline_migrations():
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS db_migrations (
+                id SERIAL PRIMARY KEY,
+                filename VARCHAR NOT NULL,
+                file_path VARCHAR NOT NULL,
+                description VARCHAR,
+                domain_suffix VARCHAR,
+                uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS db_migration_logs (
+                id SERIAL PRIMARY KEY,
+                migration_id INTEGER NOT NULL REFERENCES db_migrations(id) ON DELETE CASCADE,
+                site_id INTEGER NOT NULL REFERENCES cloudpanel_sites(id) ON DELETE CASCADE,
+                server_id INTEGER NOT NULL REFERENCES cloudpanel_servers(id) ON DELETE CASCADE,
+                status VARCHAR NOT NULL DEFAULT 'pending',
+                error_message TEXT,
+                executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS db_migration_schedules (
+                id SERIAL PRIMARY KEY,
+                server_id INTEGER NOT NULL UNIQUE REFERENCES cloudpanel_servers(id) ON DELETE CASCADE,
+                interval_minutes INTEGER NOT NULL DEFAULT 1440,
+                enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                last_run_at TIMESTAMP WITH TIME ZONE
+            )
+        """))
+        # v2: replace interval_minutes with structured schedule fields
+        conn.execute(text("""
+            ALTER TABLE db_migration_schedules
+                ADD COLUMN IF NOT EXISTS schedule_type        VARCHAR   NOT NULL DEFAULT 'recurring',
+                ADD COLUMN IF NOT EXISTS run_at               TIMESTAMPTZ,
+                ADD COLUMN IF NOT EXISTS day_of_week          INTEGER,
+                ADD COLUMN IF NOT EXISTS time_of_day          VARCHAR,
+                ADD COLUMN IF NOT EXISTS notify_emails        TEXT,
+                ADD COLUMN IF NOT EXISTS notify_hours_before  INTEGER   NOT NULL DEFAULT 24,
+                ADD COLUMN IF NOT EXISTS status               VARCHAR   NOT NULL DEFAULT 'scheduled'
+        """))
         conn.commit()
 
         # Tracking enrichment columns for campaign_recipients
@@ -931,6 +975,7 @@ app.include_router(calendar_settings_routes.router)
 app.include_router(kb_router)
 app.include_router(campaigns_router)
 app.include_router(email_templates_router)
+app.include_router(db_migrations_router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
@@ -956,6 +1001,10 @@ app.mount("/logos", StaticFiles(directory=LOGO_DIR), name="logos")
 SUB_LOGO_DIR = os.path.join(os.path.dirname(__file__), "subscription_logo_storage")
 os.makedirs(SUB_LOGO_DIR, exist_ok=True)
 app.mount("/subscription-logos", StaticFiles(directory=SUB_LOGO_DIR), name="subscription_logos")
+
+# Serve nothing from migration_storage — files are private SQL, not served publicly
+MIGRATION_DIR = os.path.join(os.path.dirname(__file__), "migration_storage")
+os.makedirs(MIGRATION_DIR, exist_ok=True)
 
 # Auto-sync scheduler
 scheduler = None
@@ -1353,6 +1402,16 @@ async def startup_event():
 
         scheduler.add_job(send_scheduled_campaigns, 'interval', minutes=1, id='send_scheduled_campaigns_job')
         scheduler.start()
+
+        # Wire scheduler reference for routes
+        import app.scheduler_ref as _sched_ref
+        _sched_ref.scheduler = scheduler
+
+        # Load DB migration schedules and register jobs
+        from app.services.migration_service import run_server_migrations_job, register_migration_jobs
+        register_migration_jobs(scheduler)
+        logger.info("✅ DB migration scheduler jobs loaded")
+
         logger.info("✅ Email auto-sync scheduler started (every 5 minutes)")
         logger.info("✅ Scheduled-email sender started (every minute)")
         logger.info("✅ Outbox auto-retry started (every 5 minutes)")
