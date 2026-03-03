@@ -500,10 +500,20 @@ function ScheduleRow({ schedule, onSave, onNotify, notifying }: {
     const [notifyHoursBefore, setNotifyHoursBefore] = useState(schedule.notify_hours_before ?? 24)
     const [enabled, setEnabled] = useState(schedule.enabled)
 
+    useEffect(() => {
+        setScheduleType(schedule.schedule_type || 'recurring')
+        setRunAt(schedule.run_at ? schedule.run_at.slice(0, 16) : '')
+        setDayOfWeek(schedule.day_of_week ?? 0)
+        setTimeOfDay(schedule.time_of_day || '02:00')
+        setNotifyEmails(schedule.notify_emails || '')
+        setNotifyHoursBefore(schedule.notify_hours_before ?? 24)
+        setEnabled(schedule.enabled)
+    }, [schedule])
+
     function buildPayload(): Partial<Schedule> {
         return {
             schedule_type: scheduleType,
-            run_at: scheduleType === 'one_time' ? (runAt ? new Date(runAt).toISOString() : null) : null,
+            run_at: scheduleType === 'one_time' ? (runAt ? `${runAt}:00Z` : null) : null,
             day_of_week: scheduleType === 'recurring' ? dayOfWeek : null,
             time_of_day: timeOfDay || null,
             notify_emails: notifyEmails.trim() || null,
@@ -605,7 +615,7 @@ function ScheduleRow({ schedule, onSave, onNotify, notifying }: {
                             />
                             Enabled
                         </label>
-                        {schedule.schedule_type === 'one_time' && (
+                        {scheduleType === 'one_time' && (
                             <span className={`text-xs px-2 py-0.5 rounded ${STATUS_COLORS[schedule.status] || STATUS_COLORS.scheduled}`}>
                                 {schedule.status}
                             </span>
@@ -628,7 +638,7 @@ function ScheduleRow({ schedule, onSave, onNotify, notifying }: {
                     </button>
                     <button
                         onClick={() => onNotify(schedule.server_id)}
-                        disabled={notifying === schedule.server_id}
+                        disabled={notifying === schedule.server_id || !notifyEmails.trim()}
                         className="bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50 text-white text-xs px-3 py-1 rounded whitespace-nowrap"
                     >
                         {notifying === schedule.server_id ? 'Sending…' : 'Send Notice'}
