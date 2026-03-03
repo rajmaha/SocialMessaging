@@ -70,6 +70,7 @@ const sidebarGroups = [
             { href: '/admin/cloudpanel/sites', label: 'Manage Sites', icon: '🌐', permission: () => hasAdminFeature('manage_cloudpanel') },
             { href: '/admin/cloudpanel/ssl', label: 'SSL Monitor', icon: '🔒', permission: () => hasAdminFeature('manage_ssl') },
             { href: '/admin/cloudpanel/migrations', label: 'DB Migrations', icon: '🗄️', permission: () => hasAdminFeature('manage_cloudpanel') },
+            { href: '/admin/backups', label: 'Backups', icon: '🗄️', permission: () => hasAdminFeature('manage_cloudpanel') },
         ],
     },
     {
