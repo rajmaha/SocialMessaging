@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { authAPI } from '@/lib/auth'
 import MainHeader from '@/components/MainHeader'
+import AdminNav from '@/components/AdminNav'
 import TodosPanel from '@/components/TodosPanel'
 
 export default function RemindersPageWrapper() {
@@ -31,7 +32,8 @@ function RemindersPage() {
     return (
         <div className="min-h-screen bg-gray-50">
             <MainHeader user={user} />
-            <div className="pt-14">
+            <AdminNav />
+            <div className="ml-60 pt-14">
                 <TodosPanel mode="page" />
             </div>
         </div>

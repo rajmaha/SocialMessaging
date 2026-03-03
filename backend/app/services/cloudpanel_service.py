@@ -199,7 +199,7 @@ class CloudPanelService:
                         with sftp.open(remote_path, "wb") as remote_f:
                             remote_f.write(raw)
 
-                    if filename == "default.sql":
+                    if filename == "default.sql" and rel_dir == "database":
                         has_sql = True
 
         sftp.close()
@@ -255,9 +255,26 @@ class CloudPanelService:
 
         # --- Step 5: Import database ---
         if has_sql:
-            sql_path = f"{remote_dir}/default.sql"
+            sql_path = f"{remote_dir}/database/default.sql"
             cmd_import = f"mysql -u {db_user} -p'{db_pass}' {db_name} < {sql_path}"
             self._execute(cmd_import)
+
+            # Import migration files in ascending filename order
+            migration_dir = f"{remote_dir}/database/migration"
+            try:
+                migration_output = self._execute(
+                    f"find {migration_dir} -maxdepth 1 -name '*.sql' -type f 2>/dev/null | sort -V"
+                )
+                migration_files = [
+                    f.strip() for f in migration_output.strip().splitlines()
+                    if f.strip().endswith(".sql")
+                ]
+                for mf in migration_files:
+                    self._execute(f"mysql -u {db_user} -p'{db_pass}' {db_name} < {mf}")
+                    logger.info(f"Imported migration: {mf}")
+            except Exception as e:
+                logger.info(f"No migration files or migration dir missing: {e}")
+
             yield {"step": "importing_database", "status": "done"}
         else:
             yield {"step": "importing_database", "status": "skipped"}

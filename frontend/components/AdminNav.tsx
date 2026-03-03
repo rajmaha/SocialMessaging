@@ -69,6 +69,7 @@ const sidebarGroups = [
             { href: '/admin/cloudpanel/deploy', label: 'Deploy New Site', icon: '🚀', permission: () => hasAdminFeature('deploy_site') },
             { href: '/admin/cloudpanel/sites', label: 'Manage Sites', icon: '🌐', permission: () => hasAdminFeature('manage_cloudpanel') },
             { href: '/admin/cloudpanel/ssl', label: 'SSL Monitor', icon: '🔒', permission: () => hasAdminFeature('manage_ssl') },
+            { href: '/admin/cloudpanel/migrations', label: 'DB Migrations', icon: '🗄️', permission: () => hasAdminFeature('manage_cloudpanel') },
         ],
     },
     {
@@ -111,6 +112,7 @@ function AdminNavInner() {
     const brandingCtx = useBranding()
     const branding = brandingCtx?.branding
 
+    const navRef = React.useRef<HTMLElement>(null)
     const [isMounted, setIsMounted] = useState(false)
     const [userRole, setUserRole] = useState('user')
     const { subscribe } = useEvents()
@@ -127,6 +129,18 @@ function AdminNavInner() {
             }
         }
     }, [])
+
+    // Restore saved scroll position after mount
+    useEffect(() => {
+        if (!isMounted || !navRef.current) return
+        const saved = sessionStorage.getItem('adminNavScrollTop')
+        if (saved) navRef.current.scrollTop = parseInt(saved, 10)
+    }, [isMounted])
+
+    // Save scroll position on scroll
+    const handleNavScroll = (e: React.UIEvent<HTMLElement>) => {
+        sessionStorage.setItem('adminNavScrollTop', String(e.currentTarget.scrollTop))
+    }
 
     // Increment badge on any CRM event
     useEffect(() => {
@@ -186,7 +200,7 @@ function AdminNavInner() {
                     color: 'var(--sidebar-text)'
                 }}
             >
-                <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
+                <nav ref={navRef} onScroll={handleNavScroll} className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
                     {sidebarGroups.map(group => {
                         // Filter items based on permissions and role
                         const visibleItems = group.items.filter(item => {

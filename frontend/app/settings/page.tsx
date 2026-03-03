@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import axios from 'axios'
 import { authAPI, getAuthToken } from '@/lib/auth'
 import MainHeader from '@/components/MainHeader'
+import AdminNav from '@/components/AdminNav'
 import { API_URL } from '@/lib/config';
 
 interface PlatformAccount {
@@ -446,8 +447,9 @@ function SettingsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <MainHeader user={user} />
+      <AdminNav />
 
-      <main className="max-w-6xl mx-auto px-6 pt-20 pb-8">
+      <main className="ml-60 pt-14 px-6 py-8">
 
         {/* Alerts */}
         {error && (
@@ -506,37 +508,6 @@ function SettingsPage() {
               >
                 Connected Accounts
               </button>
-              {user?.role === 'admin' && (
-                <>
-                  <button
-                    onClick={() => setActiveTab('branding')}
-                    className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'branding'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
-                      }`}
-                  >
-                    Branding
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('users')}
-                    className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'users'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
-                      }`}
-                  >
-                    Users
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('email-accounts')}
-                    className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'email-accounts'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
-                      }`}
-                  >
-                    Email Accounts
-                  </button>
-                </>
-              )}
               <button
                 onClick={() => setActiveTab('calendar')}
                 className={`px-4 py-3 font-medium transition-colors border-b-2 text-sm ${activeTab === 'calendar'
@@ -853,58 +824,36 @@ function SettingsPage() {
               </>
             )}
 
-            {/* Admin iframe tabs */}
-            {activeTab === 'platform-settings' && (
-              <iframe src="/admin/settings" className="w-full border-0 rounded-lg" style={{ height: '85vh' }} title="Platform Settings" />
-            )}
-            {activeTab === 'branding' && (
-              <iframe src="/admin/branding" className="w-full border-0 rounded-lg" style={{ height: '85vh' }} title="Branding" />
-            )}
-            {activeTab === 'users' && (
-              <iframe src="/admin/users" className="w-full border-0 rounded-lg" style={{ height: '85vh' }} title="Users" />
-            )}
-            {activeTab === 'email-accounts' && (
-              <iframe src="/admin/email-accounts" className="w-full border-0 rounded-lg" style={{ height: '85vh' }} title="Email Accounts" />
-            )}
-
             {/* Email & Messaging Tab */}
             {activeTab === 'email-messaging' && (
-              <div className="space-y-8">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 mb-1">Email & Messaging</h2>
-                  <p className="text-sm text-gray-500 mb-6">Manage your email accounts and connected messaging platforms.</p>
+              <div className="space-y-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-1">Email & Messaging</h2>
+                <p className="text-sm text-gray-500">Manage your email accounts and connected messaging platforms.</p>
 
-                  {/* Email Accounts Section */}
-                  <div className="mb-8">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-base font-semibold text-gray-800 flex items-center gap-2">
-                        <span>✉️</span> Email Accounts
-                      </h3>
-                      {user?.role === 'admin' && (
-                        <button
-                          onClick={() => setActiveTab('email-accounts')}
-                          className="text-sm text-blue-600 hover:underline"
-                        >
-                          Manage →
-                        </button>
-                      )}
-                    </div>
-                    {user?.role === 'admin' ? (
-                      <iframe
-                        src="/admin/email-accounts"
-                        className="w-full border border-gray-200 rounded-lg"
-                        style={{ height: '80vh' }}
-                        title="Email Accounts"
-                      />
-                    ) : (
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-5 text-sm text-gray-600">
-                        Email account settings are managed by your administrator.
+                {user?.role === 'admin' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <a href="/admin/email-accounts" className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition">
+                      <span className="text-2xl">📧</span>
+                      <div>
+                        <p className="font-semibold text-gray-900 text-sm">Email Account Management</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Configure IMAP/SMTP email accounts</p>
                       </div>
-                    )}
+                      <span className="ml-auto text-gray-400 text-sm">→</span>
+                    </a>
+                    <a href="/admin/settings" className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition">
+                      <span className="text-2xl">⚙️</span>
+                      <div>
+                        <p className="font-semibold text-gray-900 text-sm">Messenger Config</p>
+                        <p className="text-xs text-gray-500 mt-0.5">WhatsApp, Facebook, Viber, LinkedIn</p>
+                      </div>
+                      <span className="ml-auto text-gray-400 text-sm">→</span>
+                    </a>
                   </div>
-
-                  {/* Messaging Platforms section removed as it exists in Connected Accounts */}
-                </div>
+                ) : (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-5 text-sm text-gray-600">
+                    Email account settings are managed by your administrator.
+                  </div>
+                )}
               </div>
             )}
 
