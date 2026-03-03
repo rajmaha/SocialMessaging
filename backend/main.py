@@ -4,8 +4,12 @@ from fastapi.staticfiles import StaticFiles
 from app.database import Base, engine, SessionLocal
 from app.config import settings
 from app.models.cloudpanel_site import CloudPanelSite  # noqa: F401 — ensures table creation
-from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat, bot, webhooks, teams, reports, call_center, telephony, calls, extensions, agent_workspace, reminders, notifications, tickets, dynamic_fields, organizations, cloudpanel, cloudpanel_templates, individuals
+from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat, bot, webhooks, teams, reports, call_center, telephony, calls, extensions, agent_workspace, reminders, notifications, tickets, dynamic_fields, organizations, cloudpanel, cloudpanel_templates, individuals, billing, crm
 from app.routes import todos as todo_routes, calendar as calendar_routes, calendar_settings as calendar_settings_routes
+from app.routes.kb import router as kb_router
+from app.routes.campaigns import router as campaigns_router
+from app.routes.email_templates import router as email_templates_router
+from app.models.email_template import EmailTemplate  # noqa: F401 — ensures table creation
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -14,6 +18,121 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 
 logger = logging.getLogger(__name__)
+
+# ── Email Template Presets ────────────────────────────────────────────────────
+_TPL_NEWSLETTER = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:20px 0;"><tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+<tr><td style="background:#4f46e5;padding:32px 40px;text-align:center;">
+  <h1 style="color:#fff;margin:0;font-size:24px;font-weight:700;">{{company}}</h1>
+  <p style="color:#c7d2fe;margin:8px 0 0;font-size:14px;">Monthly Newsletter</p>
+</td></tr>
+<tr><td style="padding:32px 40px 16px;">
+  <p style="font-size:18px;color:#1f2937;margin:0 0 16px;">Hi {{first_name}},</p>
+  <p style="font-size:15px;color:#4b5563;line-height:1.7;margin:0;">Here's what's new this month.</p>
+</td></tr>
+<tr><td style="padding:0 40px 24px;">
+  <div style="border-left:4px solid #4f46e5;padding-left:16px;">
+    <h2 style="font-size:17px;color:#1f2937;margin:0 0 8px;">📌 Featured Update</h2>
+    <p style="font-size:14px;color:#6b7280;line-height:1.7;margin:0;">Your article content goes here. Share your latest news or product updates.</p>
+  </div>
+</td></tr>
+<tr><td style="padding:0 40px 24px;"><hr style="border:none;border-top:1px solid #e5e7eb;"></td></tr>
+<tr><td style="padding:0 40px 32px;">
+  <div style="border-left:4px solid #10b981;padding-left:16px;">
+    <h2 style="font-size:17px;color:#1f2937;margin:0 0 8px;">💡 Tip of the Month</h2>
+    <p style="font-size:14px;color:#6b7280;line-height:1.7;margin:0;">Share a valuable tip here. Keep it concise and actionable.</p>
+  </div>
+</td></tr>
+<tr><td style="padding:0 40px 32px;text-align:center;">
+  <a href="#" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:14px 32px;border-radius:6px;font-size:15px;font-weight:600;">Read More →</a>
+</td></tr>
+<tr><td style="background:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;">
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin:0;">You received this from {{company}}. <a href="{{unsubscribe_link}}" style="color:#6b7280;">Unsubscribe</a></p>
+</td></tr>
+</table></td></tr></table></body></html>"""
+
+_TPL_PROMOTIONAL = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:20px 0;"><tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+<tr><td style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:48px 40px;text-align:center;">
+  <div style="display:inline-block;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.5);border-radius:24px;padding:6px 20px;margin-bottom:20px;">
+    <span style="color:#fff;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Limited Time Offer</span>
+  </div>
+  <h1 style="color:#fff;margin:0 0 16px;font-size:36px;font-weight:800;line-height:1.2;">Exclusive Deal<br>Just For You</h1>
+  <p style="color:rgba(255,255,255,.85);margin:0;font-size:16px;">Hi {{first_name}}, we have something special for you.</p>
+</td></tr>
+<tr><td style="padding:40px;text-align:center;">
+  <div style="background:#fef3c7;border:2px dashed #f59e0b;border-radius:12px;padding:24px;margin-bottom:32px;">
+    <p style="font-size:13px;color:#92400e;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;font-weight:600;">Your Special Discount</p>
+    <p style="font-size:48px;color:#d97706;font-weight:800;margin:0 0 8px;">20% OFF</p>
+    <p style="font-size:13px;color:#92400e;margin:0;">Use code: <strong>SPECIAL20</strong></p>
+  </div>
+  <p style="font-size:15px;color:#4b5563;line-height:1.7;margin:0 0 32px;">Don't miss out on this exclusive offer available for a limited time.</p>
+  <a href="#" style="display:inline-block;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;text-decoration:none;padding:16px 48px;border-radius:50px;font-size:16px;font-weight:700;">Claim Your Offer →</a>
+</td></tr>
+<tr><td style="background:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;">
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin:0;">© {{company}} · <a href="{{unsubscribe_link}}" style="color:#6b7280;">Unsubscribe</a></p>
+</td></tr>
+</table></td></tr></table></body></html>"""
+
+_TPL_WELCOME = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f0fdf4;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;padding:20px 0;"><tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+<tr><td style="background:#059669;padding:32px 40px;text-align:center;">
+  <div style="font-size:40px;margin-bottom:12px;">👋</div>
+  <h1 style="color:#fff;margin:0;font-size:26px;font-weight:700;">Welcome to {{company}}!</h1>
+</td></tr>
+<tr><td style="padding:32px 40px 16px;">
+  <p style="font-size:16px;color:#1f2937;margin:0 0 16px;">Hi {{first_name}},</p>
+  <p style="font-size:15px;color:#4b5563;line-height:1.7;margin:0;">We're thrilled to have you. Here are a few steps to get started:</p>
+</td></tr>
+<tr><td style="padding:0 40px 32px;">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr><td style="padding:12px;background:#f0fdf4;border-radius:8px;font-size:14px;color:#1f2937;"><strong>Step 1:</strong> Complete your profile setup</td></tr>
+    <tr><td style="height:8px;"></td></tr>
+    <tr><td style="padding:12px;background:#eff6ff;border-radius:8px;font-size:14px;color:#1f2937;"><strong>Step 2:</strong> Explore our features and resources</td></tr>
+    <tr><td style="height:8px;"></td></tr>
+    <tr><td style="padding:12px;background:#faf5ff;border-radius:8px;font-size:14px;color:#1f2937;"><strong>Step 3:</strong> Reach out if you have any questions</td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:0 40px 32px;text-align:center;">
+  <a href="#" style="display:inline-block;background:#059669;color:#fff;text-decoration:none;padding:14px 40px;border-radius:6px;font-size:15px;font-weight:600;">Get Started →</a>
+</td></tr>
+<tr><td style="padding:24px 40px 32px;border-top:1px solid #e5e7eb;">
+  <p style="font-size:14px;color:#4b5563;margin:0;">Warmly,<br><strong>The {{company}} Team</strong></p>
+</td></tr>
+<tr><td style="background:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;">
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin:0;">© {{company}} · <a href="{{unsubscribe_link}}" style="color:#6b7280;">Unsubscribe</a></p>
+</td></tr>
+</table></td></tr></table></body></html>"""
+
+_TPL_FOLLOWUP = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:20px 0;"><tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+<tr><td style="background:#3b82f6;height:4px;"></td></tr>
+<tr><td style="padding:40px;">
+  <p style="font-size:15px;color:#1f2937;margin:0 0 20px;">Hi {{first_name}},</p>
+  <p style="font-size:15px;color:#4b5563;line-height:1.8;margin:0 0 20px;">I wanted to follow up and check in with you. I'd love to see how things are going.</p>
+  <p style="font-size:15px;color:#4b5563;line-height:1.8;margin:0 0 32px;">If there's anything I can help you with, I'm just one click away.</p>
+  <a href="#" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;padding:14px 36px;border-radius:6px;font-size:15px;font-weight:600;">Let's Chat →</a>
+  <p style="font-size:14px;color:#6b7280;margin:32px 0 0;border-top:1px solid #e5e7eb;padding-top:24px;">Best regards,<br><strong style="color:#1f2937;">The {{company}} Team</strong></p>
+</td></tr>
+<tr><td style="background:#f9fafb;padding:16px 40px;border-top:1px solid #e5e7eb;">
+  <p style="font-size:12px;color:#9ca3af;text-align:center;margin:0;"><a href="{{unsubscribe_link}}" style="color:#6b7280;">Unsubscribe</a></p>
+</td></tr>
+</table></td></tr></table></body></html>"""
+
+_PRESET_TEMPLATES = [
+    ("Newsletter", "newsletter", _TPL_NEWSLETTER),
+    ("Promotional / Offer", "promotional", _TPL_PROMOTIONAL),
+    ("Welcome Email", "welcome", _TPL_WELCOME),
+    ("Follow-up", "followup", _TPL_FOLLOWUP),
+]
 
 # Reference to the running asyncio event loop (set at startup) so that the
 # background scheduler thread can schedule async coroutines onto it.
@@ -167,6 +286,46 @@ def _run_inline_migrations():
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
         """))
+        # Product / billing tables & columns
+        conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR"))
+        conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR"))
+        conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'active'"))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pricing_plans (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                stripe_price_id VARCHAR,
+                amount_cents INTEGER NOT NULL,
+                currency VARCHAR DEFAULT 'npr',
+                interval VARCHAR DEFAULT 'month',
+                description TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS usage_events (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                event_type VARCHAR NOT NULL,
+                metadata JSON,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        # seed a couple of default pricing tiers (basic/pro) if none exist
+        result = conn.execute(text("SELECT COUNT(*) FROM pricing_plans"))
+        count = result.scalar() or 0
+        if count == 0:
+            # try to use any price IDs from the stripe_settings module
+            from app import stripe_settings
+            basic_price = stripe_settings.PRICE_IDS.get("basic")
+            pro_price = stripe_settings.PRICE_IDS.get("pro")
+            conn.execute(text("""
+                INSERT INTO pricing_plans (name, stripe_price_id, amount_cents, currency, interval, description)
+                VALUES
+                  ('Basic', :basic_price, 5000, 'npr', 'month', 'Entry level plan'),
+                  ('Pro', :pro_price, 15000, 'npr', 'month', 'Professional tier')
+            """), {"basic_price": basic_price, "pro_price": pro_price})
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS reminder_call_logs (
                 id SERIAL PRIMARY KEY,
@@ -413,7 +572,162 @@ def _run_inline_migrations():
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
         """))
+        # CRM Module Tables
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS leads (
+                id SERIAL PRIMARY KEY,
+                first_name VARCHAR NOT NULL,
+                last_name VARCHAR,
+                email VARCHAR UNIQUE,
+                phone VARCHAR,
+                company VARCHAR,
+                position VARCHAR,
+                status VARCHAR DEFAULT 'new',
+                source VARCHAR DEFAULT 'other',
+                assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                score INTEGER DEFAULT 0,
+                estimated_value FLOAT,
+                conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+                organization_id INTEGER REFERENCES organizations(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS deals (
+                id SERIAL PRIMARY KEY,
+                lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+                name VARCHAR NOT NULL,
+                description TEXT,
+                stage VARCHAR DEFAULT 'prospect',
+                amount FLOAT,
+                probability INTEGER DEFAULT 50,
+                expected_close_date TIMESTAMP,
+                closed_at TIMESTAMP,
+                assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS crm_tasks (
+                id SERIAL PRIMARY KEY,
+                lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+                deal_id INTEGER REFERENCES deals(id) ON DELETE CASCADE,
+                title VARCHAR NOT NULL,
+                description TEXT,
+                status VARCHAR DEFAULT 'open',
+                assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                due_date TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                completed_at TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS crm_activities (
+                id SERIAL PRIMARY KEY,
+                lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+                type VARCHAR NOT NULL,
+                title VARCHAR NOT NULL,
+                description TEXT,
+                message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                activity_date TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        # Extend LeadSource enum with new source types (idempotent)
+        for _src in [
+            "search_engine", "facebook_post", "facebook_boost", "linkedin",
+            "x_post", "email_marketing", "word_of_mouth", "local_agent",
+            "staff_reference", "phone_call", "existing_client", "client_reference",
+        ]:
+            try:
+                conn.execute(text(f"ALTER TYPE leadsource ADD VALUE IF NOT EXISTS '{_src}'"))
+            except Exception:
+                pass
         conn.commit()
+
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS kb_articles (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(500) NOT NULL,
+                slug VARCHAR(500) UNIQUE NOT NULL,
+                content_html TEXT NOT NULL,
+                category VARCHAR(255),
+                published BOOLEAN DEFAULT FALSE NOT NULL,
+                views INTEGER DEFAULT 0 NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ
+            )
+        """))
+        conn.commit()
+
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS campaigns (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                subject VARCHAR(500) NOT NULL,
+                body_html TEXT NOT NULL,
+                status VARCHAR(50) DEFAULT 'draft' NOT NULL,
+                target_filter JSONB DEFAULT '{}',
+                scheduled_at TIMESTAMPTZ,
+                sent_at TIMESTAMPTZ,
+                sent_count INTEGER DEFAULT 0,
+                opened_count INTEGER DEFAULT 0,
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS campaign_recipients (
+                id SERIAL PRIMARY KEY,
+                campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+                lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+                email VARCHAR(255) NOT NULL,
+                name VARCHAR(255),
+                sent_at TIMESTAMPTZ,
+                opened_at TIMESTAMPTZ,
+                open_count INTEGER DEFAULT 0
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS email_templates (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(200) NOT NULL,
+                category VARCHAR(50) NOT NULL,
+                is_preset BOOLEAN NOT NULL DEFAULT FALSE,
+                body_html TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        conn.commit()
+
+        # Tracking enrichment columns for campaign_recipients
+        for _col_sql in [
+            "ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS country VARCHAR(100)",
+            "ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
+            "ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS device_type VARCHAR(50)",
+            "ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS email_client VARCHAR(100)",
+        ]:
+            conn.execute(text(_col_sql))
+        conn.commit()
+
+        # Seed preset templates once
+        preset_count = conn.execute(
+            text("SELECT COUNT(*) FROM email_templates WHERE is_preset = TRUE")
+        ).scalar()
+        if preset_count == 0:
+            for tpl_name, tpl_category, tpl_html in _PRESET_TEMPLATES:
+                conn.execute(text("""
+                    INSERT INTO email_templates (name, category, is_preset, body_html)
+                    VALUES (:name, :category, TRUE, :body_html)
+                """), {"name": tpl_name, "category": tpl_category, "body_html": tpl_html})
+            conn.commit()
 
 try:
     _run_inline_migrations()
@@ -592,6 +906,8 @@ app.include_router(branding.router)
 app.include_router(teams.router)
 app.include_router(reports.router)
 app.include_router(email.router)
+app.include_router(billing.router)
+app.include_router(crm.router)
 app.include_router(events.router)
 app.include_router(webchat.router)
 app.include_router(bot.router)
@@ -612,6 +928,9 @@ app.include_router(individuals.router)
 app.include_router(todo_routes.router)
 app.include_router(calendar_routes.router)
 app.include_router(calendar_settings_routes.router)
+app.include_router(kb_router)
+app.include_router(campaigns_router)
+app.include_router(email_templates_router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
@@ -955,6 +1274,49 @@ async def startup_event():
             except Exception as e:
                 logger.error("Overdue reminders check error: %s", e)
         scheduler.add_job(check_overdue_reminders, 'interval', minutes=1, id='check_overdue_reminders')
+
+        def check_overdue_crm_tasks():
+            """Broadcast CRM_TASK_OVERDUE for any open/in_progress tasks past their due date."""
+            from app.models.crm import Task as CrmTask
+            from app.services.events_service import events_service, EventTypes
+            from datetime import datetime
+            import asyncio
+
+            db = SessionLocal()
+            try:
+                now = datetime.utcnow()
+                overdue = db.query(CrmTask).filter(
+                    CrmTask.due_date < now,
+                    CrmTask.status.in_(["open", "in_progress"]),
+                ).all()
+
+                for task in overdue:
+                    event = EventTypes.create_event(
+                        EventTypes.CRM_TASK_OVERDUE,
+                        {
+                            "task_id": task.id,
+                            "task_title": task.title,
+                            "lead_id": task.lead_id,
+                            "due_date": task.due_date.isoformat() if task.due_date else None,
+                        },
+                    )
+                    if task.assigned_to:
+                        try:
+                            loop = asyncio.get_event_loop()
+                            if loop.is_running():
+                                asyncio.run_coroutine_threadsafe(
+                                    events_service.broadcast_to_user(task.assigned_to, event),
+                                    loop,
+                                )
+                        except Exception as e:
+                            logger.warning(f"CRM task overdue broadcast error: {e}")
+            except Exception as e:
+                logger.error(f"check_overdue_crm_tasks error: {e}")
+            finally:
+                db.close()
+
+        scheduler.add_job(check_overdue_crm_tasks, 'interval', minutes=5, id='check_overdue_crm_tasks')
+
         # Refresh expiring calendar tokens every 30 minutes
         def refresh_calendar_tokens():
             try:
@@ -967,6 +1329,29 @@ async def startup_event():
             except Exception as e:
                 logger.error("Calendar token refresh error: %s", e)
         scheduler.add_job(refresh_calendar_tokens, 'interval', minutes=30, id='refresh_calendar_tokens')
+
+        def send_scheduled_campaigns():
+            """Fire campaigns whose scheduled_at has passed and status is 'scheduled'."""
+            from app.models.campaign import Campaign
+            from app.routes.campaigns import _do_send
+            db = SessionLocal()
+            try:
+                now = datetime.utcnow()
+                due = db.query(Campaign).filter(
+                    Campaign.status == "scheduled",
+                    Campaign.scheduled_at <= now,
+                ).all()
+                for campaign in due:
+                    try:
+                        _do_send(campaign.id, db)
+                    except Exception as e:
+                        logger.error(f"Campaign send error (id={campaign.id}): {e}")
+            except Exception as e:
+                logger.error(f"send_scheduled_campaigns error: {e}")
+            finally:
+                db.close()
+
+        scheduler.add_job(send_scheduled_campaigns, 'interval', minutes=1, id='send_scheduled_campaigns_job')
         scheduler.start()
         logger.info("✅ Email auto-sync scheduler started (every 5 minutes)")
         logger.info("✅ Scheduled-email sender started (every minute)")
