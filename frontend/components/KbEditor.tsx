@@ -9,6 +9,7 @@ import Image from '@tiptap/extension-image'
 import { TableKit } from '@tiptap/extension-table'
 import { useEffect, useRef, useState } from 'react'
 import MediaLibraryModal from './MediaLibraryModal'
+import { CustomTableCell, CustomTableHeader } from './tiptap-table-cells'
 
 const FONTS = [
   { label: 'Default', value: '' },
@@ -42,8 +43,9 @@ function ToolBtn({ onClick, active, title, children }: {
 }
 
 export default function KbEditor({ content, onChange }: KbEditorProps) {
-  const textColorRef = useRef<HTMLInputElement>(null)
-  const cellBgRef    = useRef<HTMLInputElement>(null)
+  const textColorRef  = useRef<HTMLInputElement>(null)
+  const cellBgRef     = useRef<HTMLInputElement>(null)
+  const cellBorderRef = useRef<HTMLInputElement>(null)
   const [mediaOpen, setMediaOpen] = useState(false)
 
   const editor = useEditor({
@@ -53,7 +55,9 @@ export default function KbEditor({ content, onChange }: KbEditorProps) {
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyleKit,
       Image.configure({ inline: false, allowBase64: true }),
-      TableKit.configure({ resizable: true }),
+      TableKit.configure({ table: { resizable: true }, tableCell: false, tableHeader: false }),
+      CustomTableCell,
+      CustomTableHeader,
     ],
     content: content || '<p></p>',
     immediatelyRender: false,
@@ -63,7 +67,7 @@ export default function KbEditor({ content, onChange }: KbEditorProps) {
   useEffect(() => {
     if (!editor || !content) return
     if (editor.getHTML() === content) return
-    editor.commands.setContent(content, false)
+    editor.commands.setContent(content, { emitUpdate: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content])
 
@@ -177,6 +181,17 @@ export default function KbEditor({ content, onChange }: KbEditorProps) {
               <input ref={cellBgRef} type="color" defaultValue="#fffde7"
                 className="absolute opacity-0 w-0 h-0 pointer-events-none"
                 onChange={e => editor.chain().focus().setCellAttribute('backgroundColor', e.target.value).run()} />
+            </div>
+
+            {/* Cell border color */}
+            <div className="relative flex-shrink-0" title="Cell border color">
+              <button type="button" onClick={() => cellBorderRef.current?.click()}
+                className="flex items-center gap-1 px-2 py-0.5 border border-amber-300 rounded bg-white hover:bg-amber-50 text-amber-800 text-xs font-medium">
+                🖊 Cell Border
+              </button>
+              <input ref={cellBorderRef} type="color" defaultValue="#94a3b8"
+                className="absolute opacity-0 w-0 h-0 pointer-events-none"
+                onChange={e => editor.chain().focus().setCellAttribute('borderColor', e.target.value).run()} />
             </div>
 
             <span className="w-px h-4 bg-amber-200 mx-0.5" />
