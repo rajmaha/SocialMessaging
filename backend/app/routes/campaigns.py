@@ -347,10 +347,21 @@ def get_campaign_stats(
         CampaignRecipient.campaign_id == campaign_id
     ).all()
     open_rate = round((c.opened_count / c.sent_count * 100), 1) if c.sent_count else 0
+
+    # Build breakdown summaries from recipients that have opened
+    from collections import Counter
+    opened_recipients = [r for r in recipients if r.opened_at]
+    device_breakdown = dict(Counter(r.device_type for r in opened_recipients if r.device_type))
+    client_breakdown = dict(Counter(r.email_client for r in opened_recipients if r.email_client))
+    country_breakdown = dict(Counter(r.country for r in opened_recipients if r.country))
+
     return {
         "sent_count": c.sent_count,
         "opened_count": c.opened_count,
         "open_rate": open_rate,
+        "device_breakdown": device_breakdown,
+        "client_breakdown": client_breakdown,
+        "country_breakdown": country_breakdown,
         "recipients": [
             {
                 "id": r.id,
@@ -359,6 +370,10 @@ def get_campaign_stats(
                 "sent_at": r.sent_at,
                 "opened_at": r.opened_at,
                 "open_count": r.open_count,
+                "country": r.country,
+                "city": r.city,
+                "device_type": r.device_type,
+                "email_client": r.email_client,
             }
             for r in recipients
         ],

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useBranding } from '@/lib/branding-context'
 import { hasModuleAccess, hasAdminFeature } from '@/lib/permissions'
+import { useEvents } from '@/lib/events-context'
 
 const sidebarGroups = [
     {
@@ -70,6 +71,30 @@ const sidebarGroups = [
             { href: '/admin/cloudpanel/ssl', label: 'SSL Monitor', icon: '🔒', permission: () => hasAdminFeature('manage_ssl') },
         ],
     },
+    {
+        label: 'Content',
+        items: [
+            { href: '/admin/kb', label: 'Knowledge Base', icon: '📚', permission: () => hasAdminFeature('manage_branding') },
+        ],
+    },
+    {
+        label: 'Marketing',
+        items: [
+            { href: '/admin/email-templates', label: 'Email Templates', icon: '🎨', permission: () => hasAdminFeature('manage_billing') },
+            { href: '/admin/campaigns', label: 'Email Campaigns', icon: '📨', permission: () => hasAdminFeature('manage_billing') },
+        ],
+    },
+    {
+        label: 'Business',
+        items: [
+            { href: '/admin/pricing', label: 'Pricing Plans', icon: '💲', permission: () => hasAdminFeature('manage_billing') },
+            { href: '/admin/usage', label: 'Usage Analytics', icon: '📊', permission: () => hasAdminFeature('manage_billing') },
+            { href: '/admin/crm/leads', label: 'Leads', icon: '👥', permission: () => hasAdminFeature('feature_manage_crm') },
+            { href: '/admin/crm/deals', label: 'Sales Pipeline', icon: '💼', permission: () => hasAdminFeature('feature_manage_crm') },
+            { href: '/admin/crm/tasks', label: 'Tasks', icon: '✓', permission: () => hasAdminFeature('feature_manage_crm') },
+            { href: '/admin/crm/analytics', label: 'Analytics', icon: '📈', permission: () => hasAdminFeature('feature_manage_crm') },
+        ],
+    },
 ]
 
 export default function AdminNav() {
@@ -88,6 +113,8 @@ function AdminNavInner() {
 
     const [isMounted, setIsMounted] = useState(false)
     const [userRole, setUserRole] = useState('user')
+    const { subscribe } = useEvents()
+    const [crmBadge, setCrmBadge] = useState(0)
 
     useEffect(() => {
         setIsMounted(true)
@@ -100,6 +127,21 @@ function AdminNavInner() {
             }
         }
     }, [])
+
+    // Increment badge on any CRM event
+    useEffect(() => {
+        const unsub1 = subscribe('crm_lead_assigned', () => setCrmBadge(n => n + 1))
+        const unsub2 = subscribe('crm_deal_stage_changed', () => setCrmBadge(n => n + 1))
+        const unsub3 = subscribe('crm_task_overdue', () => setCrmBadge(n => n + 1))
+        return () => { unsub1(); unsub2(); unsub3() }
+    }, [subscribe])
+
+    // Clear badge when user is on a CRM page
+    useEffect(() => {
+        if (pathname.startsWith('/admin/crm')) {
+            setCrmBadge(0)
+        }
+    }, [pathname])
 
     const isActive = (href: string, exact = false) => {
         const [pathOnly, queryString] = href.split('?');
@@ -180,7 +222,12 @@ function AdminNavInner() {
                                                 >
                                                     <span className="text-base w-5 text-center flex-shrink-0">{item.icon}</span>
                                                     <span className="truncate">{item.label}</span>
-                                                    {active && (
+                                                    {crmBadge > 0 && item.href.startsWith('/admin/crm') && (
+                                                        <span className="ml-auto bg-red-500 text-white text-xs rounded-full h-5 min-w-[20px] flex items-center justify-center px-1 flex-shrink-0">
+                                                            {crmBadge > 99 ? '99+' : crmBadge}
+                                                        </span>
+                                                    )}
+                                                    {active && crmBadge === 0 && (
                                                         <span className="ml-auto w-2 h-2 rounded-full bg-indigo-300 flex-shrink-0" />
                                                     )}
                                                 </Link>
