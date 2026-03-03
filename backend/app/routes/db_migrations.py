@@ -18,6 +18,7 @@ from app.services.migration_service import (
     run_server_migrations, _upsert_job, MIGRATION_DIR,
     send_migration_notification,
 )
+import app.scheduler_ref as sched_ref
 
 router = APIRouter(prefix="/cloudpanel/migrations", tags=["DB Migrations"])
 require_cp = require_admin_feature("feature_manage_cloudpanel")
@@ -229,7 +230,6 @@ def upsert_schedule(
     db.refresh(schedule)
 
     # Update APScheduler live
-    import app.scheduler_ref as sched_ref
     if sched_ref.scheduler:
         _upsert_job(sched_ref.scheduler, server_id, schedule)
 
