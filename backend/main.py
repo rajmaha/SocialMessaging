@@ -12,6 +12,9 @@ from app.routes.email_templates import router as email_templates_router
 from app.routes.db_migrations import router as db_migrations_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
+from app.models.backup_destination import BackupDestination  # noqa: F401
+from app.models.backup_job import BackupJob  # noqa: F401
+from app.models.backup_run import BackupRun  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -760,6 +763,14 @@ def _run_inline_migrations():
         ]:
             conn.execute(text(_col_sql))
         conn.commit()
+
+        # Backup system — guard for future column additions
+        with engine.connect() as conn:
+            conn.execute(text("""
+                ALTER TABLE backup_jobs
+                ADD COLUMN IF NOT EXISTS notify_on_failure_emails JSON DEFAULT '[]'::json
+            """))
+            conn.commit()
 
         # Seed preset templates once
         preset_count = conn.execute(
