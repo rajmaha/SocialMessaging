@@ -7,7 +7,7 @@ class BackupRun(Base):
     __tablename__ = "backup_runs"
 
     id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("backup_jobs.id"), nullable=False)
+    job_id = Column(Integer, ForeignKey("backup_jobs.id", ondelete="CASCADE"), nullable=False)
     status = Column(String, default="running")  # running | success | failed
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     finished_at = Column(DateTime(timezone=True), nullable=True)
