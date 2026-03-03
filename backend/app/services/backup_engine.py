@@ -104,7 +104,9 @@ class BackupEngine:
                 remote_db = f"/tmp/backup_db_{server.id}.sql"
                 self._exec(ssh, f"mysqldump -u root --all-databases > {remote_db}")
                 local_db = os.path.join(tmpdir, f"db_{server.id}.sql")
-                ssh.open_sftp().get(remote_db, local_db)
+                sftp = ssh.open_sftp()
+                sftp.get(remote_db, local_db)
+                sftp.close()
                 self._exec(ssh, f"rm -f {remote_db}")
                 files.append(local_db)
 
@@ -112,7 +114,9 @@ class BackupEngine:
                 remote_tar = f"/tmp/backup_files_{server.id}.tar.gz"
                 self._exec(ssh, f"tar -czf {remote_tar} /home/*/htdocs/ 2>/dev/null || true")
                 local_tar = os.path.join(tmpdir, f"files_{server.id}.tar.gz")
-                ssh.open_sftp().get(remote_tar, local_tar)
+                sftp = ssh.open_sftp()
+                sftp.get(remote_tar, local_tar)
+                sftp.close()
                 self._exec(ssh, f"rm -f {remote_tar}")
                 files.append(local_tar)
         finally:

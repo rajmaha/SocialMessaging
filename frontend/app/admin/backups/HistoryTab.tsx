@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { getBackupRuns, getBackupJobs } from '@/lib/api';
 
 function formatBytes(bytes: number | null) {
@@ -69,9 +69,8 @@ export default function BackupHistoryTab() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {runs.map(run => (
-              <>
+              <React.Fragment key={run.id}>
                 <tr
-                  key={run.id}
                   className="hover:bg-gray-50 cursor-pointer"
                   onClick={() => setExpanded(expanded === run.id ? null : run.id)}
                 >
@@ -90,7 +89,7 @@ export default function BackupHistoryTab() {
                   </td>
                 </tr>
                 {expanded === run.id && (
-                  <tr key={`${run.id}-detail`}>
+                  <tr>
                     <td colSpan={5} className="px-4 py-3 bg-gray-50">
                       {run.backup_file_path && (
                         <p className="text-xs text-gray-600 mb-1">
@@ -106,7 +105,7 @@ export default function BackupHistoryTab() {
                     </td>
                   </tr>
                 )}
-              </>
+              </React.Fragment>
             ))}
             {runs.length === 0 && (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No backup runs yet</td></tr>

@@ -766,12 +766,11 @@ def _run_inline_migrations():
         conn.commit()
 
         # Backup system — guard for future column additions
-        with engine.connect() as conn:
-            conn.execute(text("""
-                ALTER TABLE backup_jobs
-                ADD COLUMN IF NOT EXISTS notify_on_failure_emails JSON DEFAULT '[]'::json
-            """))
-            conn.commit()
+        conn.execute(text("""
+            ALTER TABLE backup_jobs
+            ADD COLUMN IF NOT EXISTS notify_on_failure_emails JSON DEFAULT '[]'::json
+        """))
+        conn.commit()
 
         # Seed preset templates once
         preset_count = conn.execute(
