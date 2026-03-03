@@ -10,6 +10,7 @@ from app.routes.kb import router as kb_router
 from app.routes.campaigns import router as campaigns_router
 from app.routes.email_templates import router as email_templates_router
 from app.routes.db_migrations import router as db_migrations_router
+from app.routes.backups import router as backups_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
 from app.models.backup_destination import BackupDestination  # noqa: F401
@@ -987,6 +988,7 @@ app.include_router(kb_router)
 app.include_router(campaigns_router)
 app.include_router(email_templates_router)
 app.include_router(db_migrations_router)
+app.include_router(backups_router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
@@ -1412,6 +1414,40 @@ async def startup_event():
                 db.close()
 
         scheduler.add_job(send_scheduled_campaigns, 'interval', minutes=1, id='send_scheduled_campaigns_job')
+
+        def run_due_backup_jobs():
+            """Poll BackupJob table every minute and run jobs whose next_run_at is due."""
+            from app.database import SessionLocal
+            from app.models.backup_job import BackupJob
+            from app.services.backup_engine import backup_engine
+            from datetime import datetime, timezone, timedelta
+            from croniter import croniter
+
+            db = SessionLocal()
+            try:
+                now = datetime.now(timezone.utc)
+                due_jobs = db.query(BackupJob).filter(
+                    BackupJob.is_active == True,
+                    BackupJob.next_run_at != None,
+                    BackupJob.next_run_at <= now
+                ).all()
+                for job in due_jobs:
+                    try:
+                        backup_engine.run(job.id, db)
+                        # Update next_run_at
+                        if job.schedule_type == "interval" and job.schedule_interval_hours:
+                            job.next_run_at = now + timedelta(hours=job.schedule_interval_hours)
+                        elif job.schedule_type == "cron" and job.schedule_cron:
+                            job.next_run_at = croniter(job.schedule_cron, now).get_next(datetime)
+                        else:
+                            job.next_run_at = None
+                        db.commit()
+                    except Exception as e:
+                        logger.error(f"Scheduled backup job {job.id} error: {e}")
+            finally:
+                db.close()
+
+        scheduler.add_job(run_due_backup_jobs, 'interval', minutes=1, id='run_due_backup_jobs')
         scheduler.start()
 
         # Wire scheduler reference for routes
