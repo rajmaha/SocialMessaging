@@ -8,6 +8,7 @@ import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 import EmailEditor from "@/components/EmailEditor";
 import EmailTemplateGallery from "@/components/EmailTemplateGallery";
+import SendTestEmailPopover from "@/components/SendTestEmailPopover";
 import { useRouter } from "next/navigation";
 
 const LEAD_STATUSES = ["new", "contacted", "qualified", "lost", "converted"];
@@ -47,8 +48,7 @@ export default function NewCampaignPage() {
     setAudienceCount(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const save = async (publish: boolean) => {
     if (!form.name || !form.subject || !form.body_html) {
       setError("Name, subject, and body are required.");
       return;
@@ -59,17 +59,27 @@ export default function NewCampaignPage() {
       const payload = {
         ...form,
         scheduled_at: form.scheduled_at ? new Date(form.scheduled_at).toISOString() : null,
-        status: form.scheduled_at ? "scheduled" : "draft",
+        status: publish
+          ? (form.scheduled_at ? "scheduled" : "draft")
+          : "draft",
       };
       const res = await axios.post(`${API_URL}/campaigns`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      router.push(`/admin/campaigns/${res.data.id}`);
+      if (publish) {
+        router.push(`/admin/campaigns/${res.data.id}`);
+      } else {
+        router.push(`/admin/campaigns/${res.data.id}/edit`);
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to save campaign");
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
   };
 
   return (
@@ -109,7 +119,10 @@ export default function NewCampaignPage() {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-sm font-medium text-gray-600">Email Body *</label>
-                <EmailTemplateGallery onSelect={html => setForm(prev => ({ ...prev, body_html: html }))} />
+                <div className="flex items-center gap-2">
+                  <SendTestEmailPopover subject={form.subject} bodyHtml={form.body_html} />
+                  <EmailTemplateGallery onSelect={html => setForm(prev => ({ ...prev, body_html: html }))} />
+                </div>
               </div>
               <EmailEditor
                 content={form.body_html}
@@ -192,13 +205,22 @@ export default function NewCampaignPage() {
             />
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
             <button
-              type="submit"
+              type="button"
+              onClick={() => save(false)}
+              disabled={saving}
+              className="px-6 py-2 border border-gray-300 bg-white text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "💾 Save Draft"}
+            </button>
+            <button
+              type="button"
+              onClick={() => save(true)}
               disabled={saving}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50"
             >
-              {saving ? "Saving..." : "Save Campaign"}
+              {saving ? "Saving..." : "✅ Publish"}
             </button>
             <a href="/admin/campaigns" className="px-6 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
               Cancel

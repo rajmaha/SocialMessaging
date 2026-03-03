@@ -212,6 +212,7 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
               defaultValue="1"
               onChange={e => editor.chain().focus().setCellAttribute('borderWidth', e.target.value).run()}
               className="text-xs border border-amber-300 rounded px-1 py-0.5 bg-white text-amber-800 focus:outline-none focus:ring-1 focus:ring-amber-400">
+              <option value="0">0px</option>
               <option value="1">1px</option>
               <option value="2">2px</option>
               <option value="3">3px</option>
