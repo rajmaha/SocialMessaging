@@ -3,8 +3,8 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 
-class EmailTemplate(Base):
-    __tablename__ = "email_templates"
+class CampaignEmailTemplate(Base):
+    __tablename__ = "campaign_email_templates"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False)

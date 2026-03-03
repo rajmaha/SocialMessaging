@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.database import get_db
-from app.models.email_template import EmailTemplate
+from app.models.email_template import CampaignEmailTemplate
 from app.schemas.email_template import EmailTemplateCreate, EmailTemplateUpdate, EmailTemplateResponse
 from app.dependencies import get_current_user
 from app.models.user import User
@@ -16,8 +16,8 @@ def list_templates(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return db.query(EmailTemplate).order_by(
-        EmailTemplate.is_preset.desc(), EmailTemplate.created_at.desc()
+    return db.query(CampaignEmailTemplate).order_by(
+        CampaignEmailTemplate.is_preset.desc(), CampaignEmailTemplate.created_at.desc()
     ).all()
 
 
@@ -27,7 +27,7 @@ def get_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    t = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()
+    t = db.query(CampaignEmailTemplate).filter(CampaignEmailTemplate.id == template_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Template not found")
     return t
@@ -41,7 +41,7 @@ def create_template(
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
-    t = EmailTemplate(**data.model_dump(), is_preset=False)
+    t = CampaignEmailTemplate(**data.model_dump(), is_preset=False)
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -57,7 +57,7 @@ def update_template(
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
-    t = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()
+    t = db.query(CampaignEmailTemplate).filter(CampaignEmailTemplate.id == template_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Template not found")
     if t.is_preset:
@@ -77,7 +77,7 @@ def delete_template(
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
-    t = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()
+    t = db.query(CampaignEmailTemplate).filter(CampaignEmailTemplate.id == template_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Template not found")
     if t.is_preset:

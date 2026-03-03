@@ -9,7 +9,7 @@ from app.routes import todos as todo_routes, calendar as calendar_routes, calend
 from app.routes.kb import router as kb_router
 from app.routes.campaigns import router as campaigns_router
 from app.routes.email_templates import router as email_templates_router
-from app.models.email_template import EmailTemplate  # noqa: F401 — ensures table creation
+from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -696,7 +696,7 @@ def _run_inline_migrations():
             )
         """))
         conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS email_templates (
+            CREATE TABLE IF NOT EXISTS campaign_email_templates (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(200) NOT NULL,
                 category VARCHAR(50) NOT NULL,
@@ -719,12 +719,12 @@ def _run_inline_migrations():
 
         # Seed preset templates once
         preset_count = conn.execute(
-            text("SELECT COUNT(*) FROM email_templates WHERE is_preset = TRUE")
+            text("SELECT COUNT(*) FROM campaign_email_templates WHERE is_preset = TRUE")
         ).scalar()
         if preset_count == 0:
             for tpl_name, tpl_category, tpl_html in _PRESET_TEMPLATES:
                 conn.execute(text("""
-                    INSERT INTO email_templates (name, category, is_preset, body_html)
+                    INSERT INTO campaign_email_templates (name, category, is_preset, body_html)
                     VALUES (:name, :category, TRUE, :body_html)
                 """), {"name": tpl_name, "category": tpl_category, "body_html": tpl_html})
             conn.commit()
