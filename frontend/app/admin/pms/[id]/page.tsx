@@ -2,6 +2,9 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { pmsApi } from '@/lib/api';
+import { authAPI } from '@/lib/auth';
+import MainHeader from '@/components/MainHeader';
+import AdminNav from '@/components/AdminNav';
 import GanttChart from '@/components/pms/GanttChart';
 import BoardView from '@/components/pms/BoardView';
 import ListView from '@/components/pms/ListView';
@@ -11,6 +14,7 @@ const TABS = ['Gantt', 'Board', 'List', 'Milestones', 'Settings'];
 export default function ProjectDetailPage() {
   const { id } = useParams();
   const projectId = Number(id);
+  const user = authAPI.getUser();
   const [project, setProject] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [milestones, setMilestones] = useState<any[]>([]);
@@ -31,15 +35,26 @@ export default function ProjectDetailPage() {
 
   useEffect(() => { reload(); }, [projectId]);
 
-  if (loading) return <div className="flex-1 flex items-center justify-center text-gray-400">Loading...</div>;
+  if (!user) return null;
+  if (loading) return (
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <MainHeader user={user} />
+      <AdminNav />
+      <div className="flex items-center justify-center h-64 text-gray-400">Loading...</div>
+    </div>
+  );
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50 flex flex-col">
+      <MainHeader user={user} />
+      <AdminNav />
+      {/* Project header */}
       <div className="px-6 py-4 border-b border-gray-200 bg-white flex items-center gap-4">
-        <div className="w-3 h-3 rounded-full" style={{ background: project?.color }} />
+        <div className="w-3 h-3 rounded-full flex-none" style={{ background: project?.color }} />
         <h1 className="text-lg font-semibold text-gray-900">{project?.name}</h1>
-        <span className="text-xs text-gray-400">{project?.status?.replace('_', ' ')}</span>
+        <span className="text-xs text-gray-400 capitalize">{project?.status?.replace('_', ' ')}</span>
       </div>
+      {/* Tabs */}
       <div className="border-b border-gray-200 bg-white px-6">
         <div className="flex gap-1">
           {TABS.map(tab => (
@@ -52,9 +67,18 @@ export default function ProjectDetailPage() {
           ))}
         </div>
       </div>
-      <div className="flex-1 overflow-hidden">
-        {activeTab === 'Gantt' && <GanttChart projectId={projectId} tasks={tasks} milestones={milestones} />}
-        {activeTab === 'Board' && <BoardView projectId={projectId} tasks={tasks} onReload={reload} />}
+      {/* Tab content — Gantt gets fixed height, others scroll naturally */}
+      <div className={activeTab === 'Gantt' || activeTab === 'Board' ? 'flex-1 overflow-hidden' : 'flex-1'}>
+        {activeTab === 'Gantt' && (
+          <div className="h-full" style={{ height: 'calc(100vh - 14rem)' }}>
+            <GanttChart projectId={projectId} tasks={tasks} milestones={milestones} />
+          </div>
+        )}
+        {activeTab === 'Board' && (
+          <div style={{ height: 'calc(100vh - 14rem)' }}>
+            <BoardView projectId={projectId} tasks={tasks} onReload={reload} />
+          </div>
+        )}
         {activeTab === 'List' && <ListView projectId={projectId} tasks={tasks} milestones={milestones} members={project?.members || []} onReload={reload} />}
         {activeTab === 'Milestones' && <MilestonesTab projectId={projectId} milestones={milestones} onReload={reload} />}
         {activeTab === 'Settings' && <SettingsTab project={project} onReload={reload} />}

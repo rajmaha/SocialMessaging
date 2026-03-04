@@ -2,6 +2,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { pmsApi } from '@/lib/api';
+import MainHeader from '@/components/MainHeader';
+import AdminNav from '@/components/AdminNav';
+import { authAPI } from '@/lib/auth';
 
 const STATUS_COLORS: Record<string, string> = {
   planning: 'bg-gray-100 text-gray-700',
@@ -12,6 +15,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function PMSPage() {
   const router = useRouter();
+  const user = authAPI.getUser();
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -29,8 +33,13 @@ export default function PMSPage() {
     setForm({ name: '', description: '', color: '#6366f1', status: 'planning' });
   };
 
+  if (!user) return null;
+
   return (
-    <div className="flex-1 overflow-auto p-6">
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <MainHeader user={user} />
+      <AdminNav />
+      <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
         <button onClick={() => setShowCreate(true)}
@@ -100,6 +109,7 @@ export default function PMSPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
