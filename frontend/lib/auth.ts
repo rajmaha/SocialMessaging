@@ -60,6 +60,16 @@ export const authAPI = {
     const data = await response.json()
     if (response.ok && data.user_id) {
       localStorage.setItem('user', JSON.stringify(data))
+      // Set role cookie for middleware route protection
+      if (typeof document !== 'undefined') {
+        document.cookie = `user_role=${data.role || 'support'}; path=/; SameSite=Lax`
+        // Fetch and cache page permissions
+        import('@/lib/permissions').then(({ fetchAndStoreUserPages }) => {
+          fetchAndStoreUserPages().then(pages => {
+            document.cookie = `user_pages=${encodeURIComponent(JSON.stringify(pages))}; path=/; SameSite=Lax`
+          })
+        })
+      }
     }
     return data
   },
@@ -75,6 +85,11 @@ export const authAPI = {
 
   logout: () => {
     localStorage.removeItem('user')
+    localStorage.removeItem('user_pages')
+    if (typeof document !== 'undefined') {
+      document.cookie = 'user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+      document.cookie = 'user_pages=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+    }
   },
 
   getUser: (): User | null => {
