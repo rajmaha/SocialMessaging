@@ -587,3 +587,103 @@ def get_top_leads_by_score(
         }
         for lead in leads
     ]
+
+
+@router.get("/analytics/forecast")
+def revenue_forecast(
+    months: int = Query(6),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Probability-weighted revenue forecast by month."""
+    import calendar as cal
+    result = []
+    now = datetime.utcnow()
+    for i in range(months):
+        month_num = (now.month - 1 + i) % 12 + 1
+        year_offset = (now.month - 1 + i) // 12
+        month_year = now.year + year_offset
+        month_start = datetime(month_year, month_num, 1)
+        last_day = cal.monthrange(month_year, month_num)[1]
+        month_end = datetime(month_year, month_num, last_day, 23, 59, 59)
+
+        deals = db.query(Deal).filter(
+            Deal.expected_close_date >= month_start,
+            Deal.expected_close_date <= month_end,
+            Deal.stage.notin_(["won", "lost"]),
+        ).all()
+
+        forecasted = sum((d.amount or 0) * (d.probability or 50) / 100 for d in deals)
+        result.append({
+            "month": month_start.strftime("%Y-%m"),
+            "month_label": month_start.strftime("%b %Y"),
+            "forecasted": round(forecasted, 2),
+            "pipeline_count": len(deals),
+        })
+    return result
+
+
+@router.get("/analytics/win-loss")
+def win_loss_analysis(
+    days: int = Query(90),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Win rate and loss rate for the given lookback period."""
+    from datetime import timedelta
+    since = datetime.utcnow() - timedelta(days=days)
+    won = db.query(Deal).filter(Deal.stage == "won", Deal.closed_at >= since).all()
+    lost = db.query(Deal).filter(Deal.stage == "lost", Deal.closed_at >= since).all()
+    total = len(won) + len(lost)
+    return {
+        "period_days": days,
+        "won_count": len(won),
+        "lost_count": len(lost),
+        "total_closed": total,
+        "win_rate": round(len(won) / total * 100, 1) if total else 0,
+        "loss_rate": round(len(lost) / total * 100, 1) if total else 0,
+        "avg_won_value": round(sum(d.amount or 0 for d in won) / len(won), 2) if won else 0,
+        "total_won_revenue": round(sum(d.amount or 0 for d in won), 2),
+    }
+
+
+@router.get("/analytics/deal-velocity")
+def deal_velocity(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Average days deals spend in each stage."""
+    stages = ["prospect", "qualified", "proposal", "negotiation", "close", "won", "lost"]
+    result = []
+    for stage in stages:
+        deals = db.query(Deal).filter(Deal.stage == stage).all()
+        if not deals:
+            result.append({"stage": stage, "avg_days": 0, "count": 0})
+            continue
+        ages = [(datetime.utcnow() - d.created_at).days for d in deals]
+        result.append({
+            "stage": stage,
+            "avg_days": round(sum(ages) / len(ages), 1),
+            "count": len(deals),
+        })
+    return result
+
+
+@router.get("/analytics/conversion-funnel")
+def conversion_funnel(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lead to Deal to Won conversion percentages."""
+    from sqlalchemy import func
+    total_leads = db.query(func.count(Lead.id)).scalar() or 0
+    leads_with_deals = db.query(func.count(func.distinct(Deal.lead_id))).scalar() or 0
+    won_deals = db.query(func.count(Deal.id)).filter(Deal.stage == "won").scalar() or 0
+    return {
+        "total_leads": total_leads,
+        "leads_with_deals": leads_with_deals,
+        "won_deals": won_deals,
+        "lead_to_deal_rate": round(leads_with_deals / total_leads * 100, 1) if total_leads else 0,
+        "deal_to_won_rate": round(won_deals / leads_with_deals * 100, 1) if leads_with_deals else 0,
+        "overall_conversion": round(won_deals / total_leads * 100, 1) if total_leads else 0,
+    }
