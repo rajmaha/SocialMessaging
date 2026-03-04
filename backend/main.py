@@ -977,7 +977,45 @@ def _run_inline_migrations():
                     INSERT INTO campaign_email_templates (name, category, is_preset, body_html)
                     VALUES (:name, :category, TRUE, :body_html)
                 """), {"name": tpl_name, "category": tpl_category, "body_html": tpl_html})
-            conn.commit()
+        conn.commit()
+
+        # ── RBAC Roles ──────────────────────────────────────────────
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS roles (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                slug VARCHAR(100) UNIQUE NOT NULL,
+                is_system BOOLEAN DEFAULT FALSE,
+                pages JSONB DEFAULT '[]',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
+        # Seed fixed system roles (upsert by slug)
+        fixed_roles = [
+            ('Admin',               'admin',              True,  '["pms","tickets","crm","messaging","callcenter","campaigns","reports","kb","teams"]'),
+            ('Project Manager',     'project_manager',    True,  '["pms","tickets","teams","reports","crm","kb"]'),
+            ('Developer',           'developer',          True,  '["pms","tickets"]'),
+            ('Frontend / Designer', 'frontend_designer',  True,  '["pms","tickets"]'),
+            ('QA',                  'qa',                 True,  '["pms","tickets"]'),
+            ('Support',             'support',            True,  '["messaging","callcenter","tickets","kb"]'),
+            ('Sales',               'sales',              True,  '["crm","messaging","campaigns"]'),
+            ('Marketer',            'marketer',           True,  '["campaigns","reports"]'),
+            ('Viewer',              'viewer',             True,  '[]'),
+        ]
+        for name, slug, is_system, pages in fixed_roles:
+            conn.execute(text("""
+                INSERT INTO roles (name, slug, is_system, pages)
+                VALUES (:name, :slug, :is_system, CAST(:pages AS jsonb))
+                ON CONFLICT (slug) DO NOTHING
+            """), {"name": name, "slug": slug, "is_system": is_system, "pages": pages})
+
+        # Migrate old role values: 'user' -> 'support', keep 'admin'
+        conn.execute(text("""
+            UPDATE users SET role = 'support' WHERE role = 'user'
+        """))
+
+        conn.commit()
 
 try:
     _run_inline_migrations()
