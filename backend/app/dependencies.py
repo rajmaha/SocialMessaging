@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from app.models.user import User
 from app.database import SessionLocal
 import json
@@ -156,3 +157,26 @@ def require_admin_feature(feature_key: str):
             db.close()
             
     return verify_admin_access
+
+
+def require_page(page_key: str):
+    """
+    Dependency factory: checks that the current user's role grants access
+    to the given page key. Admins bypass this check.
+    Usage: Depends(require_page("pms"))
+    """
+    async def _check(
+        current_user=Depends(get_current_user),
+        db: Session = Depends(get_db)
+    ):
+        if current_user.role == "admin":
+            return current_user
+        from app.models.role import Role
+        role = db.query(Role).filter(Role.slug == current_user.role).first()
+        if not role or page_key not in (role.pages or []):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Your role does not have access to the '{page_key}' module"
+            )
+        return current_user
+    return _check

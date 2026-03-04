@@ -14,7 +14,7 @@ from app.models.campaign import Campaign, CampaignRecipient
 from app.models.crm import Lead
 from app.models.user import User
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse, RecipientResponse
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_page
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -250,6 +250,7 @@ def create_campaign(
 def list_campaigns(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _page=Depends(require_page("campaigns")),
 ):
     return db.query(Campaign).order_by(desc(Campaign.created_at)).all()
 

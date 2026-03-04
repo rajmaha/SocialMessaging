@@ -6,7 +6,7 @@ from datetime import date
 import os, shutil
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_page
 from app.models.user import User
 from app.models.pms import (
     PMSProject, PMSProjectMember, PMSMilestone, PMSTask,
@@ -74,7 +74,7 @@ def _fire_alert(db: Session, task: PMSTask, alert_type: str, message: str):
 # ── Projects ──────────────────────────────────────────────
 
 @router.get("/projects")
-def list_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def list_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user), _page=Depends(require_page("pms"))):
     if _is_admin(current_user):
         projects = db.query(PMSProject).all()
     else:
@@ -94,7 +94,7 @@ def list_projects(db: Session = Depends(get_db), current_user: User = Depends(ge
     return result
 
 @router.post("/projects")
-def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), _page=Depends(require_page("pms"))):
     if not _is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admins only")
     p = PMSProject(**data.dict(), owner_id=current_user.id)

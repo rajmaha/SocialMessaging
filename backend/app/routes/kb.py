@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.kb import KBArticle
 from app.models.user import User
 from app.schemas.kb import KBArticleCreate, KBArticleUpdate, KBArticleResponse, KBArticleSummary
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_page
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -58,6 +58,7 @@ def list_articles_admin(
     published: bool = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _page=Depends(require_page("kb")),
 ):
     """Admin: list all articles including drafts."""
     query = db.query(KBArticle)

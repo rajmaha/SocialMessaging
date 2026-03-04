@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import uuid
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_module, require_admin_feature
+from app.dependencies import get_current_user, require_module, require_admin_feature, require_page
 from app.models.user import User
 from app.models.ticket import Ticket, TicketStatus, TicketPriority
 from app.models.call_records import CallRecording
@@ -141,7 +141,8 @@ def create_ticket(
 def get_ticket_history(
     phone_number: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _page=Depends(require_page("tickets")),
 ):
     """Get all tickets associated with a specific phone number, ordered by most recent first."""
     tickets = db.query(Ticket).filter(

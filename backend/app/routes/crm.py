@@ -13,7 +13,7 @@ from app.schemas.crm import (
     TaskCreate, TaskUpdate, TaskResponse,
     ActivityCreate, ActivityResponse,
 )
-from app.dependencies import get_current_user, require_admin_feature
+from app.dependencies import get_current_user, require_admin_feature, require_page
 from app.services.crm_scoring import apply_score
 from app.services.events_service import events_service, EventTypes
 import asyncio
@@ -60,6 +60,7 @@ def list_leads(
     limit: int = 100,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _page=Depends(require_page("crm")),
 ):
     """List leads with optional filtering."""
     query = db.query(Lead)

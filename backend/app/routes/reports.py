@@ -10,7 +10,7 @@ from app.models.message import Message as MessageModel
 from app.models.user import User
 from app.models.team import Team
 from app.models.email import Email, UserEmailAccount
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_page
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -72,6 +72,7 @@ def get_summary(
     category: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(_require_admin_or_reports_permission),
+    _page=Depends(require_page("reports")),
 ):
     """Aggregate stats filtered by date, agent, team, visitor, category."""
     convs = _base_query(db, date_from, date_to, agent_id, team_id, visitor, None, category).all()

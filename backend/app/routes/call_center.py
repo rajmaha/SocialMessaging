@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.dependencies import get_current_user, get_admin_user
+from app.dependencies import get_current_user, get_admin_user, require_page
 from app.models.user import User
 from app.models.call_center import CallCenterSettings
 from app.schemas.call_center import CallCenterSettingsResponse, CallCenterSettingsUpdate
@@ -15,7 +15,8 @@ router = APIRouter(
 @router.get("/settings", response_model=CallCenterSettingsResponse)
 def get_call_center_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _page=Depends(require_page("callcenter")),
 ):
     """Get the current call center settings."""
     settings = db.query(CallCenterSettings).first()
