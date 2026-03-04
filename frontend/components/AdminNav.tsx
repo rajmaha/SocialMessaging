@@ -96,6 +96,7 @@ const sidebarGroups = [
             { href: '/admin/crm/tasks', label: 'Tasks', icon: '✓', permission: () => hasAdminFeature('feature_manage_crm') },
             { href: '/admin/crm/analytics', label: 'Analytics', icon: '📈', permission: () => hasAdminFeature('feature_manage_crm') },
             { href: '/admin/crm/companies', label: 'Companies', icon: '🏢', permission: () => hasAdminFeature('feature_manage_crm') },
+            { href: '/admin/crm/automation', label: 'Automation', icon: '⚡', permission: () => hasAdminFeature('feature_manage_crm') },
         ],
     },
 ]
