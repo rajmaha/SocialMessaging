@@ -2,6 +2,9 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
+import { authAPI } from '@/lib/auth'
+import MainHeader from '@/components/MainHeader'
+import AdminNav from '@/components/AdminNav'
 
 interface Organization {
   id: number
@@ -16,6 +19,7 @@ interface Organization {
 }
 
 export default function CompaniesPage() {
+  const user = authAPI.getUser()
   const [orgs, setOrgs] = useState<Organization[]>([])
   const [search, setSearch] = useState('')
   const [industry, setIndustry] = useState('')
@@ -35,7 +39,10 @@ export default function CompaniesPage() {
   const industries = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Manufacturing', 'Education', 'Other']
 
   return (
-    <div className="p-6">
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <MainHeader user={user!} />
+      <AdminNav />
+      <main className="w-full px-6 py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Companies</h1>
@@ -112,6 +119,7 @@ export default function CompaniesPage() {
           </table>
         </div>
       )}
+      </main>
     </div>
   )
 }

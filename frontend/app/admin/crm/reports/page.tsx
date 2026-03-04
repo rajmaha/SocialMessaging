@@ -1,8 +1,12 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
+import { authAPI } from '@/lib/auth'
+import MainHeader from '@/components/MainHeader'
+import AdminNav from '@/components/AdminNav'
 
 export default function ReportsPage() {
+  const user = authAPI.getUser()
   const [tab, setTab] = useState<'agents' | 'aging' | 'revenue' | 'export'>('agents')
   const [agentData, setAgentData] = useState<any[]>([])
   const [agingData, setAgingData] = useState<any[]>([])
@@ -41,7 +45,10 @@ export default function ReportsPage() {
   const maxRevenue = Math.max(...revenueData.flatMap(r => [r.actual, r.forecasted]), 1)
 
   return (
-    <div className="p-6">
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <MainHeader user={user!} />
+      <AdminNav />
+      <main className="w-full px-6 py-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">CRM Reports</h1>
         <p className="text-sm text-gray-500 mt-1">Operational and revenue insights</p>
@@ -183,6 +190,7 @@ export default function ReportsPage() {
           </div>
         </div>
       )}
+      </main>
     </div>
   )
 }

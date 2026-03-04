@@ -1,6 +1,9 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
+import { authAPI } from '@/lib/auth'
+import MainHeader from '@/components/MainHeader'
+import AdminNav from '@/components/AdminNav'
 
 const TRIGGER_TYPES = [
   { value: 'no_activity', label: 'No activity for X days' },
@@ -16,6 +19,7 @@ const ACTION_TYPES = [
 ]
 
 export default function AutomationPage() {
+  const user = authAPI.getUser()
   const [tab, setTab] = useState<'rules' | 'sequences'>('rules')
   const [rules, setRules] = useState<any[]>([])
   const [sequences, setSequences] = useState<any[]>([])
@@ -62,7 +66,10 @@ export default function AutomationPage() {
   }))
 
   return (
-    <div className="p-6">
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <MainHeader user={user!} />
+      <AdminNav />
+      <main className="w-full px-6 py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Automation & Workflows</h1>
@@ -224,6 +231,7 @@ export default function AutomationPage() {
           </div>
         </div>
       )}
+      </main>
     </div>
   )
 }

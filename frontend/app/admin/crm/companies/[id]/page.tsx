@@ -3,8 +3,12 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { api } from '@/lib/api'
+import { authAPI } from '@/lib/auth'
+import MainHeader from '@/components/MainHeader'
+import AdminNav from '@/components/AdminNav'
 
 export default function CompanyDetailPage() {
+  const user = authAPI.getUser()
   const { id } = useParams()
   const router = useRouter()
   const [org, setOrg] = useState<any>(null)
@@ -32,11 +36,24 @@ export default function CompanyDetailPage() {
     load()
   }
 
-  if (loading) return <div className="p-6 text-gray-400">Loading...</div>
-  if (!org) return <div className="p-6 text-red-500">Not found</div>
+  if (loading) return (
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <MainHeader user={user!} /><AdminNav />
+      <main className="w-full px-6 py-8 text-gray-400">Loading...</main>
+    </div>
+  )
+  if (!org) return (
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <MainHeader user={user!} /><AdminNav />
+      <main className="w-full px-6 py-8 text-red-500">Not found</main>
+    </div>
+  )
 
   return (
-    <div className="p-6">
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <MainHeader user={user!} />
+      <AdminNav />
+      <main className="w-full px-6 py-8">
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-sm">← Back</button>
         <div>
@@ -123,6 +140,7 @@ export default function CompanyDetailPage() {
           {(org.leads || []).length === 0 && <p className="text-gray-400 text-sm">No leads linked to this company.</p>}
         </div>
       )}
+      </main>
     </div>
   )
 }

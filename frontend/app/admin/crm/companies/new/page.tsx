@@ -2,11 +2,15 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
+import { authAPI } from '@/lib/auth'
+import MainHeader from '@/components/MainHeader'
+import AdminNav from '@/components/AdminNav'
 
 const INDUSTRIES = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Manufacturing', 'Education', 'Other']
 const SIZES = ['1-10', '11-50', '51-200', '201-500', '500+']
 
 export default function NewCompanyPage() {
+  const user = authAPI.getUser()
   const router = useRouter()
   const [form, setForm] = useState({
     organization_name: '', industry: '', company_size: '', website: '',
@@ -31,7 +35,10 @@ export default function NewCompanyPage() {
   }
 
   return (
-    <div className="p-6 max-w-2xl">
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <MainHeader user={user!} />
+      <AdminNav />
+      <main className="w-full px-6 py-8 max-w-3xl">
       <h1 className="text-2xl font-bold mb-6">New Company</h1>
       {error && <div className="bg-red-50 text-red-600 px-4 py-2 rounded mb-4 text-sm">{error}</div>}
       <div className="bg-white rounded-xl border p-6 space-y-4">
@@ -90,6 +97,7 @@ export default function NewCompanyPage() {
           </button>
         </div>
       </div>
+      </main>
     </div>
   )
 }
