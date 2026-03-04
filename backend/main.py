@@ -239,6 +239,15 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS recording_file VARCHAR"))
         conn.execute(text("ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS ticket_number VARCHAR"))
         conn.execute(text("ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id) ON DELETE SET NULL"))
+        # Phase 2: Organization CRM enhancements
+        conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS industry VARCHAR"))
+        conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS company_size VARCHAR"))
+        conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS website VARCHAR"))
+        conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS annual_revenue FLOAT"))
+        conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS description TEXT"))
+        conn.execute(text("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS tags JSON DEFAULT '[]'"))
+        conn.execute(text("ALTER TABLE organization_contacts ADD COLUMN IF NOT EXISTS notes TEXT"))
+        conn.execute(text("ALTER TABLE organization_contacts ADD COLUMN IF NOT EXISTS lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL"))
         # Agent Extensions tracking table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS agent_extensions (
