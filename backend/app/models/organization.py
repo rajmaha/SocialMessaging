@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Date
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Date, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -15,13 +15,20 @@ class Organization(Base):
     contact_numbers = Column(JSON, default=list)  # Comma separated or list of numbers
     email = Column(String, nullable=True)
     is_active = Column(Integer, default=1)  # 1 for active, 0 for inactive
-    
+    industry = Column(String, nullable=True)
+    company_size = Column(String, nullable=True)
+    website = Column(String, nullable=True)
+    annual_revenue = Column(Float, nullable=True)
+    description = Column(Text, nullable=True)
+    tags = Column(JSON, default=list)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     contacts = relationship("OrganizationContact", back_populates="organization", cascade="all, delete-orphan")
     subscriptions = relationship("Subscription", back_populates="organization", cascade="all, delete-orphan")
+    leads = relationship("Lead", back_populates="organization", foreign_keys="[Lead.organization_id]")
 
 class OrganizationContact(Base):
     __tablename__ = "organization_contacts"
@@ -36,7 +43,9 @@ class OrganizationContact(Base):
     phone_no = Column(JSON, default=list)  # Comma separated or list of numbers
     designation = Column(String, nullable=True)
     address = Column(Text, nullable=True)
-    
+    notes = Column(Text, nullable=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

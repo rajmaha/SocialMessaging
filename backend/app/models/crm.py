@@ -97,6 +97,7 @@ class Lead(Base):
     tasks = relationship("Task", back_populates="lead", cascade="all, delete-orphan")
     activities = relationship("Activity", back_populates="lead", cascade="all, delete-orphan")
     assigned_user = relationship("User", foreign_keys=[assigned_to])
+    organization = relationship("Organization", back_populates="leads", foreign_keys="[Lead.organization_id]")
 
 
 class Deal(Base):
