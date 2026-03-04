@@ -167,3 +167,15 @@ export const pmsApi = {
   createTaskFromTicket: (ticketId: number, projectId: number) =>
     api.post(`/api/pms/tasks/from-ticket/${ticketId}?project_id=${projectId}`),
 };
+
+// ─── Roles API ───────────────────────────────────────────────────────────────
+export const rolesApi = {
+  list: () => api.get('/roles'),
+  create: (data: { name: string; slug: string; pages: string[] }) =>
+    api.post('/roles', data),
+  update: (id: number, data: { name?: string; pages?: string[] }) =>
+    api.put(`/roles/${id}`, data),
+  delete: (id: number) => api.delete(`/roles/${id}`),
+  changeUserRole: (userId: number, role: string) =>
+    api.patch(`/admin/users/${userId}/role`, { role }),
+}

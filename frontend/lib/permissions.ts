@@ -78,3 +78,58 @@ export function hasAnyAdminPermission(): boolean {
         return false;
     }
 }
+
+// ─── Page-level role access (RBAC system) ─────────────────────────────────────
+
+/**
+ * Store the current user's page keys after login.
+ * Call this once after login or role change.
+ */
+export function storeUserPages(pages: string[]): void {
+  localStorage.setItem('user_pages', JSON.stringify(pages))
+}
+
+/**
+ * Check if the current user's role grants access to a page key.
+ * Admins always return true.
+ */
+export function hasPageAccess(pageKey: string): boolean {
+  try {
+    const user = localStorage.getItem('user')
+    if (!user) return false
+    const parsed = JSON.parse(user)
+    if (parsed.role === 'admin') return true
+    const stored = localStorage.getItem('user_pages')
+    if (!stored) return false
+    const pages: string[] = JSON.parse(stored)
+    return pages.includes(pageKey)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Load the user's page keys from the roles list and cache them.
+ * Call after login. Returns the pages array.
+ */
+export async function fetchAndStoreUserPages(): Promise<string[]> {
+  try {
+    const user = localStorage.getItem('user')
+    if (!user) return []
+    const parsed = JSON.parse(user)
+    if (parsed.role === 'admin') {
+      const allPages = ['pms', 'tickets', 'crm', 'messaging', 'callcenter', 'campaigns', 'reports', 'kb', 'teams']
+      storeUserPages(allPages)
+      return allPages
+    }
+    const { rolesApi } = await import('./api')
+    const res = await rolesApi.list()
+    const roles: any[] = res.data
+    const myRole = roles.find((r: any) => r.slug === parsed.role)
+    const pages: string[] = myRole?.pages ?? []
+    storeUserPages(pages)
+    return pages
+  } catch {
+    return []
+  }
+}
