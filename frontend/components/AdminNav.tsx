@@ -91,6 +91,11 @@ const sidebarGroups = [
         items: [
             { href: '/admin/pricing', label: 'Pricing Plans', icon: '💲', permission: () => hasAdminFeature('manage_billing') },
             { href: '/admin/usage', label: 'Usage Analytics', icon: '📊', permission: () => hasAdminFeature('manage_billing') },
+        ],
+    },
+    {
+        label: 'CRM',
+        items: [
             { href: '/admin/crm/leads', label: 'Leads', icon: '👥', permission: () => hasAdminFeature('feature_manage_crm') },
             { href: '/admin/crm/deals', label: 'Sales Pipeline', icon: '💼', permission: () => hasAdminFeature('feature_manage_crm') },
             { href: '/admin/crm/tasks', label: 'Tasks', icon: '✓', permission: () => hasAdminFeature('feature_manage_crm') },
