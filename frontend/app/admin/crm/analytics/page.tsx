@@ -6,7 +6,7 @@ import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
-import api from "@/lib/api";
+import { api } from "@/lib/api";
 
 const STAGE_COLORS: Record<string, string> = {
   prospect:    "border-blue-400",

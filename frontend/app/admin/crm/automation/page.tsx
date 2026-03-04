@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import api from '@/lib/api'
+import { api } from '@/lib/api'
 
 const TRIGGER_TYPES = [
   { value: 'no_activity', label: 'No activity for X days' },

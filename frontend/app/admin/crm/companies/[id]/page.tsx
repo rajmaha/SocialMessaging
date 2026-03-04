@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import api from '@/lib/api'
+import { api } from '@/lib/api'
 
 export default function CompanyDetailPage() {
   const { id } = useParams()

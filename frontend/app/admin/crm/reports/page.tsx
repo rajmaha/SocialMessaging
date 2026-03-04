@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import api from '@/lib/api'
+import { api } from '@/lib/api'
 
 export default function ReportsPage() {
   const [tab, setTab] = useState<'agents' | 'aging' | 'revenue' | 'export'>('agents')

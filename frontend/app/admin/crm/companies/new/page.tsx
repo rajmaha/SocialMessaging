@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import api from '@/lib/api'
+import { api } from '@/lib/api'
 
 const INDUSTRIES = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Manufacturing', 'Education', 'Other']
 const SIZES = ['1-10', '11-50', '51-200', '201-500', '500+']
