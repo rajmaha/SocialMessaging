@@ -136,11 +136,27 @@ function MilestonesTab({ projectId, milestones, onReload }: any) {
 
 function SettingsTab({ project }: any) {
   const [members, setMembers] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
   const [addForm, setAddForm] = useState({ user_id: '', role: 'developer' });
+  const [loadingUsers, setLoadingUsers] = useState(true);
 
   useEffect(() => {
+    // Load current project members
     pmsApi.listMembers(project.id).then(r => setMembers(r.data));
+
+    // Load all system users for the dropdown
+    const { getAuthToken } = require('@/lib/auth');
+    const { API_URL } = require('@/lib/config');
+    const token = getAuthToken();
+    fetch(`${API_URL}/admin/users`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { setAllUsers(Array.isArray(data) ? data : []); setLoadingUsers(false); })
+      .catch(() => setLoadingUsers(false));
   }, [project.id]);
+
+  const memberUserIds = new Set(members.map((m: any) => m.user_id));
+  // Only show users not already members
+  const availableUsers = allUsers.filter((u: any) => !memberUserIds.has(u.id));
 
   const handleAdd = async () => {
     if (!addForm.user_id) return;
@@ -162,23 +178,48 @@ function SettingsTab({ project }: any) {
       <div className="space-y-2 mb-6">
         {members.map((m: any) => (
           <div key={m.id} className="flex items-center gap-3 bg-white border rounded-lg px-4 py-3">
-            <span className="flex-1 text-sm font-medium text-gray-800">{m.user_name || `User #${m.user_id}`}</span>
-            <span className="text-xs text-gray-400">{m.user_email}</span>
-            <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">{m.role}</span>
-            <button onClick={() => handleRemove(m.user_id)} className="text-red-400 hover:text-red-600 text-xs ml-2">Remove</button>
+            <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold flex-none">
+              {(m.user_name || 'U').charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-gray-800 truncate">{m.user_name || `User #${m.user_id}`}</div>
+              {m.user_email && <div className="text-xs text-gray-400 truncate">{m.user_email}</div>}
+            </div>
+            <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-medium capitalize">{m.role}</span>
+            <button onClick={() => handleRemove(m.user_id)}
+              className="text-red-400 hover:text-red-600 text-xs ml-1 hover:bg-red-50 px-2 py-1 rounded">
+              Remove
+            </button>
           </div>
         ))}
+        {members.length === 0 && <p className="text-sm text-gray-400">No members yet.</p>}
       </div>
-      <div className="bg-gray-50 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-gray-700 mb-3">Add Member</h3>
+
+      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Add Member</h3>
         <div className="flex gap-2">
-          <input className="flex-1 border rounded px-3 py-2 text-sm" placeholder="User ID"
-            value={addForm.user_id} onChange={e => setAddForm({...addForm, user_id: e.target.value})} />
-          <select className="border rounded px-3 py-2 text-sm" value={addForm.role}
-            onChange={e => setAddForm({...addForm, role: e.target.value})}>
-            {['developer', 'qa', 'pm', 'client', 'viewer'].map(r => <option key={r}>{r}</option>)}
+          <select
+            className="flex-1 border rounded-lg px-3 py-2 text-sm bg-white disabled:opacity-50"
+            value={addForm.user_id}
+            disabled={loadingUsers}
+            onChange={e => setAddForm({ ...addForm, user_id: e.target.value })}>
+            <option value="">{loadingUsers ? 'Loading users…' : availableUsers.length === 0 ? 'All users are members' : 'Select a user…'}</option>
+            {availableUsers.map((u: any) => (
+              <option key={u.id} value={u.id}>
+                {u.full_name || u.username || u.email} {u.email ? `(${u.email})` : ''}
+              </option>
+            ))}
           </select>
-          <button onClick={handleAdd} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm">Add</button>
+          <select className="border rounded-lg px-3 py-2 text-sm bg-white" value={addForm.role}
+            onChange={e => setAddForm({ ...addForm, role: e.target.value })}>
+            {['developer', 'qa', 'pm', 'client', 'viewer'].map(r => (
+              <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
+            ))}
+          </select>
+          <button onClick={handleAdd} disabled={!addForm.user_id}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">
+            Add
+          </button>
         </div>
       </div>
     </div>
