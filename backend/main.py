@@ -16,6 +16,7 @@ from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSche
 from app.models.backup_destination import BackupDestination  # noqa: F401
 from app.models.backup_job import BackupJob  # noqa: F401
 from app.models.backup_run import BackupRun  # noqa: F401
+from app.models.automation import AutomationRule, EmailSequence, EmailSequenceStep, EmailSequenceEnrollment  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -778,6 +779,58 @@ def _run_inline_migrations():
         conn.execute(text("""
             ALTER TABLE backup_jobs
             ADD COLUMN IF NOT EXISTS notify_on_failure_emails JSON DEFAULT '[]'::json
+        """))
+        conn.commit()
+
+        # Phase 4: Automation & Workflows tables
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS automation_rules (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                description TEXT,
+                trigger_type VARCHAR NOT NULL,
+                conditions JSON DEFAULT '{}',
+                actions JSON DEFAULT '[]',
+                is_active BOOLEAN DEFAULT TRUE,
+                last_run_at TIMESTAMP,
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS email_sequences (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                description TEXT,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS email_sequence_steps (
+                id SERIAL PRIMARY KEY,
+                sequence_id INTEGER REFERENCES email_sequences(id) ON DELETE CASCADE NOT NULL,
+                step_order INTEGER NOT NULL DEFAULT 1,
+                delay_days INTEGER NOT NULL DEFAULT 1,
+                subject VARCHAR NOT NULL,
+                body_html TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS email_sequence_enrollments (
+                id SERIAL PRIMARY KEY,
+                sequence_id INTEGER REFERENCES email_sequences(id) ON DELETE CASCADE NOT NULL,
+                lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE NOT NULL,
+                status VARCHAR DEFAULT 'active',
+                current_step INTEGER DEFAULT 0,
+                enrolled_at TIMESTAMP DEFAULT NOW(),
+                next_send_at TIMESTAMP,
+                completed_at TIMESTAMP
+            )
         """))
         conn.commit()
 
