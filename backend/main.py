@@ -1442,6 +1442,133 @@ async def startup_event():
 
         scheduler.add_job(check_overdue_crm_tasks, 'interval', minutes=5, id='check_overdue_crm_tasks')
 
+        def evaluate_automation_rules():
+            """Evaluate active automation rules against leads every 5 minutes."""
+            from app.models.automation import AutomationRule
+            from app.models.crm import Lead, Task as CrmTask, Activity
+            from datetime import datetime, timedelta
+
+            db = SessionLocal()
+            try:
+                rules = db.query(AutomationRule).filter(AutomationRule.is_active == True).all()
+                for rule in rules:
+                    try:
+                        leads = db.query(Lead).all()
+                        for lead in leads:
+                            conditions = rule.conditions or {}
+                            matched = False
+
+                            if rule.trigger_type == "no_activity":
+                                days = conditions.get("days", 3)
+                                cutoff = datetime.utcnow() - timedelta(days=days)
+                                last_activity = db.query(Activity).filter(
+                                    Activity.lead_id == lead.id,
+                                    Activity.created_at >= cutoff,
+                                ).first()
+                                if not last_activity:
+                                    matched = True
+
+                            elif rule.trigger_type == "score_below":
+                                threshold = conditions.get("threshold", 10)
+                                if lead.score < threshold:
+                                    matched = True
+
+                            if matched:
+                                for action in (rule.actions or []):
+                                    action_type = action.get("type")
+                                    if action_type == "create_task":
+                                        existing = db.query(CrmTask).filter(
+                                            CrmTask.lead_id == lead.id,
+                                            CrmTask.title == action.get("title"),
+                                            CrmTask.status == "open",
+                                        ).first()
+                                        if not existing:
+                                            db.add(CrmTask(
+                                                lead_id=lead.id,
+                                                title=action.get("title", "Follow up"),
+                                                assigned_to=lead.assigned_to,
+                                            ))
+                                    elif action_type == "change_lead_status":
+                                        new_status = action.get("status")
+                                        if new_status:
+                                            lead.status = new_status
+
+                        rule.last_run_at = datetime.utcnow()
+                        db.commit()
+                    except Exception as e:
+                        logger.warning(f"Automation rule {rule.id} error: {e}")
+                        db.rollback()
+            except Exception as e:
+                logger.error(f"evaluate_automation_rules error: {e}")
+            finally:
+                db.close()
+
+        def process_email_sequences():
+            """Send due email sequence steps to enrolled leads every minute."""
+            from app.models.automation import EmailSequenceEnrollment, EmailSequenceStep
+            from app.models.crm import Lead
+            from datetime import datetime, timedelta
+
+            db = SessionLocal()
+            try:
+                now = datetime.utcnow()
+                due = db.query(EmailSequenceEnrollment).filter(
+                    EmailSequenceEnrollment.status == "active",
+                    EmailSequenceEnrollment.next_send_at <= now,
+                    EmailSequenceEnrollment.next_send_at.isnot(None),
+                ).all()
+
+                for enrollment in due:
+                    try:
+                        steps = db.query(EmailSequenceStep).filter(
+                            EmailSequenceStep.sequence_id == enrollment.sequence_id,
+                        ).order_by(EmailSequenceStep.step_order).all()
+
+                        if enrollment.current_step >= len(steps):
+                            enrollment.status = "completed"
+                            enrollment.completed_at = now
+                            db.commit()
+                            continue
+
+                        step = steps[enrollment.current_step]
+                        lead = db.query(Lead).filter(Lead.id == enrollment.lead_id).first()
+
+                        if lead and lead.email:
+                            try:
+                                import asyncio
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    asyncio.run_coroutine_threadsafe(
+                                        email_service.send_email(
+                                            to_email=lead.email,
+                                            subject=step.subject,
+                                            body=step.body_html,
+                                        ),
+                                        loop,
+                                    )
+                            except Exception as send_err:
+                                logger.warning(f"Sequence email send error: {send_err}")
+
+                        enrollment.current_step += 1
+                        if enrollment.current_step >= len(steps):
+                            enrollment.status = "completed"
+                            enrollment.completed_at = now
+                        else:
+                            next_step = steps[enrollment.current_step]
+                            enrollment.next_send_at = now + timedelta(days=next_step.delay_days)
+
+                        db.commit()
+                    except Exception as e:
+                        logger.warning(f"Sequence enrollment {enrollment.id} error: {e}")
+                        db.rollback()
+            except Exception as e:
+                logger.error(f"process_email_sequences error: {e}")
+            finally:
+                db.close()
+
+        scheduler.add_job(evaluate_automation_rules, 'interval', minutes=5, id='evaluate_automation_rules')
+        scheduler.add_job(process_email_sequences, 'interval', minutes=1, id='process_email_sequences')
+
         # Refresh expiring calendar tokens every 30 minutes
         def refresh_calendar_tokens():
             try:
