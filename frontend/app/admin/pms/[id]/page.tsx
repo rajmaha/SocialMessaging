@@ -110,7 +110,7 @@ function MilestonesTab({ projectId, milestones, onReload }: any) {
   );
 }
 
-function SettingsTab({ project, onReload }: any) {
+function SettingsTab({ project }: any) {
   const [members, setMembers] = useState<any[]>([]);
   const [addForm, setAddForm] = useState({ user_id: '', role: 'developer' });
 

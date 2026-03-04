@@ -19,7 +19,7 @@ const PRIORITY_DOT: Record<string, string> = {
   low: 'bg-gray-300', medium: 'bg-yellow-400', high: 'bg-orange-400', urgent: 'bg-red-500',
 };
 
-export default function BoardView({ projectId, tasks, onReload }: { projectId: number; tasks: any[]; onReload: () => void }) {
+export default function BoardView({ projectId: _projectId, tasks, onReload }: { projectId: number; tasks: any[]; onReload: () => void }) {
   const [dragTaskId, setDragTaskId] = useState<number | null>(null);
 
   const onDrop = async (stage: string) => {

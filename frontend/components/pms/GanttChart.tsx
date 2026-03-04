@@ -279,7 +279,7 @@ const NEXT_STAGES: Record<string, string[]> = {
   client_review: ['approved', 'development'], approved: ['completed'],
 };
 
-function TaskDetailPanel({ task, projectId, onClose, onUpdated }: any) {
+function TaskDetailPanel({ task, projectId: _projectId, onClose, onUpdated }: any) {
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState('');
   const [history, setHistory] = useState<any[]>([]);
