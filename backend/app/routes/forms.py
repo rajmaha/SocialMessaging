@@ -21,7 +21,7 @@ from app.services.api_proxy import api_request, _resolve_json_path
 # --- Admin routes ---
 
 admin_router = APIRouter(
-    prefix="/api/admin/forms",
+    prefix="/admin/forms",
     tags=["admin", "forms"],
 )
 
@@ -379,7 +379,7 @@ async def _proxy_delete(db: Session, form: Form, user: User, record_id: int):
 # --- Public routes ---
 
 public_router = APIRouter(
-    prefix="/api/forms",
+    prefix="/forms",
     tags=["forms"],
 )
 

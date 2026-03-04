@@ -14,7 +14,7 @@ from app.schemas.api_server import (
 from app.services.api_proxy import api_login
 
 router = APIRouter(
-    prefix="/api/admin/api-servers",
+    prefix="/admin/api-servers",
     tags=["admin", "api_servers"],
 )
 
@@ -113,7 +113,7 @@ def list_user_credentials(
 # --- User-facing credential routes ---
 
 user_router = APIRouter(
-    prefix="/api/user/api-credentials",
+    prefix="/user/api-credentials",
     tags=["user", "api_credentials"],
 )
 
