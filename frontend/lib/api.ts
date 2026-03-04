@@ -179,3 +179,42 @@ export const rolesApi = {
   changeUserRole: (userId: number, role: string) =>
     api.patch(`/admin/users/${userId}/role`, { role }),
 }
+
+// --- API Servers ---
+export const apiServersApi = {
+  list: () => api.get('/admin/api-servers'),
+  create: (data: any) => api.post('/admin/api-servers', data),
+  update: (id: number, data: any) => api.put(`/admin/api-servers/${id}`, data),
+  delete: (id: number) => api.delete(`/admin/api-servers/${id}`),
+  listCredentials: (id: number) => api.get(`/admin/api-servers/${id}/credentials`),
+  createCredential: (id: number, data: any) => api.post(`/admin/api-servers/${id}/credentials`, data),
+}
+
+export const userApiCredsApi = {
+  update: (id: number, data: any) => api.put(`/user/api-credentials/${id}`, data),
+  login: (id: number) => api.post(`/user/api-credentials/${id}/login`),
+}
+
+// --- Forms ---
+export const formsApi = {
+  list: () => api.get('/admin/forms'),
+  create: (data: any) => api.post('/admin/forms', data),
+  get: (id: number) => api.get(`/admin/forms/${id}`),
+  update: (id: number, data: any) => api.put(`/admin/forms/${id}`, data),
+  delete: (id: number) => api.delete(`/admin/forms/${id}`),
+  // Fields
+  listFields: (formId: number) => api.get(`/admin/forms/${formId}/fields`),
+  createField: (formId: number, data: any) => api.post(`/admin/forms/${formId}/fields`, data),
+  updateField: (formId: number, fieldId: number, data: any) => api.put(`/admin/forms/${formId}/fields/${fieldId}`, data),
+  deleteField: (formId: number, fieldId: number) => api.delete(`/admin/forms/${formId}/fields/${fieldId}`),
+  reorderFields: (formId: number, fieldIds: number[]) => api.put(`/admin/forms/${formId}/fields/reorder`, { field_ids: fieldIds }),
+  // Submissions
+  listSubmissions: (formId: number, skip = 0, limit = 50) => api.get(`/admin/forms/${formId}/submissions`, { params: { skip, limit } }),
+  getSubmission: (formId: number, subId: number) => api.get(`/admin/forms/${formId}/submissions/${subId}`),
+  updateSubmission: (formId: number, subId: number, data: any) => api.put(`/admin/forms/${formId}/submissions/${subId}`, data),
+  deleteSubmission: (formId: number, subId: number) => api.delete(`/admin/forms/${formId}/submissions/${subId}`),
+  exportSubmissions: (formId: number) => api.get(`/admin/forms/${formId}/submissions/export`, { responseType: 'blob' }),
+  // Public
+  getPublicForm: (slug: string) => api.get(`/forms/${slug}`),
+  submitForm: (slug: string, data: any) => api.post(`/forms/${slug}/submit`, data),
+}

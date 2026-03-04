@@ -71,6 +71,8 @@ const sidebarGroups = [
             { href: '/admin/cloudpanel/ssl', label: 'SSL Monitor', icon: '🔒', permission: () => hasAdminFeature('manage_ssl') },
             { href: '/admin/cloudpanel/migrations', label: 'DB Migrations', icon: '🗄️', permission: () => hasAdminFeature('manage_cloudpanel') },
             { href: '/admin/backups', label: 'Backups', icon: '🗄️', permission: () => hasAdminFeature('manage_cloudpanel') },
+            { href: '/admin/api-servers', label: 'API Servers', icon: '🔌', permission: () => hasAdminFeature('manage_forms') },
+            { href: '/admin/forms', label: 'Form Pages', icon: '📋', permission: () => hasAdminFeature('manage_forms') },
         ],
     },
     {
