@@ -527,6 +527,40 @@ def _run_inline_migrations():
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         """))
+        # API Servers table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS api_servers (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                base_url VARCHAR NOT NULL,
+                auth_type VARCHAR NOT NULL DEFAULT 'none',
+                api_key_header VARCHAR,
+                api_key_value VARCHAR,
+                token_header VARCHAR,
+                login_endpoint VARCHAR,
+                login_username_field VARCHAR DEFAULT 'username',
+                login_password_field VARCHAR DEFAULT 'password',
+                token_response_path VARCHAR DEFAULT 'data.token',
+                request_content_type VARCHAR NOT NULL DEFAULT 'json',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
+        # User API Credentials table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS user_api_credentials (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                api_server_id INTEGER NOT NULL REFERENCES api_servers(id),
+                username VARCHAR NOT NULL,
+                password VARCHAR NOT NULL,
+                token VARCHAR,
+                token_expires_at TIMESTAMP,
+                is_active BOOLEAN DEFAULT TRUE,
+                UNIQUE(user_id, api_server_id)
+            )
+        """))
+
         # Todos / Reminders module
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS todos (
