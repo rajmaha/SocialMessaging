@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import api from "@/lib/api";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
 import MainHeader from "@/components/MainHeader";
@@ -33,6 +34,7 @@ export default function NewLeadPage() {
   const router = useRouter();
   const token = getAuthToken();
 
+  const [orgs, setOrgs] = useState<{id: number, organization_name: string}[]>([])
   const [form, setForm] = useState({
     first_name: "",
     last_name: "",
@@ -41,9 +43,12 @@ export default function NewLeadPage() {
     company: "",
     position: "",
     source: "other",
+    organization_id: null as number | null,
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => { api.get('/crm/organizations?limit=200').then(r => setOrgs(r.data)) }, [])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -123,6 +128,15 @@ export default function NewLeadPage() {
                   {SOURCES.map((s) => (
                     <option key={s.value} value={s.value}>{s.label}</option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>Company</label>
+                <select value={form.organization_id || ''} onChange={e => setForm((f: any) => ({...f, organization_id: e.target.value ? parseInt(e.target.value) : null}))}
+                  className={inputClass}>
+                  <option value="">No company</option>
+                  {orgs.map(o => <option key={o.id} value={o.id}>{o.organization_name}</option>)}
                 </select>
               </div>
 
