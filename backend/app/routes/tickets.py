@@ -15,6 +15,7 @@ router = APIRouter(
     prefix="/api/tickets",
     tags=["tickets"],
     responses={404: {"description": "Not found"}},
+    dependencies=[Depends(require_page("tickets"))],
 )
 
 @router.post("", response_model=TicketResponse)
@@ -142,7 +143,6 @@ def get_ticket_history(
     phone_number: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _page=Depends(require_page("tickets")),
 ):
     """Get all tickets associated with a specific phone number, ordered by most recent first."""
     tickets = db.query(Ticket).filter(

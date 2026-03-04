@@ -16,7 +16,11 @@ from app.models.user import User
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse, RecipientResponse
 from app.dependencies import get_current_user, require_page
 
-router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+# Public router — no auth required (used for email tracking pixels)
+public_router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+
+# Protected router — requires page access
+router = APIRouter(prefix="/campaigns", tags=["campaigns"], dependencies=[Depends(require_page("campaigns"))])
 
 # 1x1 transparent GIF bytes
 TRACKING_PIXEL = base64.b64decode(
@@ -185,7 +189,7 @@ def _do_send(campaign_id: int, db: Session):
 # IMPORTANT: This route must be registered BEFORE the {campaign_id} wildcard routes
 # to avoid FastAPI treating "track" as a campaign_id integer.
 
-@router.get("/track/open/{campaign_id}/{recipient_id}")
+@public_router.get("/track/open/{campaign_id}/{recipient_id}")
 def track_open(
     campaign_id: int,
     recipient_id: int,
@@ -250,7 +254,6 @@ def create_campaign(
 def list_campaigns(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _page=Depends(require_page("campaigns")),
 ):
     return db.query(Campaign).order_by(desc(Campaign.created_at)).all()
 

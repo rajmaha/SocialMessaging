@@ -8,7 +8,7 @@ from app.models.user import User
 from app.dependencies import get_current_user, require_page
 from app.routes.admin import check_permission
 
-router = APIRouter(prefix="/teams", tags=["teams"])
+router = APIRouter(prefix="/teams", tags=["teams"], dependencies=[Depends(require_page("teams"))])
 
 
 class TeamCreate(BaseModel):
@@ -34,7 +34,7 @@ def _team_out(t: Team):
 
 
 @router.get("/")
-def list_teams(db: Session = Depends(get_db), current_user: User = Depends(get_current_user), _page=Depends(require_page("teams"))):
+def list_teams(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return [_team_out(t) for t in db.query(Team).order_by(Team.name).all()]
 
 

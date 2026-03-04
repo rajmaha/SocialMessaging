@@ -15,7 +15,7 @@ from app.models.pms import (
 )
 from app.schemas.pms import *
 
-router = APIRouter(prefix="/api/pms", tags=["pms"])
+router = APIRouter(prefix="/api/pms", tags=["pms"], dependencies=[Depends(require_page("pms"))])
 
 ATTACHMENT_DIR = "app/attachment_storage/pms"
 os.makedirs(ATTACHMENT_DIR, exist_ok=True)
@@ -74,7 +74,7 @@ def _fire_alert(db: Session, task: PMSTask, alert_type: str, message: str):
 # ── Projects ──────────────────────────────────────────────
 
 @router.get("/projects")
-def list_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user), _page=Depends(require_page("pms"))):
+def list_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if _is_admin(current_user):
         projects = db.query(PMSProject).all()
     else:
@@ -94,7 +94,7 @@ def list_projects(db: Session = Depends(get_db), current_user: User = Depends(ge
     return result
 
 @router.post("/projects")
-def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), _page=Depends(require_page("pms"))):
+def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not _is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admins only")
     p = PMSProject(**data.dict(), owner_id=current_user.id)

@@ -10,13 +10,13 @@ router = APIRouter(
     prefix="/admin/callcenter",
     tags=["admin", "call_center"],
     responses={404: {"description": "Not found"}},
+    dependencies=[Depends(require_page("callcenter"))],
 )
 
 @router.get("/settings", response_model=CallCenterSettingsResponse)
 def get_call_center_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _page=Depends(require_page("callcenter")),
 ):
     """Get the current call center settings."""
     settings = db.query(CallCenterSettings).first()

@@ -12,7 +12,7 @@ from app.models.team import Team
 from app.models.email import Email, UserEmailAccount
 from app.dependencies import get_current_user, require_page
 
-router = APIRouter(prefix="/reports", tags=["reports"])
+router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_page("reports"))])
 
 ISSUE_CATEGORIES = ["General", "Billing", "Technical Support", "Sales", "Complaint", "Other"]
 
@@ -72,7 +72,6 @@ def get_summary(
     category: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(_require_admin_or_reports_permission),
-    _page=Depends(require_page("reports")),
 ):
     """Aggregate stats filtered by date, agent, team, visitor, category."""
     convs = _base_query(db, date_from, date_to, agent_id, team_id, visitor, None, category).all()

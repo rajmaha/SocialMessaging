@@ -6,8 +6,8 @@ from app.config import settings
 from app.models.cloudpanel_site import CloudPanelSite  # noqa: F401 — ensures table creation
 from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat, bot, webhooks, teams, reports, call_center, telephony, calls, extensions, agent_workspace, reminders, notifications, tickets, dynamic_fields, organizations, cloudpanel, cloudpanel_templates, individuals, billing, crm, crm_organizations, automation as automation_routes, crm_reports
 from app.routes import todos as todo_routes, calendar as calendar_routes, calendar_settings as calendar_settings_routes
-from app.routes.kb import router as kb_router
-from app.routes.campaigns import router as campaigns_router
+from app.routes.kb import router as kb_router, public_router as kb_public_router
+from app.routes.campaigns import router as campaigns_router, public_router as campaigns_public_router
 from app.routes.email_templates import router as email_templates_router
 from app.routes.db_migrations import router as db_migrations_router
 from app.routes.backups import router as backups_router
@@ -1220,7 +1220,9 @@ app.include_router(individuals.router)
 app.include_router(todo_routes.router)
 app.include_router(calendar_routes.router)
 app.include_router(calendar_settings_routes.router)
+app.include_router(kb_public_router)
 app.include_router(kb_router)
+app.include_router(campaigns_public_router)
 app.include_router(campaigns_router)
 app.include_router(email_templates_router)
 app.include_router(db_migrations_router)

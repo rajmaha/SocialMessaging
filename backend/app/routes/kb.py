@@ -10,7 +10,11 @@ from app.models.user import User
 from app.schemas.kb import KBArticleCreate, KBArticleUpdate, KBArticleResponse, KBArticleSummary
 from app.dependencies import get_current_user, require_page
 
-router = APIRouter(prefix="/kb", tags=["knowledge-base"])
+# Public router — no auth required (widget/public KB access)
+public_router = APIRouter(prefix="/kb", tags=["knowledge-base"])
+
+# Protected router — requires page access
+router = APIRouter(prefix="/kb", tags=["knowledge-base"], dependencies=[Depends(require_page("kb"))])
 
 
 def slugify(text: str) -> str:
@@ -58,7 +62,6 @@ def list_articles_admin(
     published: bool = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _page=Depends(require_page("kb")),
 ):
     """Admin: list all articles including drafts."""
     query = db.query(KBArticle)
@@ -120,7 +123,7 @@ def delete_article(
 
 # ===== PUBLIC ENDPOINTS (no auth) =====
 
-@router.get("/public/articles", response_model=list[KBArticleSummary])
+@public_router.get("/public/articles", response_model=list[KBArticleSummary])
 def list_articles_public(
     search: str = Query(None),
     category: str = Query(None),
@@ -138,7 +141,7 @@ def list_articles_public(
     return query.order_by(desc(KBArticle.views), desc(KBArticle.created_at)).all()
 
 
-@router.get("/public/articles/{slug}", response_model=KBArticleResponse)
+@public_router.get("/public/articles/{slug}", response_model=KBArticleResponse)
 def get_article_by_slug(
     slug: str,
     db: Session = Depends(get_db),
@@ -156,7 +159,7 @@ def get_article_by_slug(
     return article
 
 
-@router.get("/public/categories")
+@public_router.get("/public/categories")
 def list_categories_public(db: Session = Depends(get_db)):
     """Public: list distinct categories that have published articles."""
     results = db.query(KBArticle.category).filter(
