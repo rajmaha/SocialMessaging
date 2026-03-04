@@ -12,5 +12,6 @@ from .kb import KBArticle
 from .campaign import Campaign, CampaignRecipient
 from app.models.role import Role  # noqa: F401
 from .api_server import ApiServer, UserApiCredential
+from .form import Form, FormField, FormSubmission
 
-__all__ = ["User", "Conversation", "Message", "PlatformAccount", "Team", "UserEmailAccount", "Email", "EmailAttachment", "EmailTemplate", "EmailSignature", "Contact", "EmailThread", "UserPermission", "Organization", "OrganizationContact", "Subscription", "CloudPanelServer", "Lead", "Deal", "Task", "Activity", "KBArticle", "Campaign", "CampaignRecipient", "Role", "ApiServer", "UserApiCredential"]
+__all__ = ["User", "Conversation", "Message", "PlatformAccount", "Team", "UserEmailAccount", "Email", "EmailAttachment", "EmailTemplate", "EmailSignature", "Contact", "EmailThread", "UserPermission", "Organization", "OrganizationContact", "Subscription", "CloudPanelServer", "Lead", "Deal", "Task", "Activity", "KBArticle", "Campaign", "CampaignRecipient", "Role", "ApiServer", "UserApiCredential", "Form", "FormField", "FormSubmission"]

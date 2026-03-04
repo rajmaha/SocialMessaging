@@ -561,6 +561,67 @@ def _run_inline_migrations():
             )
         """))
 
+        # Forms table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS forms (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR NOT NULL,
+                slug VARCHAR UNIQUE NOT NULL,
+                description TEXT,
+                success_message TEXT DEFAULT 'Thank you for your submission!',
+                storage_type VARCHAR NOT NULL DEFAULT 'local',
+                is_published BOOLEAN DEFAULT FALSE,
+                require_otp BOOLEAN DEFAULT FALSE,
+                api_server_id INTEGER REFERENCES api_servers(id),
+                api_create_method VARCHAR,
+                api_list_method VARCHAR,
+                api_detail_method VARCHAR,
+                api_update_method VARCHAR,
+                api_delete_method VARCHAR,
+                api_list_columns JSON,
+                api_record_id_path VARCHAR DEFAULT 'data.id',
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
+        # Form Fields table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS form_fields (
+                id SERIAL PRIMARY KEY,
+                form_id INTEGER NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+                field_label VARCHAR NOT NULL,
+                field_key VARCHAR NOT NULL,
+                field_type VARCHAR NOT NULL DEFAULT 'text',
+                placeholder VARCHAR,
+                is_required BOOLEAN DEFAULT FALSE,
+                display_order INTEGER DEFAULT 0,
+                default_value VARCHAR,
+                options JSON,
+                validation_rules JSON,
+                api_endpoint VARCHAR,
+                api_value_key VARCHAR,
+                api_label_key VARCHAR,
+                condition JSON,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(form_id, field_key)
+            )
+        """))
+
+        # Form Submissions table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS form_submissions (
+                id SERIAL PRIMARY KEY,
+                form_id INTEGER NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+                data JSON NOT NULL,
+                submitter_email VARCHAR,
+                submitted_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
         # Todos / Reminders module
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS todos (
