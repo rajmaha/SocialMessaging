@@ -11,6 +11,7 @@ from app.routes.campaigns import router as campaigns_router
 from app.routes.email_templates import router as email_templates_router
 from app.routes.db_migrations import router as db_migrations_router
 from app.routes.backups import router as backups_router
+from app.routes import pms as pms_routes
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
 from app.models.backup_destination import BackupDestination  # noqa: F401
@@ -1185,6 +1186,7 @@ app.include_router(campaigns_router)
 app.include_router(email_templates_router)
 app.include_router(db_migrations_router)
 app.include_router(backups_router)
+app.include_router(pms_routes.router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
@@ -1574,6 +1576,44 @@ async def startup_event():
                 db.close()
 
         scheduler.add_job(check_overdue_crm_tasks, 'interval', minutes=5, id='check_overdue_crm_tasks')
+
+        def check_pms_overdue_tasks():
+            """Fire alerts for PMS tasks past their due date."""
+            from app.models.pms import PMSTask, PMSAlert, PMSProjectMember
+            from datetime import date as date_type
+            db = SessionLocal()
+            try:
+                overdue = db.query(PMSTask).filter(
+                    PMSTask.due_date < date_type.today(),
+                    PMSTask.stage.notin_(["approved", "completed"])
+                ).all()
+                for task in overdue:
+                    existing = db.query(PMSAlert).filter_by(
+                        task_id=task.id, type="overdue", is_read=False
+                    ).first()
+                    if existing:
+                        continue
+                    recipients = set()
+                    if task.assignee_id:
+                        recipients.add(task.assignee_id)
+                    pm_members = db.query(PMSProjectMember).filter_by(project_id=task.project_id, role="pm").all()
+                    for pm in pm_members:
+                        recipients.add(pm.user_id)
+                    for uid in recipients:
+                        db.add(PMSAlert(
+                            task_id=task.id,
+                            project_id=task.project_id,
+                            type="overdue",
+                            message=f"Task '{task.title}' is overdue (due: {task.due_date})",
+                            notified_user_id=uid
+                        ))
+                    db.commit()
+            except Exception as e:
+                logger.error("PMS overdue check error: %s", e)
+            finally:
+                db.close()
+
+        scheduler.add_job(check_pms_overdue_tasks, 'interval', minutes=15, id='pms_overdue_check')
 
         def evaluate_automation_rules():
             """Evaluate active automation rules against leads every 5 minutes."""
