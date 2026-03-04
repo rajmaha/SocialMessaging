@@ -17,6 +17,7 @@ from app.models.backup_destination import BackupDestination  # noqa: F401
 from app.models.backup_job import BackupJob  # noqa: F401
 from app.models.backup_run import BackupRun  # noqa: F401
 from app.models.automation import AutomationRule, EmailSequence, EmailSequenceStep, EmailSequenceEnrollment  # noqa: F401
+from app.models import pms  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
