@@ -98,3 +98,72 @@ export const getBackupRuns = (jobId?: number, status?: string) =>
 
 export const getJobBackupRuns = (jobId: number) =>
   api.get(`/backups/jobs/${jobId}/runs`).then(r => r.data);
+
+export const restoreBackupRun = (runId: number) =>
+  api.post(`/backups/runs/${runId}/restore`).then(r => r.data);
+
+// ── PMS ────────────────────────────────────────────────────────────────────
+
+export const pmsApi = {
+  // Projects
+  listProjects: () => api.get('/api/pms/projects'),
+  createProject: (data: any) => api.post('/api/pms/projects', data),
+  getProject: (id: number) => api.get(`/api/pms/projects/${id}`),
+  updateProject: (id: number, data: any) => api.put(`/api/pms/projects/${id}`, data),
+  deleteProject: (id: number) => api.delete(`/api/pms/projects/${id}`),
+
+  // Members
+  listMembers: (projectId: number) => api.get(`/api/pms/projects/${projectId}/members`),
+  addMember: (projectId: number, data: any) => api.post(`/api/pms/projects/${projectId}/members`, data),
+  removeMember: (projectId: number, userId: number) => api.delete(`/api/pms/projects/${projectId}/members/${userId}`),
+
+  // Milestones
+  listMilestones: (projectId: number) => api.get(`/api/pms/projects/${projectId}/milestones`),
+  createMilestone: (projectId: number, data: any) => api.post(`/api/pms/projects/${projectId}/milestones`, data),
+  updateMilestone: (id: number, data: any) => api.put(`/api/pms/milestones/${id}`, data),
+  deleteMilestone: (id: number) => api.delete(`/api/pms/milestones/${id}`),
+
+  // Tasks
+  listTasks: (projectId: number) => api.get(`/api/pms/projects/${projectId}/tasks`),
+  createTask: (projectId: number, data: any) => api.post(`/api/pms/projects/${projectId}/tasks`, data),
+  getTask: (id: number) => api.get(`/api/pms/tasks/${id}`),
+  updateTask: (id: number, data: any) => api.put(`/api/pms/tasks/${id}`, data),
+  deleteTask: (id: number) => api.delete(`/api/pms/tasks/${id}`),
+  transitionTask: (id: number, data: any) => api.post(`/api/pms/tasks/${id}/transition`, data),
+  getTaskHistory: (id: number) => api.get(`/api/pms/tasks/${id}/history`),
+
+  // Dependencies
+  addDependency: (taskId: number, data: any) => api.post(`/api/pms/tasks/${taskId}/dependencies`, data),
+  removeDependency: (depId: number) => api.delete(`/api/pms/dependencies/${depId}`),
+
+  // Comments
+  listComments: (taskId: number) => api.get(`/api/pms/tasks/${taskId}/comments`),
+  createComment: (taskId: number, data: any) => api.post(`/api/pms/tasks/${taskId}/comments`, data),
+  deleteComment: (id: number) => api.delete(`/api/pms/comments/${id}`),
+
+  // Time logs
+  listTimeLogs: (taskId: number) => api.get(`/api/pms/tasks/${taskId}/timelogs`),
+  logTime: (taskId: number, data: any) => api.post(`/api/pms/tasks/${taskId}/timelogs`, data),
+  deleteTimeLog: (id: number) => api.delete(`/api/pms/timelogs/${id}`),
+
+  // Attachments
+  uploadAttachment: (taskId: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post(`/api/pms/tasks/${taskId}/attachments`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  deleteAttachment: (id: number) => api.delete(`/api/pms/attachments/${id}`),
+
+  // Alerts
+  listAlerts: () => api.get('/api/pms/alerts'),
+  markAlertRead: (id: number) => api.post(`/api/pms/alerts/${id}/read`),
+
+  // Gantt
+  getGantt: (projectId: number) => api.get(`/api/pms/projects/${projectId}/gantt`),
+
+  // Integration
+  createTaskFromTicket: (ticketId: number, projectId: number) =>
+    api.post(`/api/pms/tasks/from-ticket/${ticketId}?project_id=${projectId}`),
+};

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getBackupRuns, getBackupJobs } from '@/lib/api';
+import { getBackupRuns, getBackupJobs, restoreBackupRun } from '@/lib/api';
 
 function formatBytes(bytes: number | null) {
   if (!bytes) return '—';
@@ -24,6 +24,9 @@ export default function BackupHistoryTab() {
   const [filterJobId, setFilterJobId] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [confirmRunId, setConfirmRunId] = useState<number | null>(null);
+  const [restoring, setRestoring] = useState<number | null>(null);
+  const [restoreMsg, setRestoreMsg] = useState<{ id: number; ok: boolean; text: string } | null>(null);
 
   const load = async () => {
     const [r, j] = await Promise.all([
@@ -38,8 +41,50 @@ export default function BackupHistoryTab() {
 
   const jobName = (jobId: number) => jobs.find(j => j.id === jobId)?.name || `Job #${jobId}`;
 
+  const handleRestore = async (runId: number) => {
+    setConfirmRunId(null);
+    setRestoring(runId);
+    setRestoreMsg(null);
+    try {
+      await restoreBackupRun(runId);
+      setRestoreMsg({ id: runId, ok: true, text: 'Restore completed successfully.' });
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || err?.message || 'Restore failed';
+      setRestoreMsg({ id: runId, ok: false, text: detail });
+    } finally {
+      setRestoring(null);
+    }
+  };
+
   return (
     <div>
+      {/* Confirmation modal */}
+      {confirmRunId !== null && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirm Restore</h3>
+            <p className="text-sm text-gray-600 mb-1">
+              This will overwrite the current database (or server files) with the contents of this backup.
+            </p>
+            <p className="text-sm font-medium text-red-600 mb-5">This action cannot be undone.</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                onClick={() => setConfirmRunId(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 font-medium"
+                onClick={() => handleRestore(confirmRunId)}
+              >
+                Yes, Restore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold text-gray-700">Backup History</h2>
         <div className="flex gap-2">
@@ -65,6 +110,7 @@ export default function BackupHistoryTab() {
               <th className="px-4 py-3 text-left">Duration</th>
               <th className="px-4 py-3 text-left">Size</th>
               <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-4 py-3 text-left">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -87,10 +133,26 @@ export default function BackupHistoryTab() {
                       {run.status === 'success' ? '✓ Success' : run.status === 'failed' ? '✗ Failed' : '⟳ Running'}
                     </span>
                   </td>
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    {run.status === 'success' && (
+                      <button
+                        className="text-xs px-2 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        disabled={restoring === run.id}
+                        onClick={() => setConfirmRunId(run.id)}
+                      >
+                        {restoring === run.id ? 'Restoring…' : 'Restore'}
+                      </button>
+                    )}
+                  </td>
                 </tr>
                 {expanded === run.id && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-3 bg-gray-50">
+                    <td colSpan={6} className="px-4 py-3 bg-gray-50">
+                      {restoreMsg?.id === run.id && (
+                        <p className={`text-xs mb-2 px-2 py-1 rounded font-medium ${restoreMsg.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600 font-mono'}`}>
+                          {restoreMsg.text}
+                        </p>
+                      )}
                       {run.backup_file_path && (
                         <p className="text-xs text-gray-600 mb-1">
                           <span className="font-medium">File:</span> {run.backup_file_path}
@@ -108,7 +170,7 @@ export default function BackupHistoryTab() {
               </React.Fragment>
             ))}
             {runs.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No backup runs yet</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No backup runs yet</td></tr>
             )}
           </tbody>
         </table>

@@ -172,22 +172,20 @@ export default function BackupJobsTab() {
                 </select>
               </F>
               {form.source_type === 'cloudpanel_server' && (
-                <>
-                  <F label="Server">
-                    <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.server_id} onChange={e => setForm(f => ({ ...f, server_id: e.target.value }))}>
-                      <option value="">Select server...</option>
-                      {servers.map((s: any) => <option key={s.id} value={s.id}>{s.name} ({s.host})</option>)}
-                    </select>
-                  </F>
-                  <F label="Backup Scope">
-                    <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.backup_scope} onChange={e => setForm(f => ({ ...f, backup_scope: e.target.value }))}>
-                      <option value="both">Database + Files</option>
-                      <option value="db">Database only</option>
-                      <option value="files">Files only</option>
-                    </select>
-                  </F>
-                </>
+                <F label="Server">
+                  <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.server_id} onChange={e => setForm(f => ({ ...f, server_id: e.target.value }))}>
+                    <option value="">Select server...</option>
+                    {servers.map((s: any) => <option key={s.id} value={s.id}>{s.name} ({s.host})</option>)}
+                  </select>
+                </F>
               )}
+              <F label="Backup Scope">
+                <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.backup_scope} onChange={e => setForm(f => ({ ...f, backup_scope: e.target.value }))}>
+                  <option value="both">Database + Files</option>
+                  <option value="db">Database only</option>
+                  <option value="files">Files only</option>
+                </select>
+              </F>
               <F label="Destination">
                 <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.destination_id} onChange={e => setForm(f => ({ ...f, destination_id: e.target.value }))}>
                   <option value="">Select destination...</option>

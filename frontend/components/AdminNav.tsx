@@ -94,6 +94,12 @@ const sidebarGroups = [
         ],
     },
     {
+        label: 'PMS',
+        items: [
+            { href: '/admin/pms', label: 'Projects', icon: '📂', permission: () => hasAdminFeature('manage_tickets') },
+        ],
+    },
+    {
         label: 'CRM',
         items: [
             { href: '/admin/crm/leads', label: 'Leads', icon: '👥', permission: () => hasAdminFeature('feature_manage_crm') },
