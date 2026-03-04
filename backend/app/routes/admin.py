@@ -8,6 +8,8 @@ from app.models.platform_settings import PlatformSettings
 from app.models.email import UserEmailAccount
 from app.routes.auth import get_password_hash, verify_password
 from app.schemas.email import EmailAccountCreate, EmailAccountUpdate, EmailAccountResponse, EmailAccountFullResponse, TestEmailCredentialsRequest
+from app.schemas.role import UserRoleUpdate
+from app.models.role import Role
 from pydantic import BaseModel
 import json
 import os
@@ -304,6 +306,26 @@ async def update_user_role(
         "user_id": user_id,
         "new_role": role
     }
+
+@router.patch("/users/{user_id}/role")
+def change_user_role(
+    user_id: int,
+    data: UserRoleUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(verify_admin)
+):
+    if current_user.get("user_id") == user_id:
+        raise HTTPException(400, "You cannot change your own role")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    role = db.query(Role).filter(Role.slug == data.role).first()
+    if not role:
+        raise HTTPException(400, f"Role '{data.role}' does not exist")
+    user.role = data.role
+    db.commit()
+    return {"ok": True, "role": data.role}
+
 
 @router.delete("/users/{user_id}")
 async def deactivate_user(
