@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useBranding } from '@/lib/branding-context'
-import { hasModuleAccess, hasAdminFeature } from '@/lib/permissions'
+import { hasModuleAccess, hasAdminFeature, hasPageAccess } from '@/lib/permissions'
 import { useEvents } from '@/lib/events-context'
 
 const sidebarGroups = [
@@ -20,7 +20,7 @@ const sidebarGroups = [
         label: 'People',
         items: [
             { href: '/admin/users', label: 'Users', icon: '👤', permission: () => hasAdminFeature('manage_users') },
-            { href: '/admin/teams', label: 'Teams', icon: '👥', permission: () => hasAdminFeature('manage_teams') },
+            { href: '/admin/teams', label: 'Teams', icon: '👥', pageKey: 'teams' },
         ],
     },
     {
@@ -29,7 +29,7 @@ const sidebarGroups = [
             { href: '/admin/email-accounts', label: 'Email Account Management', icon: '📧', permission: () => hasAdminFeature('manage_email_accounts') },
             { href: '/admin/settings', label: 'Messenger Config', icon: '⚙️', permission: () => hasAdminFeature('manage_messenger_config') },
             { href: '/admin/telephony', label: 'Telephony (VoIP)', icon: '🎧', permission: () => hasAdminFeature('manage_telephony') },
-            { href: '/admin/recordings', label: 'Call Records', icon: '🎙️', permission: () => hasModuleAccess('calls') },
+            { href: '/admin/recordings', label: 'Call Records', icon: '🎙️', pageKey: 'callcenter' },
             { href: '/admin/extensions', label: 'SIP Extensions', icon: '📞', permission: () => hasAdminFeature('manage_extensions') },
         ],
     },
@@ -58,9 +58,9 @@ const sidebarGroups = [
     {
         label: 'Applications',
         items: [
-            { href: '/admin/callcenter', label: 'Call Center', icon: '📞', permission: () => hasModuleAccess('workspace') },
-            { href: '/admin/ticket-fields', label: 'Ticket Config', icon: '📝', permission: () => hasAdminFeature('manage_tickets') },
-            { href: '/admin/tickets', label: 'All Tickets', icon: '📋', permission: () => hasAdminFeature('manage_tickets') },
+            { href: '/admin/callcenter', label: 'Call Center', icon: '📞', pageKey: 'callcenter' },
+            { href: '/admin/ticket-fields', label: 'Ticket Config', icon: '📝', pageKey: 'tickets' },
+            { href: '/admin/tickets', label: 'All Tickets', icon: '📋', pageKey: 'tickets' },
             { href: '/admin/organizations', label: 'Organizations', icon: '🏢', permission: () => hasModuleAccess('organizations') },
             { href: '/admin/individuals', label: 'Individuals', icon: '👤', permission: () => hasModuleAccess('individuals') },
             { href: '/admin/subscription-modules', label: 'Subscription Modules', icon: '📦', permission: () => hasModuleAccess('subscriptions') },
@@ -76,39 +76,39 @@ const sidebarGroups = [
     {
         label: 'Content',
         items: [
-            { href: '/admin/kb', label: 'Knowledge Base', icon: '📚', permission: () => hasAdminFeature('manage_branding') },
+            { href: '/admin/kb', label: 'Knowledge Base', icon: '📚', pageKey: 'kb' },
         ],
     },
     {
         label: 'Marketing',
         items: [
-            { href: '/admin/email-templates', label: 'Email Templates', icon: '🎨', permission: () => hasAdminFeature('manage_billing') },
-            { href: '/admin/campaigns', label: 'Email Campaigns', icon: '📨', permission: () => hasAdminFeature('manage_billing') },
+            { href: '/admin/email-templates', label: 'Email Templates', icon: '🎨', pageKey: 'campaigns' },
+            { href: '/admin/campaigns', label: 'Email Campaigns', icon: '📨', pageKey: 'campaigns' },
         ],
     },
     {
         label: 'Business',
         items: [
             { href: '/admin/pricing', label: 'Pricing Plans', icon: '💲', permission: () => hasAdminFeature('manage_billing') },
-            { href: '/admin/usage', label: 'Usage Analytics', icon: '📊', permission: () => hasAdminFeature('manage_billing') },
+            { href: '/admin/usage', label: 'Usage Analytics', icon: '📊', pageKey: 'reports' },
         ],
     },
     {
         label: 'PMS',
         items: [
-            { href: '/admin/pms', label: 'Projects', icon: '📂', permission: () => hasAdminFeature('manage_tickets') },
+            { href: '/admin/pms', label: 'Projects', icon: '📂', pageKey: 'pms' },
         ],
     },
     {
         label: 'CRM',
         items: [
-            { href: '/admin/crm/leads', label: 'Leads', icon: '👥', permission: () => hasAdminFeature('feature_manage_crm') },
-            { href: '/admin/crm/deals', label: 'Sales Pipeline', icon: '💼', permission: () => hasAdminFeature('feature_manage_crm') },
-            { href: '/admin/crm/tasks', label: 'Tasks', icon: '✓', permission: () => hasAdminFeature('feature_manage_crm') },
-            { href: '/admin/crm/analytics', label: 'Analytics', icon: '📈', permission: () => hasAdminFeature('feature_manage_crm') },
-            { href: '/admin/crm/companies', label: 'Companies', icon: '🏢', permission: () => hasAdminFeature('feature_manage_crm') },
-            { href: '/admin/crm/automation', label: 'Automation', icon: '⚡', permission: () => hasAdminFeature('feature_manage_crm') },
-            { href: '/admin/crm/reports', label: 'Reports', icon: '📊', permission: () => hasAdminFeature('feature_manage_crm') },
+            { href: '/admin/crm/leads', label: 'Leads', icon: '👥', pageKey: 'crm' },
+            { href: '/admin/crm/deals', label: 'Sales Pipeline', icon: '💼', pageKey: 'crm' },
+            { href: '/admin/crm/tasks', label: 'Tasks', icon: '✓', pageKey: 'crm' },
+            { href: '/admin/crm/analytics', label: 'Analytics', icon: '📈', pageKey: 'crm' },
+            { href: '/admin/crm/companies', label: 'Companies', icon: '🏢', pageKey: 'crm' },
+            { href: '/admin/crm/automation', label: 'Automation', icon: '⚡', pageKey: 'crm' },
+            { href: '/admin/crm/reports', label: 'Reports', icon: '📊', pageKey: 'crm' },
         ],
     },
 ]
@@ -218,15 +218,19 @@ function AdminNavInner() {
                 <nav ref={navRef} onScroll={handleNavScroll} className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
                     {sidebarGroups.map(group => {
                         // Filter items based on permissions and role
-                        const visibleItems = group.items.filter(item => {
+                        const visibleItems = group.items.filter((item: any) => {
                             // Admins see everything
                             if (userRole === 'admin') return true;
-                            // Check specific permission if defined
-                            if ((item as any).permission) {
-                                return (item as any).permission();
+                            // New RBAC: check page key
+                            if (item.pageKey) {
+                                return hasPageAccess(item.pageKey);
                             }
-                            // Default to FALSE for non-admins if no explicit permission defined
-                            return false;
+                            // Legacy: old permission function check (for admin-only features)
+                            if (item.permission) {
+                                return item.permission();
+                            }
+                            // No guard = visible to all authenticated users (Account group etc.)
+                            return true;
                         });
 
                         if (visibleItems.length === 0) return null;
