@@ -174,7 +174,7 @@ export default function FormsPage() {
             </div>
           ))}
           {forms.length === 0 && (
-            <p className="text-gray-400 text-sm py-10 text-center">No forms yet. Click "+ Create Form" to get started.</p>
+            <p className="text-gray-400 text-sm py-10 text-center">No forms yet. Click &quot;+ Create Form&quot; to get started.</p>
           )}
         </div>
       </div>
