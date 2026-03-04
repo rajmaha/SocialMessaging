@@ -6,6 +6,7 @@ import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
+import api from "@/lib/api";
 
 const STAGE_COLORS: Record<string, string> = {
   prospect:    "border-blue-400",
@@ -40,6 +41,10 @@ export default function AnalyticsPage() {
   const [sources, setSources] = useState<any>(null);
   const [topLeads, setTopLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [forecast, setForecast] = useState<any[]>([])
+  const [winLoss, setWinLoss] = useState<any>(null)
+  const [velocity, setVelocity] = useState<any[]>([])
+  const [funnel, setFunnel] = useState<any>(null)
 
   useEffect(() => {
     Promise.all([
@@ -55,6 +60,13 @@ export default function AnalyticsPage() {
       .catch((err) => console.error("Failed to load analytics", err))
       .finally(() => setLoading(false));
   }, [token]);
+
+  useEffect(() => {
+    api.get('/crm/analytics/forecast?months=6').then(r => setForecast(r.data)).catch(() => {})
+    api.get('/crm/analytics/win-loss?days=90').then(r => setWinLoss(r.data)).catch(() => {})
+    api.get('/crm/analytics/deal-velocity').then(r => setVelocity(r.data)).catch(() => {})
+    api.get('/crm/analytics/conversion-funnel').then(r => setFunnel(r.data)).catch(() => {})
+  }, [])
 
   if (loading) {
     return (
@@ -155,6 +167,93 @@ export default function AnalyticsPage() {
             </table>
           </div>
         </section>
+
+      {/* ── Revenue Forecast ─────────────────────────────── */}
+      <div className="mt-8">
+        <h2 className="text-lg font-semibold mb-4">Revenue Forecast (6 Months)</h2>
+        <div className="bg-white rounded-xl border p-6">
+          {forecast.length === 0 ? <p className="text-gray-400 text-sm">No pipeline deals with close dates set.</p> : (
+            <div className="flex items-end gap-3 h-40">
+              {forecast.map(f => {
+                const maxVal = Math.max(...forecast.map((x: any) => x.forecasted), 1)
+                const pct = Math.round((f.forecasted / maxVal) * 100)
+                return (
+                  <div key={f.month} className="flex flex-col items-center flex-1 gap-1">
+                    <span className="text-xs text-gray-500">${(f.forecasted / 1000).toFixed(1)}k</span>
+                    <div className="w-full bg-indigo-500 rounded-t" style={{ height: `${Math.max(pct, 4)}%` }} />
+                    <span className="text-xs text-gray-400">{f.month_label}</span>
+                    <span className="text-xs text-gray-300">{f.pipeline_count} deals</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Win / Loss + Funnel ───────────────────────────── */}
+      <div className="mt-6 grid grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl border p-6">
+          <h2 className="text-lg font-semibold mb-4">Win / Loss (90 days)</h2>
+          {winLoss ? (
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm"><span className="text-green-600 font-medium">Won</span><span>{winLoss.won_count} deals · ${winLoss.total_won_revenue.toLocaleString()}</span></div>
+              <div className="w-full bg-gray-100 rounded-full h-3">
+                <div className="bg-green-500 h-3 rounded-full" style={{ width: `${winLoss.win_rate}%` }} />
+              </div>
+              <div className="flex justify-between text-sm"><span className="text-red-500 font-medium">Lost</span><span>{winLoss.lost_count} deals</span></div>
+              <div className="w-full bg-gray-100 rounded-full h-3">
+                <div className="bg-red-400 h-3 rounded-full" style={{ width: `${winLoss.loss_rate}%` }} />
+              </div>
+              <p className="text-xs text-gray-400 mt-2">Win rate: {winLoss.win_rate}% · Avg won deal: ${winLoss.avg_won_value.toLocaleString()}</p>
+            </div>
+          ) : <p className="text-gray-400 text-sm">No closed deals yet.</p>}
+        </div>
+
+        <div className="bg-white rounded-xl border p-6">
+          <h2 className="text-lg font-semibold mb-4">Conversion Funnel</h2>
+          {funnel ? (
+            <div className="space-y-3">
+              {[
+                { label: 'Total Leads', value: funnel.total_leads, color: 'bg-indigo-500' },
+                { label: 'Leads with Deals', value: funnel.leads_with_deals, color: 'bg-yellow-400', rate: funnel.lead_to_deal_rate },
+                { label: 'Won Deals', value: funnel.won_deals, color: 'bg-green-500', rate: funnel.overall_conversion },
+              ].map(row => (
+                <div key={row.label}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-600">{row.label}</span>
+                    <span className="font-semibold">{row.value}{row.rate !== undefined ? ` (${row.rate}%)` : ''}</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div className={`${row.color} h-2 rounded-full`}
+                      style={{ width: `${funnel.total_leads ? Math.round(row.value / funnel.total_leads * 100) : 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-gray-400 text-sm">No data yet.</p>}
+        </div>
+      </div>
+
+      {/* ── Deal Velocity ────────────────────────────────── */}
+      <div className="mt-6 mb-8">
+        <h2 className="text-lg font-semibold mb-4">Deal Velocity (Avg Days per Stage)</h2>
+        <div className="bg-white rounded-xl border p-6 space-y-3">
+          {velocity.map((v: any) => {
+            const maxDays = Math.max(...velocity.map((x: any) => x.avg_days), 1)
+            return (
+              <div key={v.stage} className="flex items-center gap-3">
+                <span className="text-sm text-gray-600 w-24 capitalize">{v.stage}</span>
+                <div className="flex-1 bg-gray-100 rounded-full h-3">
+                  <div className="bg-indigo-400 h-3 rounded-full" style={{ width: `${Math.round(v.avg_days / maxDays * 100)}%` }} />
+                </div>
+                <span className="text-sm text-gray-500 w-20 text-right">{v.avg_days}d · {v.count}</span>
+              </div>
+            )
+          })}
+          {velocity.length === 0 && <p className="text-gray-400 text-sm">No deals yet.</p>}
+        </div>
+      </div>
       </main>
     </div>
   );
