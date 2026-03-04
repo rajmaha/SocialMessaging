@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from app.database import Base, engine, SessionLocal
 from app.config import settings
 from app.models.cloudpanel_site import CloudPanelSite  # noqa: F401 — ensures table creation
-from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat, bot, webhooks, teams, reports, call_center, telephony, calls, extensions, agent_workspace, reminders, notifications, tickets, dynamic_fields, organizations, cloudpanel, cloudpanel_templates, individuals, billing, crm, crm_organizations
+from app.routes import messages, conversations, auth, accounts, admin, branding, email, events, webchat, bot, webhooks, teams, reports, call_center, telephony, calls, extensions, agent_workspace, reminders, notifications, tickets, dynamic_fields, organizations, cloudpanel, cloudpanel_templates, individuals, billing, crm, crm_organizations, automation as automation_routes
 from app.routes import todos as todo_routes, calendar as calendar_routes, calendar_settings as calendar_settings_routes
 from app.routes.kb import router as kb_router
 from app.routes.campaigns import router as campaigns_router
@@ -1026,6 +1026,7 @@ app.include_router(email.router)
 app.include_router(billing.router)
 app.include_router(crm.router)
 app.include_router(crm_organizations.router)
+app.include_router(automation_routes.router)
 app.include_router(events.router)
 app.include_router(webchat.router)
 app.include_router(bot.router)
