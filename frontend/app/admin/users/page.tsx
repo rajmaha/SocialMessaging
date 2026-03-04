@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
 import AdminNav from '@/components/AdminNav';
 import { API_URL } from '@/lib/config';
+import { rolesApi } from '@/lib/api';
 
 interface User {
   id: number;
@@ -23,6 +24,7 @@ export default function AdminUsers() {
   const user = authAPI.getUser();
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -48,6 +50,7 @@ export default function AdminUsers() {
 
   useEffect(() => {
     fetchUsers();
+    rolesApi.list().then(r => setRoles(r.data));
   }, []);
 
   const fetchUsers = async () => {
@@ -175,29 +178,12 @@ export default function AdminUsers() {
     }
   };
 
-  const handleChangeRole = async (userId: number, newRole: string) => {
+  const handleRoleChange = async (userId: number, newRole: string) => {
     try {
-      const token = getAuthToken();
-      if (!token) {
-        setError('Not authenticated');
-        return;
-      }
-      const response = await fetch(`${API_URL}/admin/users/${userId}/role`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ role: newRole })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update user role');
-      }
-
+      await rolesApi.changeUserRole(userId, newRole);
       await fetchUsers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Failed to change role:', err);
     }
   };
 
@@ -323,9 +309,14 @@ export default function AdminUsers() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.email}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <select value={user.role} onChange={(e) => handleChangeRole(user.id, e.target.value)} className="text-sm border border-gray-300 rounded px-2 py-1" disabled={editModalOpen}>
-                        <option value="user">User</option>
-                        <option value="admin">Admin</option>
+                      <select
+                        value={user.role || 'support'}
+                        onChange={e => handleRoleChange(user.id, e.target.value)}
+                        className="text-xs border rounded-lg px-2 py-1 bg-white text-gray-700 cursor-pointer hover:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        {roles.map((r: any) => (
+                          <option key={r.slug} value={r.slug}>{r.name}</option>
+                        ))}
                       </select>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
