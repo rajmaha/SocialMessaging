@@ -832,6 +832,137 @@ def _run_inline_migrations():
                 completed_at TIMESTAMP
             )
         """))
+
+        # PMS Tables
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_projects (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                description TEXT,
+                status VARCHAR DEFAULT 'planning',
+                start_date DATE,
+                end_date DATE,
+                color VARCHAR DEFAULT '#6366f1',
+                owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_project_members (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                role VARCHAR DEFAULT 'developer',
+                added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                added_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(project_id, user_id)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_milestones (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                name VARCHAR NOT NULL,
+                due_date DATE,
+                status VARCHAR DEFAULT 'pending',
+                color VARCHAR DEFAULT '#f59e0b'
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_tasks (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                milestone_id INTEGER REFERENCES pms_milestones(id) ON DELETE SET NULL,
+                parent_task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                title VARCHAR NOT NULL,
+                description TEXT,
+                stage VARCHAR DEFAULT 'development',
+                priority VARCHAR DEFAULT 'medium',
+                assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                start_date DATE,
+                due_date DATE,
+                estimated_hours FLOAT DEFAULT 0,
+                actual_hours FLOAT DEFAULT 0,
+                position INTEGER DEFAULT 0,
+                ticket_id INTEGER,
+                crm_deal_id INTEGER,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_task_dependencies (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                depends_on_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                type VARCHAR DEFAULT 'finish_to_start',
+                UNIQUE(task_id, depends_on_id)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_task_comments (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_task_timelogs (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                hours FLOAT NOT NULL,
+                log_date DATE DEFAULT CURRENT_DATE,
+                note VARCHAR,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_task_attachments (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                file_path VARCHAR NOT NULL,
+                file_name VARCHAR NOT NULL,
+                file_size INTEGER DEFAULT 0,
+                uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_task_labels (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                name VARCHAR NOT NULL,
+                color VARCHAR DEFAULT '#6366f1'
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_workflow_history (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                from_stage VARCHAR,
+                to_stage VARCHAR NOT NULL,
+                moved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                note TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_alerts (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                type VARCHAR NOT NULL,
+                message TEXT NOT NULL,
+                is_read BOOLEAN DEFAULT FALSE,
+                notified_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
         conn.commit()
 
         # Seed preset templates once
