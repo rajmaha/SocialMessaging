@@ -10,5 +10,6 @@ from .cloudpanel_server import CloudPanelServer
 from .crm import Lead, Deal, Task, Activity
 from .kb import KBArticle
 from .campaign import Campaign, CampaignRecipient
+from app.models.role import Role  # noqa: F401
 
-__all__ = ["User", "Conversation", "Message", "PlatformAccount", "Team", "UserEmailAccount", "Email", "EmailAttachment", "EmailTemplate", "EmailSignature", "Contact", "EmailThread", "UserPermission", "Organization", "OrganizationContact", "Subscription", "CloudPanelServer", "Lead", "Deal", "Task", "Activity", "KBArticle", "Campaign", "CampaignRecipient"]
+__all__ = ["User", "Conversation", "Message", "PlatformAccount", "Team", "UserEmailAccount", "Email", "EmailAttachment", "EmailTemplate", "EmailSignature", "Contact", "EmailThread", "UserPermission", "Organization", "OrganizationContact", "Subscription", "CloudPanelServer", "Lead", "Deal", "Task", "Activity", "KBArticle", "Campaign", "CampaignRecipient", "Role"]
