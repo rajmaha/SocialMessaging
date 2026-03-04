@@ -13,6 +13,7 @@ from app.routes.db_migrations import router as db_migrations_router
 from app.routes.backups import router as backups_router
 from app.routes import pms as pms_routes
 from app.routes import roles as roles_routes
+from app.routes.api_servers import router as api_servers_router, user_router as user_api_creds_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
 from app.models.backup_destination import BackupDestination  # noqa: F401
@@ -1324,6 +1325,8 @@ app.include_router(db_migrations_router)
 app.include_router(backups_router)
 app.include_router(pms_routes.router)
 app.include_router(roles_routes.router)
+app.include_router(api_servers_router)
+app.include_router(user_api_creds_router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
