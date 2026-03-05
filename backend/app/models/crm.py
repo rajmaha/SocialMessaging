@@ -98,6 +98,7 @@ class Lead(Base):
     activities = relationship("Activity", back_populates="lead", cascade="all, delete-orphan")
     assigned_user = relationship("User", foreign_keys=[assigned_to])
     organization = relationship("Organization", back_populates="leads", foreign_keys="[Lead.organization_id]")
+    notes = relationship("LeadNote", back_populates="lead", cascade="all, delete-orphan")
 
 
 class Deal(Base):
@@ -177,4 +178,19 @@ class Activity(Base):
     
     # Relationships
     lead = relationship("Lead", back_populates="activities")
+    user = relationship("User", foreign_keys=[created_by])
+
+
+class LeadNote(Base):
+    __tablename__ = "crm_lead_notes"
+
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    is_pinned = Column(Boolean, default=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    lead = relationship("Lead", back_populates="notes")
     user = relationship("User", foreign_keys=[created_by])

@@ -1282,6 +1282,19 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE form_fields ADD COLUMN IF NOT EXISTS is_auto_generated BOOLEAN DEFAULT FALSE"))
         conn.execute(text("ALTER TABLE form_fields ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT TRUE"))
 
+        # CRM Lead Notes table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS crm_lead_notes (
+                id SERIAL PRIMARY KEY,
+                lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+                content TEXT NOT NULL,
+                is_pinned BOOLEAN DEFAULT FALSE,
+                created_by INTEGER NOT NULL REFERENCES users(id),
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
         conn.commit()
 
 try:
