@@ -138,6 +138,7 @@ class PMSTaskLabel(Base):
     task_id = Column(Integer, ForeignKey("pms_tasks.id", ondelete="CASCADE"))
     name = Column(String, nullable=False)
     color = Column(String, default="#6366f1")
+    label_definition_id = Column(Integer, ForeignKey("pms_label_definitions.id", ondelete="CASCADE"), nullable=True)
 
     task = relationship("PMSTask", back_populates="labels")
 
@@ -154,6 +155,15 @@ class PMSWorkflowHistory(Base):
 
     task = relationship("PMSTask", back_populates="workflow_history")
     actor = relationship("User", foreign_keys=[moved_by])
+
+
+class PMSLabelDefinition(Base):
+    __tablename__ = "pms_label_definitions"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)
+    color = Column(String, default="#6366f1")
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
 
 
 class PMSAlert(Base):

@@ -1122,6 +1122,18 @@ def _run_inline_migrations():
             )
         """))
         conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_label_definitions (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR UNIQUE NOT NULL,
+                color VARCHAR DEFAULT '#6366f1',
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            ALTER TABLE pms_task_labels ADD COLUMN IF NOT EXISTS label_definition_id INTEGER REFERENCES pms_label_definitions(id) ON DELETE CASCADE
+        """))
+        conn.execute(text("""
             CREATE TABLE IF NOT EXISTS pms_alerts (
                 id SERIAL PRIMARY KEY,
                 task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
