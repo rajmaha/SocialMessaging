@@ -181,6 +181,14 @@ export const pmsApi = {
   getMyTasks: (params?: any) => api.get('/api/pms/my-tasks', { params }),
   // Reports
   getReports: (params?: any) => api.get('/api/pms/reports', { params }),
+  // PM/Admin features
+  getTeamWorkload: (params?: any) => api.get('/api/pms/team-workload', { params }),
+  getApprovalQueue: () => api.get('/api/pms/approval-queue'),
+  getEscalations: () => api.get('/api/pms/escalations'),
+  getCapacity: (params?: any) => api.get('/api/pms/capacity', { params }),
+  updateMemberHours: (memberId: number, hoursPerDay: number) =>
+    api.patch(`/api/pms/members/${memberId}/hours`, null, { params: { hours_per_day: hoursPerDay } }),
+  getAuditTrail: (params?: any) => api.get('/api/pms/audit-trail', { params }),
 };
 
 // ─── Roles API ───────────────────────────────────────────────────────────────

@@ -1038,6 +1038,35 @@ def get_reports(
     all_eff = [e for e in all_eff if e is not None]
     project_efficiency = round(sum(all_eff) / len(all_eff), 1) if all_eff else None
 
+    # Admin-only: Project comparison and team velocity comparison
+    project_comparison = []
+    team_velocity = []
+    if _is_admin(current_user):
+        all_projects = db.query(PMSProject).all()
+        for p in all_projects:
+            p_tasks = db.query(PMSTask).filter_by(project_id=p.id).all()
+            p_total = len(p_tasks)
+            p_completed = sum(1 for t in p_tasks if t.stage == "completed")
+            p_on_time = sum(1 for t in p_tasks if t.stage == "completed" and t.due_date and t.updated_at and t.updated_at.date() <= t.due_date)
+            p_effs = [_task_efficiency(t, today) for t in p_tasks if t.stage != "completed"]
+            p_effs = [e for e in p_effs if e is not None]
+            project_comparison.append({
+                "name": p.name,
+                "completion_pct": round(p_completed / p_total * 100, 1) if p_total else 0,
+                "efficiency": round(sum(p_effs) / len(p_effs), 1) if p_effs else 0,
+                "on_time_pct": round(p_on_time / p_completed * 100, 1) if p_completed else 0,
+            })
+
+        for p in all_projects:
+            p_tasks = db.query(PMSTask).filter_by(project_id=p.id).all()
+            series = []
+            for w in range(8):
+                week_start = today - timedelta(days=(7 * (8 - w)))
+                week_end = week_start + timedelta(days=7)
+                count = sum(1 for t in p_tasks if t.stage == "completed" and t.updated_at and week_start <= t.updated_at.date() < week_end)
+                series.append({"week": week_start.isoformat(), "completed": count})
+            team_velocity.append({"project": p.name, "data": series})
+
     return {
         "burndown": burndown,
         "velocity": velocity,
@@ -1049,6 +1078,8 @@ def get_reports(
         "member_completion": member_completion,
         "member_efficiency": member_efficiency,
         "project_efficiency": project_efficiency,
+        "project_comparison": project_comparison,
+        "team_velocity": team_velocity,
     }
 
 
