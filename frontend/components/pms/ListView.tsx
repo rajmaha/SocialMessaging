@@ -14,6 +14,12 @@ const STAGE_BADGE: Record<string, string> = {
 
 const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
+function EffBadge({ value }: { value: number | null }) {
+  if (value === null || value === undefined) return null;
+  const c = value >= 80 ? 'bg-green-100 text-green-700' : value >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${c}`}>{value}%</span>;
+}
+
 export default function ListView({ projectId, tasks, milestones, members, onReload }: {
   projectId: number; tasks: any[]; milestones: any[]; members: any[]; onReload: () => void;
 }) {
@@ -139,10 +145,14 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
               <th className="text-left px-4 py-2 font-semibold cursor-pointer hover:text-indigo-600 select-none" onClick={() => toggleSort('hours')}>
                 Hours{sortIcon('hours')}
               </th>
+              <th className="text-left px-4 py-2 font-semibold">Eff.</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {sorted.map(t => (
+            {sorted.map(t => {
+              const isOverdue = t.due_date && new Date(t.due_date) < new Date() && t.stage !== 'completed';
+              const isDueSoon = !isOverdue && t.due_date && ((new Date(t.due_date).getTime() - new Date().getTime()) / 86400000) <= 2 && t.stage !== 'completed';
+              return (
               <tr key={t.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-2.5 font-medium text-gray-800">
                   <div>{t.title}
@@ -162,14 +172,19 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
                 </td>
                 <td className={`px-4 py-2.5 font-medium capitalize ${PRIORITY_COLORS[t.priority] || 'text-gray-600'}`}>{t.priority}</td>
                 <td className="px-4 py-2.5 text-gray-500">{t.assignee_name || '\u2014'}</td>
-                <td className="px-4 py-2.5 text-gray-500">{t.due_date || '\u2014'}</td>
+                <td className={`px-4 py-2.5 ${isOverdue ? 'text-red-600 font-medium' : isDueSoon ? 'text-amber-600' : 'text-gray-500'}`}>
+                  {t.due_date || '\u2014'}
+                  {isOverdue && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">Overdue</span>}
+                </td>
                 <td className={`px-4 py-2.5 ${t.actual_hours > t.estimated_hours && t.estimated_hours > 0 ? 'text-red-500 font-medium' : 'text-gray-500'}`}>
                   {t.actual_hours}/{t.estimated_hours}h
                 </td>
+                <td className="px-4 py-2.5"><EffBadge value={t.efficiency} /></td>
               </tr>
-            ))}
+              );
+            })}
             {sorted.length === 0 && (
-              <tr><td colSpan={6} className="text-center text-gray-400 py-12">No tasks found.</td></tr>
+              <tr><td colSpan={7} className="text-center text-gray-400 py-12">No tasks found.</td></tr>
             )}
           </tbody>
         </table>

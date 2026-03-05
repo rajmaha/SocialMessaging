@@ -20,6 +20,12 @@ const STAGE_COLORS: Record<string, string> = {
 };
 const ZOOM_PX: Record<ZoomLevel, number> = { day: 40, week: 14, month: 4, quarter: 2 };
 
+function EffBadge({ value }: { value: number | null }) {
+  if (value === null || value === undefined) return null;
+  const c = value >= 80 ? 'bg-green-100 text-green-700' : value >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${c}`}>{value}%</span>;
+}
+
 function parseDate(d: string | null): Date | null { return d ? new Date(d) : null; }
 function addDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 function diffDays(a: Date, b: Date): number { return Math.round((b.getTime() - a.getTime()) / 86400000); }
@@ -325,7 +331,7 @@ function TaskDetailPanel({ task, projectId: _projectId, onClose, onUpdated }: an
             <div className="text-xs text-gray-500 space-y-1">
               {task.assignee_name && <div>Assignee: <span className="text-gray-800 font-medium">{task.assignee_name}</span></div>}
               <div>Due: <span className="text-gray-800">{task.due_date || '—'}</span></div>
-              <div>Hours: <span className={`font-medium ${task.actual_hours > task.estimated_hours && task.estimated_hours > 0 ? 'text-red-500' : 'text-gray-800'}`}>{task.actual_hours}/{task.estimated_hours}h</span></div>
+              <div>Hours: <span className={`font-medium ${task.actual_hours > task.estimated_hours && task.estimated_hours > 0 ? 'text-red-500' : 'text-gray-800'}`}>{task.actual_hours}/{task.estimated_hours}h</span> <EffBadge value={task.efficiency} /></div>
             </div>
             {NEXT_STAGES[task.stage]?.length > 0 && (
               <div>
