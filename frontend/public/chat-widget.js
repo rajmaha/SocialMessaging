@@ -101,6 +101,45 @@
     transition: 'transform 0.22s cubic-bezier(.4,0,.2,1), opacity 0.22s ease',
   })
 
+  // ── Tab bar (Chat / Menu) — hidden until menus load ───────────────────
+  var tabBar = document.createElement('div')
+  tabBar.id = 'sc-chat-tabs'
+  Object.assign(tabBar.style, {
+    display: 'none',
+    flexDirection: 'row',
+    borderBottom: '1px solid #e5e7eb',
+    background: '#fff',
+    borderRadius: '16px 16px 0 0',
+    overflow: 'hidden',
+    flexShrink: '0',
+  })
+
+  function createTab(label, isActive) {
+    var btn = document.createElement('button')
+    btn.textContent = label
+    Object.assign(btn.style, {
+      flex: '1',
+      padding: '10px 0',
+      border: 'none',
+      cursor: 'pointer',
+      fontSize: '13px',
+      fontWeight: '600',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      background: isActive ? '#fff' : '#f9fafb',
+      color: isActive ? '#4f46e5' : '#6b7280',
+      borderBottom: isActive ? '2px solid #4f46e5' : '2px solid transparent',
+      transition: 'all 0.15s ease',
+    })
+    return btn
+  }
+
+  var chatTab = createTab('Chat', true)
+  var menuTab = createTab('Menu', false)
+  tabBar.appendChild(chatTab)
+  tabBar.appendChild(menuTab)
+  container.appendChild(tabBar)
+
+  // ── Chat iframe ──────────────────────────────────────────────────────
   var iframe = document.createElement('iframe')
   iframe.src = WIDGET_URL
   iframe.title = 'Live Chat'
@@ -108,9 +147,122 @@
     width: '100%',
     height: '100%',
     border: 'none',
-    borderRadius: '16px',
+    borderRadius: '0 0 16px 16px',
+    flex: '1',
   })
   container.appendChild(iframe)
+
+  // ── Menu panel ───────────────────────────────────────────────────────
+  var menuPanel = document.createElement('div')
+  menuPanel.id = 'sc-menu-panel'
+  Object.assign(menuPanel.style, {
+    display: 'none',
+    flex: '1',
+    overflowY: 'auto',
+    background: '#f9fafb',
+    padding: '16px',
+    borderRadius: '0 0 16px 16px',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  })
+  container.appendChild(menuPanel)
+
+  var activeTab = 'chat'
+  var menuData = []
+
+  function switchTab(tab) {
+    activeTab = tab
+    if (tab === 'chat') {
+      iframe.style.display = 'block'
+      menuPanel.style.display = 'none'
+      chatTab.style.background = '#fff'
+      chatTab.style.color = '#4f46e5'
+      chatTab.style.borderBottom = '2px solid #4f46e5'
+      menuTab.style.background = '#f9fafb'
+      menuTab.style.color = '#6b7280'
+      menuTab.style.borderBottom = '2px solid transparent'
+    } else {
+      iframe.style.display = 'none'
+      menuPanel.style.display = 'block'
+      menuTab.style.background = '#fff'
+      menuTab.style.color = '#4f46e5'
+      menuTab.style.borderBottom = '2px solid #4f46e5'
+      chatTab.style.background = '#f9fafb'
+      chatTab.style.color = '#6b7280'
+      chatTab.style.borderBottom = '2px solid transparent'
+      renderMenu()
+    }
+  }
+
+  chatTab.addEventListener('click', function () { switchTab('chat') })
+  menuTab.addEventListener('click', function () { switchTab('menu') })
+
+  function renderMenu() {
+    menuPanel.innerHTML = ''
+    if (menuData.length === 0) {
+      menuPanel.innerHTML = '<p style="text-align:center;color:#9ca3af;font-size:13px;padding:40px 0;">No menu items available.</p>'
+      return
+    }
+    menuData.forEach(function (group) {
+      var items = (group.items || []).filter(function (i) { return i.is_active })
+      if (items.length === 0) return
+
+      var header = document.createElement('p')
+      header.textContent = (group.icon || '') + ' ' + group.name
+      Object.assign(header.style, {
+        fontSize: '11px',
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+        color: '#6b7280',
+        marginBottom: '8px',
+        marginTop: '12px',
+      })
+      menuPanel.appendChild(header)
+
+      items.forEach(function (item) {
+        var link = document.createElement('a')
+        var href = item.link_type === 'form' ? SERVER + '/forms/' + item.link_value : item.link_value
+        link.href = href
+        link.target = '_blank'
+        link.rel = 'noopener noreferrer'
+        link.textContent = (item.icon ? item.icon + ' ' : '') + item.label
+        Object.assign(link.style, {
+          display: 'block',
+          padding: '10px 12px',
+          marginBottom: '4px',
+          background: '#fff',
+          borderRadius: '8px',
+          color: '#1f2937',
+          textDecoration: 'none',
+          fontSize: '13px',
+          fontWeight: '500',
+          border: '1px solid #e5e7eb',
+          transition: 'all 0.15s ease',
+          cursor: 'pointer',
+        })
+        link.addEventListener('mouseenter', function () {
+          link.style.borderColor = '#a5b4fc'
+          link.style.background = '#eef2ff'
+        })
+        link.addEventListener('mouseleave', function () {
+          link.style.borderColor = '#e5e7eb'
+          link.style.background = '#fff'
+        })
+        menuPanel.appendChild(link)
+      })
+    })
+  }
+
+  // Fetch public menus — show tab bar only if menus exist
+  fetch(SERVER.replace(':3000', ':8000') + '/menu')
+    .then(function (r) { return r.json() })
+    .then(function (data) {
+      if (data && data.length > 0) {
+        menuData = data
+        tabBar.style.display = 'flex'
+      }
+    })
+    .catch(function () {})
 
   var open = false
   var unread = 0

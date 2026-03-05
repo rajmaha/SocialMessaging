@@ -16,7 +16,7 @@ from app.schemas.form import (
     FormFieldCreate, FormFieldUpdate, FormFieldResponse, FormFieldReorder,
     FormSubmissionCreate, FormSubmissionUpdate, FormSubmissionResponse,
 )
-from app.services.api_proxy import api_request, _resolve_json_path
+from app.services.api_proxy import api_request, _resolve_json_path, _extract_data
 
 # --- Admin routes ---
 
@@ -403,6 +403,39 @@ def get_public_form(
     return form_dict
 
 
+def _inject_hidden_fields(db: Session, form: Form, data: dict, user: Optional[User] = None):
+    """Inject auto-populated hidden field values into submission data."""
+    from datetime import datetime, timezone
+
+    fields = db.query(FormField).filter(FormField.form_id == form.id).all()
+    now = datetime.now(timezone.utc)
+
+    # Get preserved login data if user is authenticated and form has an API server
+    login_response_data = {}
+    if user and form.api_server_id:
+        cred = db.query(UserApiCredential).filter(
+            UserApiCredential.user_id == user.id,
+            UserApiCredential.api_server_id == form.api_server_id,
+        ).first()
+        if cred and cred.login_response_data:
+            login_response_data = cred.login_response_data
+
+    for field in fields:
+        if field.field_type == "hidden_datetime":
+            data[field.field_key] = now.isoformat()
+        elif field.field_type == "hidden_date":
+            data[field.field_key] = now.strftime("%Y-%m-%d")
+        elif field.field_type == "hidden_time":
+            data[field.field_key] = now.strftime("%H:%M:%S")
+        elif field.field_type == "hidden_preserved":
+            # default_value holds the preserved key name (e.g. "remote_user_id")
+            preserved_key = field.default_value
+            if preserved_key and preserved_key in login_response_data:
+                data[field.field_key] = login_response_data[preserved_key]
+
+    return data
+
+
 @public_router.post("/{slug}/submit")
 async def submit_form(
     slug: str,
@@ -413,9 +446,10 @@ async def submit_form(
     if not form:
         raise HTTPException(status_code=404, detail="Form not found or not published")
     if form.storage_type == "local":
+        submission_data = _inject_hidden_fields(db, form, dict(data.data))
         submission = FormSubmission(
             form_id=form.id,
-            data=data.data,
+            data=submission_data,
             submitter_email=data.submitter_email,
         )
         db.add(submission)
@@ -423,3 +457,56 @@ async def submit_form(
         db.refresh(submission)
         return {"message": form.success_message, "submission_id": submission.id}
     raise HTTPException(status_code=400, detail="API form submission requires authentication")
+
+
+@public_router.post("/{slug}/submit/authenticated")
+async def submit_form_authenticated(
+    slug: str,
+    data: FormSubmissionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Submit a form with authentication — required for API-type forms."""
+    form = db.query(Form).filter(Form.slug == slug, Form.is_published == True).first()
+    if not form:
+        raise HTTPException(status_code=404, detail="Form not found or not published")
+
+    submission_data = _inject_hidden_fields(db, form, dict(data.data), current_user)
+
+    if form.storage_type == "local":
+        submission = FormSubmission(
+            form_id=form.id,
+            data=submission_data,
+            submitter_email=data.submitter_email,
+        )
+        db.add(submission)
+        db.commit()
+        db.refresh(submission)
+        return {"message": form.success_message, "submission_id": submission.id}
+
+    # API submission
+    if not form.api_create_method:
+        raise HTTPException(status_code=400, detail="No create endpoint configured for this form")
+    server, cred = _get_credential(db, form, current_user)
+    try:
+        result = await api_request(db, server, cred, form.api_create_method, body=submission_data)
+    except HTTPException:
+        raise  # Re-raise HTTPExceptions from api_request (remote API errors)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail={
+            "remote_error": True,
+            "message": f"Failed to connect to remote API: {str(e)}",
+        })
+    # Extract message and data using server's configured paths
+    api_message = None
+    api_data = None
+    if isinstance(result, dict):
+        msg_path = server.response_message_path or "message"
+        api_message = _resolve_json_path(result, msg_path)
+        api_data = _extract_data(server, result)
+    return {
+        "message": form.success_message,
+        "api_message": api_message,
+        "result": api_data if api_data is not None else result,
+        "success": True,
+    }

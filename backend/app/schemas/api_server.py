@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, List, Any
 from datetime import datetime
 
 
@@ -15,6 +15,10 @@ class ApiServerCreate(BaseModel):
     login_password_field: Optional[str] = "password"
     token_response_path: Optional[str] = "data.token"
     request_content_type: str = "json"
+    preserved_fields: Optional[List[dict]] = None  # [{"key": "remote_user_id", "path": "data.id"}]
+    response_success_path: Optional[str] = None  # e.g. "status" or "success"
+    response_message_path: Optional[str] = "message"  # e.g. "message"
+    response_data_path: Optional[str] = "data"  # e.g. "data"
 
 
 class ApiServerUpdate(BaseModel):
@@ -29,6 +33,10 @@ class ApiServerUpdate(BaseModel):
     login_password_field: Optional[str] = None
     token_response_path: Optional[str] = None
     request_content_type: Optional[str] = None
+    preserved_fields: Optional[List[dict]] = None
+    response_success_path: Optional[str] = None
+    response_message_path: Optional[str] = None
+    response_data_path: Optional[str] = None
 
 
 class ApiServerResponse(ApiServerCreate):
@@ -59,5 +67,19 @@ class UserApiCredentialResponse(BaseModel):
 
 
 class ApiLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class ApiServerPublicResponse(BaseModel):
+    id: int
+    name: str
+    base_url: str
+    auth_type: str
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserApiCredentialSelfCreate(BaseModel):
+    api_server_id: int
     username: str
     password: str

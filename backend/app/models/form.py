@@ -44,6 +44,8 @@ class FormField(Base):
     api_value_key = Column(String, nullable=True)
     api_label_key = Column(String, nullable=True)
     condition = Column(JSON, nullable=True)
+    condition_logic = Column(String, nullable=True, default="AND")  # AND, OR
+    api_params = Column(JSON, nullable=True)  # e.g. [{"param": "departmentId", "source_field_key": "department"}]
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 

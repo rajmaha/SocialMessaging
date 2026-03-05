@@ -35,6 +35,8 @@ interface PublicForm {
   description?: string;
   success_message?: string;
   require_otp?: boolean;
+  storage_type?: string;
+  api_server_id?: number;
   fields: FormField[];
 }
 
@@ -105,6 +107,7 @@ export default function PublicFormPage() {
   const [generalError, setGeneralError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitResult, setSubmitResult] = useState<any>(null);
 
   // For OTP email field
   const [submitterEmail, setSubmitterEmail] = useState("");
@@ -219,6 +222,14 @@ export default function PublicFormPage() {
     }
 
     visibleFields.forEach((field) => {
+      // Skip validation for hidden fields
+      if (
+        field.field_type === "hidden_datetime" ||
+        field.field_type === "hidden_date" ||
+        field.field_type === "hidden_time" ||
+        field.field_type === "hidden_preserved"
+      ) return;
+
       const val = values[field.field_key];
       const rules = field.validation_rules || {};
       const strVal = typeof val === "string" ? val.trim() : "";
@@ -331,17 +342,55 @@ export default function PublicFormPage() {
       data[f.field_key] = values[f.field_key];
     });
 
+    // Auto-populate hidden field values
+    if (form) {
+      const now = new Date();
+      form.fields.forEach((f) => {
+        switch (f.field_type) {
+          case "hidden_datetime":
+            data[f.field_key] = now.toISOString();
+            break;
+          case "hidden_date":
+            data[f.field_key] = now.toISOString().split("T")[0];
+            break;
+          case "hidden_time":
+            data[f.field_key] = now.toTimeString().split(" ")[0]; // HH:MM:SS
+            break;
+          case "hidden_preserved":
+            // Value will be injected by the backend using login_response_data
+            // Send the preserved key name so backend knows which value to inject
+            data[f.field_key] = f.default_value || "";
+            break;
+        }
+      });
+    }
+
     setSubmitting(true);
     try {
-      await formsApi.submitForm(slug, {
+      const payload = {
         data,
         submitter_email: submitterEmail || undefined,
-      });
+      };
+      // Use authenticated submit for API-type forms
+      let res;
+      if (form.storage_type === "api") {
+        res = await formsApi.submitFormAuthenticated(slug, payload);
+      } else {
+        res = await formsApi.submitForm(slug, payload);
+      }
+      setSubmitResult(res.data);
       setSubmitted(true);
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.detail || "Something went wrong. Please try again.";
-      setGeneralError(msg);
+      const detail = err?.response?.data?.detail;
+      if (detail === "login_required") {
+        setGeneralError("You need to log in and set up your API credentials before submitting this form.");
+      } else if (typeof detail === "object" && detail?.remote_error) {
+        setGeneralError(`Submission failed: ${detail.message || "Remote API rejected the request."}`);
+      } else if (typeof detail === "string") {
+        setGeneralError(detail);
+      } else {
+        setGeneralError("Something went wrong. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -649,6 +698,13 @@ export default function PublicFormPage() {
           </div>
         );
 
+      /* ---- hidden fields ---- */
+      case "hidden_datetime":
+      case "hidden_date":
+      case "hidden_time":
+      case "hidden_preserved":
+        return null; // hidden fields are not rendered
+
       default:
         return (
           <input
@@ -718,8 +774,38 @@ export default function PublicFormPage() {
             </svg>
           </div>
           <p className="text-lg text-gray-700">
-            {form.success_message || "Thank you! Your response has been submitted."}
+            {submitResult?.message || form.success_message || "Thank you! Your response has been submitted."}
           </p>
+          {submitResult?.api_message && (
+            <p className="text-sm text-gray-500 mt-2">{submitResult.api_message}</p>
+          )}
+          {submitResult?.result && typeof submitResult.result === "object" && (
+            <div className="mt-4 text-left bg-gray-50 rounded-lg p-3">
+              {submitResult.result.id && (
+                <p className="text-sm text-gray-500">Record ID: {submitResult.result.id}</p>
+              )}
+            </div>
+          )}
+          <button
+            onClick={() => {
+              setSubmitted(false);
+              setSubmitResult(null);
+              setValues({});
+              // Reset defaults
+              if (form) {
+                const defaults: Record<string, any> = {};
+                form.fields.forEach((f) => {
+                  if (f.default_value) defaults[f.field_key] = f.default_value;
+                  else if (f.field_type === "checkbox" || f.field_type === "checkbox_api") defaults[f.field_key] = [];
+                  else defaults[f.field_key] = "";
+                });
+                setValues(defaults);
+              }
+            }}
+            className="mt-4 text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            Submit another response
+          </button>
         </div>
       </div>
     );
@@ -778,13 +864,24 @@ export default function PublicFormPage() {
             )}
 
             {/* Dynamic fields */}
-            {visibleFields.map((field) => (
-              <div key={field.field_key}>
-                {renderLabel(field)}
-                {renderField(field)}
-                {renderError(field.field_key)}
-              </div>
-            ))}
+            {visibleFields.map((field) => {
+              // Skip hidden fields from rendering entirely
+              if (
+                field.field_type === "hidden_datetime" ||
+                field.field_type === "hidden_date" ||
+                field.field_type === "hidden_time" ||
+                field.field_type === "hidden_preserved"
+              ) {
+                return null;
+              }
+              return (
+                <div key={field.field_key}>
+                  {renderLabel(field)}
+                  {renderField(field)}
+                  {renderError(field.field_key)}
+                </div>
+              );
+            })}
 
             <button
               type="submit"

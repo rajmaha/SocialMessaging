@@ -66,6 +66,8 @@ class FormFieldCreate(BaseModel):
     api_value_key: Optional[str] = None
     api_label_key: Optional[str] = None
     condition: Optional[Any] = None
+    condition_logic: Optional[str] = "AND"
+    api_params: Optional[List[Dict[str, str]]] = None
 
 
 class FormFieldUpdate(BaseModel):
@@ -82,6 +84,8 @@ class FormFieldUpdate(BaseModel):
     api_value_key: Optional[str] = None
     api_label_key: Optional[str] = None
     condition: Optional[Any] = None
+    condition_logic: Optional[str] = None
+    api_params: Optional[List[Dict[str, str]]] = None
 
 
 class FormFieldResponse(FormFieldCreate):

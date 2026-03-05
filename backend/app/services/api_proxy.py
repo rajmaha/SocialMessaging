@@ -1,6 +1,7 @@
 import httpx
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
 from app.models.api_server import ApiServer, UserApiCredential
 
 
@@ -34,6 +35,58 @@ def _parse_method_string(method_string: str):
     return "GET", parts[0]
 
 
+def _check_body_success(server: ApiServer, body: Any) -> tuple[bool, str]:
+    """
+    Check if response body indicates success using the server's configured paths.
+    Returns (is_success, error_message).
+
+    Supports different API patterns:
+      {"status": true, "message": "...", "data": {...}}
+      {"success": true, "message": "...", "data": {...}}
+      {"status": false, "message": "Error description"}
+    """
+    if not isinstance(body, dict):
+        return True, ""  # Can't check non-dict bodies, assume OK
+
+    success_path = server.response_success_path
+    message_path = server.response_message_path or "message"
+
+    if not success_path:
+        # No success indicator configured — fall back to checking common patterns
+        # Check "status" and "success" fields if present
+        for key in ("status", "success"):
+            val = body.get(key)
+            if val is False or val == "false" or val == 0:
+                msg = _resolve_json_path(body, message_path) or "Request failed"
+                return False, str(msg)
+        return True, ""
+
+    # Use the configured path
+    success_val = _resolve_json_path(body, success_path)
+    if success_val is None:
+        return True, ""  # Field not present, assume OK
+
+    # Evaluate truthiness — handle bool, int, string
+    is_success = success_val in (True, 1, "1", "true", "True")
+    if not is_success:
+        msg = _resolve_json_path(body, message_path) or "Request failed"
+        return False, str(msg)
+
+    return True, ""
+
+
+def _extract_data(server: ApiServer, body: Any) -> Any:
+    """Extract the data payload from a response body using configured path."""
+    if not isinstance(body, dict):
+        return body
+    data_path = server.response_data_path
+    if data_path:
+        extracted = _resolve_json_path(body, data_path)
+        if extracted is not None:
+            return extracted
+    return body
+
+
 async def api_login(
     db: Session,
     server: ApiServer,
@@ -57,8 +110,26 @@ async def api_login(
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(url, headers=headers, **request_kwargs)
-        resp.raise_for_status()
+
+        if resp.status_code >= 400:
+            # Try to extract message from body
+            try:
+                err_body = resp.json()
+                msg = _resolve_json_path(err_body, server.response_message_path or "message") or "Login failed"
+            except Exception:
+                msg = f"Login failed with HTTP {resp.status_code}"
+            raise HTTPException(status_code=resp.status_code, detail={
+                "remote_error": True, "message": str(msg), "status": resp.status_code
+            })
+
         body = resp.json()
+
+    # Check body-level success indicator (e.g. {"status": false, "message": "..."})
+    is_success, err_msg = _check_body_success(server, body)
+    if not is_success:
+        raise HTTPException(status_code=401, detail={
+            "remote_error": True, "message": err_msg, "status": 401
+        })
 
     token = _resolve_json_path(body, server.token_response_path or "data.token")
     if not token:
@@ -66,6 +137,26 @@ async def api_login(
 
     credential.token = token
     credential.is_active = True
+
+    # Preserve fields from login response as configured on the server
+    if server.preserved_fields:
+        # Resolve against the data portion (using response_data_path) so admin
+        # can write just "id" / "full_name" instead of "data.id" / "data.full_name"
+        data_section = _extract_data(server, body)
+        preserved = {}
+        for pf in server.preserved_fields:
+            key = pf.get("key")
+            path = pf.get("path")
+            if key and path:
+                # Try from extracted data first, fall back to full body
+                val = _resolve_json_path(data_section, path) if isinstance(data_section, dict) else None
+                if val is None:
+                    val = _resolve_json_path(body, path)
+                preserved[key] = val
+        credential.login_response_data = preserved
+    else:
+        credential.login_response_data = None
+
     db.commit()
 
     return token
@@ -118,8 +209,39 @@ async def api_request(
             headers = _build_headers(server, token)
             resp = await client.request(method, url, headers=headers, **request_kwargs)
 
-        resp.raise_for_status()
-
+        # Extract response body for both success and error cases
+        response_body = None
         if resp.headers.get("content-type", "").startswith("application/json"):
-            return resp.json()
-        return resp.text
+            try:
+                response_body = resp.json()
+            except Exception:
+                response_body = None
+
+        # HTTP-level error (4xx/5xx)
+        if resp.status_code >= 400:
+            detail = "Remote API request failed"
+            if isinstance(response_body, dict):
+                msg_path = server.response_message_path or "message"
+                detail = (
+                    _resolve_json_path(response_body, msg_path)
+                    or response_body.get("error")
+                    or response_body.get("detail")
+                    or str(response_body)
+                )
+            elif isinstance(response_body, str):
+                detail = response_body
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail={"remote_error": True, "message": str(detail), "status": resp.status_code},
+            )
+
+        # Body-level error (HTTP 200 but {"status": false, "message": "..."})
+        if isinstance(response_body, dict):
+            is_success, err_msg = _check_body_success(server, response_body)
+            if not is_success:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"remote_error": True, "message": err_msg, "status": 422},
+                )
+
+        return response_body if response_body is not None else resp.text

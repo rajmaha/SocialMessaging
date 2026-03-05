@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { formsApi } from '@/lib/api';
+import { formsApi, apiServersApi } from '@/lib/api';
 import { authAPI } from '@/lib/auth';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
@@ -20,7 +20,13 @@ const FIELD_TYPES = [
   { value: 'checkbox_api', label: 'Checkbox (API)' },
   { value: 'yes_no', label: 'Yes/No' },
   { value: 'true_false', label: 'True/False' },
+  { value: 'hidden_datetime', label: 'Hidden: Current DateTime' },
+  { value: 'hidden_date', label: 'Hidden: Current Date' },
+  { value: 'hidden_time', label: 'Hidden: Current Time' },
+  { value: 'hidden_preserved', label: 'Hidden: Preserved Value' },
 ];
+
+const HIDDEN_TYPES = ['hidden_datetime', 'hidden_date', 'hidden_time', 'hidden_preserved'];
 
 const FIELD_TYPE_DISPLAY: Record<string, string> = Object.fromEntries(FIELD_TYPES.map(t => [t.value, t.label]));
 
@@ -50,10 +56,13 @@ const defaultField = () => ({
   field_type: 'text',
   is_required: false,
   placeholder: '',
+  default_value: '',
   options: [] as { key: string; value: string }[],
   validation: {} as Record<string, any>,
   api_config: { endpoint: '', value_key: '', label_key: '' },
   conditions: [] as { field_key: string; operator: string; value: string }[],
+  condition_logic: 'AND' as 'AND' | 'OR',
+  api_params: [] as { param: string; source_field_key: string }[],
 });
 
 export default function FieldBuilderPage() {
@@ -67,11 +76,20 @@ export default function FieldBuilderPage() {
   const [editing, setEditing] = useState<any>(null);
   const [field, setField] = useState(defaultField());
   const [saving, setSaving] = useState(false);
+  const [apiServerBaseUrl, setApiServerBaseUrl] = useState('');
 
   const loadForm = async () => {
     try {
       const res = await formsApi.get(formId);
       setFormTitle(res.data.title || '');
+      // Load API server base URL if form is linked to one
+      if (res.data.api_server_id) {
+        try {
+          const servers = await apiServersApi.list();
+          const server = servers.data.find((s: any) => s.id === res.data.api_server_id);
+          if (server) setApiServerBaseUrl(server.base_url || '');
+        } catch {}
+      }
     } catch {}
   };
 
@@ -101,23 +119,31 @@ export default function FieldBuilderPage() {
     const opts = Array.isArray(item.options)
       ? item.options.map((o: any) => (typeof o === 'object' ? { key: o.key || '', value: o.value || '' } : { key: o, value: o }))
       : [];
-    const conds = Array.isArray(item.conditions)
-      ? item.conditions.map((c: any) => ({
+    const rawConds = item.condition || item.conditions;
+    const conds = Array.isArray(rawConds)
+      ? rawConds.map((c: any) => ({
           field_key: c.field_key || '',
           operator: Object.entries(OPERATOR_MAP).find(([, v]) => v === c.operator)?.[0] || 'is equal to',
           value: c.value || '',
         }))
       : [];
     setField({
-      label: item.label || '',
+      label: item.field_label || item.label || '',
       field_key: item.field_key || '',
       field_type: item.field_type || 'text',
       is_required: item.is_required || false,
       placeholder: item.placeholder || '',
+      default_value: item.default_value || '',
       options: opts.length > 0 ? opts : [],
-      validation: item.validation || {},
-      api_config: item.api_config || { endpoint: '', value_key: '', label_key: '' },
+      validation: item.validation_rules || item.validation || {},
+      api_config: {
+        endpoint: item.api_endpoint || '',
+        value_key: item.api_value_key || '',
+        label_key: item.api_label_key || '',
+      },
       conditions: conds,
+      condition_logic: (item.condition_logic || 'AND') as 'AND' | 'OR',
+      api_params: Array.isArray(item.api_params) ? item.api_params : [],
     });
     setShowModal(true);
   };
@@ -127,11 +153,12 @@ export default function FieldBuilderPage() {
     setSaving(true);
     try {
       const payload: any = {
-        label: field.label,
+        field_label: field.label,
         field_key: field.field_key,
         field_type: field.field_type,
-        is_required: field.is_required,
+        is_required: HIDDEN_TYPES.includes(field.field_type) ? false : field.is_required,
         placeholder: PLACEHOLDER_TYPES.includes(field.field_type) ? field.placeholder : '',
+        default_value: HIDDEN_TYPES.includes(field.field_type) ? (field.default_value || null) : null,
       };
 
       // Options for dropdown / checkbox
@@ -161,23 +188,34 @@ export default function FieldBuilderPage() {
         if (field.validation.min_selections !== undefined && field.validation.min_selections !== '') v.min_selections = Number(field.validation.min_selections);
         if (field.validation.max_selections !== undefined && field.validation.max_selections !== '') v.max_selections = Number(field.validation.max_selections);
       }
-      payload.validation = v;
+      payload.validation_rules = v;
 
       // API config
       if (['dropdown_api', 'checkbox_api'].includes(field.field_type)) {
-        payload.api_config = field.api_config;
+        payload.api_endpoint = field.api_config?.endpoint || null;
+        payload.api_value_key = field.api_config?.value_key || null;
+        payload.api_label_key = field.api_config?.label_key || null;
+        const params = field.api_params.filter((p: any) => p.param && p.source_field_key);
+        payload.api_params = params.length > 0 ? params : null;
       } else {
-        payload.api_config = null;
+        payload.api_endpoint = null;
+        payload.api_value_key = null;
+        payload.api_label_key = null;
+        payload.api_params = null;
       }
 
       // Conditions
-      payload.conditions = field.conditions
-        .filter(c => c.field_key && c.value)
-        .map(c => ({
+      const conditions = field.conditions
+        .filter((c: any) => c.field_key && c.value)
+        .map((c: any) => ({
           field_key: c.field_key,
           operator: OPERATOR_MAP[c.operator] || 'equals',
           value: c.value,
         }));
+      payload.condition = conditions.length > 0 ? conditions : null;
+      if (conditions.length > 1) {
+        payload.condition_logic = field.condition_logic || 'AND';
+      }
 
       if (editing) {
         await formsApi.updateField(formId, editing.id, payload);
@@ -311,7 +349,7 @@ export default function FieldBuilderPage() {
               {/* Field info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-gray-900">{item.label}</span>
+                  <span className="font-semibold text-gray-900">{item.field_label || item.label}</span>
                   {item.is_required && (
                     <span className="text-xs text-red-600 font-medium">*Required</span>
                   )}
@@ -420,6 +458,34 @@ export default function FieldBuilderPage() {
                   onChange={e => updateField({ placeholder: e.target.value })}
                 />
               </>
+            )}
+
+            {/* Hidden field info */}
+            {HIDDEN_TYPES.includes(field.field_type) && (
+              <div className="border border-amber-200 rounded-lg p-3 mb-3 bg-amber-50">
+                <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">Hidden Field</p>
+                {field.field_type === 'hidden_datetime' && (
+                  <p className="text-xs text-amber-600">This field will be automatically set to the current date and time when the form is submitted.</p>
+                )}
+                {field.field_type === 'hidden_date' && (
+                  <p className="text-xs text-amber-600">This field will be automatically set to the current date when the form is submitted.</p>
+                )}
+                {field.field_type === 'hidden_time' && (
+                  <p className="text-xs text-amber-600">This field will be automatically set to the current time when the form is submitted.</p>
+                )}
+                {field.field_type === 'hidden_preserved' && (
+                  <>
+                    <p className="text-xs text-amber-600 mb-2">This field will use a preserved value from the API server login response.</p>
+                    <label className="block text-xs text-gray-700 mb-1">Preserved Key Name</label>
+                    <input
+                      className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                      placeholder="e.g. remote_user_id (must match key in API Server preserved fields)"
+                      value={field.default_value || ''}
+                      onChange={e => updateField({ default_value: e.target.value })}
+                    />
+                  </>
+                )}
+              </div>
             )}
 
             {/* Type-specific validation */}
@@ -617,13 +683,30 @@ export default function FieldBuilderPage() {
               <div className="border border-gray-200 rounded-lg p-3 mb-3 bg-gray-50 space-y-2">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">API Configuration</p>
                 <div>
-                  <label className="block text-xs text-gray-600 mb-1">API Endpoint URL</label>
-                  <input
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                    placeholder="https://api.example.com/items"
-                    value={field.api_config.endpoint}
-                    onChange={e => updateApiConfig('endpoint', e.target.value)}
-                  />
+                  <label className="block text-xs text-gray-600 mb-1">API Endpoint Path</label>
+                  {apiServerBaseUrl ? (
+                    <div className="flex items-stretch">
+                      <span className="inline-flex items-center px-3 py-2 text-sm text-gray-500 bg-gray-100 border border-r-0 rounded-l-lg whitespace-nowrap">
+                        {apiServerBaseUrl}
+                      </span>
+                      <input
+                        className="flex-1 border rounded-r-lg px-3 py-2 text-sm bg-white min-w-0"
+                        placeholder="/api/items"
+                        value={field.api_config.endpoint}
+                        onChange={e => updateApiConfig('endpoint', e.target.value)}
+                      />
+                    </div>
+                  ) : (
+                    <input
+                      className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                      placeholder="/api/items"
+                      value={field.api_config.endpoint}
+                      onChange={e => updateApiConfig('endpoint', e.target.value)}
+                    />
+                  )}
+                  {!apiServerBaseUrl && (
+                    <p className="text-xs text-amber-600 mt-1">No API server linked to this form. The endpoint path will be appended to the server base URL.</p>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -645,6 +728,55 @@ export default function FieldBuilderPage() {
                     />
                   </div>
                 </div>
+                {/* API Parameters */}
+                <div className="mt-2 pt-2 border-t border-gray-200">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Query Parameters</p>
+                  <p className="text-xs text-gray-400 mb-2">Map URL query parameters to values from other form fields.</p>
+                  <div className="space-y-2">
+                    {field.api_params.map((p: any, i: number) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          className="flex-1 border rounded-lg px-2 py-1.5 text-sm bg-white"
+                          placeholder="Parameter name"
+                          value={p.param}
+                          onChange={e => {
+                            const params = [...field.api_params];
+                            params[i] = { ...params[i], param: e.target.value };
+                            updateField({ api_params: params });
+                          }}
+                        />
+                        <span className="text-gray-400 text-xs">=</span>
+                        <select
+                          className="flex-1 border rounded-lg px-2 py-1.5 text-sm bg-white"
+                          value={p.source_field_key}
+                          onChange={e => {
+                            const params = [...field.api_params];
+                            params[i] = { ...params[i], source_field_key: e.target.value };
+                            updateField({ api_params: params });
+                          }}
+                        >
+                          <option value="">Select source field...</option>
+                          {otherFields.map((f: any) => (
+                            <option key={f.id} value={f.field_key}>{f.field_label || f.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => updateField({ api_params: field.api_params.filter((_: any, idx: number) => idx !== i) })}
+                          className="text-red-400 hover:text-red-600 p-1"
+                          title="Remove parameter"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => updateField({ api_params: [...field.api_params, { param: '', source_field_key: '' }] })}
+                    className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    + Add Parameter
+                  </button>
+                </div>
               </div>
             )}
 
@@ -662,42 +794,69 @@ export default function FieldBuilderPage() {
 
             {/* Conditional visibility */}
             <div className="border border-gray-200 rounded-lg p-3 mb-4">
-              <p className="text-sm font-medium text-gray-700 mb-2">Show this field only when:</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-gray-700">Show this field only when:</p>
+                {field.conditions.length > 1 && (
+                  <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => updateField({ condition_logic: 'AND' as 'AND' | 'OR' })}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${field.condition_logic === 'AND' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      AND
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateField({ condition_logic: 'OR' as 'AND' | 'OR' })}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${field.condition_logic === 'OR' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      OR
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="space-y-2">
                 {field.conditions.map((cond, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <select
-                      className="flex-1 border rounded-lg px-2 py-1.5 text-sm bg-white"
-                      value={cond.field_key}
-                      onChange={e => updateCondition(i, 'field_key', e.target.value)}
-                    >
-                      <option value="">Select field...</option>
-                      {otherFields.map((f: any) => (
-                        <option key={f.id} value={f.field_key}>{f.label}</option>
-                      ))}
-                    </select>
-                    <select
-                      className="border rounded-lg px-2 py-1.5 text-sm bg-white"
-                      value={cond.operator}
-                      onChange={e => updateCondition(i, 'operator', e.target.value)}
-                    >
-                      {OPERATOR_DISPLAY.map(op => (
-                        <option key={op} value={op}>{op}</option>
-                      ))}
-                    </select>
-                    <input
-                      className="flex-1 border rounded-lg px-2 py-1.5 text-sm bg-white"
-                      placeholder="Value"
-                      value={cond.value}
-                      onChange={e => updateCondition(i, 'value', e.target.value)}
-                    />
-                    <button
-                      onClick={() => removeCondition(i)}
-                      className="text-red-400 hover:text-red-600 p-1"
-                      title="Remove condition"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
+                  <div key={i}>
+                    {i > 0 && (
+                      <div className="flex justify-center py-1">
+                        <span className="text-xs font-semibold text-gray-400 uppercase">{field.condition_logic}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="flex-1 border rounded-lg px-2 py-1.5 text-sm bg-white"
+                        value={cond.field_key}
+                        onChange={e => updateCondition(i, 'field_key', e.target.value)}
+                      >
+                        <option value="">Select field...</option>
+                        {otherFields.map((f: any) => (
+                          <option key={f.id} value={f.field_key}>{f.field_label || f.label}</option>
+                        ))}
+                      </select>
+                      <select
+                        className="border rounded-lg px-2 py-1.5 text-sm bg-white"
+                        value={cond.operator}
+                        onChange={e => updateCondition(i, 'operator', e.target.value)}
+                      >
+                        {OPERATOR_DISPLAY.map(op => (
+                          <option key={op} value={op}>{op}</option>
+                        ))}
+                      </select>
+                      <input
+                        className="flex-1 border rounded-lg px-2 py-1.5 text-sm bg-white"
+                        placeholder="Value"
+                        value={cond.value}
+                        onChange={e => updateCondition(i, 'value', e.target.value)}
+                      />
+                      <button
+                        onClick={() => removeCondition(i)}
+                        className="text-red-400 hover:text-red-600 p-1"
+                        title="Remove condition"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

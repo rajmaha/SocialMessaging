@@ -3,11 +3,14 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
-import { getAuthToken } from '@/lib/auth'
+import { getAuthToken, authAPI } from '@/lib/auth'
 import { API_URL } from '@/lib/config';
+import MainHeader from '@/components/MainHeader'
+import AdminNav from '@/components/AdminNav'
 
 export default function CorsSettingsPage() {
     const router = useRouter()
+    const user = authAPI.getUser()
     const [origins, setOrigins] = useState<string[]>([])
     const [newOrigin, setNewOrigin] = useState('')
     const [loading, setLoading] = useState(true)
@@ -84,18 +87,13 @@ export default function CorsSettingsPage() {
 <script src="${API_URL}/widget.js" defer></script>`
 
     return (
-        <div className="min-h-screen bg-gray-50 p-6">
+        <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+            <MainHeader user={user!} />
+            <AdminNav />
+            <main className="w-full px-6 py-8">
             <div className="max-w-3xl mx-auto">
                 {/* Header */}
                 <div className="flex items-center gap-3 mb-6">
-                    <button
-                        onClick={() => router.back()}
-                        className="p-2 rounded-lg hover:bg-gray-200 transition text-gray-600"
-                    >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                    </button>
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900">CORS / Allowed Origins</h1>
                         <p className="text-sm text-gray-500">Control which websites can embed the chat widget</p>
@@ -210,6 +208,7 @@ export default function CorsSettingsPage() {
                     </button>
                 </div>
             </div>
+            </main>
         </div>
     )
 }
