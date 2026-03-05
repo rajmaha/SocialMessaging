@@ -58,8 +58,15 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
             {filtered.map(t => (
               <tr key={t.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-2.5 font-medium text-gray-800">
-                  {t.title}
-                  {t.subtask_count > 0 && <span className="ml-1 text-xs text-gray-400 font-normal">+{t.subtask_count} sub</span>}
+                  <div>{t.title}
+                  {t.subtask_count > 0 && <span className="ml-1 text-xs text-gray-400 font-normal">+{t.subtask_count} sub</span>}</div>
+                  {t.labels?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {t.labels.map((l: any) => (
+                        <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium text-white" style={{ background: l.color }}>{l.name}</span>
+                      ))}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-2.5">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_BADGE[t.stage] || 'bg-gray-100 text-gray-600'}`}>

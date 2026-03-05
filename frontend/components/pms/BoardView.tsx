@@ -57,6 +57,13 @@ export default function BoardView({ projectId: _projectId, tasks, onReload }: { 
                     <span className={`w-2 h-2 rounded-full mt-1 flex-none ${PRIORITY_DOT[t.priority] || 'bg-gray-300'}`} />
                     <span className="text-sm font-medium text-gray-800 leading-snug">{t.title}</span>
                   </div>
+                  {t.labels?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1 ml-4">
+                      {t.labels.map((l: any) => (
+                        <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium text-white" style={{ background: l.color }}>{l.name}</span>
+                      ))}
+                    </div>
+                  )}
                   {t.assignee_name && <div className="text-xs text-gray-400 ml-4">{t.assignee_name}</div>}
                   {t.due_date && <div className="text-xs text-gray-400 ml-4 mt-1">Due {t.due_date}</div>}
                   {t.subtask_count > 0 && <div className="text-xs text-indigo-400 ml-4 mt-1">+{t.subtask_count} subtasks</div>}

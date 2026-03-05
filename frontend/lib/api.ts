@@ -166,6 +166,14 @@ export const pmsApi = {
   // Integration
   createTaskFromTicket: (ticketId: number, projectId: number) =>
     api.post(`/api/pms/tasks/from-ticket/${ticketId}?project_id=${projectId}`),
+
+  // Labels (global library)
+  listLabels: () => api.get('/api/pms/labels'),
+  createLabel: (data: any) => api.post('/api/pms/labels', data),
+  updateLabel: (id: number, data: any) => api.put(`/api/pms/labels/${id}`, data),
+  deleteLabel: (id: number) => api.delete(`/api/pms/labels/${id}`),
+  attachLabel: (taskId: number, labelId: number) => api.post(`/api/pms/tasks/${taskId}/labels/${labelId}`),
+  detachLabel: (taskId: number, labelId: number) => api.delete(`/api/pms/tasks/${taskId}/labels/${labelId}`),
 };
 
 // ─── Roles API ───────────────────────────────────────────────────────────────
