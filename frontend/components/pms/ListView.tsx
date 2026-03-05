@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { pmsApi } from '@/lib/api';
+import FilterBar, { FilterState, defaultFilters } from './FilterBar';
 
 const PRIORITY_COLORS: Record<string, string> = {
   low: 'text-gray-400', medium: 'text-yellow-500', high: 'text-orange-500', urgent: 'text-red-500',
@@ -11,6 +12,8 @@ const STAGE_BADGE: Record<string, string> = {
   approved: 'bg-green-100 text-green-700', completed: 'bg-gray-100 text-gray-600',
 };
 
+const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+
 export default function ListView({ projectId, tasks, milestones, members, onReload }: {
   projectId: number; tasks: any[]; milestones: any[]; members: any[]; onReload: () => void;
 }) {
@@ -18,7 +21,71 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
 
-  const filtered = tasks.filter(t => !t.parent_task_id && t.title?.toLowerCase().includes(filter.toLowerCase()));
+  /* ── FilterBar state ───────────────────────────────────────────── */
+  const [filters, setFilters] = useState<FilterState>(defaultFilters);
+  const [sortBy, setSortBy] = useState<string>('');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [allLabels, setAllLabels] = useState<any[]>([]);
+
+  useEffect(() => {
+    pmsApi.listLabels().then(r => setAllLabels(r.data)).catch(() => {});
+  }, []);
+
+  /* ── Filtering ─────────────────────────────────────────────────── */
+  const filtered = tasks.filter(t => {
+    if (t.parent_task_id) return false;
+    // Text search
+    if (filter && !t.title?.toLowerCase().includes(filter.toLowerCase())) return false;
+    // Assignee
+    if (filters.assignees.length > 0 && !filters.assignees.includes(t.assignee_id)) return false;
+    // Priority
+    if (filters.priorities.length > 0 && !filters.priorities.includes(t.priority)) return false;
+    // Stage
+    if (filters.stages.length > 0 && !filters.stages.includes(t.stage)) return false;
+    // Milestone
+    if (filters.milestone_id && t.milestone_id !== filters.milestone_id) return false;
+    // Due date range
+    if (filters.due_from && t.due_date && t.due_date < filters.due_from) return false;
+    if (filters.due_to && t.due_date && t.due_date > filters.due_to) return false;
+    // Labels
+    if (filters.labels.length > 0) {
+      const taskLabelIds = (t.labels || []).map((l: any) => l.label_definition_id || l.id);
+      if (!filters.labels.some(id => taskLabelIds.includes(id))) return false;
+    }
+    // Created date range
+    if (filters.created_from && t.created_at) {
+      const created = t.created_at.substring(0, 10);
+      if (created < filters.created_from) return false;
+    }
+    if (filters.created_to && t.created_at) {
+      const created = t.created_at.substring(0, 10);
+      if (created > filters.created_to) return false;
+    }
+    return true;
+  });
+
+  /* ── Sorting ───────────────────────────────────────────────────── */
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (!sortBy) return 0;
+    let va: any, vb: any;
+    switch (sortBy) {
+      case 'priority': { va = PRIORITY_ORDER[a.priority] ?? 4; vb = PRIORITY_ORDER[b.priority] ?? 4; break; }
+      case 'due_date': { va = a.due_date || '9999'; vb = b.due_date || '9999'; break; }
+      case 'created_at': { va = a.created_at || ''; vb = b.created_at || ''; break; }
+      case 'hours': { va = a.actual_hours || 0; vb = b.actual_hours || 0; break; }
+      default: return 0;
+    }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const sortIcon = (col: string) => sortBy === col ? (sortDir === 'asc' ? ' \u2191' : ' \u2193') : '';
 
   const handleCreate = async () => {
     await pmsApi.createTask(projectId, {
@@ -42,20 +109,40 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
           + Add Task
         </button>
       </div>
+
+      {/* ── FilterBar ──────────────────────────────────────────────── */}
+      <div className="px-4 pt-3 flex-none">
+        <FilterBar
+          members={members}
+          milestones={milestones}
+          labels={allLabels}
+          filters={filters}
+          onFilterChange={setFilters}
+        />
+      </div>
+
       <div className="flex-1 overflow-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide sticky top-0">
             <tr>
               <th className="text-left px-4 py-2 font-semibold">Task</th>
-              <th className="text-left px-4 py-2 font-semibold">Stage</th>
-              <th className="text-left px-4 py-2 font-semibold">Priority</th>
+              <th className="text-left px-4 py-2 font-semibold cursor-pointer hover:text-indigo-600 select-none" onClick={() => toggleSort('stage')}>
+                Stage
+              </th>
+              <th className="text-left px-4 py-2 font-semibold cursor-pointer hover:text-indigo-600 select-none" onClick={() => toggleSort('priority')}>
+                Priority{sortIcon('priority')}
+              </th>
               <th className="text-left px-4 py-2 font-semibold">Assignee</th>
-              <th className="text-left px-4 py-2 font-semibold">Due</th>
-              <th className="text-left px-4 py-2 font-semibold">Hours</th>
+              <th className="text-left px-4 py-2 font-semibold cursor-pointer hover:text-indigo-600 select-none" onClick={() => toggleSort('due_date')}>
+                Due{sortIcon('due_date')}
+              </th>
+              <th className="text-left px-4 py-2 font-semibold cursor-pointer hover:text-indigo-600 select-none" onClick={() => toggleSort('hours')}>
+                Hours{sortIcon('hours')}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {filtered.map(t => (
+            {sorted.map(t => (
               <tr key={t.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-2.5 font-medium text-gray-800">
                   <div>{t.title}
@@ -74,14 +161,14 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
                   </span>
                 </td>
                 <td className={`px-4 py-2.5 font-medium capitalize ${PRIORITY_COLORS[t.priority] || 'text-gray-600'}`}>{t.priority}</td>
-                <td className="px-4 py-2.5 text-gray-500">{t.assignee_name || '—'}</td>
-                <td className="px-4 py-2.5 text-gray-500">{t.due_date || '—'}</td>
+                <td className="px-4 py-2.5 text-gray-500">{t.assignee_name || '\u2014'}</td>
+                <td className="px-4 py-2.5 text-gray-500">{t.due_date || '\u2014'}</td>
                 <td className={`px-4 py-2.5 ${t.actual_hours > t.estimated_hours && t.estimated_hours > 0 ? 'text-red-500 font-medium' : 'text-gray-500'}`}>
                   {t.actual_hours}/{t.estimated_hours}h
                 </td>
               </tr>
             ))}
-            {filtered.length === 0 && (
+            {sorted.length === 0 && (
               <tr><td colSpan={6} className="text-center text-gray-400 py-12">No tasks found.</td></tr>
             )}
           </tbody>
