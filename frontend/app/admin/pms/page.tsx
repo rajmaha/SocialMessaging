@@ -25,6 +25,8 @@ export default function PMSDashboard() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', color: '#6366f1', status: 'planning' });
+  const [digestOpen, setDigestOpen] = useState(true);
+  const [cpSort, setCpSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'name', dir: 'asc' });
 
   useEffect(() => {
     setLoading(true);
@@ -121,6 +123,73 @@ export default function PMSDashboard() {
               </div>
             </div>
 
+            {/* ── Admin-Only Extra Metric Cards ────────────────────── */}
+            {data?.is_admin && (
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+                {/* Health Score */}
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <p className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-1">Health Score</p>
+                  <p className={`text-3xl font-bold ${
+                    (data?.health_score ?? 0) >= 80 ? 'text-green-600' : (data?.health_score ?? 0) >= 50 ? 'text-amber-600' : 'text-red-600'
+                  }`}>{data?.health_score ?? 0}%</p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {(data?.health_score ?? 0) >= 80 ? 'healthy' : (data?.health_score ?? 0) >= 50 ? 'needs attention' : 'at risk'}
+                  </p>
+                </div>
+
+                {/* Escalations */}
+                <Link href="/admin/pms/escalations" className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                  <p className="text-xs font-medium text-red-600 uppercase tracking-wide mb-1">Escalations</p>
+                  <p className="text-3xl font-bold text-gray-900">{data?.escalation_count ?? 0}</p>
+                  <p className="text-sm text-gray-500 mt-1">open escalations</p>
+                </Link>
+
+                {/* Pending Approvals */}
+                <Link href="/admin/pms/approval-queue" className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                  <p className="text-xs font-medium text-purple-600 uppercase tracking-wide mb-1">Pending Approvals</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {(data?.approval_counts?.pm_review || 0) + (data?.approval_counts?.client_review || 0)}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">awaiting review</p>
+                </Link>
+              </div>
+            )}
+
+            {/* ── Weekly Digest (PM or Admin) ──────────────────────── */}
+            {(data?.is_pm || data?.is_admin) && data?.weekly_digest && (
+              <div className="bg-white rounded-xl border border-gray-200 mb-8">
+                <button
+                  onClick={() => setDigestOpen(!digestOpen)}
+                  className="w-full flex items-center justify-between p-5"
+                >
+                  <h2 className="text-lg font-semibold text-gray-900">This Week Summary</h2>
+                  <svg className={`w-5 h-5 text-gray-400 transition-transform ${digestOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {digestOpen && (
+                  <div className="px-5 pb-5 grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-green-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-green-700">{data.weekly_digest.completed ?? 0}</p>
+                      <p className="text-xs text-green-600 font-medium mt-1">Completed</p>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-red-700">{data.weekly_digest.new_overdue ?? 0}</p>
+                      <p className="text-xs text-red-600 font-medium mt-1">New Overdue</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-blue-700">{data.weekly_digest.created ?? 0}</p>
+                      <p className="text-xs text-blue-600 font-medium mt-1">Created</p>
+                    </div>
+                    <div className="bg-purple-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-purple-700">{data.weekly_digest.transitions ?? 0}</p>
+                      <p className="text-xs text-purple-600 font-medium mt-1">Transitions</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ── My Tasks Widget ─────────────────────────────────── */}
             <div className="bg-white rounded-xl border border-gray-200 p-5 mb-8">
               <div className="flex items-center justify-between mb-4">
@@ -182,6 +251,29 @@ export default function PMSDashboard() {
               )}
             </div>
 
+            {/* ── Cross-Project Deadlines Timeline (PM only) ──────── */}
+            {data?.is_pm && (data?.upcoming_deadlines || []).length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">My Deadlines</h2>
+                <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+                  {(data.upcoming_deadlines as any[]).map((d: any, i: number) => (
+                    <div key={i} className="flex items-center gap-4 px-5 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        d.type === 'milestone' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'
+                      }`}>{d.type}</span>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        {d.project_color && <span className="w-2 h-2 rounded-full flex-none" style={{ background: d.project_color }} />}
+                        <span className="text-xs text-gray-500 truncate max-w-[120px]">{d.project_name}</span>
+                        <span className="text-gray-300 mx-1">|</span>
+                        <span className="text-sm text-gray-900 font-medium truncate">{d.title}</span>
+                      </div>
+                      <span className="text-sm text-gray-500 whitespace-nowrap">{d.date}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ── Projects Grid ───────────────────────────────────── */}
             <div className="mb-2">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Projects</h2>
@@ -235,6 +327,65 @@ export default function PMSDashboard() {
                 <div className="col-span-3 text-center text-gray-400 py-20">No projects yet. Create your first one.</div>
               )}
             </div>
+            {/* ── Cross-Project Summary Table (Admin only) ────────── */}
+            {data?.is_admin && (data?.cross_project_summary || []).length > 0 && (() => {
+              const sorted = [...(data.cross_project_summary as any[])].sort((a, b) => {
+                const av = a[cpSort.field], bv = b[cpSort.field];
+                if (av == null && bv == null) return 0;
+                if (av == null) return 1;
+                if (bv == null) return -1;
+                const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+                return cpSort.dir === 'asc' ? cmp : -cmp;
+              });
+              const toggleSort = (field: string) =>
+                setCpSort(prev => ({ field, dir: prev.field === field && prev.dir === 'asc' ? 'desc' : 'asc' }));
+              const sortIcon = (field: string) =>
+                cpSort.field === field ? (cpSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+              return (
+                <div className="mt-8">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Cross-Project Summary</h2>
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-500 uppercase border-b">
+                          <th className="px-5 py-3 cursor-pointer select-none" onClick={() => toggleSort('name')}>Project{sortIcon('name')}</th>
+                          <th className="px-5 py-3 cursor-pointer select-none" onClick={() => toggleSort('pm_name')}>PM{sortIcon('pm_name')}</th>
+                          <th className="px-5 py-3 cursor-pointer select-none" onClick={() => toggleSort('total_tasks')}>Tasks{sortIcon('total_tasks')}</th>
+                          <th className="px-5 py-3 cursor-pointer select-none" onClick={() => toggleSort('completion_pct')}>Completion %{sortIcon('completion_pct')}</th>
+                          <th className="px-5 py-3 cursor-pointer select-none" onClick={() => toggleSort('overdue_count')}>Overdue{sortIcon('overdue_count')}</th>
+                          <th className="px-5 py-3 cursor-pointer select-none" onClick={() => toggleSort('efficiency')}>Efficiency{sortIcon('efficiency')}</th>
+                          <th className="px-5 py-3 cursor-pointer select-none" onClick={() => toggleSort('health_score')}>Health{sortIcon('health_score')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sorted.map((p: any) => (
+                          <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
+                            <td className="px-5 py-3 font-medium text-gray-900">{p.name}</td>
+                            <td className="px-5 py-3 text-gray-600">{p.pm_name || '-'}</td>
+                            <td className="px-5 py-3 text-gray-600">{p.completed_tasks}/{p.total_tasks}</td>
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-16 bg-gray-100 rounded-full h-1.5">
+                                  <div className="h-1.5 rounded-full bg-indigo-500" style={{ width: `${p.completion_pct ?? 0}%` }} />
+                                </div>
+                                <span className="text-gray-600">{p.completion_pct ?? 0}%</span>
+                              </div>
+                            </td>
+                            <td className="px-5 py-3">
+                              {(p.overdue_count ?? 0) > 0
+                                ? <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-red-100 text-red-700">{p.overdue_count}</span>
+                                : <span className="text-gray-400">0</span>}
+                            </td>
+                            <td className="px-5 py-3"><EffBadge value={p.efficiency} /></td>
+                            <td className="px-5 py-3"><EffBadge value={p.health_score} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
           </>
         )}
 
