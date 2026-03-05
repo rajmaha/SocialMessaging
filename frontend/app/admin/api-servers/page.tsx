@@ -56,6 +56,12 @@ export default function ApiServersPage() {
   const [testResult, setTestResult] = useState<{ credId: number; type: 'success' | 'error'; text: string } | null>(null);
   const [serverCredCounts, setServerCredCounts] = useState<Record<number, number>>({});
 
+  // Spec & Endpoints state
+  const [endpoints, setEndpoints] = useState<any[]>([]);
+  const [uploadingSpec, setUploadingSpec] = useState(false);
+  const [specMessage, setSpecMessage] = useState('');
+  const [expandedEndpointServer, setExpandedEndpointServer] = useState<number | null>(null);
+
   // Access control state
   const [accessUserIds, setAccessUserIds] = useState<number[]>([]);
   const [accessTeamIds, setAccessTeamIds] = useState<number[]>([]);
@@ -178,6 +184,46 @@ export default function ApiServersPage() {
       }
     } finally {
       setTestingCredId(null);
+    }
+  };
+
+  // Spec upload & endpoints
+  const handleSpecUpload = async (serverId: number, file: File) => {
+    setUploadingSpec(true);
+    setSpecMessage('');
+    try {
+      const res = await apiServersApi.uploadSpec(serverId, file);
+      setSpecMessage(res.data.message);
+      loadEndpoints(serverId);
+    } catch (err: any) {
+      setSpecMessage(err.response?.data?.detail || 'Upload failed');
+    } finally {
+      setUploadingSpec(false);
+    }
+  };
+
+  const loadEndpoints = async (serverId: number) => {
+    try {
+      const res = await apiServersApi.listEndpoints(serverId);
+      setEndpoints(res.data);
+    } catch {
+      setEndpoints([]);
+    }
+  };
+
+  const handleDeleteEndpoint = async (serverId: number, endpointId: number) => {
+    if (!confirm('Delete this endpoint?')) return;
+    await apiServersApi.deleteEndpoint(serverId, endpointId);
+    loadEndpoints(serverId);
+  };
+
+  const toggleEndpointList = (serverId: number) => {
+    if (expandedEndpointServer === serverId) {
+      setExpandedEndpointServer(null);
+      setEndpoints([]);
+    } else {
+      setExpandedEndpointServer(serverId);
+      loadEndpoints(serverId);
     }
   };
 
@@ -411,6 +457,79 @@ export default function ApiServersPage() {
                   </div>
                 </div>
               )}
+
+              {/* Spec Upload & Endpoints Section */}
+              <div className="mt-3 border-t pt-3">
+                <div className="flex items-center gap-3 mb-2">
+                  <label className="cursor-pointer bg-purple-50 hover:bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium transition">
+                    {uploadingSpec ? 'Uploading...' : 'Upload API Spec'}
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      disabled={uploadingSpec}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleSpecUpload(server.id, file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {server.spec_file_name && (
+                    <span className="text-xs text-gray-500">
+                      Spec: {server.spec_file_name}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => toggleEndpointList(server.id)}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    {expandedEndpointServer === server.id ? 'Hide' : 'Show'} Endpoints
+                  </button>
+                </div>
+
+                {specMessage && (
+                  <p className="text-sm text-green-700 bg-green-50 px-3 py-1.5 rounded mb-2">{specMessage}</p>
+                )}
+
+                {expandedEndpointServer === server.id && (
+                  <div className="space-y-1.5 mt-2">
+                    {endpoints.length === 0 ? (
+                      <p className="text-sm text-gray-400">No endpoints parsed yet. Upload a Swagger or Postman JSON file.</p>
+                    ) : (
+                      endpoints.map((ep: any) => {
+                        const methodColors: Record<string, string> = {
+                          GET: 'bg-green-100 text-green-700',
+                          POST: 'bg-blue-100 text-blue-700',
+                          PUT: 'bg-yellow-100 text-yellow-800',
+                          PATCH: 'bg-orange-100 text-orange-700',
+                          DELETE: 'bg-red-100 text-red-700',
+                        };
+                        return (
+                          <div key={ep.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-xs font-bold ${methodColors[ep.method] || 'bg-gray-100 text-gray-600'}`}>
+                                {ep.method}
+                              </span>
+                              <span className="text-sm font-mono">{ep.path}</span>
+                              {ep.summary && <span className="text-xs text-gray-500 truncate max-w-[200px]">— {ep.summary}</span>}
+                              <span className="text-xs bg-gray-200 text-gray-600 rounded-full px-2 py-0.5">
+                                {ep.field_count || ep.fields?.length || 0} fields
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteEndpoint(server.id, ep.id)}
+                              className="text-red-400 hover:text-red-600 text-sm"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
           {servers.length === 0 && (
