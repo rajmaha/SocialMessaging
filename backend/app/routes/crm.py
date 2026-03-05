@@ -822,3 +822,137 @@ def conversion_funnel(
         "deal_to_won_rate": round(won_deals / leads_with_deals * 100, 1) if leads_with_deals else 0,
         "overall_conversion": round(won_deals / total_leads * 100, 1) if total_leads else 0,
     }
+
+
+# ========== DASHBOARD ENDPOINTS ==========
+
+@router.get("/dashboard/my-day")
+def get_my_day(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Aggregated daily dashboard for the current agent."""
+    from datetime import timedelta
+    from sqlalchemy import and_, exists, select
+
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+    seven_days_ago = now - timedelta(days=7)
+    seven_days_ahead = now + timedelta(days=7)
+
+    # Overdue tasks
+    overdue_tasks = (
+        db.query(Task)
+        .filter(
+            Task.assigned_to == current_user.id,
+            Task.status.in_([TaskStatus.OPEN, TaskStatus.IN_PROGRESS]),
+            Task.due_date < now,
+            Task.due_date.isnot(None),
+        )
+        .order_by(Task.due_date)
+        .limit(20)
+        .all()
+    )
+
+    # Today's tasks
+    today_tasks = (
+        db.query(Task)
+        .filter(
+            Task.assigned_to == current_user.id,
+            Task.status.in_([TaskStatus.OPEN, TaskStatus.IN_PROGRESS]),
+            Task.due_date >= today_start,
+            Task.due_date < today_end,
+        )
+        .order_by(Task.due_date)
+        .all()
+    )
+
+    # Stale leads (no activity in 7+ days)
+    recent_activity_subq = (
+        select(Activity.id)
+        .where(
+            and_(
+                Activity.lead_id == Lead.id,
+                Activity.created_at >= seven_days_ago,
+            )
+        )
+        .correlate(Lead)
+        .exists()
+    )
+    stale_leads = (
+        db.query(Lead)
+        .filter(
+            Lead.assigned_to == current_user.id,
+            Lead.status.in_([LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED]),
+            ~recent_activity_subq,
+        )
+        .limit(20)
+        .all()
+    )
+
+    # Deals closing soon
+    deals_closing_soon = (
+        db.query(Deal)
+        .filter(
+            Deal.assigned_to == current_user.id,
+            Deal.stage.notin_([DealStage.WON, DealStage.LOST]),
+            Deal.expected_close_date <= seven_days_ahead,
+            Deal.expected_close_date >= now,
+        )
+        .order_by(Deal.expected_close_date)
+        .limit(10)
+        .all()
+    )
+
+    # Recent activity across agent's leads
+    agent_lead_ids = [l.id for l in db.query(Lead.id).filter(Lead.assigned_to == current_user.id).all()]
+    recent_activity = []
+    if agent_lead_ids:
+        recent_activity = (
+            db.query(Activity)
+            .filter(Activity.lead_id.in_(agent_lead_ids))
+            .order_by(Activity.created_at.desc())
+            .limit(20)
+            .all()
+        )
+
+    # Stats
+    open_leads_count = db.query(Lead).filter(
+        Lead.assigned_to == current_user.id,
+        Lead.status.in_([LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED]),
+    ).count()
+
+    pipeline_value = db.query(func.sum(Deal.amount)).filter(
+        Deal.assigned_to == current_user.id,
+        Deal.stage.notin_([DealStage.WON, DealStage.LOST]),
+    ).scalar() or 0
+
+    tasks_completed_today = db.query(Task).filter(
+        Task.assigned_to == current_user.id,
+        Task.status == TaskStatus.COMPLETED,
+        Task.completed_at >= today_start,
+    ).count()
+
+    conversations_active = 0
+    try:
+        conversations_active = db.query(Conversation).filter(
+            Conversation.assigned_to == current_user.id,
+            Conversation.status == "open",
+        ).count()
+    except Exception:
+        pass
+
+    return {
+        "overdue_tasks": [{"id": t.id, "title": t.title, "due_date": t.due_date.isoformat() if t.due_date else None, "lead_id": t.lead_id, "status": t.status.value} for t in overdue_tasks],
+        "today_tasks": [{"id": t.id, "title": t.title, "due_date": t.due_date.isoformat() if t.due_date else None, "lead_id": t.lead_id, "status": t.status.value} for t in today_tasks],
+        "stale_leads": [{"id": l.id, "first_name": l.first_name, "last_name": l.last_name, "company": l.company, "status": l.status.value, "score": l.score} for l in stale_leads],
+        "deals_closing_soon": [{"id": d.id, "name": d.name, "stage": d.stage.value, "amount": d.amount, "probability": d.probability, "expected_close_date": d.expected_close_date.isoformat() if d.expected_close_date else None} for d in deals_closing_soon],
+        "recent_activity": [{"id": a.id, "type": a.type.value, "title": a.title, "description": a.description, "lead_id": a.lead_id, "created_at": a.created_at.isoformat()} for a in recent_activity],
+        "stats": {
+            "open_leads_count": open_leads_count,
+            "pipeline_value": float(pipeline_value),
+            "tasks_completed_today": tasks_completed_today,
+            "conversations_active": conversations_active,
+        },
+    }
