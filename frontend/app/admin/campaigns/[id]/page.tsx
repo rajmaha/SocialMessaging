@@ -122,7 +122,7 @@ export default function CampaignStatsPage() {
               title="🌍 Top Countries"
               data={Object.fromEntries(
                 Object.entries(stats.country_breakdown || {}).slice(0, 8)
-              )}
+              ) as Record<string, number>}
             />
           </div>
         )}

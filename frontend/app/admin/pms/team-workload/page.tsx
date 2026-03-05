@@ -31,7 +31,7 @@ export default function TeamWorkloadPage() {
       .catch(() => setLoading(false));
   }, [projectId]);
 
-  const toggleSort = (field: string) => {
+  const _toggleSort = (field: string) => {
     if (sortBy === field) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
     else { setSortBy(field); setSortDir('desc'); }
   };

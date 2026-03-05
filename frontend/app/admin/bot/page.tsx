@@ -204,7 +204,7 @@ export default function BotSettingsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">
-                Handoff message <span className="text-gray-400">(sent when bot can't answer N times in a row)</span>
+                Handoff message <span className="text-gray-400">(sent when bot can&apos;t answer N times in a row)</span>
               </label>
               <textarea
                 value={config.handoff_message}

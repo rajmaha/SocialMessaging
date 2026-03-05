@@ -42,7 +42,7 @@ const DEFAULT_BRANDING = {
 
 export default function EmailPage() {
   const brandingContext = useBranding()
-  const branding = brandingContext?.branding || DEFAULT_BRANDING
+  const _branding = brandingContext?.branding || DEFAULT_BRANDING
   
   const [threads, setThreads] = useState<EmailThread[]>([])
   const [selectedThread, setSelectedThread] = useState<EmailThread | null>(null)

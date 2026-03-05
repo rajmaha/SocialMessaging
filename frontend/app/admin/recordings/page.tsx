@@ -8,7 +8,7 @@ import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
 import {
     PhoneCall, PhoneIncoming, PhoneOutgoing, Clock, Play, Pause,
-    Download, Search, RefreshCw, Filter, X, User as UserIcon, Calendar, Hash, Eye
+    Download, Search, RefreshCw, Filter, X, Hash, Eye
 } from 'lucide-react';
 import TicketHistory from '@/components/TicketHistory';
 import { API_URL } from '@/lib/config';
@@ -136,7 +136,7 @@ export default function Recordings() {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
-                const data = await res.json();
+                await res.json();
                 fetchRecordings();
                 fetchStats();
             }

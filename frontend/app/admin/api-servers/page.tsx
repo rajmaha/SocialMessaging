@@ -50,7 +50,7 @@ export default function ApiServersPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [credentials, setCredentials] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
-  const [teams, setTeams] = useState<any[]>([]);
+  const [_teams, _setTeams] = useState<any[]>([]);
   const [credForm, setCredForm] = useState({ user_id: '', username: '', password: '' });
   const [testingCredId, setTestingCredId] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<{ credId: number; type: 'success' | 'error'; text: string } | null>(null);
@@ -240,7 +240,7 @@ export default function ApiServersPage() {
     );
   };
 
-  const handleSaveAccess = async () => {
+  const _handleSaveAccess = async () => {
     if (!expandedId) return;
     setSavingAccess(true);
     setAccessMessage(null);
@@ -479,8 +479,8 @@ export default function ApiServersPage() {
                               <span className="ml-auto" />
                             )}
                             {testResult?.credId === cred.id && (
-                              <span className={`text-xs ${testResult.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                                {testResult.text}
+                              <span className={`text-xs ${testResult!.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                                {testResult!.text}
                               </span>
                             )}
                           </div>

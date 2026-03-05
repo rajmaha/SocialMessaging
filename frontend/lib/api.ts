@@ -59,7 +59,7 @@ export const messageAPI = {
 export const api = axios.create({ baseURL: API_URL })
 api.interceptors.request.use(cfg => {
   const token = getAuthToken()
-  if (token) cfg.headers = { ...cfg.headers, Authorization: `Bearer ${token}` }
+  if (token) cfg.headers = { ...cfg.headers, Authorization: `Bearer ${token}` } as any
   return cfg
 })
 

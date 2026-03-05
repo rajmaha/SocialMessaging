@@ -391,7 +391,7 @@ export default function FormsPage() {
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.require_otp ? 'translate-x-6' : 'translate-x-1'}`} />
                   </button>
                 </label>
-                <p className="text-xs text-gray-400 mt-0.5 ml-0.5">Send OTP to submitter's email before finalizing submission</p>
+                <p className="text-xs text-gray-400 mt-0.5 ml-0.5">Send OTP to submitter&apos;s email before finalizing submission</p>
               </div>
             </div>
 

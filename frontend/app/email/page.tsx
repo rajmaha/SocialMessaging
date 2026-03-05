@@ -89,7 +89,7 @@ interface EmailSignature {
   htmlContent?: string // Rich text editor output (takes precedence over field-based generation)
 }
 
-const DEFAULT_BRANDING = {
+const _DEFAULT_BRANDING = {
   company_name: 'Social Media Messenger',
   company_description: 'Unified messaging platform',
   logo_url: null,
@@ -266,7 +266,6 @@ function SignatureRichEditor({ initialContent, onChange }: { initialContent: str
     const reader = new FileReader()
     reader.onload = (ev) => {
       const src = ev.target?.result as string
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sigEditor.chain().focus().setImage({ src, width: imgWidth } as any).run()
     }
     reader.readAsDataURL(file)
@@ -332,7 +331,7 @@ export default function EmailPage() {
   const [showCompose, setShowCompose] = useState(false)
   const [requestResponse, setRequestResponse] = useState('')
   const [requestError, setRequestError] = useState('')
-  const [currentDraftId, setCurrentDraftId] = useState<number | null>(null)
+  const [_currentDraftId, setCurrentDraftId] = useState<number | null>(null)
   const currentDraftIdRef = useRef<number | null>(null)  // ref so saveDraft closure always sees latest value
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const isSavingDraftRef = useRef(false)  // guard against concurrent saves
@@ -446,8 +445,8 @@ export default function EmailPage() {
   const [showSigDropdown, setShowSigDropdown] = useState(false)
   const [showRequestModal, setShowRequestModal] = useState(false)
 
-  const [companyLogo, setCompanyLogo] = useState<string | null>(null)
-  const [showBrandingSettings, setShowBrandingSettings] = useState(false)
+  const [_companyLogo, setCompanyLogo] = useState<string | null>(null)
+  const [_showBrandingSettings, _setShowBrandingSettings] = useState(false)
   const [labelColors] = useState([
     'bg-blue-100',
     'bg-red-100',
@@ -508,7 +507,7 @@ export default function EmailPage() {
       try {
         const token = getAuthToken()
         if (!token) { setEmailAccountConfigured(false); return }
-        const res = await axios.get(`${API_URL}/email/account`, {
+        await axios.get(`${API_URL}/email/account`, {
           headers: { Authorization: `Bearer ${token}` }
         })
         setEmailAccountConfigured(true)
@@ -947,7 +946,7 @@ export default function EmailPage() {
     }
   }
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const _handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
       const reader = new FileReader()
@@ -961,7 +960,7 @@ export default function EmailPage() {
     }
   }
 
-  const removeLogo = () => {
+  const _removeLogo = () => {
     setCompanyLogo(null)
     localStorage.removeItem('companyLogo')
     showToast('✓ Company logo removed')
@@ -1068,7 +1067,7 @@ export default function EmailPage() {
   }
 
   const getFilteredThreads = (threadsToFilter: EmailThread[]): EmailThread[] => {
-    const isSmart = SMART_FOLDERS.some(f => f.id === currentFolder)
+    const _isSmart = SMART_FOLDERS.some(f => f.id === currentFolder)
     const isCustom = customSmartFolders.some(f => f.id === currentFolder)
     const isLabel = currentFolder.startsWith('label-')
 
@@ -1912,7 +1911,7 @@ export default function EmailPage() {
     }
   }
 
-  const handleSend = async () => {
+  const _handleSend = async () => {
     const token = getAuthToken()
     if (!token) {
       showToast('Please log in to send emails', 'error')
@@ -2373,7 +2372,7 @@ export default function EmailPage() {
                     }
                   }}
                 />
-                <span className="text-sm font-medium text-gray-700 select-none group-hover:text-gray-900">Don't ask me again</span>
+                <span className="text-sm font-medium text-gray-700 select-none group-hover:text-gray-900">Don&apos;t ask me again</span>
               </label>
               <div className="flex justify-end gap-3">
                 <button
@@ -2671,7 +2670,7 @@ export default function EmailPage() {
                         e.preventDefault()
                         // Custom folders are read-only filtered views
                       }}
-                      onDragOver={(e) => {
+                      onDragOver={(_e) => {
                         // Don't accept drops
                       }}
                       className={`flex-1 text-left px-3 py-2 rounded-lg text-sm transition flex items-center gap-2 ${currentFolder === folder.id
@@ -3846,7 +3845,7 @@ export default function EmailPage() {
                           {/* Edit Form (inline, below the card) */}
                           {editingSignatureId === sig.id && (
                             <div className="border-t border-amber-200 bg-amber-50 p-4 space-y-3">
-                              <h4 className="font-semibold text-amber-800 text-sm">Edit "{sig.name}"</h4>
+                              <h4 className="font-semibold text-amber-800 text-sm">Edit &ldquo;{sig.name}&rdquo;</h4>
                               <div>
                                 <label className="block text-xs font-semibold text-gray-600 mb-1">Signature Name</label>
                                 <input
@@ -4335,7 +4334,7 @@ export default function EmailPage() {
                   <p className="text-xs text-gray-400 px-4 py-6 text-center">No rules yet. Create one →</p>
                 ) : rules.map(r => (
                   <div key={r.id} className={`group flex items-center gap-1 px-3 py-2 cursor-pointer transition rounded-lg mx-1 ${editingRuleId === r.id ? 'bg-orange-50 border border-orange-200' : 'hover:bg-gray-50'}`}
-                    onClick={() => { setEditingRuleId(r.id); setRuleForm({ name: r.name, match_all: r.match_all, conditions: r.conditions, actions: r.actions }) }}>
+                    onClick={() => { setEditingRuleId(r.id); setRuleForm({ name: r.name, match_all: r.match_all, conditions: r.conditions, actions: r.actions as { type: string; value: string }[] }) }}>
                     <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${r.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
                     <span className="flex-1 text-xs font-medium text-gray-700 truncate">{r.name}</span>
                     <div className="opacity-0 group-hover:opacity-100 flex gap-0.5">

@@ -52,7 +52,7 @@ function formatTimestamp(ts: string): string {
 export default function AuditTrailPage() {
   const user = authAPI.getUser();
   const [logs, setLogs] = useState<any[]>([]);
-  const [total, setTotal] = useState(0);
+  const [_total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [filters, setFilters] = useState<any>({ projects: [], actors: [], action_types: [] });
@@ -107,7 +107,7 @@ export default function AuditTrailPage() {
 
   return (
     <>
-      <MainHeader />
+      <MainHeader user={user!} />
       <AdminNav />
       <div className="ml-60 pt-14 min-h-screen bg-gray-50">
         <div className="p-6 max-w-5xl mx-auto">

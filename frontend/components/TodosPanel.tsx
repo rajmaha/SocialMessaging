@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { authAPI, getAuthToken } from '@/lib/auth'
+import { getAuthToken } from '@/lib/auth'
 import ReminderShareModal from '@/components/ReminderShareModal'
 import SocialShareButtons from '@/components/SocialShareButtons'
 import { useEvents } from '@/lib/events-context'

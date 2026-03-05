@@ -145,7 +145,7 @@ function AdminNavInner() {
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const brandingCtx = useBranding()
-    const branding = brandingCtx?.branding
+    const _branding = brandingCtx?.branding
 
     const navRef = React.useRef<HTMLElement>(null)
     const [isMounted, setIsMounted] = useState(false)

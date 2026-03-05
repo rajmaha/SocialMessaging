@@ -32,13 +32,13 @@ const STATUS_COLORS: Record<string, string> = {
     resolved: 'bg-gray-100 text-gray-600 border-gray-200',
 }
 
-const TICKET_STATUS_COLORS: Record<string, string> = {
+const _TICKET_STATUS_COLORS: Record<string, string> = {
     pending: 'bg-yellow-50 text-yellow-700 border-yellow-200',
     solved: 'bg-green-50 text-green-700 border-green-200',
     forwarded: 'bg-blue-50 text-blue-700 border-blue-200',
 }
 
-const PRIORITY_COLORS: Record<string, string> = {
+const _PRIORITY_COLORS: Record<string, string> = {
     low: 'text-gray-500', normal: 'text-blue-600',
     high: 'text-orange-600', urgent: 'text-red-600',
 }
@@ -99,7 +99,7 @@ export default function OrganizationDetailPage() {
     const [expandedCallId, setExpandedCallId] = useState<number | null>(null)
     // ticketThreads: map call_id → ticket array
     const [ticketThreads, setTicketThreads] = useState<Record<number, any[]>>({})
-    const [ticketThreadLoading, setTicketThreadLoading] = useState<Record<number, boolean>>({})
+    const [_ticketThreadLoading, setTicketThreadLoading] = useState<Record<number, boolean>>({})
     const [selectedCall, setSelectedCall] = useState<any | null>(null)
 
     useEffect(() => {

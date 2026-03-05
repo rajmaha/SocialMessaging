@@ -13,7 +13,7 @@ interface Notification {
 
 export function EventNotifications() {
   const { subscribe, timezone } = useEvents()
-  const { branding } = useBranding()
+  const { branding: _branding } = useBranding()
   const [notifications, setNotifications] = useState<Notification[]>([])
 
   useEffect(() => {

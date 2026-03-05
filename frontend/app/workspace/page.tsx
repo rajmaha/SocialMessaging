@@ -170,7 +170,7 @@ export default function Workspace() {
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900">Agent Workspace</h1>
                             <p className="text-gray-500 mt-1 flex items-center gap-2 text-sm">
-                                <Headphones className="w-4 h-4" /> Ready to tackle today's queues?
+                                <Headphones className="w-4 h-4" /> Ready to tackle today&apos;s queues?
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">

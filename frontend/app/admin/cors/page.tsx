@@ -9,7 +9,7 @@ import MainHeader from '@/components/MainHeader'
 import AdminNav from '@/components/AdminNav'
 
 export default function CorsSettingsPage() {
-    const router = useRouter()
+    const _router = useRouter()
     const user = authAPI.getUser()
     const [origins, setOrigins] = useState<string[]>([])
     const [newOrigin, setNewOrigin] = useState('')

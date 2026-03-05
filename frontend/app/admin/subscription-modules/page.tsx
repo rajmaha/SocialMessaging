@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import AdminNav from '@/components/AdminNav'
 import MainHeader from '@/components/MainHeader'
-import { Plus, Search, Layers, Edit2, Trash2, X, Check, AlertCircle } from 'lucide-react'
+import { Plus, Search, Layers, Edit2, Trash2, X } from 'lucide-react'
 import axios from 'axios'
 import { useAuth, getAuthToken } from '@/lib/auth'
 import { hasModuleAccess } from '@/lib/permissions'

@@ -21,7 +21,7 @@ function ResetPassword() {
   const { branding } = useBranding()
   const token = searchParams.get('token')
 
-  const [loading, setLoading] = useState(true)
+  const [_loading, setLoading] = useState(true)
   const [validating, setValidating] = useState(true)
   const [tokenValid, setTokenValid] = useState(false)
   const [email, setEmail] = useState('')
@@ -97,7 +97,7 @@ function ResetPassword() {
 
     setResetting(true)
     try {
-      const response = await axios.post(`${API_URL}/auth/reset-password`, {
+      await axios.post(`${API_URL}/auth/reset-password`, {
         token: token,
         new_password: newPassword,
         confirm_password: confirmPassword,
@@ -244,7 +244,7 @@ function ResetPassword() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Enter new password"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 transition"
-                  style={{ focusRingColor: branding?.primary_color || '#2563eb' }}
+                  style={{ focusRingColor: branding?.primary_color || '#2563eb' } as any}
                   disabled={resetting}
                 />
               </div>
@@ -259,7 +259,7 @@ function ResetPassword() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Confirm new password"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 transition"
-                  style={{ focusRingColor: branding?.primary_color || '#2563eb' }}
+                  style={{ focusRingColor: branding?.primary_color || '#2563eb' } as any}
                   disabled={resetting}
                 />
               </div>

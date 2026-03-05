@@ -5,7 +5,7 @@ import MainHeader from "@/components/MainHeader";
 import AdminNav from '@/components/AdminNav';
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
-import { Phone, Edit2, Check, X, Server, RefreshCw, ToggleLeft, ToggleRight, CheckCircle, AlertCircle, Wifi } from 'lucide-react';
+import { Phone, Edit2, Check, X, Server, RefreshCw, ToggleLeft, ToggleRight, CheckCircle, AlertCircle } from 'lucide-react';
 import { API_URL } from '@/lib/config';
 
 export default function PBXSetup() {

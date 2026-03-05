@@ -282,7 +282,7 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
   );
 }
 
-function Section({ title, count, color, children }: { title: string; count: number; color: string; children: React.ReactNode }) {
+function Section({ title, count, color: _color, children }: { title: string; count: number; color: string; children: React.ReactNode }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-3">

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getAuthToken, authAPI } from '@/lib/auth';
+import { getAuthToken } from '@/lib/auth';
 import { API_URL } from '@/lib/config';
 
 export default function ChangePasswordPage() {

@@ -36,7 +36,7 @@ export default function ReportsPage() {
 
   return (
     <>
-      <MainHeader />
+      <MainHeader user={user!} />
       <AdminNav />
       <div className="ml-60 pt-14 min-h-screen bg-gray-50">
         <div className="p-6 max-w-7xl mx-auto">

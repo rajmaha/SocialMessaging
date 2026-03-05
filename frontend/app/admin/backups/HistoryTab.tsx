@@ -149,8 +149,8 @@ export default function BackupHistoryTab() {
                   <tr>
                     <td colSpan={6} className="px-4 py-3 bg-gray-50">
                       {restoreMsg?.id === run.id && (
-                        <p className={`text-xs mb-2 px-2 py-1 rounded font-medium ${restoreMsg.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600 font-mono'}`}>
-                          {restoreMsg.text}
+                        <p className={`text-xs mb-2 px-2 py-1 rounded font-medium ${restoreMsg!.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600 font-mono'}`}>
+                          {restoreMsg!.text}
                         </p>
                       )}
                       {run.backup_file_path && (

@@ -25,7 +25,7 @@ import MainHeader from '@/components/MainHeader'
 import ConversationList from '@/components/ConversationList'
 import ChatWindow from '@/components/ChatWindow'
 import PlatformFilter from '@/components/PlatformFilter'
-import { useBranding } from '@/lib/branding-context'
+// import { useBranding } from '@/lib/branding-context'
 import { useEvents, type EventMessage } from '@/lib/events-context'
 import { API_URL } from '@/lib/config';
 

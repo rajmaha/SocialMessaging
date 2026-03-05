@@ -187,7 +187,7 @@ export default function PublicFormPage() {
     return form.fields.filter((f) => isFieldVisible(f, values));
   }, [form, values]);
 
-  const visibleKeys = useMemo(
+  const _visibleKeys = useMemo(
     () => new Set(visibleFields.map((f) => f.field_key)),
     [visibleFields]
   );
@@ -373,7 +373,7 @@ export default function PublicFormPage() {
       };
       // Use authenticated submit for API-type forms
       let res;
-      if (form.storage_type === "api") {
+      if (form!.storage_type === "api") {
         res = await formsApi.submitFormAuthenticated(slug, payload);
       } else {
         res = await formsApi.submitForm(slug, payload);

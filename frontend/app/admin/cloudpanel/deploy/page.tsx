@@ -332,7 +332,7 @@ export default function CloudPanelDeployPage() {
                                     <label className="block text-sm font-medium text-gray-700 mb-1">SSL Mode</label>
                                     <select className="w-full p-2 border rounded" value={siteForm.sslMode} onChange={e => setSiteForm({ ...siteForm, sslMode: e.target.value })}>
                                         <option value="none">No SSL</option>
-                                        <option value="auto">Let's Encrypt (Auto-issue)</option>
+                                        <option value="auto">Let&apos;s Encrypt (Auto-issue)</option>
                                         <option value="custom">Custom/Purchased SSL</option>
                                     </select>
                                 </div>
