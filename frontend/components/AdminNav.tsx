@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { useBranding } from '@/lib/branding-context'
 import { hasModuleAccess, hasAdminFeature, hasPageAccess } from '@/lib/permissions'
 import { useEvents } from '@/lib/events-context'
+import { menuApi } from '@/lib/api'
 
 const sidebarGroups = [
     {
@@ -14,6 +15,7 @@ const sidebarGroups = [
             { href: '/settings?tab=profile', label: 'Profile', icon: '👤' },
             { href: '/settings?tab=accounts', label: 'Connected Accounts', icon: '🔗' },
             { href: '/settings?tab=account-settings', label: 'Account Settings', icon: '⚙️' },
+            { href: '/settings/api-credentials', label: 'My API Credentials', icon: '🔑' },
         ],
     },
     {
@@ -76,6 +78,12 @@ const sidebarGroups = [
         ],
     },
     {
+        label: 'Navigation',
+        items: [
+            { href: '/admin/menus', label: 'Menu Manager', icon: '🗂️', permission: () => hasAdminFeature('manage_menus') },
+        ],
+    },
+    {
         label: 'Content',
         items: [
             { href: '/admin/kb', label: 'Knowledge Base', icon: '📚', pageKey: 'kb' },
@@ -134,6 +142,7 @@ function AdminNavInner() {
     const [userRole, setUserRole] = useState('user')
     const { subscribe } = useEvents()
     const [crmBadge, setCrmBadge] = useState(0)
+    const [dynamicMenus, setDynamicMenus] = useState<any[]>([])
 
     useEffect(() => {
         setIsMounted(true)
@@ -146,6 +155,16 @@ function AdminNavInner() {
             }
         }
     }, [])
+
+    // Load dynamic menus after mount
+    useEffect(() => {
+        if (!isMounted) return
+        menuApi.getAll()
+            .then(r => {
+                if (Array.isArray(r.data)) setDynamicMenus(r.data)
+            })
+            .catch(e => console.warn('Failed to load dynamic menus:', e?.response?.status || e))
+    }, [isMounted])
 
     // Restore saved scroll position after mount
     useEffect(() => {
@@ -266,6 +285,61 @@ function AdminNavInner() {
                                                         <span className="ml-auto w-2 h-2 rounded-full bg-indigo-300 flex-shrink-0" />
                                                     )}
                                                 </Link>
+                                            </li>
+                                        )
+                                    })}
+                                </ul>
+                            </div>
+                        )
+                    })}
+
+                    {/* Dynamic menu groups from Menu Manager */}
+                    {dynamicMenus.map(group => {
+                        const activeItems = (group.items || []).filter((i: any) => i.is_active)
+                        if (activeItems.length === 0) return null
+                        // Check permission for dynamic menu group
+                        if (userRole !== 'admin' && !hasModuleAccess(`menu_${group.slug}`)) return null
+                        return (
+                            <div key={`menu-${group.id}`}>
+                                <p className="text-xs font-bold uppercase tracking-widest text-gray-500 px-2 mb-1.5">
+                                    {group.icon} {group.name}
+                                </p>
+                                <ul className="space-y-0.5">
+                                    {activeItems.map((item: any) => {
+                                        const href = item.link_type === 'form' ? `/forms/${item.link_value}` : item.link_value
+                                        const isExternal = item.link_type === 'external'
+                                        const active = !isExternal && isActive(href)
+                                        return (
+                                            <li key={item.id}>
+                                                {isExternal ? (
+                                                    <a
+                                                        href={href}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all text-gray-300 hover:bg-white/10 hover:text-white"
+                                                        style={{ color: 'var(--sidebar-text)', opacity: 0.8 }}
+                                                    >
+                                                        <span className="text-base w-5 text-center flex-shrink-0">{item.icon || '·'}</span>
+                                                        <span className="truncate">{item.label}</span>
+                                                        <span className="ml-auto text-xs opacity-50">↗</span>
+                                                    </a>
+                                                ) : (
+                                                    <Link
+                                                        href={href}
+                                                        target={item.open_in_new_tab ? '_blank' : undefined}
+                                                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${active
+                                                            ? 'text-white font-semibold'
+                                                            : 'text-gray-300 hover:bg-white/10 hover:text-white'
+                                                            }`}
+                                                        style={active ? { backgroundColor: 'var(--accent-color)', color: 'var(--sidebar-text)' } : { color: 'var(--sidebar-text)', opacity: 0.8 }}
+                                                    >
+                                                        <span className="text-base w-5 text-center flex-shrink-0">{item.icon || '·'}</span>
+                                                        <span className="truncate">{item.label}</span>
+                                                        {active && (
+                                                            <span className="ml-auto w-2 h-2 rounded-full bg-indigo-300 flex-shrink-0" />
+                                                        )}
+                                                    </Link>
+                                                )}
                                             </li>
                                         )
                                     })}
