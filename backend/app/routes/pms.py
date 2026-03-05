@@ -12,7 +12,7 @@ from app.models.pms import (
     PMSProject, PMSProjectMember, PMSMilestone, PMSTask,
     PMSTaskDependency, PMSTaskComment, PMSTaskTimeLog,
     PMSTaskAttachment, PMSTaskLabel, PMSWorkflowHistory, PMSAlert,
-    PMSLabelDefinition
+    PMSLabelDefinition, PMSAuditLog
 )
 from app.schemas.pms import *
 
@@ -94,6 +94,31 @@ def _task_efficiency(task, today=None):
     if capacity <= 0:
         return None
     return min(round((task.estimated_hours / capacity) * 100, 1), 100.0)
+
+import json as _json
+
+def _audit_log(db: Session, project_id: int, action_type: str, actor_id: int, details: dict, task_id: int = None):
+    db.add(PMSAuditLog(
+        project_id=project_id,
+        task_id=task_id,
+        action_type=action_type,
+        actor_id=actor_id,
+        details=_json.dumps(details),
+    ))
+
+def _is_pm(db: Session, user: User) -> bool:
+    if _is_admin(user):
+        return True
+    return db.query(PMSProjectMember).filter_by(user_id=user.id, role="pm").first() is not None
+
+def _pm_project_ids(db: Session, user: User) -> list:
+    if _is_admin(user):
+        return [p.id for p in db.query(PMSProject.id).all()]
+    return [m.project_id for m in db.query(PMSProjectMember).filter_by(user_id=user.id, role="pm").all()]
+
+def _require_pm_or_admin(db: Session, user: User):
+    if not _is_pm(db, user):
+        raise HTTPException(403, "PM or admin role required")
 
 # ── Projects ──────────────────────────────────────────────
 
@@ -195,6 +220,9 @@ def add_member(project_id: int, data: PMSMemberAdd, db: Session = Depends(get_db
         return {"ok": True, "updated": True}
     db.add(PMSProjectMember(project_id=project_id, user_id=data.user_id, role=data.role, added_by=current_user.id))
     db.commit()
+    _audit_log(db, project_id, "member_added", current_user.id,
+               {"user_id": data.user_id, "role": data.role})
+    db.commit()
     return {"ok": True}
 
 @router.delete("/projects/{project_id}/members/{user_id}")
@@ -206,6 +234,9 @@ def remove_member(project_id: int, user_id: int, db: Session = Depends(get_db), 
     if not mem:
         raise HTTPException(404)
     db.delete(mem)
+    db.commit()
+    _audit_log(db, project_id, "member_removed", current_user.id,
+               {"user_id": user_id})
     db.commit()
     return {"ok": True}
 
@@ -237,6 +268,9 @@ def update_milestone(milestone_id: int, data: PMSMilestoneUpdate, db: Session = 
         setattr(ms, k, v)
     db.commit()
     db.refresh(ms)
+    _audit_log(db, ms.project_id, "milestone_change", current_user.id,
+               {"milestone": ms.name, "changes": data.dict(exclude_unset=True)})
+    db.commit()
     return ms
 
 @router.delete("/milestones/{milestone_id}")
@@ -291,10 +325,18 @@ def update_task(task_id: int, data: PMSTaskUpdate, db: Session = Depends(get_db)
     if data.assignee_id:
         if not _get_membership(db, task.project_id, data.assignee_id) and not _is_admin(current_user):
             raise HTTPException(400, "Assignee must be a project member")
+    # Before updates: capture old assignee
+    old_assignee_name = task.assignee.full_name if task.assignee else None
+    old_assignee_id = task.assignee_id
     for k, v in data.dict(exclude_none=True).items():
         setattr(task, k, v)
     db.commit()
     db.refresh(task)
+    if data.assignee_id is not None and data.assignee_id != old_assignee_id:
+        new_assignee = db.query(User).filter_by(id=data.assignee_id).first()
+        _audit_log(db, task.project_id, "assignee_change", current_user.id,
+                   {"task_title": task.title, "from": old_assignee_name, "to": new_assignee.full_name if new_assignee else None}, task.id)
+        db.commit()
     return _enrich_task(task, db)
 
 @router.delete("/tasks/{task_id}")
@@ -324,7 +366,11 @@ def transition_task(task_id: int, data: PMSTransitionRequest, db: Session = Depe
         raise HTTPException(403, f"Role '{m.role}' cannot perform this transition")
     old_stage = task.stage
     task.stage = data.to_stage
-    db.add(PMSWorkflowHistory(task_id=task.id, from_stage=old_stage, to_stage=data.to_stage, moved_by=current_user.id, note=data.note))
+    wh = PMSWorkflowHistory(task_id=task.id, from_stage=old_stage, to_stage=data.to_stage, moved_by=current_user.id, note=data.note)
+    db.add(wh)
+    db.commit()
+    _audit_log(db, task.project_id, "stage_change", current_user.id,
+               {"task_title": task.title, "from": wh.from_stage, "to": data.to_stage, "note": data.note}, task.id)
     db.commit()
     return {"ok": True, "stage": task.stage}
 

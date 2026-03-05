@@ -1145,6 +1145,24 @@ def _run_inline_migrations():
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """))
+
+        # PMS audit log table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_audit_logs (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                task_id INTEGER,
+                action_type VARCHAR NOT NULL,
+                actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                details TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
+        # hours_per_day on project members
+        conn.execute(text("""
+            ALTER TABLE pms_project_members ADD COLUMN IF NOT EXISTS hours_per_day FLOAT DEFAULT 7.0
+        """))
         conn.commit()
 
         # Seed preset templates once

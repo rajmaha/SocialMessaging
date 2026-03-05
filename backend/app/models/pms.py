@@ -32,6 +32,7 @@ class PMSProjectMember(Base):
     role = Column(String, default="developer")
     added_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     added_at = Column(DateTime, server_default=func.now())
+    hours_per_day = Column(Float, default=7.0)
 
     project = relationship("PMSProject", back_populates="members")
     user = relationship("User", foreign_keys=[user_id])
@@ -176,3 +177,16 @@ class PMSAlert(Base):
     is_read = Column(Boolean, default=False)
     notified_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     created_at = Column(DateTime, server_default=func.now())
+
+
+class PMSAuditLog(Base):
+    __tablename__ = "pms_audit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("pms_projects.id", ondelete="CASCADE"))
+    task_id = Column(Integer, nullable=True)
+    action_type = Column(String, nullable=False)
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    details = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+
+    actor = relationship("User", foreign_keys=[actor_id])
