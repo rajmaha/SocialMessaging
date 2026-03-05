@@ -358,6 +358,42 @@ class EmailService:
             print(f"❌ Error sending account request email: {str(e)}")
             return False
 
+    def send_system_email(self, to_email: str, subject: str, html_body: str, db=None):
+        """Send a generic system email using branding SMTP config."""
+        try:
+            from app.services.branding_service import branding_service
+            smtp_config = branding_service.get_smtp_config(db) if db else {
+                "smtp_server": self.smtp_server,
+                "smtp_port": self.smtp_port,
+                "smtp_username": self.sender_email,
+                "smtp_password": self.sender_password,
+                "smtp_from_email": self.sender_email,
+                "smtp_from_name": "Social Media Messenger",
+                "smtp_use_tls": True,
+            }
+
+            if not smtp_config.get("smtp_password"):
+                logger.info("No SMTP password configured - system email (dev mode): to=%s subject=%s", to_email, subject)
+                return True
+
+            message = MIMEMultipart("alternative")
+            message["Subject"] = subject
+            message["From"] = smtp_config.get("smtp_from_email", self.sender_email)
+            message["To"] = to_email
+            message.attach(MIMEText(html_body, "html"))
+
+            with smtplib.SMTP(smtp_config["smtp_server"], int(smtp_config["smtp_port"])) as server:
+                if smtp_config.get("smtp_use_tls", True):
+                    server.starttls()
+                server.login(smtp_config["smtp_username"], smtp_config["smtp_password"])
+                server.sendmail(smtp_config["smtp_from_email"], to_email, message.as_string())
+
+            logger.info("System email sent to %s: %s", to_email, subject)
+            return True
+        except Exception as e:
+            logger.error("Error sending system email to %s: %s", to_email, e)
+            return False
+
     def send_welcome_email(self, to_email: str, full_name: str):
         """Send welcome email to new user"""
         try:

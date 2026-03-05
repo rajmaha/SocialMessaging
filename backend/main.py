@@ -1957,7 +1957,87 @@ async def startup_event():
             finally:
                 db.close()
 
-        scheduler.add_job(check_pms_overdue_tasks, 'interval', minutes=15, id='pms_overdue_check')
+        scheduler.add_job(check_pms_overdue_tasks, 'interval', minutes=60, id='pms_overdue_check')
+
+        def send_pms_overdue_digest():
+            """Send daily digest email of overdue PMS tasks to PM and admin users."""
+            from app.models.pms import PMSTask, PMSProject, PMSProjectMember
+            from app.models.user import User
+            from datetime import date as _date
+            db = SessionLocal()
+            try:
+                today = _date.today()
+                overdue = db.query(PMSTask).filter(
+                    PMSTask.due_date < today,
+                    PMSTask.stage.notin_(["approved", "completed"])
+                ).all()
+                if not overdue:
+                    return
+
+                by_project = {}
+                for t in overdue:
+                    if t.project_id not in by_project:
+                        p = db.query(PMSProject).filter_by(id=t.project_id).first()
+                        by_project[t.project_id] = {"project": p, "tasks": []}
+                    by_project[t.project_id]["tasks"].append(t)
+
+                recipients = {}
+                admins = db.query(User).filter_by(role="admin", is_active=True).all()
+                for u in admins:
+                    recipients[u.id] = u
+                for pid in by_project:
+                    pms = db.query(PMSProjectMember).filter_by(project_id=pid, role="pm").all()
+                    for m in pms:
+                        if m.user_id not in recipients:
+                            u = db.query(User).filter_by(id=m.user_id).first()
+                            if u:
+                                recipients[u.id] = u
+
+                if not recipients:
+                    return
+
+                project_count = len(by_project)
+                task_count = len(overdue)
+                subject = f"PMS: {task_count} overdue task{'s' if task_count != 1 else ''} across {project_count} project{'s' if project_count != 1 else ''}"
+
+                rows = ""
+                for pid, data in by_project.items():
+                    p = data["project"]
+                    for t in data["tasks"]:
+                        days_over = (today - t.due_date).days
+                        assignee_name = t.assignee.full_name if t.assignee else "Unassigned"
+                        rows += f"<tr><td style='padding:8px;border-bottom:1px solid #e5e7eb;'>{t.title}</td>"
+                        rows += f"<td style='padding:8px;border-bottom:1px solid #e5e7eb;'>{p.name if p else 'Unknown'}</td>"
+                        rows += f"<td style='padding:8px;border-bottom:1px solid #e5e7eb;'>{assignee_name}</td>"
+                        rows += f"<td style='padding:8px;border-bottom:1px solid #e5e7eb;color:#dc2626;'>{days_over} day{'s' if days_over != 1 else ''}</td>"
+                        rows += f"<td style='padding:8px;border-bottom:1px solid #e5e7eb;'>{t.priority}</td></tr>"
+
+                html_body = f"""<div style="font-family:Arial,sans-serif;max-width:700px;margin:0 auto;">
+                    <h2 style="color:#1f2937;">PMS Overdue Tasks Summary</h2>
+                    <p style="color:#6b7280;">{task_count} task(s) are overdue across {project_count} project(s).</p>
+                    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                        <thead><tr style="background:#f9fafb;">
+                            <th style="padding:8px;text-align:left;border-bottom:2px solid #e5e7eb;">Task</th>
+                            <th style="padding:8px;text-align:left;border-bottom:2px solid #e5e7eb;">Project</th>
+                            <th style="padding:8px;text-align:left;border-bottom:2px solid #e5e7eb;">Assignee</th>
+                            <th style="padding:8px;text-align:left;border-bottom:2px solid #e5e7eb;">Overdue</th>
+                            <th style="padding:8px;text-align:left;border-bottom:2px solid #e5e7eb;">Priority</th>
+                        </tr></thead>
+                        <tbody>{rows}</tbody>
+                    </table></div>"""
+
+                for uid, user_obj in recipients.items():
+                    try:
+                        email_service.send_system_email(user_obj.email, subject, html_body)
+                    except Exception as e:
+                        logger.error("PMS digest email to %s failed: %s", user_obj.email, e)
+
+            except Exception as e:
+                logger.error("PMS overdue digest error: %s", e)
+            finally:
+                db.close()
+
+        scheduler.add_job(send_pms_overdue_digest, 'cron', hour=8, minute=0, id='pms_overdue_digest')
 
         def evaluate_automation_rules():
             """Evaluate active automation rules against leads every 5 minutes."""
