@@ -81,7 +81,7 @@ export default function FieldBuilderPage() {
   const [selectedEndpointId, setSelectedEndpointId] = useState<number | null>(null);
   const [autoGenerating, setAutoGenerating] = useState(false);
   const [autoGenMessage, setAutoGenMessage] = useState('');
-  const [formApiServerId, setFormApiServerId] = useState<number | null>(null);
+  const [, setFormApiServerId] = useState<number | null>(null);
 
   const loadForm = async () => {
     try {
