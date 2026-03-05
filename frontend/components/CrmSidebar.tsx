@@ -1,8 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import axios from "axios";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { getAuthToken } from "@/lib/auth";
+import { API_URL } from "@/lib/config";
 
 interface Lead {
   id: number;
@@ -99,7 +99,7 @@ export default function CrmSidebar({
   const [newNote, setNewNote] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "activity" | "notes">("overview");
 
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = getAuthToken();
   const headers = { Authorization: `Bearer ${token}` };
 
   useEffect(() => {

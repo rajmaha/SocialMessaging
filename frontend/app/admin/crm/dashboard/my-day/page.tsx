@@ -2,8 +2,8 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { getAuthToken } from "@/lib/auth";
+import { API_URL } from "@/lib/config";
 
 interface TaskItem {
   id: number;
@@ -75,7 +75,7 @@ export default function MyDayPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = getAuthToken();
 
   useEffect(() => {
     fetchMyDay();
