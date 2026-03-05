@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 
 const PRIORITY_COLORS: Record<string, string> = { low: '#9ca3af', medium: '#eab308', high: '#f97316', urgent: '#ef4444' };
+const PROJECT_COLORS = ['#6366f1', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
 
 export default function ReportsPage() {
   const user = authAPI.getUser();
@@ -275,6 +276,60 @@ export default function ReportsPage() {
                     </p>
                     <p className="text-sm text-gray-500 mt-2">Overall Efficiency</p>
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Admin-Only: Project Comparison & Team Velocity ──── */}
+          {!loading && data && user?.role === 'admin' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+              {/* Project Comparison Bar Chart */}
+              {data.project_comparison && data.project_comparison.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-1">Project Comparison</h3>
+                  <p className="text-xs text-gray-400 mb-3">Completion, efficiency &amp; on-time rate per project</p>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={data.project_comparison}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={50} />
+                      <YAxis tick={{ fontSize: 12 }} domain={[0, 100]} />
+                      <Tooltip />
+                      <Legend />
+                      <Bar dataKey="completion_pct" fill="#6366f1" name="Completion %" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="efficiency" fill="#3b82f6" name="Efficiency %" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="on_time_pct" fill="#22c55e" name="On-Time %" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Team Velocity Comparison Line Chart */}
+              {data.team_velocity && data.team_velocity.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-1">Team Velocity Comparison</h3>
+                  <p className="text-xs text-gray-400 mb-3">Completed tasks per week across projects</p>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <LineChart data={data.team_velocity}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="week" tick={{ fontSize: 12 }} />
+                      <YAxis tick={{ fontSize: 12 }} />
+                      <Tooltip />
+                      <Legend />
+                      {Object.keys(data.team_velocity[0] || {})
+                        .filter((k: string) => k !== 'week')
+                        .map((projectName: string, i: number) => (
+                          <Line
+                            key={projectName}
+                            type="monotone"
+                            dataKey={projectName}
+                            stroke={PROJECT_COLORS[i % PROJECT_COLORS.length]}
+                            strokeWidth={2}
+                            dot={{ r: 3 }}
+                          />
+                        ))}
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
               )}
             </div>
