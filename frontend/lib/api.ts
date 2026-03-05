@@ -171,13 +171,22 @@ export const pmsApi = {
 // ─── Roles API ───────────────────────────────────────────────────────────────
 export const rolesApi = {
   list: () => api.get('/roles'),
-  create: (data: { name: string; slug: string; pages: string[] }) =>
+  registry: () => api.get('/roles/registry'),
+  myPermissions: () => api.get('/roles/my-permissions'),
+  create: (data: { name: string; slug: string; permissions: Record<string, string[]> }) =>
     api.post('/roles', data),
-  update: (id: number, data: { name?: string; pages?: string[] }) =>
+  update: (id: number, data: { name?: string; permissions?: Record<string, string[]> }) =>
     api.put(`/roles/${id}`, data),
   delete: (id: number) => api.delete(`/roles/${id}`),
-  changeUserRole: (userId: number, role: string) =>
-    api.patch(`/admin/users/${userId}/role`, { role }),
+}
+
+export const permissionOverrideApi = {
+  list: (userId: number) => api.get(`/admin/permission-overrides/${userId}`),
+  create: (data: { user_id: number; module_key: string; granted_actions: string[]; revoked_actions: string[] }) =>
+    api.post('/admin/permission-overrides', data),
+  update: (id: number, data: { granted_actions?: string[]; revoked_actions?: string[] }) =>
+    api.put(`/admin/permission-overrides/${id}`, data),
+  delete: (id: number) => api.delete(`/admin/permission-overrides/${id}`),
 }
 
 // --- API Servers ---
@@ -188,9 +197,15 @@ export const apiServersApi = {
   delete: (id: number) => api.delete(`/admin/api-servers/${id}`),
   listCredentials: (id: number) => api.get(`/admin/api-servers/${id}/credentials`),
   createCredential: (id: number, data: any) => api.post(`/admin/api-servers/${id}/credentials`, data),
+  testCredential: (credId: number) => api.post(`/admin/api-servers/credentials/${credId}/test`),
+  getAccess: (id: number) => api.get(`/admin/api-servers/${id}/access`),
+  updateAccess: (id: number, data: any) => api.put(`/admin/api-servers/${id}/access`, data),
 }
 
 export const userApiCredsApi = {
+  listServers: () => api.get('/user/api-credentials/servers'),
+  list: () => api.get('/user/api-credentials'),
+  create: (data: any) => api.post('/user/api-credentials', data),
   update: (id: number, data: any) => api.put(`/user/api-credentials/${id}`, data),
   login: (id: number) => api.post(`/user/api-credentials/${id}/login`),
 }
@@ -217,4 +232,23 @@ export const formsApi = {
   // Public
   getPublicForm: (slug: string) => api.get(`/forms/${slug}`),
   submitForm: (slug: string, data: any) => api.post(`/forms/${slug}/submit`, data),
+  submitFormAuthenticated: (slug: string, data: any) => api.post(`/forms/${slug}/submit/authenticated`, data),
+}
+
+// --- Menus ---
+export const menuApi = {
+  // Admin
+  list: () => api.get('/admin/menu-groups'),
+  create: (data: any) => api.post('/admin/menu-groups', data),
+  update: (id: number, data: any) => api.put(`/admin/menu-groups/${id}`, data),
+  delete: (id: number) => api.delete(`/admin/menu-groups/${id}`),
+  reorderGroups: (groupIds: number[]) => api.put('/admin/menu-groups/reorder', { group_ids: groupIds }),
+  // Items
+  createItem: (groupId: number, data: any) => api.post(`/admin/menu-groups/${groupId}/items`, data),
+  updateItem: (groupId: number, itemId: number, data: any) => api.put(`/admin/menu-groups/${groupId}/items/${itemId}`, data),
+  deleteItem: (groupId: number, itemId: number) => api.delete(`/admin/menu-groups/${groupId}/items/${itemId}`),
+  reorderItems: (groupId: number, itemIds: number[]) => api.put(`/admin/menu-groups/${groupId}/items/reorder`, { item_ids: itemIds }),
+  // Public / Internal
+  getPublic: () => api.get('/menu'),
+  getAll: () => api.get('/menu/all'),
 }
