@@ -167,3 +167,27 @@ class LeadDetailResponse(LeadResponse):
     deals: list[DealResponse] = []
     tasks: list[TaskResponse] = []
     activities: list[ActivityResponse] = []
+
+
+# ========== NOTE SCHEMAS ==========
+
+class NoteCreate(BaseModel):
+    content: str
+    is_pinned: Optional[bool] = False
+
+class NoteUpdate(BaseModel):
+    content: Optional[str] = None
+    is_pinned: Optional[bool] = None
+
+class NoteResponse(BaseModel):
+    id: int
+    lead_id: int
+    content: str
+    is_pinned: bool
+    created_by: int
+    created_by_name: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
