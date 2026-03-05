@@ -459,7 +459,7 @@ export default function ApiServersPage() {
               )}
 
               {/* Spec Upload & Endpoints Section */}
-              <div className="mt-3 border-t pt-3">
+              <div className="bg-white border border-gray-200 rounded-xl p-4 mt-2">
                 <div className="flex items-center gap-3 mb-2">
                   <label className="cursor-pointer bg-purple-50 hover:bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium transition">
                     {uploadingSpecFor === server.id ? 'Uploading...' : 'Upload API Spec'}
