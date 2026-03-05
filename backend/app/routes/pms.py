@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 from typing import List, Optional
-from datetime import date
+from datetime import date, timedelta
 import os, shutil
 
 from app.database import get_db
@@ -59,6 +59,7 @@ def _enrich_task(task: PMSTask, db: Session) -> dict:
     d["assignee_name"] = task.assignee.full_name if task.assignee else None
     d["labels"] = [{"id": l.id, "name": l.name, "color": l.color} for l in task.labels]
     d["subtask_count"] = db.query(PMSTask).filter_by(parent_task_id=task.id).count()
+    d["efficiency"] = _task_efficiency(task)
     return d
 
 def _fire_alert(db: Session, task: PMSTask, alert_type: str, message: str):
@@ -71,6 +72,28 @@ def _fire_alert(db: Session, task: PMSTask, alert_type: str, message: str):
     for uid in recipients:
         db.add(PMSAlert(task_id=task.id, project_id=task.project_id, type=alert_type, message=message, notified_user_id=uid))
     db.commit()
+
+def _business_days(start: date, end: date) -> int:
+    if not start or not end or end <= start:
+        return 0
+    days = 0
+    current = start
+    while current < end:
+        if current.weekday() < 5:
+            days += 1
+        current += timedelta(days=1)
+    return max(days, 1)
+
+def _task_efficiency(task, today=None):
+    if not task.estimated_hours or task.estimated_hours <= 0 or not task.start_date:
+        return None
+    today = today or date.today()
+    end = today if task.stage != "completed" else (task.updated_at.date() if task.updated_at else today)
+    bdays = _business_days(task.start_date, end)
+    capacity = bdays * 7
+    if capacity <= 0:
+        return None
+    return min(round((task.estimated_hours / capacity) * 100, 1), 100.0)
 
 # ── Projects ──────────────────────────────────────────────
 
@@ -595,3 +618,135 @@ def detach_label(task_id: int, label_id: int, db: Session = Depends(get_db), cur
     db.delete(tl)
     db.commit()
     return {"ok": True}
+
+# ── Dashboard ─────────────────────────────────────────────
+
+@router.get("/dashboard")
+def get_dashboard(stale_days: int = 7, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    today = date.today()
+    stale_cutoff = today - timedelta(days=stale_days)
+
+    if _is_admin(current_user):
+        projects = db.query(PMSProject).all()
+        all_tasks = db.query(PMSTask).all()
+    else:
+        memberships = db.query(PMSProjectMember).filter_by(user_id=current_user.id).all()
+        project_ids = [m.project_id for m in memberships]
+        projects = db.query(PMSProject).filter(PMSProject.id.in_(project_ids)).all() if project_ids else []
+        all_tasks = db.query(PMSTask).filter(PMSTask.project_id.in_(project_ids)).all() if project_ids else []
+
+    total_tasks = len(all_tasks)
+    completed_tasks = sum(1 for t in all_tasks if t.stage == "completed")
+    overdue_tasks = [t for t in all_tasks if t.due_date and t.due_date < today and t.stage not in ("approved", "completed")]
+    urgent_client = [t for t in all_tasks if (t.stage == "client_review" or t.priority == "urgent") and t.stage != "completed"]
+    stale_tasks = [t for t in all_tasks if t.priority in ("low", "medium") and t.created_at and t.created_at.date() <= stale_cutoff and t.stage in ("development", "qa")]
+
+    total_estimated = sum(t.estimated_hours or 0 for t in all_tasks)
+    total_actual = sum(t.actual_hours or 0 for t in all_tasks)
+    active_projects = sum(1 for p in projects if p.status == "active")
+
+    my_tasks = sorted(
+        [t for t in all_tasks if t.assignee_id == current_user.id and t.stage != "completed"],
+        key=lambda t: (0 if t.due_date and t.due_date < today else 1, t.due_date or date.max)
+    )[:5]
+    my_tasks_data = []
+    for t in my_tasks:
+        project = next((p for p in projects if p.id == t.project_id), None)
+        my_tasks_data.append({
+            "id": t.id, "title": t.title, "priority": t.priority, "stage": t.stage,
+            "due_date": t.due_date,
+            "project_id": t.project_id,
+            "project_name": project.name if project else None,
+            "project_color": project.color if project else None,
+            "efficiency": _task_efficiency(t, today),
+        })
+
+    project_cards = []
+    for p in projects:
+        p_tasks = [t for t in all_tasks if t.project_id == p.id]
+        p_total = len(p_tasks)
+        p_completed = sum(1 for t in p_tasks if t.stage == "completed")
+        p_overdue = sum(1 for t in p_tasks if t.due_date and t.due_date < today and t.stage not in ("approved", "completed"))
+        efficiencies = [_task_efficiency(t, today) for t in p_tasks if t.stage != "completed"]
+        efficiencies = [e for e in efficiencies if e is not None]
+        p_efficiency = round(sum(efficiencies) / len(efficiencies), 1) if efficiencies else None
+        d = {c.name: getattr(p, c.name) for c in p.__table__.columns}
+        d["total_tasks"] = p_total
+        d["completed_tasks"] = p_completed
+        d["overdue_count"] = p_overdue
+        d["efficiency"] = p_efficiency
+        d["members"] = [{"user_id": m.user_id, "role": m.role, "user_name": m.user.full_name if m.user else None} for m in p.members]
+        project_cards.append(d)
+
+    my_active = [t for t in all_tasks if t.assignee_id == current_user.id and t.stage != "completed"]
+    my_efficiencies = [_task_efficiency(t, today) for t in my_active]
+    my_efficiencies = [e for e in my_efficiencies if e is not None]
+    my_avg_efficiency = round(sum(my_efficiencies) / len(my_efficiencies), 1) if my_efficiencies else None
+
+    return {
+        "metrics": {
+            "total_tasks": total_tasks,
+            "completed_tasks": completed_tasks,
+            "completion_pct": round(completed_tasks / total_tasks * 100, 1) if total_tasks else 0,
+            "overdue_count": len(overdue_tasks),
+            "urgent_client_count": len(urgent_client),
+            "stale_count": len(stale_tasks),
+            "stale_days": stale_days,
+            "total_estimated_hours": round(total_estimated, 1),
+            "total_actual_hours": round(total_actual, 1),
+            "hours_utilization_pct": round(total_actual / total_estimated * 100, 1) if total_estimated else 0,
+            "active_projects": active_projects,
+            "total_projects": len(projects),
+        },
+        "my_tasks": my_tasks_data,
+        "my_avg_efficiency": my_avg_efficiency,
+        "projects": project_cards,
+    }
+
+# ── My Tasks ──────────────────────────────────────────────
+
+@router.get("/my-tasks")
+def get_my_tasks(
+    stage: Optional[str] = None,
+    priority: Optional[str] = None,
+    project_id: Optional[int] = None,
+    due_from: Optional[date] = None,
+    due_to: Optional[date] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    today = date.today()
+    q = db.query(PMSTask).filter(PMSTask.assignee_id == current_user.id)
+    if stage:
+        q = q.filter(PMSTask.stage == stage)
+    if priority:
+        q = q.filter(PMSTask.priority == priority)
+    if project_id:
+        q = q.filter(PMSTask.project_id == project_id)
+    if due_from:
+        q = q.filter(PMSTask.due_date >= due_from)
+    if due_to:
+        q = q.filter(PMSTask.due_date <= due_to)
+    tasks = q.order_by(PMSTask.due_date.asc().nullslast()).all()
+
+    result = []
+    project_cache = {}
+    for t in tasks:
+        if t.project_id not in project_cache:
+            p = db.query(PMSProject).filter_by(id=t.project_id).first()
+            project_cache[t.project_id] = p
+        p = project_cache[t.project_id]
+        result.append({
+            "id": t.id, "title": t.title, "description": t.description,
+            "stage": t.stage, "priority": t.priority,
+            "due_date": t.due_date, "start_date": t.start_date,
+            "estimated_hours": t.estimated_hours, "actual_hours": t.actual_hours,
+            "project_id": t.project_id,
+            "project_name": p.name if p else None,
+            "project_color": p.color if p else None,
+            "labels": [{"id": l.id, "name": l.name, "color": l.color} for l in t.labels],
+            "efficiency": _task_efficiency(t, today),
+            "is_overdue": bool(t.due_date and t.due_date < today and t.stage not in ("approved", "completed")),
+            "created_at": t.created_at,
+        })
+    return result
