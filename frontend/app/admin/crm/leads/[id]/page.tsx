@@ -35,6 +35,10 @@ export default function LeadDetailPage() {
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [activityForm, setActivityForm] = useState({ type: "note", title: "", description: "" });
   const [activityLoading, setActivityLoading] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
 
   const handleStatusChange = async (newStatus: string) => {
     try {
@@ -65,6 +69,30 @@ export default function LeadDetailPage() {
       alert(err.response?.data?.detail || "Failed to log activity");
     } finally {
       setActivityLoading(false);
+    }
+  };
+
+  const handleMerge = async () => {
+    if (!mergeTargetId.trim()) return;
+    setMergeLoading(true);
+    setMergeError(null);
+    try {
+      await axios.post(
+        `${API_URL}/crm/leads/merge`,
+        { primary_lead_id: Number(id), secondary_lead_id: Number(mergeTargetId) },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setShowMergeModal(false);
+      setMergeTargetId("");
+      // Refresh lead data
+      const res = await axios.get(`${API_URL}/crm/leads/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setLead(res.data);
+    } catch (err: any) {
+      setMergeError(err.response?.data?.detail || "Failed to merge leads");
+    } finally {
+      setMergeLoading(false);
     }
   };
 
@@ -154,6 +182,12 @@ export default function LeadDetailPage() {
             >
               + Add Deal
             </a>
+            <button
+              onClick={() => setShowMergeModal(true)}
+              className="text-sm px-3 py-1.5 border border-orange-300 text-orange-600 rounded hover:bg-orange-50"
+            >
+              Merge Lead
+            </button>
             <a
               href={`/admin/crm/leads/${lead.id}/edit`}
               className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-sm font-medium"
@@ -321,6 +355,53 @@ export default function LeadDetailPage() {
                 className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
               >
                 {activityLoading ? "Saving…" : "Log Activity"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Merge Lead Modal */}
+      {showMergeModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => { setShowMergeModal(false); setMergeError(null); }}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-4">Merge Lead</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              Merge another lead into <strong>{lead.first_name} {lead.last_name}</strong>. The secondary lead's data (activities, deals, tags) will be transferred to this lead.
+            </p>
+            <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg mb-4">
+              <p className="text-sm text-orange-700 font-medium">
+                This action cannot be undone. The secondary lead will be deleted.
+              </p>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Secondary Lead ID</label>
+              <input
+                type="number"
+                placeholder="Enter lead ID to merge into this one"
+                value={mergeTargetId}
+                onChange={e => setMergeTargetId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            {mergeError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
+                <p className="text-sm text-red-700">{mergeError}</p>
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setShowMergeModal(false); setMergeError(null); setMergeTargetId(""); }}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMerge}
+                disabled={!mergeTargetId.trim() || mergeLoading}
+                className="px-4 py-2 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+              >
+                {mergeLoading ? "Merging..." : "Merge"}
               </button>
             </div>
           </div>
