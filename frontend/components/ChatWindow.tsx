@@ -7,6 +7,7 @@ import { getAuthToken, authAPI } from '@/lib/auth'
 import { useEvents } from '@/lib/events-context'
 import { useBranding } from '@/lib/branding-context'
 import { API_URL } from '@/lib/config';
+import CrmSidebar from './CrmSidebar';
 
 interface Message {
   id: number
@@ -89,6 +90,7 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
   const [leadCreated, setLeadCreated] = useState(false)
   const [crmLead, setCrmLead] = useState<any>(null)
   const [crmCardOpen, setCrmCardOpen] = useState(false)
+  const [crmSidebarOpen, setCrmSidebarOpen] = useState(true)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [allowedTypes, setAllowedTypes] = useState<string[]>([])
   const [maxFileMb, setMaxFileMb] = useState(10)
@@ -501,7 +503,9 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
   }
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex">
+      {/* Main chat column */}
+      <div className="flex-1 flex flex-col min-w-0">
       {/* Chat Header */}
       <div className="border-b px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
         <div>
@@ -617,6 +621,14 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
           ) : (
             <span className="text-xs text-green-600 font-medium">✓ Lead created</span>
           )}
+          {/* CRM Sidebar toggle */}
+          <button
+            onClick={() => setCrmSidebarOpen((prev) => !prev)}
+            className={`p-1.5 rounded-lg transition text-sm font-medium ${crmSidebarOpen ? 'bg-purple-100 text-purple-700' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+            title={crmSidebarOpen ? 'Hide CRM' : 'Show CRM'}
+          >
+            {crmSidebarOpen ? '\u25C0 CRM' : '\u25B6 CRM'}
+          </button>
           {/* Search toggle */}
           <button
             onClick={() => setShowSearch((s) => !s)}
@@ -1126,6 +1138,26 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
             </div>
           </div>
         </div>
+      )}
+      </div>
+      {/* CRM Sidebar */}
+      {crmSidebarOpen && conversation && (
+        <CrmSidebar
+          conversationId={conversation.id}
+          contactName={conversation.contact_name}
+          contactPhone={conversation.contact_id}
+          onCreateLead={(prefill) => {
+            const nameParts = (prefill.first_name || conversation.contact_name || '').trim().split(' ')
+            setLeadForm({
+              first_name: nameParts[0] || '',
+              last_name: nameParts.slice(1).join(' '),
+              email: prefill.email || '',
+              phone: prefill.phone || '',
+              company: '',
+            })
+            setShowLeadModal(true)
+          }}
+        />
       )}
     </div>
   )
