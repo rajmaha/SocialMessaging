@@ -1065,3 +1065,74 @@ def get_my_day(
             "conversations_active": conversations_active,
         },
     }
+
+
+@router.get("/dashboard/team-feed")
+def get_team_feed(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Recent activity across the entire team — for managers."""
+    from datetime import timedelta
+    now = datetime.utcnow()
+    seven_days_ago = now - timedelta(days=7)
+
+    # Recent activity across all leads
+    recent_activity = (
+        db.query(Activity)
+        .filter(Activity.created_at >= seven_days_ago)
+        .order_by(Activity.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    # Enrich with lead names
+    lead_ids = list({a.lead_id for a in recent_activity})
+    leads_map = {}
+    if lead_ids:
+        leads_list = db.query(Lead).filter(Lead.id.in_(lead_ids)).all()
+        leads_map = {l.id: f"{l.first_name} {l.last_name or ''}".strip() for l in leads_list}
+
+    # Enrich with user names
+    user_ids = list({a.created_by for a in recent_activity if a.created_by})
+    users_map = {}
+    if user_ids:
+        users_list = db.query(User).filter(User.id.in_(user_ids)).all()
+        users_map = {u.id: u.full_name for u in users_list}
+
+    # Team stats
+    total_open_leads = db.query(Lead).filter(
+        Lead.status.in_([LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED]),
+    ).count()
+
+    total_pipeline_value = db.query(func.sum(Deal.amount)).filter(
+        Deal.stage.notin_([DealStage.WON, DealStage.LOST]),
+    ).scalar() or 0
+
+    deals_won_this_week = db.query(Deal).filter(
+        Deal.stage == DealStage.WON,
+        Deal.closed_at >= seven_days_ago,
+    ).count()
+
+    return {
+        "recent_activity": [
+            {
+                "id": a.id,
+                "type": a.type.value,
+                "title": a.title,
+                "description": a.description,
+                "lead_id": a.lead_id,
+                "lead_name": leads_map.get(a.lead_id, "Unknown"),
+                "created_by": a.created_by,
+                "created_by_name": users_map.get(a.created_by, "Unknown") if a.created_by else None,
+                "created_at": a.created_at.isoformat(),
+            }
+            for a in recent_activity
+        ],
+        "stats": {
+            "total_open_leads": total_open_leads,
+            "total_pipeline_value": float(total_pipeline_value),
+            "deals_won_this_week": deals_won_this_week,
+            "team_activities_this_week": len(recent_activity),
+        },
+    }

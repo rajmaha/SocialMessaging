@@ -112,6 +112,8 @@ const sidebarGroups = [
     {
         label: 'CRM',
         items: [
+            { href: '/admin/crm/dashboard/my-day', label: 'My Day', icon: '☀️', pageKey: 'crm' },
+            { href: '/admin/crm/dashboard/team-feed', label: 'Team Feed', icon: '👨‍👩‍👧‍👦', pageKey: 'crm' },
             { href: '/admin/crm/leads', label: 'Leads', icon: '👥', pageKey: 'crm' },
             { href: '/admin/crm/deals', label: 'Sales Pipeline', icon: '💼', pageKey: 'crm' },
             { href: '/admin/crm/tasks', label: 'Tasks', icon: '✓', pageKey: 'crm' },

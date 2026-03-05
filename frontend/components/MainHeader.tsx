@@ -44,7 +44,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
     const isReportsActive = pathname === '/admin/reports'
     const isWorkspaceActive = pathname === '/workspace'
     const isRemindersActive = pathname === '/reminders'
-    const isMyDayActive = pathname === '/dashboard/my-day'
+    const isMyDayActive = pathname?.startsWith('/admin/crm/dashboard')
 
     const [canAccessEmail, setCanAccessEmail] = useState(true)
     const [canAccessMessaging, setCanAccessMessaging] = useState(true)
@@ -241,7 +241,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                     </Link>
 
                     <Link
-                        href="/dashboard/my-day"
+                        href="/admin/crm/dashboard/my-day"
                         className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isMyDayActive
                             ? 'text-white shadow-sm'
                             : 'text-gray-600 hover:bg-gray-100'
