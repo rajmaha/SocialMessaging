@@ -2,8 +2,10 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { getAuthToken } from "@/lib/auth";
+import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import MainHeader from "@/components/MainHeader";
+import AdminNav from "@/components/AdminNav";
 
 interface TaskItem {
   id: number;
@@ -75,6 +77,7 @@ export default function MyDayPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
+  const user = authAPI.getUser();
   const token = getAuthToken();
 
   useEffect(() => {
@@ -98,17 +101,25 @@ export default function MyDayPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-gray-400">Loading your day...</div>
+      <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+        {user && <MainHeader user={user} />}
+        <AdminNav />
+        <div className="flex items-center justify-center h-96">
+          <div className="text-gray-400">Loading your day...</div>
+        </div>
       </div>
     );
   }
 
   if (error || !data) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <div className="text-red-500">{error}</div>
-        <button onClick={fetchMyDay} className="text-blue-600 hover:underline">Retry</button>
+      <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+        {user && <MainHeader user={user} />}
+        <AdminNav />
+        <div className="flex flex-col items-center justify-center h-96 gap-4">
+          <div className="text-red-500">{error}</div>
+          <button onClick={fetchMyDay} className="text-blue-600 hover:underline">Retry</button>
+        </div>
       </div>
     );
   }
@@ -116,9 +127,11 @@ export default function MyDayPage() {
   const { stats } = data;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">My Day</h1>
+    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      {user && <MainHeader user={user} />}
+      <AdminNav />
+      <main className="w-full px-6 py-8">
+        <h1 className="text-2xl font-semibold text-gray-900 mb-6">My Day</h1>
 
         {/* Stat Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -249,7 +262,7 @@ export default function MyDayPage() {
             </Section>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

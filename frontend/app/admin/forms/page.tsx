@@ -28,6 +28,9 @@ export default function FormsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ ...defaultForm });
+  const [serverEndpoints, setServerEndpoints] = useState<any[]>([]);
+  const [autoFillFromSpec, setAutoFillFromSpec] = useState(false);
+  const [selectedCreateEndpointId, setSelectedCreateEndpointId] = useState<number | null>(null);
 
   const load = () => formsApi.list().then(r => setForms(r.data));
   useEffect(() => {
@@ -38,9 +41,45 @@ export default function FormsPage() {
   const titleToSlug = (title: string) =>
     title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+  const loadServerEndpoints = async (serverId: string | number) => {
+    if (!serverId) {
+      setServerEndpoints([]);
+      setAutoFillFromSpec(false);
+      return;
+    }
+    try {
+      const res = await apiServersApi.listEndpoints(Number(serverId));
+      setServerEndpoints(res.data);
+    } catch {
+      setServerEndpoints([]);
+    }
+  };
+
+  const handleServerChange = (serverId: string) => {
+    setForm({ ...form, api_server_id: serverId, api_method_create: '', api_method_list: '', api_method_detail: '', api_method_update: '', api_method_delete: '' });
+    setAutoFillFromSpec(false);
+    setSelectedCreateEndpointId(null);
+    loadServerEndpoints(serverId);
+  };
+
+  const handleEndpointSelect = (field: string, endpointId: string) => {
+    const ep = serverEndpoints.find((e: any) => e.id === Number(endpointId));
+    if (ep) {
+      setForm({ ...form, [field]: `${ep.method} ${ep.path}` });
+    } else {
+      setForm({ ...form, [field]: '' });
+    }
+    if (field === 'api_method_create') {
+      setSelectedCreateEndpointId(endpointId ? Number(endpointId) : null);
+    }
+  };
+
   const openCreate = () => {
     setEditing(null);
     setForm({ ...defaultForm });
+    setServerEndpoints([]);
+    setAutoFillFromSpec(false);
+    setSelectedCreateEndpointId(null);
     setShowModal(true);
   };
 
@@ -61,6 +100,9 @@ export default function FormsPage() {
       is_published: item.is_published || false,
       require_otp: item.require_otp || false,
     });
+    setAutoFillFromSpec(false);
+    if (item.api_server_id) loadServerEndpoints(item.api_server_id);
+    else setServerEndpoints([]);
     setShowModal(true);
   };
 
@@ -69,14 +111,26 @@ export default function FormsPage() {
       ...form,
       api_server_id: form.api_server_id ? Number(form.api_server_id) : null,
     };
+    let formId: number;
     if (editing) {
       await formsApi.update(editing.id, payload);
+      formId = editing.id;
     } else {
-      await formsApi.create(payload);
+      const res = await formsApi.create(payload);
+      formId = res.data.id;
+    }
+    // Auto-generate fields from spec if enabled and create endpoint selected
+    if (autoFillFromSpec && selectedCreateEndpointId) {
+      try {
+        await formsApi.autoGenerateFields(formId, selectedCreateEndpointId);
+      } catch (err) {
+        console.error('Auto-generate fields failed:', err);
+      }
     }
     setShowModal(false);
     setEditing(null);
     setForm({ ...defaultForm });
+    setSelectedCreateEndpointId(null);
     load();
   };
 
@@ -250,7 +304,7 @@ export default function FormsPage() {
                 <select
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
                   value={form.api_server_id}
-                  onChange={e => setForm({ ...form, api_server_id: e.target.value })}
+                  onChange={e => handleServerChange(e.target.value)}
                 >
                   <option value="">Select API Server...</option>
                   {apiServers.map((s: any) => (
@@ -258,45 +312,60 @@ export default function FormsPage() {
                   ))}
                 </select>
 
-                <label className="block text-sm font-medium text-gray-700 mt-2">Create Method</label>
-                <input
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                  placeholder="POST /api/records"
-                  value={form.api_method_create}
-                  onChange={e => setForm({ ...form, api_method_create: e.target.value })}
-                />
+                {form.api_server_id && (
+                  <div className="mt-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoFillFromSpec}
+                        onChange={e => setAutoFillFromSpec(e.target.checked)}
+                        disabled={serverEndpoints.length === 0}
+                        className="rounded border-gray-300"
+                      />
+                      <span className={`text-sm font-medium ${serverEndpoints.length > 0 ? 'text-purple-700' : 'text-gray-400'}`}>Auto-fill from API Spec</span>
+                      {serverEndpoints.length > 0 ? (
+                        <span className="text-xs text-gray-400">({serverEndpoints.length} endpoints available)</span>
+                      ) : (
+                        <span className="text-xs text-gray-400">— No spec uploaded for this server</span>
+                      )}
+                    </label>
+                  </div>
+                )}
 
-                <label className="block text-sm font-medium text-gray-700 mt-2">List Method</label>
-                <input
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                  placeholder="GET /api/records"
-                  value={form.api_method_list}
-                  onChange={e => setForm({ ...form, api_method_list: e.target.value })}
-                />
-
-                <label className="block text-sm font-medium text-gray-700 mt-2">Detail Method</label>
-                <input
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                  placeholder="GET /api/records/{id}"
-                  value={form.api_method_detail}
-                  onChange={e => setForm({ ...form, api_method_detail: e.target.value })}
-                />
-
-                <label className="block text-sm font-medium text-gray-700 mt-2">Update Method</label>
-                <input
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                  placeholder="PUT /api/records/{id}"
-                  value={form.api_method_update}
-                  onChange={e => setForm({ ...form, api_method_update: e.target.value })}
-                />
-
-                <label className="block text-sm font-medium text-gray-700 mt-2">Delete Method</label>
-                <input
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                  placeholder="DELETE /api/records/{id}"
-                  value={form.api_method_delete}
-                  onChange={e => setForm({ ...form, api_method_delete: e.target.value })}
-                />
+                {[
+                  { label: 'Create Method', field: 'api_method_create', placeholder: 'POST /api/records', filterMethod: 'POST' },
+                  { label: 'List Method', field: 'api_method_list', placeholder: 'GET /api/records', filterMethod: 'GET' },
+                  { label: 'Detail Method', field: 'api_method_detail', placeholder: 'GET /api/records/{id}', filterMethod: 'GET' },
+                  { label: 'Update Method', field: 'api_method_update', placeholder: 'PUT /api/records/{id}', filterMethod: 'PUT' },
+                  { label: 'Delete Method', field: 'api_method_delete', placeholder: 'DELETE /api/records/{id}', filterMethod: 'DELETE' },
+                ].map(({ label, field, placeholder, filterMethod }) => (
+                  <div key={field}>
+                    <label className="block text-sm font-medium text-gray-700 mt-2">{label}</label>
+                    {autoFillFromSpec ? (
+                      <select
+                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                        value={serverEndpoints.find((ep: any) => `${ep.method} ${ep.path}` === (form as any)[field])?.id || ''}
+                        onChange={e => handleEndpointSelect(field, e.target.value)}
+                      >
+                        <option value="">Select endpoint...</option>
+                        {serverEndpoints
+                          .filter((ep: any) => ep.method === filterMethod || ep.method === 'PATCH')
+                          .map((ep: any) => (
+                            <option key={ep.id} value={ep.id}>
+                              {ep.method} {ep.path}{ep.summary ? ` — ${ep.summary}` : ''}
+                            </option>
+                          ))}
+                      </select>
+                    ) : (
+                      <input
+                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                        placeholder={placeholder}
+                        value={(form as any)[field]}
+                        onChange={e => setForm({ ...form, [field]: e.target.value })}
+                      />
+                    )}
+                  </div>
+                ))}
               </div>
             )}
 
