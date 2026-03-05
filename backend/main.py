@@ -16,6 +16,7 @@ from app.routes import roles as roles_routes
 from app.routes.api_servers import router as api_servers_router, user_router as user_api_creds_router
 from app.routes.forms import admin_router as forms_admin_router, public_router as forms_public_router
 from app.routes.menus import router as menus_router
+from app.routes.user_permission_overrides import router as permission_overrides_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
 from app.models.backup_destination import BackupDestination  # noqa: F401
@@ -1405,6 +1406,7 @@ app.include_router(user_api_creds_router)
 app.include_router(forms_admin_router)
 app.include_router(forms_public_router)
 app.include_router(menus_router)
+app.include_router(permission_overrides_router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
