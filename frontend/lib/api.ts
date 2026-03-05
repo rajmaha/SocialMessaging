@@ -200,6 +200,16 @@ export const apiServersApi = {
   testCredential: (credId: number) => api.post(`/admin/api-servers/credentials/${credId}/test`),
   getAccess: (id: number) => api.get(`/admin/api-servers/${id}/access`),
   updateAccess: (id: number, data: any) => api.put(`/admin/api-servers/${id}/access`, data),
+  uploadSpec: (id: number, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/admin/api-servers/${id}/spec`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  listEndpoints: (id: number) => api.get(`/admin/api-servers/${id}/endpoints`),
+  getEndpoint: (id: number, endpointId: number) => api.get(`/admin/api-servers/${id}/endpoints/${endpointId}`),
+  deleteEndpoint: (id: number, endpointId: number) => api.delete(`/admin/api-servers/${id}/endpoints/${endpointId}`),
 }
 
 export const userApiCredsApi = {
@@ -223,6 +233,7 @@ export const formsApi = {
   updateField: (formId: number, fieldId: number, data: any) => api.put(`/admin/forms/${formId}/fields/${fieldId}`, data),
   deleteField: (formId: number, fieldId: number) => api.delete(`/admin/forms/${formId}/fields/${fieldId}`),
   reorderFields: (formId: number, fieldIds: number[]) => api.put(`/admin/forms/${formId}/fields/reorder`, { field_ids: fieldIds }),
+  autoGenerateFields: (formId: number, endpointId: number) => api.post(`/admin/forms/${formId}/fields/auto-generate`, { endpoint_id: endpointId }),
   // Submissions
   listSubmissions: (formId: number, skip = 0, limit = 50) => api.get(`/admin/forms/${formId}/submissions`, { params: { skip, limit } }),
   getSubmission: (formId: number, subId: number) => api.get(`/admin/forms/${formId}/submissions/${subId}`),
