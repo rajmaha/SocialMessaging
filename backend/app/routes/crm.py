@@ -166,6 +166,57 @@ def bulk_lead_action(
     return results
 
 
+@router.post("/leads/merge")
+def merge_leads(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Merge two leads: transfer related records from secondary into primary, then delete secondary."""
+    primary_id = payload.get("primary_lead_id")
+    secondary_id = payload.get("secondary_lead_id")
+
+    if not primary_id or not secondary_id or primary_id == secondary_id:
+        raise HTTPException(status_code=400, detail="Two different lead IDs required")
+
+    primary = db.query(Lead).filter(Lead.id == primary_id).first()
+    secondary = db.query(Lead).filter(Lead.id == secondary_id).first()
+
+    if not primary or not secondary:
+        raise HTTPException(status_code=404, detail="One or both leads not found")
+
+    # Fill in blank fields on primary from secondary
+    for field in ["last_name", "email", "phone", "company", "position", "estimated_value", "organization_id"]:
+        if not getattr(primary, field) and getattr(secondary, field):
+            setattr(primary, field, getattr(secondary, field))
+
+    # Merge tags
+    primary_tags = primary.tags or []
+    secondary_tags = secondary.tags or []
+    primary.tags = list(set(primary_tags + secondary_tags))
+
+    # Move related records
+    db.query(Deal).filter(Deal.lead_id == secondary_id).update({"lead_id": primary_id})
+    db.query(Task).filter(Task.lead_id == secondary_id).update({"lead_id": primary_id})
+    db.query(Activity).filter(Activity.lead_id == secondary_id).update({"lead_id": primary_id})
+    db.query(LeadNote).filter(LeadNote.lead_id == secondary_id).update({"lead_id": primary_id})
+
+    # Log merge activity
+    merge_activity = Activity(
+        lead_id=primary_id,
+        type=ActivityType.NOTE,
+        title=f"Merged with lead #{secondary_id} ({secondary.first_name} {secondary.last_name or ''})",
+        description=f"All deals, tasks, activities, and notes transferred from lead #{secondary_id}",
+        created_by=current_user.id,
+    )
+    db.add(merge_activity)
+
+    db.delete(secondary)
+    db.commit()
+
+    return {"detail": f"Lead #{secondary_id} merged into #{primary_id}", "primary_lead_id": primary_id}
+
+
 @router.get("/leads/{lead_id}", response_model=LeadDetailResponse)
 def get_lead_detail(
     lead_id: int,
