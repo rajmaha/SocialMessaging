@@ -229,3 +229,21 @@ class PMSGanttPayload(BaseModel):
     project: PMSProjectOut
     milestones: List[PMSMilestoneOut]
     tasks: List[PMSGanttTask]
+
+
+# ── Label Definition ─────────────────────────────────────
+class PMSLabelDefCreate(BaseModel):
+    name: str
+    color: str = "#6366f1"
+
+class PMSLabelDefUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+
+class PMSLabelDefOut(BaseModel):
+    id: int
+    name: str
+    color: str
+    created_by: Optional[int]
+    created_at: datetime
+    class Config: from_attributes = True

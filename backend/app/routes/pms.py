@@ -11,7 +11,8 @@ from app.models.user import User
 from app.models.pms import (
     PMSProject, PMSProjectMember, PMSMilestone, PMSTask,
     PMSTaskDependency, PMSTaskComment, PMSTaskTimeLog,
-    PMSTaskAttachment, PMSTaskLabel, PMSWorkflowHistory, PMSAlert
+    PMSTaskAttachment, PMSTaskLabel, PMSWorkflowHistory, PMSAlert,
+    PMSLabelDefinition
 )
 from app.schemas.pms import *
 
@@ -522,3 +523,75 @@ def create_task_from_ticket(ticket_id: int, project_id: int, db: Session = Depen
     db.commit()
     db.refresh(task)
     return _enrich_task(task, db)
+
+# ── Labels (Global Library) ──────────────────────────────
+
+@router.get("/labels")
+def list_labels(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(PMSLabelDefinition).order_by(PMSLabelDefinition.name).all()
+
+@router.post("/labels")
+def create_label(data: PMSLabelDefCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not _is_admin(current_user):
+        raise HTTPException(403, "Admins only")
+    existing = db.query(PMSLabelDefinition).filter_by(name=data.name).first()
+    if existing:
+        raise HTTPException(400, "Label name already exists")
+    label = PMSLabelDefinition(name=data.name, color=data.color, created_by=current_user.id)
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+    return label
+
+@router.put("/labels/{label_id}")
+def update_label(label_id: int, data: PMSLabelDefUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not _is_admin(current_user):
+        raise HTTPException(403, "Admins only")
+    label = db.query(PMSLabelDefinition).filter_by(id=label_id).first()
+    if not label:
+        raise HTTPException(404)
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(label, k, v)
+    db.commit()
+    db.refresh(label)
+    return label
+
+@router.delete("/labels/{label_id}")
+def delete_label(label_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not _is_admin(current_user):
+        raise HTTPException(403)
+    label = db.query(PMSLabelDefinition).filter_by(id=label_id).first()
+    if not label:
+        raise HTTPException(404)
+    db.delete(label)
+    db.commit()
+    return {"ok": True}
+
+@router.post("/tasks/{task_id}/labels/{label_id}")
+def attach_label(task_id: int, label_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    label_def = db.query(PMSLabelDefinition).filter_by(id=label_id).first()
+    if not label_def:
+        raise HTTPException(404, "Label not found")
+    existing = db.query(PMSTaskLabel).filter_by(task_id=task_id, label_definition_id=label_id).first()
+    if existing:
+        return {"ok": True, "already_attached": True}
+    db.add(PMSTaskLabel(task_id=task_id, name=label_def.name, color=label_def.color, label_definition_id=label_id))
+    db.commit()
+    return {"ok": True}
+
+@router.delete("/tasks/{task_id}/labels/{label_id}")
+def detach_label(task_id: int, label_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    tl = db.query(PMSTaskLabel).filter_by(task_id=task_id, label_definition_id=label_id).first()
+    if not tl:
+        raise HTTPException(404)
+    db.delete(tl)
+    db.commit()
+    return {"ok": True}
