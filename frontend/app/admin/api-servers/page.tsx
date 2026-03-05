@@ -56,10 +56,10 @@ export default function ApiServersPage() {
   const [testResult, setTestResult] = useState<{ credId: number; type: 'success' | 'error'; text: string } | null>(null);
   const [serverCredCounts, setServerCredCounts] = useState<Record<number, number>>({});
 
-  // Spec & Endpoints state
-  const [endpoints, setEndpoints] = useState<any[]>([]);
-  const [uploadingSpec, setUploadingSpec] = useState(false);
-  const [specMessage, setSpecMessage] = useState('');
+  // Spec & Endpoints state (per-server)
+  const [serverEndpoints, setServerEndpoints] = useState<Record<number, any[]>>({});
+  const [uploadingSpecFor, setUploadingSpecFor] = useState<number | null>(null);
+  const [specMessages, setSpecMessages] = useState<Record<number, string>>({});
   const [expandedEndpointServer, setExpandedEndpointServer] = useState<number | null>(null);
 
   // Access control state
@@ -187,27 +187,28 @@ export default function ApiServersPage() {
     }
   };
 
-  // Spec upload & endpoints
+  // Spec upload & endpoints (per-server)
   const handleSpecUpload = async (serverId: number, file: File) => {
-    setUploadingSpec(true);
-    setSpecMessage('');
+    setUploadingSpecFor(serverId);
+    setSpecMessages((prev) => ({ ...prev, [serverId]: '' }));
     try {
       const res = await apiServersApi.uploadSpec(serverId, file);
-      setSpecMessage(res.data.message);
+      setSpecMessages((prev) => ({ ...prev, [serverId]: res.data.message }));
       loadEndpoints(serverId);
+      load(); // refresh server list to update spec_file_name
     } catch (err: any) {
-      setSpecMessage(err.response?.data?.detail || 'Upload failed');
+      setSpecMessages((prev) => ({ ...prev, [serverId]: err.response?.data?.detail || 'Upload failed' }));
     } finally {
-      setUploadingSpec(false);
+      setUploadingSpecFor(null);
     }
   };
 
   const loadEndpoints = async (serverId: number) => {
     try {
       const res = await apiServersApi.listEndpoints(serverId);
-      setEndpoints(res.data);
+      setServerEndpoints((prev) => ({ ...prev, [serverId]: res.data }));
     } catch {
-      setEndpoints([]);
+      setServerEndpoints((prev) => ({ ...prev, [serverId]: [] }));
     }
   };
 
@@ -220,7 +221,6 @@ export default function ApiServersPage() {
   const toggleEndpointList = (serverId: number) => {
     if (expandedEndpointServer === serverId) {
       setExpandedEndpointServer(null);
-      setEndpoints([]);
     } else {
       setExpandedEndpointServer(serverId);
       loadEndpoints(serverId);
@@ -462,12 +462,12 @@ export default function ApiServersPage() {
               <div className="mt-3 border-t pt-3">
                 <div className="flex items-center gap-3 mb-2">
                   <label className="cursor-pointer bg-purple-50 hover:bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium transition">
-                    {uploadingSpec ? 'Uploading...' : 'Upload API Spec'}
+                    {uploadingSpecFor === server.id ? 'Uploading...' : 'Upload API Spec'}
                     <input
                       type="file"
                       accept=".json"
                       className="hidden"
-                      disabled={uploadingSpec}
+                      disabled={uploadingSpecFor === server.id}
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) handleSpecUpload(server.id, file);
@@ -488,16 +488,16 @@ export default function ApiServersPage() {
                   </button>
                 </div>
 
-                {specMessage && (
-                  <p className="text-sm text-green-700 bg-green-50 px-3 py-1.5 rounded mb-2">{specMessage}</p>
+                {specMessages[server.id] && (
+                  <p className="text-sm text-green-700 bg-green-50 px-3 py-1.5 rounded mb-2">{specMessages[server.id]}</p>
                 )}
 
                 {expandedEndpointServer === server.id && (
                   <div className="space-y-1.5 mt-2">
-                    {endpoints.length === 0 ? (
+                    {(serverEndpoints[server.id] || []).length === 0 ? (
                       <p className="text-sm text-gray-400">No endpoints parsed yet. Upload a Swagger or Postman JSON file.</p>
                     ) : (
-                      endpoints.map((ep: any) => {
+                      (serverEndpoints[server.id] || []).map((ep: any) => {
                         const methodColors: Record<string, string> = {
                           GET: 'bg-green-100 text-green-700',
                           POST: 'bg-blue-100 text-blue-700',
