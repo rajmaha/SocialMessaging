@@ -107,63 +107,26 @@ def verify_user_role(user: User) -> bool:
     return user.role in ["user", "admin"]
 
 def require_module(module_key: str):
-    """Dependency generator to require access to a specific module or channel"""
-    async def verify_module_access(current_user: User = Depends(get_current_user)):
-        if current_user.role == "admin":
-            return current_user
-            
-        from app.database import SessionLocal
-        from app.models.user_permission import UserPermission
-        
-        db = SessionLocal()
-        try:
-            perm = db.query(UserPermission).filter(
-                UserPermission.user_id == current_user.id,
-                UserPermission.permission_key == module_key
-            ).first()
-            if not perm:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Access to {module_key} is disabled for your account"
-                )
-            return current_user
-        finally:
-            db.close()
-            
-    return verify_module_access
+    """LEGACY SHIM — delegates to require_permission for module access"""
+    clean_key = module_key.replace("module_", "")
+    return require_permission(clean_key, "view")
 
 def require_admin_feature(feature_key: str):
-    """Dependency generator for sub-admin precise feature grants"""
-    async def verify_admin_access(current_user: User = Depends(get_current_user)):
-        if current_user.role == "admin":
-            return current_user
-            
-        from app.database import SessionLocal
-        from app.models.user_permission import UserPermission
-        
-        db = SessionLocal()
-        try:
-            perm = db.query(UserPermission).filter(
-                UserPermission.user_id == current_user.id,
-                UserPermission.permission_key == feature_key
-            ).first()
-            if not perm:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"You do not have permission to use the {feature_key} feature"
-                )
-            return current_user
-        finally:
-            db.close()
-            
-    return verify_admin_access
+    """LEGACY SHIM — delegates to require_permission for admin features"""
+    clean_key = feature_key.replace("feature_", "")
+    return require_permission(clean_key, "view")
 
 
 def require_page(page_key: str):
+    """LEGACY SHIM — delegates to require_permission(page_key, "view")"""
+    return require_permission(page_key, "view")
+
+
+def require_permission(module_key: str, action: str):
     """
-    Dependency factory: checks that the current user's role grants access
-    to the given page key. Admins bypass this check.
-    Usage: Depends(require_page("pms"))
+    Unified permission check: role permissions + user overrides.
+    Admins bypass all checks.
+    Usage: Depends(require_permission("crm", "edit"))
     """
     async def _check(
         current_user=Depends(get_current_user),
@@ -171,12 +134,63 @@ def require_page(page_key: str):
     ):
         if current_user.role == "admin":
             return current_user
+
         from app.models.role import Role
+        from app.models.user_permission_override import UserPermissionOverride
+
+        # 1. Get role permissions
         role = db.query(Role).filter(Role.slug == current_user.role).first()
-        if not role or page_key not in (role.pages or []):
+        role_actions = (role.permissions or {}).get(module_key, []) if role else []
+
+        # 2. Apply user overrides
+        override = db.query(UserPermissionOverride).filter(
+            UserPermissionOverride.user_id == current_user.id,
+            UserPermissionOverride.module_key == module_key
+        ).first()
+
+        if override:
+            effective = set(role_actions)
+            effective |= set(override.granted_actions or [])
+            effective -= set(override.revoked_actions or [])
+        else:
+            effective = set(role_actions)
+
+        if action not in effective:
             raise HTTPException(
-                status_code=403,
-                detail=f"Your role does not have access to the '{page_key}' module"
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"No '{action}' permission for '{module_key}'"
             )
         return current_user
     return _check
+
+
+async def get_effective_permissions(user, db: Session) -> dict:
+    """
+    Compute the full effective permission matrix for a user.
+    Returns: {"module_key": ["action1", "action2"], ...}
+    """
+    if user.role == "admin":
+        from app.permissions_registry import MODULE_REGISTRY
+        return {k: v["actions"][:] for k, v in MODULE_REGISTRY.items()}
+
+    from app.models.role import Role
+    from app.models.user_permission_override import UserPermissionOverride
+
+    role = db.query(Role).filter(Role.slug == user.role).first()
+    base_permissions = dict(role.permissions or {}) if role else {}
+
+    overrides = db.query(UserPermissionOverride).filter(
+        UserPermissionOverride.user_id == user.id
+    ).all()
+
+    result = {}
+    for mod_key, actions in base_permissions.items():
+        result[mod_key] = set(actions)
+
+    for ov in overrides:
+        if ov.module_key not in result:
+            result[ov.module_key] = set()
+        result[ov.module_key] |= set(ov.granted_actions or [])
+        result[ov.module_key] -= set(ov.revoked_actions or [])
+
+    return {k: sorted(v) for k, v in result.items() if v}
