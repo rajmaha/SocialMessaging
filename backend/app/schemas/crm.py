@@ -19,6 +19,7 @@ class LeadCreate(BaseModel):
     estimated_value: Optional[float] = None
     conversation_id: Optional[int] = None
     organization_id: Optional[int] = None
+    tags: Optional[list[str]] = []
 
 
 class LeadUpdate(BaseModel):
@@ -33,6 +34,7 @@ class LeadUpdate(BaseModel):
     assigned_to: Optional[int] = None
     estimated_value: Optional[float] = None
     score: Optional[int] = None
+    tags: Optional[list[str]] = None
 
 
 class LeadResponse(BaseModel):
@@ -50,6 +52,7 @@ class LeadResponse(BaseModel):
     estimated_value: Optional[float]
     conversation_id: Optional[int]
     organization_id: Optional[int]
+    tags: Optional[list[str]] = []
     created_at: datetime
     updated_at: datetime
 

@@ -55,6 +55,20 @@ def auto_match_lead(
     return []
 
 
+@router.get("/tags")
+def get_all_tags(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all unique tags across leads."""
+    leads = db.query(Lead.tags).filter(Lead.tags.isnot(None)).all()
+    all_tags = set()
+    for (tags,) in leads:
+        if isinstance(tags, list):
+            all_tags.update(tags)
+    return sorted(all_tags)
+
+
 @router.post("/leads", response_model=LeadResponse)
 def create_lead(
     lead: LeadCreate,
@@ -86,6 +100,7 @@ def list_leads(
     status: str = Query(None),
     assigned_to: int = Query(None),
     search: str = Query(None),
+    tag: str = Query(None),
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
@@ -104,6 +119,8 @@ def list_leads(
             Lead.email.ilike(f"%{search}%") |
             Lead.company.ilike(f"%{search}%")
         )
+    if tag:
+        query = query.filter(Lead.tags.contains([tag]))
 
     return query.order_by(desc(Lead.created_at)).offset(skip).limit(limit).all()
 

@@ -1295,6 +1295,11 @@ def _run_inline_migrations():
             )
         """))
 
+        # Lead tags column
+        conn.execute(text("""
+            ALTER TABLE leads ADD COLUMN IF NOT EXISTS tags JSON DEFAULT '[]'
+        """))
+
         conn.commit()
 
 try:
