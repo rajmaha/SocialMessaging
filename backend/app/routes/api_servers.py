@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_
 from typing import List
@@ -7,7 +7,7 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_admin_feature
 from app.models.user import User
 from app.models.api_server import (
-    ApiServer, UserApiCredential,
+    ApiServer, ApiServerEndpoint, UserApiCredential,
     api_server_user_access, api_server_team_access,
 )
 from app.models.team import Team, team_members
@@ -17,6 +17,8 @@ from app.schemas.api_server import (
     ApiLoginRequest, ApiServerPublicResponse, UserApiCredentialSelfCreate,
 )
 from app.services.api_proxy import api_login
+from app.services.spec_parser import parse_spec
+import json
 
 router = APIRouter(
     prefix="/admin/api-servers",
@@ -240,6 +242,161 @@ def update_server_access(
 
     db.commit()
     return {"message": "Access updated", "user_ids": user_ids, "team_ids": team_ids}
+
+
+# --- Spec Upload & Endpoint Management ---
+
+@router.post("/{server_id}/spec")
+async def upload_spec(
+    server_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_manage_forms),
+):
+    """Upload and parse a Swagger/OpenAPI or Postman Collection JSON file."""
+    server = db.query(ApiServer).filter(ApiServer.id == server_id).first()
+    if not server:
+        raise HTTPException(404, "API Server not found")
+
+    try:
+        content = await file.read()
+        data = json.loads(content)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(400, "Invalid JSON file")
+
+    try:
+        parsed_endpoints = parse_spec(data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    if not parsed_endpoints:
+        raise HTTPException(400, "No endpoints found in the spec file")
+
+    # Upsert endpoints
+    created_or_updated = []
+    for ep in parsed_endpoints:
+        existing = db.query(ApiServerEndpoint).filter(
+            ApiServerEndpoint.api_server_id == server_id,
+            ApiServerEndpoint.path == ep["path"],
+            ApiServerEndpoint.method == ep["method"],
+        ).first()
+
+        if existing:
+            existing.summary = ep["summary"]
+            existing.fields = ep["fields"]
+            existing.source_type = ep["source_type"]
+            created_or_updated.append(existing)
+        else:
+            new_ep = ApiServerEndpoint(
+                api_server_id=server_id,
+                path=ep["path"],
+                method=ep["method"],
+                summary=ep["summary"],
+                fields=ep["fields"],
+                source_type=ep["source_type"],
+            )
+            db.add(new_ep)
+            created_or_updated.append(new_ep)
+
+    server.spec_file_name = file.filename
+    db.commit()
+
+    # Refresh to get IDs
+    for ep in created_or_updated:
+        db.refresh(ep)
+
+    return {
+        "message": f"Parsed {len(created_or_updated)} endpoints from {file.filename}",
+        "spec_file_name": file.filename,
+        "endpoints_count": len(created_or_updated),
+        "endpoints": [
+            {
+                "id": ep.id,
+                "api_server_id": ep.api_server_id,
+                "path": ep.path,
+                "method": ep.method,
+                "summary": ep.summary,
+                "fields": ep.fields,
+                "source_type": ep.source_type,
+                "created_at": ep.created_at.isoformat() if ep.created_at else None,
+            }
+            for ep in created_or_updated
+        ],
+    }
+
+
+@router.get("/{server_id}/endpoints")
+async def list_endpoints(
+    server_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_manage_forms),
+):
+    """List all parsed endpoints for an API server."""
+    endpoints = (
+        db.query(ApiServerEndpoint)
+        .filter(ApiServerEndpoint.api_server_id == server_id)
+        .order_by(ApiServerEndpoint.path, ApiServerEndpoint.method)
+        .all()
+    )
+    return [
+        {
+            "id": ep.id,
+            "api_server_id": ep.api_server_id,
+            "path": ep.path,
+            "method": ep.method,
+            "summary": ep.summary,
+            "fields": ep.fields,
+            "source_type": ep.source_type,
+            "created_at": ep.created_at.isoformat() if ep.created_at else None,
+            "field_count": len(ep.fields) if ep.fields else 0,
+        }
+        for ep in endpoints
+    ]
+
+
+@router.get("/{server_id}/endpoints/{endpoint_id}")
+async def get_endpoint(
+    server_id: int,
+    endpoint_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_manage_forms),
+):
+    """Get a single endpoint with its field definitions."""
+    ep = db.query(ApiServerEndpoint).filter(
+        ApiServerEndpoint.id == endpoint_id,
+        ApiServerEndpoint.api_server_id == server_id,
+    ).first()
+    if not ep:
+        raise HTTPException(404, "Endpoint not found")
+    return {
+        "id": ep.id,
+        "api_server_id": ep.api_server_id,
+        "path": ep.path,
+        "method": ep.method,
+        "summary": ep.summary,
+        "fields": ep.fields,
+        "source_type": ep.source_type,
+        "created_at": ep.created_at.isoformat() if ep.created_at else None,
+    }
+
+
+@router.delete("/{server_id}/endpoints/{endpoint_id}")
+async def delete_endpoint(
+    server_id: int,
+    endpoint_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_manage_forms),
+):
+    """Delete a parsed endpoint."""
+    ep = db.query(ApiServerEndpoint).filter(
+        ApiServerEndpoint.id == endpoint_id,
+        ApiServerEndpoint.api_server_id == server_id,
+    ).first()
+    if not ep:
+        raise HTTPException(404, "Endpoint not found")
+    db.delete(ep)
+    db.commit()
+    return {"message": "Endpoint deleted"}
 
 
 # ==================== User-facing credential routes ====================
