@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
 import AdminNav from '@/components/AdminNav';
 import { API_URL } from '@/lib/config';
-import { rolesApi } from '@/lib/api';
+import { rolesApi, permissionOverrideApi } from '@/lib/api';
 
 interface User {
   id: number;
@@ -15,9 +15,23 @@ interface User {
   email: string;
   full_name: string;
   display_name?: string;
-  role: 'admin' | 'user';
+  role: string;
   is_active: boolean;
   created_at: string;
+}
+
+interface RegistryModule {
+  key: string;
+  label: string;
+  actions: string[];
+}
+
+interface PermissionOverride {
+  id: number;
+  user_id: number;
+  module_key: string;
+  granted_actions: string[];
+  revoked_actions: string[];
 }
 
 export default function AdminUsers() {
@@ -34,9 +48,16 @@ export default function AdminUsers() {
     full_name: '',
     display_name: '',
     email: '',
-    role: 'user' as 'admin' | 'user',
+    role: 'user',
     is_active: true
   });
+
+  // Permission overrides state
+  const [overridesExpanded, setOverridesExpanded] = useState(false);
+  const [registry, setRegistry] = useState<RegistryModule[]>([]);
+  const [existingOverrides, setExistingOverrides] = useState<PermissionOverride[]>([]);
+  const [overrideEdits, setOverrideEdits] = useState<Record<string, { granted: string[]; revoked: string[] }>>({});
+  const [overridesSaving, setOverridesSaving] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -45,7 +66,7 @@ export default function AdminUsers() {
     password: '',
     full_name: '',
     display_name: '',
-    role: 'user' as 'admin' | 'user'
+    role: 'user'
   });
 
   useEffect(() => {
@@ -83,16 +104,41 @@ export default function AdminUsers() {
   };
 
   // Modal edit handlers
-  const handleEditClick = (user: User) => {
-    setEditingUserId(user.id);
+  const handleEditClick = async (u: User) => {
+    setEditingUserId(u.id);
     setEditFormData({
-      full_name: user.full_name,
-      display_name: user.display_name || '',
-      email: user.email,
-      role: user.role,
-      is_active: user.is_active
+      full_name: u.full_name,
+      display_name: u.display_name || '',
+      email: u.email,
+      role: u.role,
+      is_active: u.is_active
     });
+    setOverridesExpanded(false);
+    setOverrideEdits({});
     setEditModalOpen(true);
+
+    // Fetch registry and overrides in parallel
+    try {
+      const [registryRes, overridesRes] = await Promise.all([
+        rolesApi.registry(),
+        permissionOverrideApi.list(u.id)
+      ]);
+      setRegistry(registryRes.data);
+      const overrides: PermissionOverride[] = overridesRes.data;
+      setExistingOverrides(overrides);
+
+      // Initialize override edits from existing data
+      const edits: Record<string, { granted: string[]; revoked: string[] }> = {};
+      overrides.forEach((o: PermissionOverride) => {
+        edits[o.module_key] = {
+          granted: [...o.granted_actions],
+          revoked: [...o.revoked_actions]
+        };
+      });
+      setOverrideEdits(edits);
+    } catch (err) {
+      console.error('Failed to fetch permission data:', err);
+    }
   };
 
   const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -128,6 +174,12 @@ export default function AdminUsers() {
         const data = await response.json();
         throw new Error(data.detail || 'Failed to update user');
       }
+
+      // Save permission overrides if the section was opened
+      if (overridesExpanded) {
+        await saveOverrides();
+      }
+
       setEditModalOpen(false);
       setEditingUserId(null);
       await fetchUsers();
@@ -136,9 +188,70 @@ export default function AdminUsers() {
     }
   };
 
+  const saveOverrides = async () => {
+    if (!editingUserId) return;
+    setOverridesSaving(true);
+    try {
+      // Delete all existing overrides for this user
+      for (const o of existingOverrides) {
+        await permissionOverrideApi.delete(o.id);
+      }
+      // Create new overrides for modules that have content
+      for (const [moduleKey, actions] of Object.entries(overrideEdits)) {
+        if (actions.granted.length > 0 || actions.revoked.length > 0) {
+          await permissionOverrideApi.create({
+            user_id: editingUserId,
+            module_key: moduleKey,
+            granted_actions: actions.granted,
+            revoked_actions: actions.revoked
+          });
+        }
+      }
+      // Refresh overrides
+      const res = await permissionOverrideApi.list(editingUserId);
+      setExistingOverrides(res.data);
+    } catch (err) {
+      console.error('Failed to save overrides:', err);
+      setError('Failed to save permission overrides');
+    } finally {
+      setOverridesSaving(false);
+    }
+  };
+
   const handleEditModalClose = () => {
     setEditModalOpen(false);
     setEditingUserId(null);
+    setOverridesExpanded(false);
+    setOverrideEdits({});
+  };
+
+  // Get role actions for a module
+  const getRoleActionsForModule = (roleSlug: string, moduleKey: string): string[] => {
+    const role = roles.find((r: any) => r.slug === roleSlug);
+    if (!role || !role.permissions) return [];
+    return role.permissions[moduleKey] || [];
+  };
+
+  // Toggle a granted action for a module
+  const toggleGrantedAction = (moduleKey: string, action: string) => {
+    setOverrideEdits(prev => {
+      const current = prev[moduleKey] || { granted: [], revoked: [] };
+      const granted = current.granted.includes(action)
+        ? current.granted.filter(a => a !== action)
+        : [...current.granted, action];
+      return { ...prev, [moduleKey]: { ...current, granted } };
+    });
+  };
+
+  // Toggle a revoked action for a module
+  const toggleRevokedAction = (moduleKey: string, action: string) => {
+    setOverrideEdits(prev => {
+      const current = prev[moduleKey] || { granted: [], revoked: [] };
+      const revoked = current.revoked.includes(action)
+        ? current.revoked.filter(a => a !== action)
+        : [...current.revoked, action];
+      return { ...prev, [moduleKey]: { ...current, revoked } };
+    });
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -180,7 +293,13 @@ export default function AdminUsers() {
 
   const handleRoleChange = async (userId: number, newRole: string) => {
     try {
-      await rolesApi.changeUserRole(userId, newRole);
+      const token = getAuthToken();
+      if (!token) return;
+      await fetch(`${API_URL}/admin/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole })
+      });
       await fetchUsers();
     } catch (err) {
       console.error('Failed to change role:', err);
@@ -272,9 +391,10 @@ export default function AdminUsers() {
                 </div>
                 <div>
                   <label className="block text-gray-700 text-sm font-bold mb-2">Role</label>
-                  <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'user' })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500">
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
+                  <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500">
+                    {roles.map(r => (
+                      <option key={r.id} value={r.slug}>{r.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -342,38 +462,199 @@ export default function AdminUsers() {
         )}
         {editModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-            <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md relative">
-              <button onClick={handleEditModalClose} className="absolute top-4 right-4 text-gray-500 hover:text-gray-700" aria-label="Close">
-                <span className="text-2xl">&times;</span>
-              </button>
-              <h3 className="text-xl font-bold text-gray-900 mb-6">Edit User</h3>
-              <form onSubmit={handleEditSubmit}>
-                <div className="mb-4">
-                  <label className="block text-gray-700 text-sm font-bold mb-2">Full Name</label>
-                  <input type="text" name="full_name" value={editFormData.full_name} onChange={handleEditChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" required />
+            <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl relative max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between p-6 pb-0">
+                <h3 className="text-xl font-bold text-gray-900">Edit User</h3>
+                <button onClick={handleEditModalClose} className="text-gray-500 hover:text-gray-700" aria-label="Close">
+                  <span className="text-2xl">&times;</span>
+                </button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-6 pt-4">
+                <form onSubmit={handleEditSubmit} id="editUserForm">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-gray-700 text-sm font-bold mb-2">Full Name</label>
+                      <input type="text" name="full_name" value={editFormData.full_name} onChange={handleEditChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" required />
+                    </div>
+                    <div>
+                      <label className="block text-gray-700 text-sm font-bold mb-2">Chat Nickname <span className="font-normal text-gray-400">(shown to visitors)</span></label>
+                      <input type="text" name="display_name" value={editFormData.display_name} onChange={handleEditChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="e.g. Alex (optional — leave blank to use real name)" />
+                    </div>
+                    <div>
+                      <label className="block text-gray-700 text-sm font-bold mb-2">Email</label>
+                      <input type="email" name="email" value={editFormData.email} onChange={handleEditChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" required />
+                    </div>
+                    <div>
+                      <label className="block text-gray-700 text-sm font-bold mb-2">Role</label>
+                      <select name="role" value={editFormData.role} onChange={handleEditChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500">
+                        {roles.map(r => (
+                          <option key={r.id} value={r.slug}>{r.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <label className="block text-gray-700 text-sm font-bold mb-2">Active</label>
+                    <input type="checkbox" name="is_active" checked={editFormData.is_active} onChange={handleEditChange} className="mr-2" />
+                    <span>{editFormData.is_active ? 'Active' : 'Inactive'}</span>
+                  </div>
+                </form>
+
+                {/* Permission Overrides Section */}
+                <div className="mt-6 border-t pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setOverridesExpanded(!overridesExpanded)}
+                    className="flex items-center gap-2 text-sm font-bold text-gray-700 hover:text-gray-900 w-full text-left"
+                  >
+                    <svg
+                      className={`w-4 h-4 transition-transform ${overridesExpanded ? 'rotate-90' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    Permission Overrides
+                    {Object.values(overrideEdits).some(v => v.granted.length > 0 || v.revoked.length > 0) && (
+                      <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                        {Object.values(overrideEdits).filter(v => v.granted.length > 0 || v.revoked.length > 0).length} module(s)
+                      </span>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-1 ml-6">Grant extra permissions or revoke role permissions for this specific user.</p>
+
+                  {overridesExpanded && (
+                    <div className="mt-4 space-y-3">
+                      {registry.length === 0 && (
+                        <p className="text-sm text-gray-400 italic">No permission modules registered.</p>
+                      )}
+                      {registry.map((mod) => {
+                        const roleActions = getRoleActionsForModule(editFormData.role, mod.key);
+                        const currentOverrides = overrideEdits[mod.key] || { granted: [], revoked: [] };
+                        const nonRoleActions = mod.actions.filter(a => !roleActions.includes(a));
+
+                        return (
+                          <div key={mod.key} className="border rounded-lg p-3">
+                            <div className="flex flex-col lg:flex-row lg:items-start gap-3">
+                              {/* Module info */}
+                              <div className="lg:w-1/4 min-w-0">
+                                <p className="text-sm font-semibold text-gray-800">{mod.label}</p>
+                                <p className="text-xs text-gray-400 mt-0.5">Role grants:</p>
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {roleActions.length > 0 ? roleActions.map(action => (
+                                    <span key={action} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                                      {action}
+                                    </span>
+                                  )) : (
+                                    <span className="text-xs text-gray-400 italic">none</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Grant controls - actions NOT in role */}
+                              <div className="lg:w-[37.5%] min-w-0">
+                                <p className="text-xs font-medium text-green-700 mb-1">Grant extra</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {nonRoleActions.length > 0 ? nonRoleActions.map(action => (
+                                    <label
+                                      key={action}
+                                      className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded cursor-pointer border transition ${
+                                        currentOverrides.granted.includes(action)
+                                          ? 'bg-green-50 border-green-400 text-green-800'
+                                          : 'bg-white border-gray-200 text-gray-500 hover:border-green-300'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        className="sr-only"
+                                        checked={currentOverrides.granted.includes(action)}
+                                        onChange={() => toggleGrantedAction(mod.key, action)}
+                                      />
+                                      <span className={`w-3 h-3 rounded border flex items-center justify-center ${
+                                        currentOverrides.granted.includes(action)
+                                          ? 'bg-green-500 border-green-500'
+                                          : 'border-gray-300'
+                                      }`}>
+                                        {currentOverrides.granted.includes(action) && (
+                                          <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 12 12">
+                                            <path d="M10.28 2.28L3.989 8.575 1.695 6.28A1 1 0 00.28 7.695l3 3a1 1 0 001.414 0l7-7A1 1 0 0010.28 2.28z"/>
+                                          </svg>
+                                        )}
+                                      </span>
+                                      {action}
+                                    </label>
+                                  )) : (
+                                    <span className="text-xs text-gray-400 italic">Role already has all actions</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Revoke controls - actions IN role */}
+                              <div className="lg:w-[37.5%] min-w-0">
+                                <p className="text-xs font-medium text-red-700 mb-1">Revoke from role</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {roleActions.length > 0 ? roleActions.map(action => (
+                                    <label
+                                      key={action}
+                                      className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded cursor-pointer border transition ${
+                                        currentOverrides.revoked.includes(action)
+                                          ? 'bg-red-50 border-red-400 text-red-800'
+                                          : 'bg-white border-gray-200 text-gray-500 hover:border-red-300'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        className="sr-only"
+                                        checked={currentOverrides.revoked.includes(action)}
+                                        onChange={() => toggleRevokedAction(mod.key, action)}
+                                      />
+                                      <span className={`w-3 h-3 rounded border flex items-center justify-center ${
+                                        currentOverrides.revoked.includes(action)
+                                          ? 'bg-red-500 border-red-500'
+                                          : 'border-gray-300'
+                                      }`}>
+                                        {currentOverrides.revoked.includes(action) && (
+                                          <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 12 12">
+                                            <path d="M10.28 2.28L3.989 8.575 1.695 6.28A1 1 0 00.28 7.695l3 3a1 1 0 001.414 0l7-7A1 1 0 0010.28 2.28z"/>
+                                          </svg>
+                                        )}
+                                      </span>
+                                      {action}
+                                    </label>
+                                  )) : (
+                                    <span className="text-xs text-gray-400 italic">No role actions to revoke</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <div className="mb-4">
-                  <label className="block text-gray-700 text-sm font-bold mb-2">Chat Nickname <span className="font-normal text-gray-400">(shown to visitors)</span></label>
-                  <input type="text" name="display_name" value={editFormData.display_name} onChange={handleEditChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="e.g. Alex (optional — leave blank to use real name)" />
-                </div>
-                <div className="mb-4">
-                  <label className="block text-gray-700 text-sm font-bold mb-2">Email</label>
-                  <input type="email" name="email" value={editFormData.email} onChange={handleEditChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" required />
-                </div>
-                <div className="mb-4">
-                  <label className="block text-gray-700 text-sm font-bold mb-2">Role</label>
-                  <select name="role" value={editFormData.role} onChange={handleEditChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500">
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-                <div className="mb-4">
-                  <label className="block text-gray-700 text-sm font-bold mb-2">Active</label>
-                  <input type="checkbox" name="is_active" checked={editFormData.is_active} onChange={handleEditChange} className="mr-2" />
-                  <span>{editFormData.is_active ? 'Active' : 'Inactive'}</span>
-                </div>
-                <button type="submit" className="text-white font-semibold py-2 px-6 rounded-lg transition mt-4" style={{ backgroundColor: 'var(--button-primary)' }}>Save Changes</button>
-              </form>
+              </div>
+
+              {/* Footer with save button */}
+              <div className="p-6 pt-4 border-t bg-gray-50 rounded-b-lg flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleEditModalClose}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  form="editUserForm"
+                  disabled={overridesSaving}
+                  className="text-white font-semibold py-2 px-6 rounded-lg transition disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--button-primary)' }}
+                >
+                  {overridesSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -381,4 +662,3 @@ export default function AdminUsers() {
     </div>
   );
 }
-
