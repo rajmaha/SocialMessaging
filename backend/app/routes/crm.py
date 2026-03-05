@@ -125,6 +125,47 @@ def list_leads(
     return query.order_by(desc(Lead.created_at)).offset(skip).limit(limit).all()
 
 
+@router.post("/leads/bulk")
+def bulk_lead_action(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Perform bulk actions on multiple leads."""
+    lead_ids = payload.get("lead_ids", [])
+    action = payload.get("action")
+    value = payload.get("value")
+
+    if not lead_ids or not action:
+        raise HTTPException(status_code=400, detail="lead_ids and action required")
+
+    results = {"success": [], "failed": []}
+    leads = db.query(Lead).filter(Lead.id.in_(lead_ids)).all()
+
+    for lead in leads:
+        try:
+            if action == "assign":
+                lead.assigned_to = int(value) if value else None
+            elif action == "status":
+                lead.status = LeadStatus(value)
+            elif action == "add_tag":
+                current_tags = lead.tags or []
+                if value not in current_tags:
+                    lead.tags = current_tags + [value]
+            elif action == "remove_tag":
+                current_tags = lead.tags or []
+                lead.tags = [t for t in current_tags if t != value]
+            else:
+                results["failed"].append({"id": lead.id, "error": f"Unknown action: {action}"})
+                continue
+            results["success"].append(lead.id)
+        except Exception as e:
+            results["failed"].append({"id": lead.id, "error": str(e)})
+
+    db.commit()
+    return results
+
+
 @router.get("/leads/{lead_id}", response_model=LeadDetailResponse)
 def get_lead_detail(
     lead_id: int,
