@@ -925,3 +925,182 @@ def get_reports(
         "member_efficiency": member_efficiency,
         "project_efficiency": project_efficiency,
     }
+
+
+# ── Team Workload ─────────────────────────────────────────────────────
+
+@router.get("/team-workload")
+def get_team_workload(
+    project_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_pm_or_admin(db, current_user)
+    today = date.today()
+
+    if project_id:
+        _require_member(db, project_id, current_user)
+        pids = [project_id]
+    else:
+        pids = _pm_project_ids(db, current_user)
+
+    if not pids:
+        return {"members": [], "projects": []}
+
+    members = db.query(PMSProjectMember).filter(PMSProjectMember.project_id.in_(pids)).all()
+    tasks = db.query(PMSTask).filter(PMSTask.project_id.in_(pids), PMSTask.stage != "completed").all()
+
+    from collections import defaultdict
+    user_data = defaultdict(lambda: {
+        "user_id": 0, "name": "", "role": "", "active_tasks": 0,
+        "estimated_hours": 0, "actual_hours": 0, "overdue_count": 0,
+        "stage_breakdown": defaultdict(int), "efficiencies": [],
+    })
+
+    for t in tasks:
+        if not t.assignee_id:
+            continue
+        uid = t.assignee_id
+        user_data[uid]["user_id"] = uid
+        user_data[uid]["name"] = t.assignee.full_name if t.assignee else f"User {uid}"
+        user_data[uid]["active_tasks"] += 1
+        user_data[uid]["estimated_hours"] += t.estimated_hours or 0
+        user_data[uid]["actual_hours"] += t.actual_hours or 0
+        user_data[uid]["stage_breakdown"][t.stage] += 1
+        if t.due_date and t.due_date < today:
+            user_data[uid]["overdue_count"] += 1
+        eff = _task_efficiency(t, today)
+        if eff is not None:
+            user_data[uid]["efficiencies"].append(eff)
+
+    for m in members:
+        uid = m.user_id
+        if uid in user_data:
+            user_data[uid]["role"] = m.role
+        elif m.user:
+            user_data[uid] = {
+                "user_id": uid, "name": m.user.full_name if m.user else f"User {uid}",
+                "role": m.role, "active_tasks": 0, "estimated_hours": 0,
+                "actual_hours": 0, "overdue_count": 0,
+                "stage_breakdown": {}, "efficiencies": [],
+            }
+
+    result = []
+    for uid, d in user_data.items():
+        effs = d.pop("efficiencies")
+        d["efficiency"] = round(sum(effs) / len(effs), 1) if effs else None
+        d["estimated_hours"] = round(d["estimated_hours"], 1)
+        d["actual_hours"] = round(d["actual_hours"], 1)
+        d["stage_breakdown"] = dict(d["stage_breakdown"])
+        result.append(d)
+
+    projects = db.query(PMSProject).filter(PMSProject.id.in_(pids)).all()
+    project_options = [{"id": p.id, "name": p.name, "color": p.color} for p in projects]
+
+    return {"members": result, "projects": project_options}
+
+
+# ── Approval Queue ────────────────────────────────────────────────────
+
+@router.get("/approval-queue")
+def get_approval_queue(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_pm_or_admin(db, current_user)
+    pids = _pm_project_ids(db, current_user)
+    if not pids:
+        return {"pm_review": [], "client_review": [], "counts": {"pm_review": 0, "client_review": 0}}
+
+    pm_tasks = db.query(PMSTask).filter(
+        PMSTask.project_id.in_(pids), PMSTask.stage == "pm_review"
+    ).order_by(PMSTask.due_date.asc().nullslast()).all()
+
+    client_tasks = db.query(PMSTask).filter(
+        PMSTask.project_id.in_(pids), PMSTask.stage == "client_review"
+    ).order_by(PMSTask.due_date.asc().nullslast()).all()
+
+    today = date.today()
+    now = datetime.utcnow()
+
+    def _enrich_approval_task(t):
+        last_transition = db.query(PMSWorkflowHistory).filter_by(
+            task_id=t.id, to_stage=t.stage
+        ).order_by(PMSWorkflowHistory.created_at.desc()).first()
+        days_in_stage = round((now - last_transition.created_at).total_seconds() / 86400, 1) if last_transition else None
+        project = db.query(PMSProject).filter_by(id=t.project_id).first()
+        return {
+            "id": t.id, "title": t.title, "priority": t.priority,
+            "stage": t.stage, "due_date": t.due_date,
+            "assignee_name": t.assignee.full_name if t.assignee else None,
+            "assignee_id": t.assignee_id,
+            "project_id": t.project_id,
+            "project_name": project.name if project else None,
+            "project_color": project.color if project else None,
+            "is_overdue": bool(t.due_date and t.due_date < today),
+            "days_in_stage": days_in_stage,
+        }
+
+    return {
+        "pm_review": [_enrich_approval_task(t) for t in pm_tasks],
+        "client_review": [_enrich_approval_task(t) for t in client_tasks],
+        "counts": {"pm_review": len(pm_tasks), "client_review": len(client_tasks)},
+    }
+
+
+# ── Escalation Queue ─────────────────────────────────────────────────
+
+@router.get("/escalations")
+def get_escalations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(403, "Admin only")
+
+    today = date.today()
+    now = datetime.utcnow()
+    tasks = db.query(PMSTask).filter(PMSTask.stage.notin_(["approved", "completed"])).all()
+
+    escalated = []
+    for t in tasks:
+        triggers = []
+        if t.due_date and (today - t.due_date).days >= 3:
+            triggers.append({"type": "overdue", "detail": f"{(today - t.due_date).days}d overdue"})
+        if t.estimated_hours and t.estimated_hours > 0 and t.actual_hours > t.estimated_hours * 1.5:
+            pct = round(t.actual_hours / t.estimated_hours * 100)
+            triggers.append({"type": "over_hours", "detail": f"{pct}% of estimated hours"})
+        if t.stage in ("development", "qa"):
+            last_change = db.query(PMSWorkflowHistory).filter_by(task_id=t.id).order_by(
+                PMSWorkflowHistory.created_at.desc()
+            ).first()
+            stuck_since = last_change.created_at if last_change else t.created_at
+            if stuck_since and (now - stuck_since).days >= 7:
+                triggers.append({"type": "stuck", "detail": f"stuck {(now - stuck_since).days}d"})
+
+        if not triggers:
+            continue
+
+        project = db.query(PMSProject).filter_by(id=t.project_id).first()
+        escalated.append({
+            "id": t.id, "title": t.title, "priority": t.priority,
+            "stage": t.stage, "due_date": t.due_date,
+            "assignee_id": t.assignee_id,
+            "assignee_name": t.assignee.full_name if t.assignee else None,
+            "project_id": t.project_id,
+            "project_name": project.name if project else None,
+            "project_color": project.color if project else None,
+            "triggers": triggers,
+            "severity": "critical" if len(triggers) >= 3 else "high" if len(triggers) == 2 else "medium",
+            "estimated_hours": t.estimated_hours,
+            "actual_hours": t.actual_hours,
+        })
+
+    severity_order = {"critical": 0, "high": 1, "medium": 2}
+    escalated.sort(key=lambda x: severity_order.get(x["severity"], 3))
+
+    counts = {"critical": 0, "high": 0, "medium": 0}
+    for e in escalated:
+        counts[e["severity"]] += 1
+
+    return {"escalations": escalated, "counts": counts}
