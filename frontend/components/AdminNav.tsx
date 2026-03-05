@@ -6,7 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { useBranding } from '@/lib/branding-context'
 import { hasModuleAccess, hasAdminFeature, hasPageAccess } from '@/lib/permissions'
 import { useEvents } from '@/lib/events-context'
-import { menuApi } from '@/lib/api'
+import { menuApi, pmsApi } from '@/lib/api'
 
 const sidebarGroups = [
     {
@@ -108,6 +108,11 @@ const sidebarGroups = [
         items: [
             { href: '/admin/pms', label: 'Dashboard', icon: '📊', pageKey: 'pms' },
             { href: '/admin/pms/my-tasks', label: 'My Tasks', icon: '✅', pageKey: 'pms' },
+            { href: '/admin/pms/approval-queue', label: 'Approval Queue', icon: '👁️', pageKey: 'pms', pmOnly: true },
+            { href: '/admin/pms/team-workload', label: 'Team Workload', icon: '👥', pageKey: 'pms', pmOnly: true },
+            { href: '/admin/pms/capacity', label: 'Capacity Planning', icon: '📐', pageKey: 'pms', pmOnly: true },
+            { href: '/admin/pms/escalations', label: 'Escalations', icon: '🚨', pageKey: 'pms', adminOnly: true },
+            { href: '/admin/pms/audit-trail', label: 'Audit Trail', icon: '📜', pageKey: 'pms', adminOnly: true },
             { href: '/admin/pms/reports', label: 'Reports', icon: '📈', pageKey: 'pms' },
             { href: '/admin/pms/labels', label: 'Labels', icon: '🏷️', pageKey: 'pms' },
         ],
@@ -148,6 +153,7 @@ function AdminNavInner() {
     const { subscribe } = useEvents()
     const [crmBadge, setCrmBadge] = useState(0)
     const [dynamicMenus, setDynamicMenus] = useState<any[]>([])
+    const [isPm, setIsPm] = useState(false)
 
     useEffect(() => {
         setIsMounted(true)
@@ -158,6 +164,12 @@ function AdminNavInner() {
             } catch (e) {
                 console.error('Failed to parse user from localStorage', e)
             }
+        }
+        // Check PM status for PMS nav
+        if (hasPageAccess('pms')) {
+            pmsApi.getDashboard(7)
+                .then((r: any) => setIsPm(r.data?.is_pm || false))
+                .catch(() => {})
         }
     }, [])
 
@@ -247,6 +259,8 @@ function AdminNavInner() {
                         const visibleItems = group.items.filter((item: any) => {
                             // Admins see everything
                             if (userRole === 'admin') return true;
+                            if (item.adminOnly) return false;
+                            if (item.pmOnly) return isPm;
                             // New RBAC: check page key
                             if (item.pageKey) {
                                 return hasPageAccess(item.pageKey);
