@@ -10,7 +10,7 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_admin_feature
 from app.models.user import User
 from app.models.form import Form, FormField, FormSubmission
-from app.models.api_server import ApiServer, UserApiCredential
+from app.models.api_server import ApiServer, ApiServerEndpoint, UserApiCredential
 from app.schemas.form import (
     FormCreate, FormUpdate, FormResponse,
     FormFieldCreate, FormFieldUpdate, FormFieldResponse, FormFieldReorder,
@@ -206,6 +206,104 @@ def reorder_fields(
         ).update({"display_order": idx})
     db.commit()
     return {"message": "Fields reordered"}
+
+
+# Field type mapping from spec types to form field types
+SPEC_TYPE_MAP = {
+    ("string", None): "text",
+    ("string", "email"): "email",
+    ("string", "uri"): "url",
+    ("string", "url"): "url",
+    ("string", "date"): "date",
+    ("string", "date-time"): "date",
+    ("string", "time"): "time",
+    ("integer", None): "number",
+    ("number", None): "number",
+    ("boolean", None): "yes_no",
+}
+
+
+@admin_router.post("/{form_id}/fields/auto-generate")
+async def auto_generate_fields(
+    form_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_feature("feature_manage_forms")),
+):
+    """Auto-generate form fields from a parsed API endpoint's field definitions."""
+    form = db.query(Form).filter(Form.id == form_id).first()
+    if not form:
+        raise HTTPException(404, "Form not found")
+
+    endpoint_id = data.get("endpoint_id")
+    if not endpoint_id:
+        raise HTTPException(400, "endpoint_id is required")
+
+    endpoint = db.query(ApiServerEndpoint).filter(
+        ApiServerEndpoint.id == endpoint_id,
+    ).first()
+    if not endpoint:
+        raise HTTPException(404, "Endpoint not found")
+
+    if not endpoint.fields:
+        raise HTTPException(400, "Endpoint has no fields to generate")
+
+    # Get existing field keys for this form (for merge)
+    existing_fields = db.query(FormField).filter(FormField.form_id == form_id).all()
+    existing_keys = {f.field_key: f for f in existing_fields}
+    max_order = max((f.display_order for f in existing_fields), default=-1)
+
+    created = []
+    skipped = []
+
+    for spec_field in endpoint.fields:
+        key = spec_field.get("key", "")
+        if not key:
+            continue
+
+        if key in existing_keys:
+            skipped.append(key)
+            continue
+
+        spec_type = spec_field.get("type", "string")
+        spec_format = spec_field.get("format")
+        is_required = spec_field.get("required", False)
+
+        if spec_field.get("enum"):
+            field_type = "dropdown"
+        else:
+            field_type = SPEC_TYPE_MAP.get((spec_type, spec_format))
+            if not field_type:
+                field_type = SPEC_TYPE_MAP.get((spec_type, None), "text")
+
+        options = None
+        if spec_field.get("enum"):
+            options = [{"key": v, "value": v} for v in spec_field["enum"]]
+
+        max_order += 1
+        new_field = FormField(
+            form_id=form_id,
+            field_label=spec_field.get("label", key),
+            field_key=key,
+            field_type=field_type,
+            placeholder=spec_field.get("description", ""),
+            is_required=is_required,
+            display_order=max_order,
+            default_value=str(spec_field["default"]) if spec_field.get("default") is not None else None,
+            options=options,
+            is_auto_generated=True,
+            is_visible=is_required,
+        )
+        db.add(new_field)
+        created.append(key)
+
+    db.commit()
+
+    return {
+        "message": f"Generated {len(created)} fields, skipped {len(skipped)} existing",
+        "created_fields": created,
+        "skipped_fields": skipped,
+    }
 
 
 # --- Submissions ---
