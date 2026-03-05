@@ -76,7 +76,7 @@ export default function ProjectDetailPage() {
         )}
         {activeTab === 'Board' && (
           <div style={{ height: 'calc(100vh - 14rem)' }}>
-            <BoardView projectId={projectId} tasks={tasks} onReload={reload} />
+            <BoardView projectId={projectId} tasks={tasks} members={project?.members || []} milestones={milestones} onReload={reload} />
           </div>
         )}
         {activeTab === 'List' && <ListView projectId={projectId} tasks={tasks} milestones={milestones} members={project?.members || []} onReload={reload} />}

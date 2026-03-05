@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { pmsApi } from '@/lib/api';
+import FilterBar, { FilterState, defaultFilters } from './FilterBar';
 
 const STAGES = ['development', 'qa', 'pm_review', 'client_review', 'approved', 'completed'];
 const STAGE_LABELS: Record<string, string> = {
@@ -19,8 +20,32 @@ const PRIORITY_DOT: Record<string, string> = {
   low: 'bg-gray-300', medium: 'bg-yellow-400', high: 'bg-orange-400', urgent: 'bg-red-500',
 };
 
-export default function BoardView({ projectId: _projectId, tasks, onReload }: { projectId: number; tasks: any[]; onReload: () => void }) {
+export default function BoardView({ projectId: _projectId, tasks, members = [], milestones = [], onReload }: { projectId: number; tasks: any[]; members?: any[]; milestones?: any[]; onReload: () => void }) {
   const [dragTaskId, setDragTaskId] = useState<number | null>(null);
+  const [filters, setFilters] = useState<FilterState>(defaultFilters);
+  const [allLabels, setAllLabels] = useState<any[]>([]);
+
+  useEffect(() => { pmsApi.listLabels().then(r => setAllLabels(r.data)).catch(() => {}); }, []);
+
+  const filteredTasks = tasks.filter(t => {
+    if (t.parent_task_id) return false;
+    if (filters.assignees.length > 0 && !filters.assignees.includes(t.assignee_id)) return false;
+    if (filters.priorities.length > 0 && !filters.priorities.includes(t.priority)) return false;
+    if (filters.milestone_id && t.milestone_id !== filters.milestone_id) return false;
+    if (filters.due_from && t.due_date && t.due_date < filters.due_from) return false;
+    if (filters.due_to && t.due_date && t.due_date > filters.due_to) return false;
+    if (filters.labels.length > 0) {
+      const taskLabelIds = (t.labels || []).map((l: any) => l.label_definition_id || l.id);
+      if (!filters.labels.some(id => taskLabelIds.includes(id))) return false;
+    }
+    if (filters.created_from && t.created_at) {
+      if (t.created_at.substring(0, 10) < filters.created_from) return false;
+    }
+    if (filters.created_to && t.created_at) {
+      if (t.created_at.substring(0, 10) > filters.created_to) return false;
+    }
+    return true;
+  });
 
   const onDrop = async (stage: string) => {
     if (!dragTaskId) return;
@@ -36,9 +61,20 @@ export default function BoardView({ projectId: _projectId, tasks, onReload }: { 
   };
 
   return (
-    <div className="flex gap-4 p-4 h-full overflow-x-auto overflow-y-hidden">
+    <div className="flex flex-col h-full">
+      <div className="px-4 pt-4 flex-none">
+        <FilterBar
+          members={members}
+          milestones={milestones}
+          labels={allLabels}
+          filters={filters}
+          onFilterChange={setFilters}
+          hideStageFilter={true}
+        />
+      </div>
+      <div className="flex gap-4 px-4 pb-4 flex-1 overflow-x-auto overflow-y-hidden">
       {STAGES.map(stage => {
-        const stageTasks = tasks.filter(t => t.stage === stage);
+        const stageTasks = filteredTasks.filter(t => t.stage === stage);
         return (
           <div key={stage}
             className={`flex-none w-60 rounded-xl border ${STAGE_STYLES[stage]} flex flex-col min-h-0`}
@@ -74,6 +110,7 @@ export default function BoardView({ projectId: _projectId, tasks, onReload }: { 
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
