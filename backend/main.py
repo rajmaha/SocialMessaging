@@ -1188,6 +1188,95 @@ def _run_inline_migrations():
             UPDATE users SET role = 'support' WHERE role = 'user'
         """))
 
+        # ── Migrate role.pages → role.permissions ──
+        # For each role where permissions is empty but pages has values,
+        # convert pages array to permissions dict with full actions
+        from app.permissions_registry import MODULE_REGISTRY
+        import json
+
+        PAGE_TO_MODULES = {
+            "messaging": ["email", "messaging", "callcenter", "livechat"],
+            "callcenter": ["callcenter"],
+            "crm": ["crm"],
+            "tickets": ["tickets"],
+            "pms": ["pms"],
+            "campaigns": ["campaigns"],
+            "reports": ["reports"],
+            "kb": ["kb"],
+            "teams": ["teams"],
+        }
+
+        # Use raw SQL to read roles that need migration
+        result = conn.execute(text(
+            "SELECT id, pages, permissions FROM roles WHERE pages IS NOT NULL AND (permissions IS NULL OR permissions = '{}'::jsonb)"
+        ))
+        for row in result:
+            role_id = row[0]
+            pages = row[1] if isinstance(row[1], list) else []
+            new_perms = {}
+            for page_key in pages:
+                module_keys = PAGE_TO_MODULES.get(page_key, [page_key])
+                for mk in module_keys:
+                    if mk in MODULE_REGISTRY:
+                        new_perms[mk] = MODULE_REGISTRY[mk]["actions"][:]
+            if new_perms:
+                conn.execute(text(
+                    "UPDATE roles SET permissions = CAST(:perms AS jsonb) WHERE id = :rid"
+                ), {"perms": json.dumps(new_perms), "rid": role_id})
+
+        # ── Migrate user_permissions → user_permission_overrides (one-time) ──
+        override_count = conn.execute(text("SELECT COUNT(*) FROM user_permission_overrides")).scalar()
+        if override_count == 0:
+            old_perms_result = conn.execute(text(
+                "SELECT user_id, permission_key, granted_by FROM user_permissions"
+            ))
+
+            PERM_KEY_TO_MODULE = {
+                "module_email": "email",
+                "module_workspace": "callcenter",
+                "module_reports": "reports",
+                "module_reminders": "reminders",
+                "module_notifications": "notifications",
+                "module_organizations": "organizations",
+                "module_contacts": "contacts",
+                "module_subscriptions": "subscriptions",
+                "module_calls": "calls",
+                "channel_whatsapp": "messaging",
+                "channel_viber": "messaging",
+                "channel_linkedin": "messaging",
+                "channel_messenger": "messaging",
+                "channel_webchat": "livechat",
+                "module_individuals": "individuals",
+            }
+
+            override_map = {}  # (user_id, module_key) -> {"actions": set, "granted_by": int}
+            for row in old_perms_result:
+                user_id, perm_key, granted_by = row[0], row[1], row[2]
+                if perm_key in PERM_KEY_TO_MODULE:
+                    mod_key = PERM_KEY_TO_MODULE[perm_key]
+                elif perm_key.startswith("feature_"):
+                    mod_key = perm_key.replace("feature_", "")
+                else:
+                    continue
+
+                uid_mod = (user_id, mod_key)
+                if uid_mod not in override_map:
+                    override_map[uid_mod] = {"actions": set(), "granted_by": granted_by}
+                if mod_key in MODULE_REGISTRY:
+                    override_map[uid_mod]["actions"].update(MODULE_REGISTRY[mod_key]["actions"])
+
+            for (user_id, mod_key), info in override_map.items():
+                conn.execute(text("""
+                    INSERT INTO user_permission_overrides (user_id, module_key, granted_actions, revoked_actions, granted_by, created_at)
+                    VALUES (:uid, :mk, CAST(:ga AS jsonb), '[]'::jsonb, :gb, NOW())
+                    ON CONFLICT ON CONSTRAINT uq_user_module_override DO NOTHING
+                """), {
+                    "uid": user_id,
+                    "mk": mod_key,
+                    "ga": json.dumps(sorted(info["actions"])),
+                    "gb": info["granted_by"],
+                })
+
         conn.commit()
 
 try:
