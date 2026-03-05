@@ -729,6 +729,123 @@ def get_dashboard(stale_days: int = 7, db: Session = Depends(get_db), current_us
     my_efficiencies = [e for e in my_efficiencies if e is not None]
     my_avg_efficiency = round(sum(my_efficiencies) / len(my_efficiencies), 1) if my_efficiencies else None
 
+    # PM/Admin enhancements
+    is_pm = _is_pm(db, current_user)
+    is_admin_user = _is_admin(current_user)
+
+    approval_counts = {"pm_review": 0, "client_review": 0}
+    if is_pm:
+        pm_pids = _pm_project_ids(db, current_user)
+        if pm_pids:
+            approval_counts["pm_review"] = db.query(PMSTask).filter(
+                PMSTask.project_id.in_(pm_pids), PMSTask.stage == "pm_review"
+            ).count()
+            approval_counts["client_review"] = db.query(PMSTask).filter(
+                PMSTask.project_id.in_(pm_pids), PMSTask.stage == "client_review"
+            ).count()
+
+    escalation_count = 0
+    if is_admin_user:
+        esc_tasks = db.query(PMSTask).filter(PMSTask.stage.notin_(["approved", "completed"])).all()
+        for t in esc_tasks:
+            has_trigger = False
+            if t.due_date and (today - t.due_date).days >= 3:
+                has_trigger = True
+            if t.estimated_hours and t.estimated_hours > 0 and t.actual_hours > t.estimated_hours * 1.5:
+                has_trigger = True
+            if t.stage in ("development", "qa"):
+                last_wh = db.query(PMSWorkflowHistory).filter_by(task_id=t.id).order_by(
+                    PMSWorkflowHistory.created_at.desc()).first()
+                stuck_since = last_wh.created_at if last_wh else t.created_at
+                if stuck_since and (datetime.utcnow() - stuck_since).days >= 7:
+                    has_trigger = True
+            if has_trigger:
+                escalation_count += 1
+
+    health_score = None
+    if is_admin_user and total_tasks > 0:
+        completion_rate = completed_tasks / total_tasks * 100
+        on_time_completed = sum(1 for t in all_tasks if t.stage == "completed" and t.due_date and t.updated_at and t.updated_at.date() <= t.due_date)
+        on_time_rate = on_time_completed / completed_tasks * 100 if completed_tasks else 0
+        all_eff = [_task_efficiency(t, today) for t in all_tasks if t.stage != "completed"]
+        all_eff = [e for e in all_eff if e is not None]
+        avg_eff = sum(all_eff) / len(all_eff) if all_eff else 50
+        health_score = round(completion_rate * 0.4 + on_time_rate * 0.3 + avg_eff * 0.3, 1)
+
+    week_start = today - timedelta(days=today.weekday())
+    weekly_digest = None
+    if is_pm:
+        week_completed = sum(1 for t in all_tasks if t.stage == "completed" and t.updated_at and t.updated_at.date() >= week_start)
+        week_new_overdue = sum(1 for t in all_tasks if t.due_date and week_start <= t.due_date < today and t.stage not in ("approved", "completed"))
+        week_created = sum(1 for t in all_tasks if t.created_at and t.created_at.date() >= week_start)
+        week_transitions = db.query(PMSWorkflowHistory).filter(
+            PMSWorkflowHistory.created_at >= datetime.combine(week_start, datetime.min.time())
+        ).count()
+        weekly_digest = {
+            "completed": week_completed,
+            "new_overdue": week_new_overdue,
+            "created": week_created,
+            "transitions": week_transitions,
+        }
+
+    upcoming_deadlines = []
+    if is_pm:
+        deadline_cutoff = today + timedelta(days=30)
+        pm_pids_list = _pm_project_ids(db, current_user)
+        if pm_pids_list:
+            upcoming_ms = db.query(PMSMilestone).filter(
+                PMSMilestone.project_id.in_(pm_pids_list),
+                PMSMilestone.due_date >= today,
+                PMSMilestone.due_date <= deadline_cutoff,
+                PMSMilestone.status != "reached",
+            ).order_by(PMSMilestone.due_date).all()
+            for ms in upcoming_ms:
+                proj = next((p for p in projects if p.id == ms.project_id), None)
+                upcoming_deadlines.append({
+                    "type": "milestone", "title": ms.name, "due_date": ms.due_date,
+                    "project_name": proj.name if proj else None, "project_color": proj.color if proj else None,
+                })
+            upcoming_tasks_list = db.query(PMSTask).filter(
+                PMSTask.project_id.in_(pm_pids_list),
+                PMSTask.due_date >= today,
+                PMSTask.due_date <= deadline_cutoff,
+                PMSTask.stage.notin_(["approved", "completed"]),
+            ).order_by(PMSTask.due_date).limit(20).all()
+            for t in upcoming_tasks_list:
+                proj = next((p for p in projects if p.id == t.project_id), None)
+                upcoming_deadlines.append({
+                    "type": "task", "title": t.title, "due_date": t.due_date,
+                    "project_name": proj.name if proj else None, "project_color": proj.color if proj else None,
+                    "priority": t.priority,
+                })
+            upcoming_deadlines.sort(key=lambda x: x["due_date"])
+
+    cross_project_summary = []
+    if is_admin_user:
+        for p in projects:
+            p_tasks = [t for t in all_tasks if t.project_id == p.id]
+            p_total = len(p_tasks)
+            p_completed = sum(1 for t in p_tasks if t.stage == "completed")
+            p_overdue = sum(1 for t in p_tasks if t.due_date and t.due_date < today and t.stage not in ("approved", "completed"))
+            p_efficiencies = [_task_efficiency(t, today) for t in p_tasks if t.stage != "completed"]
+            p_efficiencies = [e for e in p_efficiencies if e is not None]
+            p_eff = round(sum(p_efficiencies) / len(p_efficiencies), 1) if p_efficiencies else None
+            pm_member = next((m for m in p.members if m.role == "pm"), None)
+            pm_name = pm_member.user.full_name if pm_member and pm_member.user else None
+            p_on_time = sum(1 for t in p_tasks if t.stage == "completed" and t.due_date and t.updated_at and t.updated_at.date() <= t.due_date)
+            p_on_time_rate = round(p_on_time / p_completed * 100, 1) if p_completed else 0
+            p_completion_rate = round(p_completed / p_total * 100, 1) if p_total else 0
+            p_health = round(p_completion_rate * 0.4 + p_on_time_rate * 0.3 + (p_eff or 50) * 0.3, 1)
+            cross_project_summary.append({
+                "id": p.id, "name": p.name, "color": p.color, "status": p.status,
+                "pm_name": pm_name,
+                "total_tasks": p_total, "completed_tasks": p_completed,
+                "completion_pct": p_completion_rate,
+                "overdue_count": p_overdue,
+                "efficiency": p_eff,
+                "health_score": p_health,
+            })
+
     return {
         "metrics": {
             "total_tasks": total_tasks,
@@ -747,6 +864,14 @@ def get_dashboard(stale_days: int = 7, db: Session = Depends(get_db), current_us
         "my_tasks": my_tasks_data,
         "my_avg_efficiency": my_avg_efficiency,
         "projects": project_cards,
+        "is_pm": is_pm,
+        "is_admin": is_admin_user,
+        "approval_counts": approval_counts,
+        "escalation_count": escalation_count,
+        "health_score": health_score,
+        "weekly_digest": weekly_digest,
+        "upcoming_deadlines": upcoming_deadlines,
+        "cross_project_summary": cross_project_summary,
     }
 
 # ── My Tasks ──────────────────────────────────────────────
@@ -1104,3 +1229,185 @@ def get_escalations(
         counts[e["severity"]] += 1
 
     return {"escalations": escalated, "counts": counts}
+
+
+# ── Capacity Planning ─────────────────────────────────────
+
+@router.get("/capacity")
+def get_capacity(
+    project_id: Optional[int] = None,
+    range: str = "this_week",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_pm_or_admin(db, current_user)
+    today = date.today()
+    import calendar as _cal
+
+    if range == "this_week":
+        start = today - timedelta(days=today.weekday())
+        end = start + timedelta(days=4)
+    elif range == "next_2_weeks":
+        start = today
+        end = today + timedelta(days=13)
+    elif range == "this_month":
+        start = today.replace(day=1)
+        _, last_day = _cal.monthrange(today.year, today.month)
+        end = today.replace(day=last_day)
+    elif range == "next_month":
+        if today.month == 12:
+            start = today.replace(year=today.year + 1, month=1, day=1)
+        else:
+            start = today.replace(month=today.month + 1, day=1)
+        _, last_day = _cal.monthrange(start.year, start.month)
+        end = start.replace(day=last_day)
+    else:
+        start = today
+        end = today + timedelta(days=6)
+
+    if project_id:
+        _require_member(db, project_id, current_user)
+        pids = [project_id]
+    else:
+        pids = _pm_project_ids(db, current_user)
+
+    if not pids:
+        return {"members": [], "summary": {}, "range": {"start": start, "end": end}}
+
+    members = db.query(PMSProjectMember).filter(PMSProjectMember.project_id.in_(pids)).all()
+    bdays = _business_days(start, end + timedelta(days=1))
+
+    user_map = {}
+    for m in members:
+        uid = m.user_id
+        if uid not in user_map:
+            user_map[uid] = {
+                "user_id": uid,
+                "name": m.user.full_name if m.user else f"User {uid}",
+                "role": m.role,
+                "hours_per_day": m.hours_per_day or 7.0,
+                "member_id": m.id,
+            }
+        if (m.hours_per_day or 7.0) > user_map[uid]["hours_per_day"]:
+            user_map[uid]["hours_per_day"] = m.hours_per_day or 7.0
+
+    tasks = db.query(PMSTask).filter(
+        PMSTask.project_id.in_(pids),
+        PMSTask.stage != "completed",
+        PMSTask.assignee_id.isnot(None),
+    ).all()
+
+    for uid, data in user_map.items():
+        capacity = data["hours_per_day"] * bdays
+        committed = sum(
+            t.estimated_hours or 0 for t in tasks
+            if t.assignee_id == uid and t.due_date and start <= t.due_date <= end
+        )
+        data["capacity"] = round(capacity, 1)
+        data["committed"] = round(committed, 1)
+        data["available"] = round(capacity - committed, 1)
+        data["utilization_pct"] = round(committed / capacity * 100, 1) if capacity > 0 else 0
+
+    result = list(user_map.values())
+    total_capacity = sum(m["capacity"] for m in result)
+    total_committed = sum(m["committed"] for m in result)
+
+    projects = db.query(PMSProject).filter(PMSProject.id.in_(pids)).all()
+    project_options = [{"id": p.id, "name": p.name} for p in projects]
+
+    return {
+        "members": result,
+        "summary": {
+            "total_capacity": round(total_capacity, 1),
+            "total_committed": round(total_committed, 1),
+            "total_available": round(total_capacity - total_committed, 1),
+            "business_days": bdays,
+        },
+        "range": {"start": start, "end": end},
+        "projects": project_options,
+    }
+
+
+@router.patch("/members/{member_id}/hours")
+def update_member_hours(
+    member_id: int,
+    hours_per_day: float,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    member = db.query(PMSProjectMember).filter_by(id=member_id).first()
+    if not member:
+        raise HTTPException(404, "Member not found")
+    _require_pm_or_admin(db, current_user)
+    if hours_per_day < 1 or hours_per_day > 24:
+        raise HTTPException(400, "hours_per_day must be between 1 and 24")
+    member.hours_per_day = hours_per_day
+    db.commit()
+    return {"ok": True, "hours_per_day": hours_per_day}
+
+
+# ── Audit Trail ───────────────────────────────────────────
+
+@router.get("/audit-trail")
+def get_audit_trail(
+    project_id: Optional[int] = None,
+    action_type: Optional[str] = None,
+    actor_id: Optional[int] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    page: int = 1,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(403, "Admin only")
+
+    q = db.query(PMSAuditLog)
+    if project_id:
+        q = q.filter(PMSAuditLog.project_id == project_id)
+    if action_type:
+        q = q.filter(PMSAuditLog.action_type == action_type)
+    if actor_id:
+        q = q.filter(PMSAuditLog.actor_id == actor_id)
+    if date_from:
+        q = q.filter(PMSAuditLog.created_at >= datetime.combine(date_from, datetime.min.time()))
+    if date_to:
+        q = q.filter(PMSAuditLog.created_at <= datetime.combine(date_to, datetime.max.time()))
+
+    total = q.count()
+    per_page = 50
+    logs = q.order_by(PMSAuditLog.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+
+    result = []
+    for log in logs:
+        result.append({
+            "id": log.id,
+            "project_id": log.project_id,
+            "task_id": log.task_id,
+            "action_type": log.action_type,
+            "actor_id": log.actor_id,
+            "actor_name": log.actor.full_name if log.actor else None,
+            "details": _json.loads(log.details) if log.details else {},
+            "created_at": log.created_at,
+        })
+
+    projects = db.query(PMSProject).all()
+    actors_ids = db.query(PMSAuditLog.actor_id).distinct().all()
+    actors = []
+    for (aid,) in actors_ids:
+        if aid:
+            u = db.query(User).filter_by(id=aid).first()
+            if u:
+                actors.append({"id": u.id, "name": u.full_name})
+
+    return {
+        "logs": result,
+        "total": total,
+        "page": page,
+        "pages": (total + per_page - 1) // per_page,
+        "filters": {
+            "projects": [{"id": p.id, "name": p.name} for p in projects],
+            "actors": actors,
+            "action_types": ["stage_change", "assignee_change", "member_added", "member_removed", "milestone_change"],
+        },
+    }
