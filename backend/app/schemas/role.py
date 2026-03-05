@@ -1,17 +1,17 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Dict, List, Optional
 from datetime import datetime
 
 
 class RoleCreate(BaseModel):
     name: str
     slug: str
-    pages: List[str] = []
+    permissions: Dict[str, List[str]] = {}
 
 
 class RoleUpdate(BaseModel):
     name: Optional[str] = None
-    pages: Optional[List[str]] = None
+    permissions: Optional[Dict[str, List[str]]] = None
 
 
 class RoleOut(BaseModel):
@@ -19,7 +19,7 @@ class RoleOut(BaseModel):
     name: str
     slug: str
     is_system: bool
-    pages: List[str]
+    permissions: Dict[str, List[str]]
     created_at: datetime
 
     class Config:
@@ -27,4 +27,4 @@ class RoleOut(BaseModel):
 
 
 class UserRoleUpdate(BaseModel):
-    role: str  # slug of the target role
+    role: str
