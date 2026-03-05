@@ -367,7 +367,7 @@ export default function LeadDetailPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-bold mb-4">Merge Lead</h2>
             <p className="text-sm text-gray-600 mb-3">
-              Merge another lead into <strong>{lead.first_name} {lead.last_name}</strong>. The secondary lead's data (activities, deals, tags) will be transferred to this lead.
+              Merge another lead into <strong>{lead.first_name} {lead.last_name}</strong>. The secondary lead&apos;s data (activities, deals, tags) will be transferred to this lead.
             </p>
             <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg mb-4">
               <p className="text-sm text-orange-700 font-medium">
