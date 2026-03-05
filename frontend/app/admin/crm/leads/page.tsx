@@ -6,6 +6,7 @@ import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
+import LeadDetailPanel from "@/components/LeadDetailPanel";
 
 interface Lead {
   id: number;
@@ -89,6 +90,7 @@ export default function LeadListPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkAction, setBulkAction] = useState("");
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
   const token = getAuthToken();
 
   useEffect(() => {
@@ -131,6 +133,7 @@ export default function LeadListPage() {
       await axios.delete(`${API_URL}/crm/leads/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (selectedLeadId === id) setSelectedLeadId(null);
       fetchLeads();
     } catch (err) {
       console.error("delete error", err);
@@ -198,176 +201,236 @@ export default function LeadListPage() {
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
       <MainHeader user={user!} />
       <AdminNav />
-      <main className="w-full px-6 py-8">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Leads</h1>
-            <p className="text-sm text-gray-500 mt-0.5">{leads.length} total</p>
-          </div>
-          <a
-            href="/admin/crm/leads/new"
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-          >
-            + New Lead
-          </a>
-        </div>
 
-        <div className="flex gap-3 mb-4">
-          <input
-            type="text"
-            placeholder="Search by name, email, or company..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full max-w-sm px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select
-            value={tagFilter}
-            onChange={e => setTagFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-          >
-            <option value="">All Tags</option>
-            {availableTags.map((tag) => (
-              <option key={tag.id} value={tag.name}>{tag.name}</option>
-            ))}
-          </select>
-        </div>
+      <div className="flex h-[calc(100vh-56px)]">
+        {/* Lead List - shrinks when detail panel is open */}
+        <div className={`transition-all duration-300 overflow-y-auto ${selectedLeadId ? "w-[420px] min-w-[420px] border-r border-gray-200" : "flex-1"}`}>
+          <div className="px-6 py-6">
+            <div className="flex justify-between items-center mb-5">
+              <div>
+                <h1 className="text-2xl font-semibold text-gray-900">Leads</h1>
+                <p className="text-sm text-gray-500 mt-0.5">{leads.length} total</p>
+              </div>
+              <a
+                href="/admin/crm/leads/new"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+              >
+                + New Lead
+              </a>
+            </div>
 
-        <div className="flex gap-2 mb-6">
-          {FILTERS.map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                filter === s
-                  ? "bg-blue-600 text-white"
-                  : "bg-white border border-gray-300 text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              {s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* Bulk Action Toolbar */}
-        {selectedIds.size > 0 && (
-          <div className="mb-4 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
-            <span className="text-sm font-medium text-blue-800">
-              {selectedIds.size} selected
-            </span>
-            <select
-              value={bulkAction}
-              onChange={(e) => {
-                const action = e.target.value;
-                setBulkAction(action);
-                if (action) handleBulkAction(action);
-              }}
-              disabled={bulkLoading}
-              className="px-3 py-1.5 border border-blue-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Choose action...</option>
-              <option value="change_status">Change status</option>
-              <option value="assign_to">Assign to</option>
-              <option value="add_tag">Add tag</option>
-              <option value="remove_tag">Remove tag</option>
-            </select>
-            {bulkLoading && (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500" />
-            )}
-            <button
-              onClick={() => { setSelectedIds(new Set()); setBulkAction(""); }}
-              className="ml-auto text-sm text-blue-600 hover:text-blue-800"
-            >
-              Clear selection
-            </button>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
-          </div>
-        ) : leads.length === 0 ? (
-          <div className="bg-white rounded-lg shadow text-center py-16 text-gray-400">
-            <p className="mb-2">No leads found.</p>
-            <a href="/admin/crm/leads/new" className="text-blue-600 hover:underline text-sm">
-              Create your first lead
-            </a>
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-4 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.size === leads.length && leads.length > 0}
-                      onChange={toggleSelectAll}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                  </th>
-                  {["Name", "Email", "Company", "Status", "Tags", "Score", "Value", "Source", "Actions"].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left font-medium text-gray-600">{h}</th>
+            <div className="flex gap-3 mb-4">
+              <input
+                type="text"
+                placeholder="Search by name, email, or company..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className={`px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${selectedLeadId ? "w-full" : "w-full max-w-sm"}`}
+              />
+              {!selectedLeadId && (
+                <select
+                  value={tagFilter}
+                  onChange={e => setTagFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">All Tags</option>
+                  {availableTags.map((tag) => (
+                    <option key={tag.id} value={tag.name}>{tag.name}</option>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+                </select>
+              )}
+            </div>
+
+            <div className="flex gap-2 mb-5 flex-wrap">
+              {FILTERS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setFilter(s)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    filter === s
+                      ? "bg-blue-600 text-white"
+                      : "bg-white border border-gray-300 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            {/* Bulk Action Toolbar */}
+            {selectedIds.size > 0 && !selectedLeadId && (
+              <div className="mb-4 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                <span className="text-sm font-medium text-blue-800">
+                  {selectedIds.size} selected
+                </span>
+                <select
+                  value={bulkAction}
+                  onChange={(e) => {
+                    const action = e.target.value;
+                    setBulkAction(action);
+                    if (action) handleBulkAction(action);
+                  }}
+                  disabled={bulkLoading}
+                  className="px-3 py-1.5 border border-blue-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Choose action...</option>
+                  <option value="change_status">Change status</option>
+                  <option value="assign_to">Assign to</option>
+                  <option value="add_tag">Add tag</option>
+                  <option value="remove_tag">Remove tag</option>
+                </select>
+                {bulkLoading && (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500" />
+                )}
+                <button
+                  onClick={() => { setSelectedIds(new Set()); setBulkAction(""); }}
+                  className="ml-auto text-sm text-blue-600 hover:text-blue-800"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
+            {loading ? (
+              <div className="flex justify-center py-16">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+              </div>
+            ) : leads.length === 0 ? (
+              <div className="bg-white rounded-lg shadow text-center py-16 text-gray-400">
+                <p className="mb-2">No leads found.</p>
+                <a href="/admin/crm/leads/new" className="text-blue-600 hover:underline text-sm">
+                  Create your first lead
+                </a>
+              </div>
+            ) : selectedLeadId ? (
+              /* Compact card list when detail panel is open */
+              <div className="space-y-1">
                 {leads.map((lead) => (
-                  <tr key={lead.id} className={`hover:bg-gray-50 ${selectedIds.has(lead.id) ? "bg-blue-50" : ""}`}>
-                    <td className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(lead.id)}
-                        onChange={() => toggleSelect(lead.id)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {lead.first_name} {lead.last_name || ""}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">{lead.email || "\u2014"}</td>
-                    <td className="px-4 py-3 text-gray-500">{lead.company || "\u2014"}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[lead.status] || "bg-gray-100 text-gray-800"}`}>
-                        {lead.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {lead.tags && lead.tags.length > 0
-                          ? lead.tags.map((tag) => (
-                              <span
-                                key={tag.id}
-                                className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
-                                style={tag.color ? { backgroundColor: `${tag.color}20`, color: tag.color } : undefined}
-                              >
-                                {tag.name}
-                              </span>
-                            ))
-                          : <span className="text-gray-300">\u2014</span>}
+                  <button
+                    key={lead.id}
+                    onClick={() => setSelectedLeadId(lead.id)}
+                    className={`w-full text-left px-4 py-3 rounded-lg transition-colors ${
+                      selectedLeadId === lead.id
+                        ? "bg-blue-50 border border-blue-200"
+                        : "hover:bg-gray-100 border border-transparent"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {lead.first_name} {lead.last_name || ""}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate mt-0.5">
+                          {lead.email || lead.company || "\u2014"}
+                        </p>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-700">{lead.score}</td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {lead.estimated_value ? `$${lead.estimated_value.toLocaleString()}` : "\u2014"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {SOURCE_ICONS[lead.source] || "\uD83D\uDCCC"} {SOURCE_LABELS[lead.source] || lead.source}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-3 text-sm">
-                        <a href={`/admin/crm/leads/${lead.id}`} className="text-blue-600 hover:underline">View</a>
-                        <a href={`/admin/crm/leads/${lead.id}/edit`} className="text-amber-600 hover:underline">Edit</a>
-                        <button onClick={() => handleDelete(lead.id)} className="text-red-600 hover:underline">Delete</button>
+                      <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${STATUS_COLORS[lead.status] || "bg-gray-100 text-gray-800"}`}>
+                          {lead.status}
+                        </span>
+                        <span className="text-xs text-gray-400">{lead.score}</span>
                       </div>
-                    </td>
-                  </tr>
+                    </div>
+                  </button>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            ) : (
+              /* Full table when no lead is selected */
+              <div className="bg-white rounded-lg shadow overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-4 py-3 text-left">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.size === leads.length && leads.length > 0}
+                          onChange={toggleSelectAll}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </th>
+                      {["Name", "Email", "Company", "Status", "Tags", "Score", "Value", "Source", "Actions"].map((h) => (
+                        <th key={h} className="px-4 py-3 text-left font-medium text-gray-600">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {leads.map((lead) => (
+                      <tr
+                        key={lead.id}
+                        className={`hover:bg-gray-50 cursor-pointer ${selectedIds.has(lead.id) ? "bg-blue-50" : ""}`}
+                        onClick={() => setSelectedLeadId(lead.id)}
+                      >
+                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(lead.id)}
+                            onChange={() => toggleSelect(lead.id)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-900">
+                          {lead.first_name} {lead.last_name || ""}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500">{lead.email || "\u2014"}</td>
+                        <td className="px-4 py-3 text-gray-500">{lead.company || "\u2014"}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[lead.status] || "bg-gray-100 text-gray-800"}`}>
+                            {lead.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {lead.tags && lead.tags.length > 0
+                              ? lead.tags.map((tag) => (
+                                  <span
+                                    key={tag.id}
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
+                                    style={tag.color ? { backgroundColor: `${tag.color}20`, color: tag.color } : undefined}
+                                  >
+                                    {tag.name}
+                                  </span>
+                                ))
+                              : <span className="text-gray-300">\u2014</span>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-700">{lead.score}</td>
+                        <td className="px-4 py-3 text-gray-700">
+                          {lead.estimated_value ? `$${lead.estimated_value.toLocaleString()}` : "\u2014"}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500">
+                          {SOURCE_ICONS[lead.source] || "\uD83D\uDCCC"} {SOURCE_LABELS[lead.source] || lead.source}
+                        </td>
+                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                          <div className="flex gap-3 text-sm">
+                            <button onClick={() => setSelectedLeadId(lead.id)} className="text-blue-600 hover:underline">View</button>
+                            <a href={`/admin/crm/leads/${lead.id}/edit`} className="text-amber-600 hover:underline">Edit</a>
+                            <button onClick={() => handleDelete(lead.id)} className="text-red-600 hover:underline">Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Detail Panel */}
+        {selectedLeadId && (
+          <div className="flex-1 overflow-hidden border-l border-gray-200 bg-white">
+            <LeadDetailPanel
+              key={selectedLeadId}
+              leadId={selectedLeadId}
+              onClose={() => setSelectedLeadId(null)}
+              onDeleted={() => {
+                setSelectedLeadId(null);
+                fetchLeads();
+              }}
+            />
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }

@@ -172,6 +172,13 @@ class LeadDetailResponse(LeadResponse):
     activities: list[ActivityResponse] = []
 
 
+class DealDetailResponse(DealResponse):
+    """Deal with lead info, tasks, and activities"""
+    lead: Optional[LeadResponse] = None
+    tasks: list[TaskResponse] = []
+    activities: list[ActivityResponse] = []
+
+
 # ========== NOTE SCHEMAS ==========
 
 class NoteCreate(BaseModel):

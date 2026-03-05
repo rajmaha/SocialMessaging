@@ -9,7 +9,7 @@ from app.models.user import User
 from app.models.conversation import Conversation
 from app.schemas.crm import (
     LeadCreate, LeadUpdate, LeadResponse, LeadDetailResponse,
-    DealCreate, DealUpdate, DealResponse,
+    DealCreate, DealUpdate, DealResponse, DealDetailResponse,
     TaskCreate, TaskUpdate, TaskResponse,
     ActivityCreate, ActivityResponse,
     NoteCreate, NoteUpdate, NoteResponse,
@@ -419,7 +419,7 @@ def list_deals(
     
     return query.order_by(desc(Deal.created_at)).offset(skip).limit(limit).all()
 
-@router.get("/deals/{deal_id}")
+@router.get("/deals/{deal_id}", response_model=DealDetailResponse)
 def get_deal_detail(
     deal_id: int,
     db: Session = Depends(get_db),
@@ -429,17 +429,16 @@ def get_deal_detail(
     deal = db.query(Deal).filter(Deal.id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
-    
+
     lead = db.query(Lead).filter(Lead.id == deal.lead_id).first()
     tasks = db.query(Task).filter(Task.deal_id == deal_id).all()
     activities = db.query(Activity).filter(Activity.lead_id == deal.lead_id).order_by(desc(Activity.created_at)).all()
-    
-    return {
-        **deal.__dict__,
-        "lead": lead.__dict__ if lead else None,
-        "tasks": tasks,
-        "activities": activities,
-    }
+
+    deal_data = DealDetailResponse.model_validate(deal)
+    deal_data.lead = LeadResponse.model_validate(lead) if lead else None
+    deal_data.tasks = [TaskResponse.model_validate(t) for t in tasks]
+    deal_data.activities = [ActivityResponse.model_validate(a) for a in activities]
+    return deal_data
 
 @router.patch("/deals/{deal_id}", response_model=DealResponse)
 def update_deal(
