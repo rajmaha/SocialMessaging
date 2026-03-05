@@ -15,6 +15,7 @@ from app.routes import pms as pms_routes
 from app.routes import roles as roles_routes
 from app.routes.api_servers import router as api_servers_router, user_router as user_api_creds_router
 from app.routes.forms import admin_router as forms_admin_router, public_router as forms_public_router
+from app.routes.menus import router as menus_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
 from app.models.backup_destination import BackupDestination  # noqa: F401
@@ -563,6 +564,40 @@ def _run_inline_migrations():
             )
         """))
 
+        # Add preserved_fields to api_servers
+        try:
+            conn.execute(text("ALTER TABLE api_servers ADD COLUMN IF NOT EXISTS preserved_fields JSONB"))
+        except Exception:
+            pass
+        # Response format configuration for API servers
+        try:
+            conn.execute(text("ALTER TABLE api_servers ADD COLUMN IF NOT EXISTS response_success_path VARCHAR"))
+            conn.execute(text("ALTER TABLE api_servers ADD COLUMN IF NOT EXISTS response_message_path VARCHAR DEFAULT 'message'"))
+            conn.execute(text("ALTER TABLE api_servers ADD COLUMN IF NOT EXISTS response_data_path VARCHAR DEFAULT 'data'"))
+        except Exception:
+            pass
+        # Add login_response_data to user_api_credentials
+        try:
+            conn.execute(text("ALTER TABLE user_api_credentials ADD COLUMN IF NOT EXISTS login_response_data JSONB"))
+        except Exception:
+            pass
+
+        # API server access control tables
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS api_server_user_access (
+                api_server_id INTEGER NOT NULL REFERENCES api_servers(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                PRIMARY KEY (api_server_id, user_id)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS api_server_team_access (
+                api_server_id INTEGER NOT NULL REFERENCES api_servers(id) ON DELETE CASCADE,
+                team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                PRIMARY KEY (api_server_id, team_id)
+            )
+        """))
+
         # Forms table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS forms (
@@ -612,6 +647,10 @@ def _run_inline_migrations():
             )
         """))
 
+        # Form Fields — new columns
+        conn.execute(text("ALTER TABLE form_fields ADD COLUMN IF NOT EXISTS condition_logic VARCHAR DEFAULT 'AND'"))
+        conn.execute(text("ALTER TABLE form_fields ADD COLUMN IF NOT EXISTS api_params JSON"))
+
         # Form Submissions table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS form_submissions (
@@ -621,6 +660,35 @@ def _run_inline_migrations():
                 submitter_email VARCHAR,
                 submitted_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
+        # ── Menu Groups & Items ─────────────────────────────────────
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS menu_groups (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                slug VARCHAR(100) UNIQUE NOT NULL,
+                icon VARCHAR(10) DEFAULT '📁',
+                display_order INTEGER DEFAULT 0,
+                public_access BOOLEAN DEFAULT FALSE,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS menu_items (
+                id SERIAL PRIMARY KEY,
+                group_id INTEGER NOT NULL REFERENCES menu_groups(id) ON DELETE CASCADE,
+                label VARCHAR(200) NOT NULL,
+                link_type VARCHAR(20) NOT NULL DEFAULT 'internal',
+                link_value VARCHAR(500) NOT NULL,
+                icon VARCHAR(10),
+                open_in_new_tab BOOLEAN DEFAULT FALSE,
+                display_order INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """))
 
@@ -1089,6 +1157,11 @@ def _run_inline_migrations():
             )
         """))
 
+        # Add permissions column to roles table
+        conn.execute(text("""
+            ALTER TABLE roles ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
+        """))
+
         # Seed fixed system roles (upsert by slug)
         fixed_roles = [
             ('Admin',               'admin',              True,  '["pms","tickets","crm","messaging","callcenter","campaigns","reports","kb","teams"]'),
@@ -1330,6 +1403,7 @@ app.include_router(api_servers_router)
 app.include_router(user_api_creds_router)
 app.include_router(forms_admin_router)
 app.include_router(forms_public_router)
+app.include_router(menus_router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")

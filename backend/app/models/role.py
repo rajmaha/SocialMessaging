@@ -11,5 +11,6 @@ class Role(Base):
     name = Column(String(100), nullable=False)
     slug = Column(String(100), unique=True, nullable=False)
     is_system = Column(Boolean, default=False)
-    pages = Column(JSONB, default=list)
+    pages = Column(JSONB, default=list)          # LEGACY — kept for migration
+    permissions = Column(JSONB, default=dict)     # NEW — unified permission matrix
     created_at = Column(DateTime, default=datetime.utcnow)
