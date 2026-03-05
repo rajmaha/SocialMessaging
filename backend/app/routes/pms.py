@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 from typing import List, Optional
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import os, shutil
 
 from app.database import get_db
@@ -750,3 +750,132 @@ def get_my_tasks(
             "created_at": t.created_at,
         })
     return result
+
+
+@router.get("/reports")
+def get_reports(
+    project_id: Optional[int] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from collections import defaultdict
+    today = date.today()
+    start = start_date or (today - timedelta(days=56))
+    end = end_date or today
+
+    q = db.query(PMSTask)
+    if project_id:
+        _require_member(db, project_id, current_user)
+        q = q.filter(PMSTask.project_id == project_id)
+    elif not _is_admin(current_user):
+        memberships = db.query(PMSProjectMember).filter_by(user_id=current_user.id).all()
+        pids = [m.project_id for m in memberships]
+        q = q.filter(PMSTask.project_id.in_(pids)) if pids else q.filter(False)
+    tasks = q.all()
+
+    # Priority distribution
+    priority_dist = defaultdict(int)
+    for t in tasks:
+        priority_dist[t.priority] += 1
+
+    # Stage cycle time
+    stages = ["development", "qa", "pm_review", "client_review", "approved", "completed"]
+    stage_times = {s: [] for s in stages}
+    for t in tasks:
+        history = db.query(PMSWorkflowHistory).filter_by(task_id=t.id).order_by(PMSWorkflowHistory.created_at).all()
+        for i, h in enumerate(history):
+            if h.to_stage in stage_times:
+                entered = h.created_at
+                exited = history[i+1].created_at if i+1 < len(history) else (datetime.utcnow() if t.stage == h.to_stage else None)
+                if entered and exited:
+                    days = (exited - entered).total_seconds() / 86400
+                    stage_times[h.to_stage].append(days)
+    avg_stage_times = {s: round(sum(v)/len(v), 1) if v else 0 for s, v in stage_times.items()}
+
+    # Velocity (last 8 weeks)
+    velocity = []
+    for w in range(8):
+        week_start = today - timedelta(days=(7 * (8 - w)))
+        week_end = week_start + timedelta(days=7)
+        count = sum(1 for t in tasks if t.stage == "completed" and t.updated_at and week_start <= t.updated_at.date() < week_end)
+        velocity.append({"week": week_start.isoformat(), "completed": count})
+
+    # Burndown
+    burndown = []
+    total_created_before_start = sum(1 for t in tasks if t.created_at and t.created_at.date() <= start)
+    remaining = total_created_before_start
+    for w in range(9):
+        snap_date = start + timedelta(days=(7 * w))
+        if snap_date > today:
+            break
+        prev_date = start + timedelta(days=(7*(w-1))) if w > 0 else start
+        new_tasks = sum(1 for t in tasks if t.created_at and prev_date < t.created_at.date() <= snap_date)
+        completed = sum(1 for t in tasks if t.stage == "completed" and t.updated_at and prev_date < t.updated_at.date() <= snap_date)
+        remaining = remaining + new_tasks - completed
+        total_at_point = total_created_before_start + sum(1 for t in tasks if t.created_at and t.created_at.date() <= snap_date)
+        ideal_remaining = max(0, total_at_point - round(total_at_point * (w / 8)))
+        burndown.append({"date": snap_date.isoformat(), "remaining": max(remaining, 0), "ideal": ideal_remaining})
+
+    # Hours by project
+    hours_by_project = defaultdict(lambda: {"estimated": 0, "actual": 0, "name": ""})
+    project_name_cache = {}
+    for t in tasks:
+        if t.project_id not in project_name_cache:
+            p = db.query(PMSProject).filter_by(id=t.project_id).first()
+            project_name_cache[t.project_id] = p.name if p else f"Project {t.project_id}"
+        hours_by_project[t.project_id]["estimated"] += t.estimated_hours or 0
+        hours_by_project[t.project_id]["actual"] += t.actual_hours or 0
+        hours_by_project[t.project_id]["name"] = project_name_cache[t.project_id]
+    hours_comparison = [{"project": v["name"], "estimated": round(v["estimated"], 1), "actual": round(v["actual"], 1)} for v in hours_by_project.values()]
+
+    # Milestone progress
+    milestones_q = db.query(PMSMilestone)
+    if project_id:
+        milestones_q = milestones_q.filter_by(project_id=project_id)
+    milestones = milestones_q.all()
+    milestone_progress = []
+    for ms in milestones:
+        ms_tasks = [t for t in tasks if t.milestone_id == ms.id]
+        total = len(ms_tasks)
+        completed = sum(1 for t in ms_tasks if t.stage == "completed")
+        milestone_progress.append({
+            "id": ms.id, "name": ms.name, "total": total, "completed": completed,
+            "pct": round(completed / total * 100, 1) if total else 0,
+        })
+
+    # Per-member stats
+    member_stats = defaultdict(lambda: {"name": "", "assigned": 0, "completed": 0, "by_priority": defaultdict(int), "efficiencies": []})
+    for t in tasks:
+        if t.assignee_id:
+            name = t.assignee.full_name if t.assignee else f"User {t.assignee_id}"
+            member_stats[t.assignee_id]["name"] = name
+            member_stats[t.assignee_id]["assigned"] += 1
+            member_stats[t.assignee_id]["by_priority"][t.priority] += 1
+            if t.stage == "completed":
+                member_stats[t.assignee_id]["completed"] += 1
+            eff = _task_efficiency(t, today)
+            if eff is not None:
+                member_stats[t.assignee_id]["efficiencies"].append(eff)
+
+    member_workload = [{"name": s["name"], "total": s["assigned"], **dict(s["by_priority"])} for uid, s in member_stats.items()]
+    member_completion = [{"name": s["name"], "assigned": s["assigned"], "completed": s["completed"]} for uid, s in member_stats.items()]
+    member_efficiency = [{"name": s["name"], "efficiency": round(sum(s["efficiencies"]) / len(s["efficiencies"]), 1) if s["efficiencies"] else None} for uid, s in member_stats.items()]
+
+    all_eff = [_task_efficiency(t, today) for t in tasks if t.stage != "completed"]
+    all_eff = [e for e in all_eff if e is not None]
+    project_efficiency = round(sum(all_eff) / len(all_eff), 1) if all_eff else None
+
+    return {
+        "burndown": burndown,
+        "velocity": velocity,
+        "avg_stage_times": avg_stage_times,
+        "priority_distribution": dict(priority_dist),
+        "milestone_progress": milestone_progress,
+        "hours_comparison": hours_comparison,
+        "member_workload": member_workload,
+        "member_completion": member_completion,
+        "member_efficiency": member_efficiency,
+        "project_efficiency": project_efficiency,
+    }

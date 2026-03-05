@@ -179,6 +179,8 @@ export const pmsApi = {
   getDashboard: (staleDays?: number) => api.get('/api/pms/dashboard', { params: { stale_days: staleDays || 7 } }),
   // My Tasks
   getMyTasks: (params?: any) => api.get('/api/pms/my-tasks', { params }),
+  // Reports
+  getReports: (params?: any) => api.get('/api/pms/reports', { params }),
 };
 
 // ─── Roles API ───────────────────────────────────────────────────────────────
