@@ -77,6 +77,11 @@ export default function FieldBuilderPage() {
   const [field, setField] = useState(defaultField());
   const [saving, setSaving] = useState(false);
   const [apiServerBaseUrl, setApiServerBaseUrl] = useState('');
+  const [apiEndpoints, setApiEndpoints] = useState<any[]>([]);
+  const [selectedEndpointId, setSelectedEndpointId] = useState<number | null>(null);
+  const [autoGenerating, setAutoGenerating] = useState(false);
+  const [autoGenMessage, setAutoGenMessage] = useState('');
+  const [formApiServerId, setFormApiServerId] = useState<number | null>(null);
 
   const loadForm = async () => {
     try {
@@ -84,11 +89,18 @@ export default function FieldBuilderPage() {
       setFormTitle(res.data.title || '');
       // Load API server base URL if form is linked to one
       if (res.data.api_server_id) {
+        setFormApiServerId(res.data.api_server_id);
         try {
           const servers = await apiServersApi.list();
           const server = servers.data.find((s: any) => s.id === res.data.api_server_id);
           if (server) setApiServerBaseUrl(server.base_url || '');
         } catch {}
+        try {
+          const epRes = await apiServersApi.listEndpoints(res.data.api_server_id);
+          setApiEndpoints(epRes.data);
+        } catch {
+          setApiEndpoints([]);
+        }
       }
     } catch {}
   };
@@ -253,6 +265,32 @@ export default function FieldBuilderPage() {
     }
   };
 
+  const handleAutoGenerate = async () => {
+    if (!selectedEndpointId) return;
+    setAutoGenerating(true);
+    setAutoGenMessage('');
+    try {
+      const res = await formsApi.autoGenerateFields(Number(params.id), selectedEndpointId);
+      setAutoGenMessage(res.data.message);
+      loadFields();
+    } catch (err: any) {
+      setAutoGenMessage(err.response?.data?.detail || 'Auto-generate failed');
+    } finally {
+      setAutoGenerating(false);
+    }
+  };
+
+  const handleToggleVisibility = async (field: any) => {
+    try {
+      await formsApi.updateField(Number(params.id), field.id, {
+        is_visible: !field.is_visible,
+      });
+      loadFields();
+    } catch (err: any) {
+      console.error('Failed to toggle visibility', err);
+    }
+  };
+
   const updateField = (updates: Partial<ReturnType<typeof defaultField>>) => {
     setField(prev => ({ ...prev, ...updates }));
   };
@@ -336,20 +374,69 @@ export default function FieldBuilderPage() {
           </button>
         </div>
 
+        {/* Auto-Generate from API Spec */}
+        {apiEndpoints.length > 0 && (
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-4">
+            <h3 className="text-sm font-semibold text-purple-800 mb-2">Auto-Generate Fields from API Spec</h3>
+            <div className="flex items-center gap-3">
+              <select
+                value={selectedEndpointId || ''}
+                onChange={(e) => setSelectedEndpointId(Number(e.target.value) || null)}
+                className="flex-1 border rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Select an endpoint...</option>
+                {apiEndpoints.map((ep: any) => (
+                  <option key={ep.id} value={ep.id}>
+                    {ep.method} {ep.path} {ep.summary ? `— ${ep.summary}` : ''} ({ep.field_count || 0} fields)
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleAutoGenerate}
+                disabled={!selectedEndpointId || autoGenerating}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+              >
+                {autoGenerating ? 'Generating...' : 'Auto Generate Fields'}
+              </button>
+            </div>
+            {autoGenMessage && (
+              <p className="mt-2 text-sm text-purple-700 bg-purple-100 px-3 py-1.5 rounded">{autoGenMessage}</p>
+            )}
+          </div>
+        )}
+
         {/* Field List */}
         <div className="space-y-3">
           {fields.map((item: any, index: number) => (
             <div
               key={item.id}
-              className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3"
+              className={`bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3 ${!item.is_visible && item.is_auto_generated ? 'opacity-50' : ''}`}
             >
               {/* Drag handle */}
               <span className="text-gray-300 mt-1 cursor-grab select-none text-lg leading-none" title="Drag to reorder">&#x2807;&#x2807;</span>
+
+              {/* Visibility toggle for auto-generated fields */}
+              {item.is_auto_generated && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleToggleVisibility(item); }}
+                  className={`p-1 rounded mt-0.5 ${item.is_visible ? 'text-blue-600' : 'text-gray-400'}`}
+                  title={item.is_visible ? 'Visible — click to hide' : 'Hidden — click to show'}
+                >
+                  {item.is_visible ? (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                  )}
+                </button>
+              )}
 
               {/* Field info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-gray-900">{item.field_label || item.label}</span>
+                  {item.is_auto_generated && (
+                    <span className="text-[10px] bg-purple-100 text-purple-600 rounded px-1.5 py-0.5 font-medium">AUTO</span>
+                  )}
                   {item.is_required && (
                     <span className="text-xs text-red-600 font-medium">*Required</span>
                   )}
