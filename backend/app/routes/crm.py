@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_, func
 from datetime import datetime
 
 from app.database import get_db
-from app.models.crm import Lead, Deal, Task, Activity, LeadStatus, DealStage, TaskStatus, ActivityType
+from app.models.crm import Lead, Deal, Task, Activity, LeadNote, LeadStatus, DealStage, TaskStatus, ActivityType
 from app.models.user import User
 from app.models.conversation import Conversation
 from app.schemas.crm import (
@@ -12,6 +12,7 @@ from app.schemas.crm import (
     DealCreate, DealUpdate, DealResponse,
     TaskCreate, TaskUpdate, TaskResponse,
     ActivityCreate, ActivityResponse,
+    NoteCreate, NoteUpdate, NoteResponse,
 )
 from app.dependencies import get_current_user, require_admin_feature, require_page
 from app.services.crm_scoring import apply_score
@@ -24,6 +25,35 @@ require_crm = require_admin_feature("feature_manage_crm")
 
 
 # ========== LEAD ENDPOINTS ==========
+
+@router.get("/leads/auto-match")
+def auto_match_lead(
+    phone: str = Query(None),
+    email: str = Query(None),
+    name: str = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Find leads matching by phone, email, or name (exact match)."""
+    if phone:
+        leads = db.query(Lead).filter(Lead.phone == phone).all()
+        if leads:
+            return leads
+    if email:
+        leads = db.query(Lead).filter(Lead.email == email).all()
+        if leads:
+            return leads
+    if name:
+        leads = db.query(Lead).filter(
+            or_(
+                func.concat(Lead.first_name, ' ', Lead.last_name).ilike(f"%{name}%"),
+                Lead.first_name.ilike(f"%{name}%"),
+            )
+        ).all()
+        if leads:
+            return leads
+    return []
+
 
 @router.post("/leads", response_model=LeadResponse)
 def create_lead(
@@ -526,6 +556,112 @@ def create_activity(
     return db_activity
 
 
+# ========== NOTE ENDPOINTS ==========
+
+@router.get("/leads/{lead_id}/notes", response_model=list[NoteResponse])
+def get_lead_notes(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    notes = (
+        db.query(LeadNote)
+        .filter(LeadNote.lead_id == lead_id)
+        .order_by(LeadNote.is_pinned.desc(), LeadNote.created_at.desc())
+        .all()
+    )
+    result = []
+    for note in notes:
+        user = db.query(User).filter(User.id == note.created_by).first()
+        result.append(NoteResponse(
+            id=note.id,
+            lead_id=note.lead_id,
+            content=note.content,
+            is_pinned=note.is_pinned,
+            created_by=note.created_by,
+            created_by_name=user.full_name if user else None,
+            created_at=note.created_at,
+            updated_at=note.updated_at,
+        ))
+    return result
+
+
+@router.post("/leads/{lead_id}/notes", response_model=NoteResponse)
+def create_note(
+    lead_id: int,
+    note: NoteCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    db_note = LeadNote(
+        lead_id=lead_id,
+        content=note.content,
+        is_pinned=note.is_pinned,
+        created_by=current_user.id,
+    )
+    db.add(db_note)
+    db.commit()
+    db.refresh(db_note)
+    return NoteResponse(
+        id=db_note.id,
+        lead_id=db_note.lead_id,
+        content=db_note.content,
+        is_pinned=db_note.is_pinned,
+        created_by=db_note.created_by,
+        created_by_name=current_user.full_name,
+        created_at=db_note.created_at,
+        updated_at=db_note.updated_at,
+    )
+
+
+@router.patch("/leads/notes/{note_id}", response_model=NoteResponse)
+def update_note(
+    note_id: int,
+    note_update: NoteUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    note = db.query(LeadNote).filter(LeadNote.id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    update_data = note_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(note, key, value)
+    db.commit()
+    db.refresh(note)
+    user = db.query(User).filter(User.id == note.created_by).first()
+    return NoteResponse(
+        id=note.id,
+        lead_id=note.lead_id,
+        content=note.content,
+        is_pinned=note.is_pinned,
+        created_by=note.created_by,
+        created_by_name=user.full_name if user else None,
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+    )
+
+
+@router.delete("/leads/notes/{note_id}")
+def delete_note(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    note = db.query(LeadNote).filter(LeadNote.id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    db.delete(note)
+    db.commit()
+    return {"detail": "Note deleted"}
+
+
 # ========== ANALYTICS ENDPOINTS ==========
 
 @router.get("/analytics/pipeline-summary")
@@ -675,7 +811,6 @@ def conversion_funnel(
     current_user: User = Depends(get_current_user),
 ):
     """Lead to Deal to Won conversion percentages."""
-    from sqlalchemy import func
     total_leads = db.query(func.count(Lead.id)).scalar() or 0
     leads_with_deals = db.query(func.count(func.distinct(Deal.lead_id))).scalar() or 0
     won_deals = db.query(func.count(Deal.id)).filter(Deal.stage == "won").scalar() or 0
