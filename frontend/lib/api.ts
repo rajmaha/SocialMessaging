@@ -174,6 +174,11 @@ export const pmsApi = {
   deleteLabel: (id: number) => api.delete(`/api/pms/labels/${id}`),
   attachLabel: (taskId: number, labelId: number) => api.post(`/api/pms/tasks/${taskId}/labels/${labelId}`),
   detachLabel: (taskId: number, labelId: number) => api.delete(`/api/pms/tasks/${taskId}/labels/${labelId}`),
+
+  // Dashboard
+  getDashboard: (staleDays?: number) => api.get('/api/pms/dashboard', { params: { stale_days: staleDays || 7 } }),
+  // My Tasks
+  getMyTasks: (params?: any) => api.get('/api/pms/my-tasks', { params }),
 };
 
 // ─── Roles API ───────────────────────────────────────────────────────────────

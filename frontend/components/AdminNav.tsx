@@ -106,7 +106,9 @@ const sidebarGroups = [
     {
         label: 'PMS',
         items: [
-            { href: '/admin/pms', label: 'Projects', icon: '📂', pageKey: 'pms' },
+            { href: '/admin/pms', label: 'Dashboard', icon: '📊', pageKey: 'pms' },
+            { href: '/admin/pms/my-tasks', label: 'My Tasks', icon: '✅', pageKey: 'pms' },
+            { href: '/admin/pms/reports', label: 'Reports', icon: '📈', pageKey: 'pms' },
             { href: '/admin/pms/labels', label: 'Labels', icon: '🏷️', pageKey: 'pms' },
         ],
     },
