@@ -68,6 +68,8 @@ class FormFieldCreate(BaseModel):
     condition: Optional[Any] = None
     condition_logic: Optional[str] = "AND"
     api_params: Optional[List[Dict[str, str]]] = None
+    is_auto_generated: bool = False
+    is_visible: bool = True
 
 
 class FormFieldUpdate(BaseModel):
@@ -86,6 +88,8 @@ class FormFieldUpdate(BaseModel):
     condition: Optional[Any] = None
     condition_logic: Optional[str] = None
     api_params: Optional[List[Dict[str, str]]] = None
+    is_auto_generated: Optional[bool] = None
+    is_visible: Optional[bool] = None
 
 
 class FormFieldResponse(FormFieldCreate):

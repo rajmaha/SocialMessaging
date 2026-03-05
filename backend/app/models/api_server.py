@@ -38,6 +38,7 @@ class ApiServer(Base):
     response_message_path = Column(String, nullable=True, default="message")  # e.g. "message" — path to message string
     response_data_path = Column(String, nullable=True, default="data")  # e.g. "data" — path to data payload
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    spec_file_name = Column(String, nullable=True)
 
 
 class UserApiCredential(Base):
@@ -55,4 +56,21 @@ class UserApiCredential(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "api_server_id", name="uq_user_api_server"),
+    )
+
+
+class ApiServerEndpoint(Base):
+    __tablename__ = "api_server_endpoints"
+
+    id = Column(Integer, primary_key=True, index=True)
+    api_server_id = Column(Integer, ForeignKey("api_servers.id", ondelete="CASCADE"), nullable=False, index=True)
+    path = Column(String, nullable=False)
+    method = Column(String, nullable=False)  # GET, POST, PUT, DELETE, PATCH
+    summary = Column(String, nullable=True)
+    fields = Column(JSON, nullable=True)  # array of {key, label, type, format, required, description, enum, default, location}
+    source_type = Column(String, nullable=False, default="swagger")  # swagger, postman
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("api_server_id", "path", "method", name="uq_api_server_endpoint"),
     )

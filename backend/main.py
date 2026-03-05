@@ -1277,6 +1277,11 @@ def _run_inline_migrations():
                     "gb": info["granted_by"],
                 })
 
+        # API Server spec upload support
+        conn.execute(text("ALTER TABLE api_servers ADD COLUMN IF NOT EXISTS spec_file_name VARCHAR"))
+        conn.execute(text("ALTER TABLE form_fields ADD COLUMN IF NOT EXISTS is_auto_generated BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("ALTER TABLE form_fields ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT TRUE"))
+
         conn.commit()
 
 try:

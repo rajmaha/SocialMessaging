@@ -19,6 +19,7 @@ class ApiServerCreate(BaseModel):
     response_success_path: Optional[str] = None  # e.g. "status" or "success"
     response_message_path: Optional[str] = "message"  # e.g. "message"
     response_data_path: Optional[str] = "data"  # e.g. "data"
+    spec_file_name: Optional[str] = None
 
 
 class ApiServerUpdate(BaseModel):
@@ -83,3 +84,38 @@ class UserApiCredentialSelfCreate(BaseModel):
     api_server_id: int
     username: str
     password: str
+
+
+class SpecFieldDef(BaseModel):
+    key: str
+    label: str
+    type: str = "string"
+    format: Optional[str] = None
+    required: bool = False
+    description: Optional[str] = None
+    enum: Optional[List[str]] = None
+    default: Optional[Any] = None
+    location: str = "body"  # body, query, path
+
+
+class ApiServerEndpointResponse(BaseModel):
+    id: int
+    api_server_id: int
+    path: str
+    method: str
+    summary: Optional[str] = None
+    fields: Optional[List[dict]] = None
+    source_type: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SpecUploadResponse(BaseModel):
+    message: str
+    spec_file_name: str
+    endpoints_count: int
+    endpoints: List[ApiServerEndpointResponse]
+
+
+class AutoGenerateFieldsRequest(BaseModel):
+    endpoint_id: int
