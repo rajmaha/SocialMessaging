@@ -27,6 +27,7 @@ from app.models.automation import AutomationRule, EmailSequence, EmailSequenceSt
 from app.models import pms  # noqa: F401
 from app.models.user_permission_override import UserPermissionOverride  # noqa: F401 — ensures table creation
 from app.models.campaign_link import CampaignLink, CampaignClick  # noqa: F401
+from app.models.campaign_variant import CampaignVariant  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -1376,6 +1377,27 @@ def _run_inline_migrations():
         """))
         conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS clicked_count INTEGER DEFAULT 0"))
         conn.execute(text("ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMPTZ"))
+
+        # A/B testing: campaign_variants table and related columns
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS campaign_variants (
+                id SERIAL PRIMARY KEY,
+                campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+                variant_label VARCHAR(10) NOT NULL,
+                subject VARCHAR(500) NOT NULL,
+                body_html TEXT NOT NULL,
+                split_percentage INTEGER DEFAULT 50,
+                sent_count INTEGER DEFAULT 0,
+                opened_count INTEGER DEFAULT 0,
+                clicked_count INTEGER DEFAULT 0
+            )
+        """))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS is_ab_test BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ab_test_size_pct INTEGER DEFAULT 20"))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ab_winner_variant_id INTEGER REFERENCES campaign_variants(id) ON DELETE SET NULL"))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ab_winner_criteria VARCHAR(50) DEFAULT 'open_rate'"))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ab_test_duration_hours INTEGER DEFAULT 4"))
+        conn.execute(text("ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS variant_id INTEGER REFERENCES campaign_variants(id) ON DELETE SET NULL"))
 
         conn.commit()
 
