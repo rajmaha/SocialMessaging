@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
+from app.models.crm import Lead
+from app.models.email_suppression import EmailSuppression
 from app.services.email_validator_service import email_validator_service
 
 router = APIRouter(prefix="/email-validator", tags=["email-validator"])
@@ -55,9 +57,6 @@ def recheck_lead_email(
     Re-validate a lead's email. Updates lead.email_valid and EmailSuppression.
     Returns updated validity status.
     """
-    from app.models.crm import Lead
-    from app.models.email_suppression import EmailSuppression
-
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -70,26 +69,24 @@ def recheck_lead_email(
         # Validator not configured or timed out — fail open, don't change status
         return {"lead_id": lead_id, "email": lead.email, "email_valid": lead.email_valid, "unchecked": True}
 
-    config = email_validator_service.get_validator_config(db)
-    threshold = config[2] if config else 60
     risk_score = result.get("risk_score", 0)
-    passed = result.get("is_valid", True) and risk_score < threshold
+    passed = result.get("is_valid", True)
 
     if passed:
         lead.email_valid = True
-        # Remove any "invalid" suppression for this email
+        # Remove any existing suppression for this email (validator says it's good now)
         db.query(EmailSuppression).filter(
             EmailSuppression.email == lead.email,
-            EmailSuppression.reason == "invalid",
         ).delete(synchronize_session=False)
     else:
         lead.email_valid = False
         # Upsert suppression with reason="invalid"
         existing = db.query(EmailSuppression).filter(
             EmailSuppression.email == lead.email,
-            EmailSuppression.reason == "invalid",
         ).first()
-        if not existing:
+        if existing:
+            existing.reason = "invalid"
+        else:
             db.add(EmailSuppression(email=lead.email, reason="invalid"))
 
     db.commit()
