@@ -51,6 +51,11 @@ class SmtpUpdate(BaseModel):
     email_footer_text: Optional[str] = None
     email_support_url: Optional[str] = None
 
+class EmailValidatorUpdate(BaseModel):
+    email_validator_url: Optional[str] = None
+    email_validator_secret: Optional[str] = None
+    email_validator_risk_threshold: Optional[int] = None
+
 @router.get("/")
 def get_branding_public(db: Session = Depends(get_db)):
     """Get public branding settings (no authentication required)"""
@@ -119,6 +124,13 @@ def get_branding_admin(
             "sidebar_text_color": branding.sidebar_text_color,
             "header_bg_color": branding.header_bg_color,
             "layout_bg_color": branding.layout_bg_color,
+            "email_validator_url": branding.email_validator_url,
+            "email_validator_secret": (
+                ("*" * (len(branding.email_validator_secret) - 4) + branding.email_validator_secret[-4:])
+                if branding.email_validator_secret and len(branding.email_validator_secret) > 4
+                else ("****" if branding.email_validator_secret else None)
+            ),
+            "email_validator_risk_threshold": branding.email_validator_risk_threshold or 60,
             "created_at": branding.created_at,
             "updated_at": branding.updated_at,
         }
@@ -222,3 +234,26 @@ def test_smtp(
             "status": "error",
             "message": f"Failed to send test email: {str(e)}"
         }
+
+@router.post("/email-validator")
+def update_email_validator(
+    data: EmailValidatorUpdate,
+    user: User = Depends(require_branding),
+    db: Session = Depends(get_db)
+):
+    """Update email validator settings (admin only)."""
+    update_dict = data.dict(exclude_unset=True)
+    # Don't overwrite the secret if the frontend sent back the masked value
+    if "email_validator_secret" in update_dict:
+        secret = update_dict["email_validator_secret"]
+        if secret and all(c == "*" for c in secret[:-4]):
+            del update_dict["email_validator_secret"]
+    branding = branding_service.update_branding(db, **update_dict)
+    return {
+        "status": "success",
+        "message": "Email validator settings updated",
+        "data": {
+            "email_validator_url": branding.email_validator_url,
+            "email_validator_risk_threshold": branding.email_validator_risk_threshold or 60,
+        }
+    }
