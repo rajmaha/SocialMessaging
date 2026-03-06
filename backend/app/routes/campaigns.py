@@ -5,7 +5,7 @@ import urllib.request
 import json as _json
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
@@ -58,6 +58,29 @@ def _verify_unsub_token(token: str) -> tuple | None:
         return email, int(campaign_id_str)
     except Exception:
         return None
+
+
+def _unsub_page(message: str, token: str, error: bool = False, resubscribed: bool = False) -> str:
+    color = "#ef4444" if error else ("#10b981" if resubscribed else "#3b82f6")
+    button = "" if error or resubscribed else f"""
+        <form method="POST" action="/campaigns/resubscribe?token={token}">
+            <button type="submit" style="margin-top:24px;padding:12px 32px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;">
+                Changed your mind? Re-subscribe
+            </button>
+        </form>
+    """
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Email Preferences</title></head>
+    <body style="margin:0;padding:40px 20px;font-family:Arial,sans-serif;background:#f9fafb;text-align:center;">
+        <div style="max-width:480px;margin:80px auto;background:#fff;border-radius:12px;padding:48px 32px;box-shadow:0 2px 8px rgba(0,0,0,.06);">
+            <div style="width:64px;height:64px;border-radius:50%;background:{color};margin:0 auto 24px;display:flex;align-items:center;justify-content:center;">
+                <span style="color:#fff;font-size:28px;">{'!' if error else '✓'}</span>
+            </div>
+            <h1 style="font-size:22px;color:#1f2937;margin:0 0 12px;">{message}</h1>
+            <p style="font-size:14px;color:#6b7280;margin:0;">{'Please try again or contact support.' if error else ("You won't receive campaign emails from us anymore." if not resubscribed else "You'll continue receiving our campaign emails.")}</p>
+            {button}
+        </div>
+    </body></html>"""
 
 
 # ── Tracking helpers ─────────────────────────────────────────────────────────
@@ -252,6 +275,47 @@ def track_open(
         media_type="image/gif",
         headers={"Cache-Control": "no-store, no-cache"},
     )
+
+
+@public_router.get("/unsubscribe/{token}")
+def unsubscribe(token: str, db: Session = Depends(get_db)):
+    """One-click unsubscribe — decodes token, suppresses email, shows landing page."""
+    result = _verify_unsub_token(token)
+    if not result:
+        return HTMLResponse(content=_unsub_page("Invalid or expired link.", token, error=True), status_code=400)
+
+    email, campaign_id = result
+
+    existing = db.query(EmailSuppression).filter(EmailSuppression.email == email).first()
+    if existing:
+        existing.unsubscribed_at = datetime.utcnow()
+        existing.resubscribed_at = None
+        existing.reason = "unsubscribed"
+    else:
+        db.add(EmailSuppression(
+            email=email,
+            reason="unsubscribed",
+            campaign_id=campaign_id,
+        ))
+    db.commit()
+
+    return HTMLResponse(content=_unsub_page("You've been unsubscribed.", token))
+
+
+@public_router.post("/resubscribe")
+def resubscribe(token: str, db: Session = Depends(get_db)):
+    """Re-subscribe — sets resubscribed_at so the email is no longer suppressed."""
+    result = _verify_unsub_token(token)
+    if not result:
+        return HTMLResponse(content=_unsub_page("Invalid or expired link.", token, error=True), status_code=400)
+
+    email, _ = result
+    sup = db.query(EmailSuppression).filter(EmailSuppression.email == email).first()
+    if sup:
+        sup.resubscribed_at = datetime.utcnow()
+        db.commit()
+
+    return HTMLResponse(content=_unsub_page("Welcome back! You've been re-subscribed.", token, resubscribed=True))
 
 
 # ===== AUDIENCE PREVIEW (no campaign_id) =====
