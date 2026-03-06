@@ -18,6 +18,7 @@ from app.routes.forms import admin_router as forms_admin_router, public_router a
 from app.routes.menus import router as menus_router
 from app.routes.user_permission_overrides import router as permission_overrides_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
+from app.models.email_suppression import EmailSuppression  # noqa: F401
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
 from app.models.backup_destination import BackupDestination  # noqa: F401
 from app.models.backup_job import BackupJob  # noqa: F401
@@ -1329,6 +1330,27 @@ def _run_inline_migrations():
         conn.execute(text("""
             ALTER TABLE leads ADD COLUMN IF NOT EXISTS tags JSON DEFAULT '[]'
         """))
+
+        # Email suppression list (unsubscribe + bounce management)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS email_suppressions (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) NOT NULL UNIQUE,
+                reason VARCHAR(50) NOT NULL,
+                campaign_id INTEGER REFERENCES campaigns(id) ON DELETE SET NULL,
+                unsubscribed_at TIMESTAMPTZ DEFAULT NOW(),
+                resubscribed_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_email_suppressions_email
+            ON email_suppressions(email)
+        """))
+        # CampaignRecipient status column for bounce tracking
+        conn.execute(text(
+            "ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'sent'"
+        ))
 
         conn.commit()
 

@@ -34,3 +34,4 @@ class CampaignRecipient(Base):
     sent_at = Column(DateTime(timezone=True), nullable=True)
     opened_at = Column(DateTime(timezone=True), nullable=True)
     open_count = Column(Integer, default=0)
+    status = Column(String(50), default="sent")  # sent | bounced | failed
