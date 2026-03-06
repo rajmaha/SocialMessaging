@@ -210,6 +210,38 @@ def _build_audience(db: Session, target_filter: dict) -> list:
     return [lead for lead in leads if lead.email not in suppressed_emails]
 
 
+def _process_dynamic_blocks(html: str, lead) -> str:
+    """Process {{#if condition="value"}}...{{#else}}...{{/if}} blocks."""
+    import re
+
+    lead_tags = lead.tags if isinstance(getattr(lead, 'tags', None), list) else []
+
+    def evaluate_condition(condition: str) -> bool:
+        match = re.match(r'(\w+)\s*=\s*"([^"]*)"', condition.strip())
+        if not match:
+            return False
+        field, value = match.groups()
+        if field == "tag":
+            return value in lead_tags
+        elif field == "status":
+            return (getattr(lead, 'status', '') or '') == value
+        elif field == "source":
+            return (getattr(lead, 'source', '') or '') == value
+        return False
+
+    def replace_block(match):
+        condition = match.group(1)
+        if_content = match.group(2)
+        else_content = match.group(4) if match.group(4) else ""
+        if evaluate_condition(condition):
+            return if_content.strip()
+        return else_content.strip()
+
+    # Match {{#if condition}}...{{#else}}...{{/if}} or {{#if condition}}...{{/if}}
+    pattern = r'\{\{#if\s+(.+?)\}\}(.*?)(\{\{#else\}\}(.*?))?\{\{/if\}\}'
+    return re.sub(pattern, replace_block, html, flags=re.DOTALL)
+
+
 def _replace_tags(html: str, lead, unsub_url: str = "#unsubscribe") -> str:
     """Replace {{merge_tags}} with lead data for personalized emails."""
     name_parts = (lead.name or "").split()
@@ -309,7 +341,8 @@ def _do_send(campaign_id: int, db: Session):
 
             # Personalise + inject tracking pixel into body
             pixel_url = f"{base_url}/campaigns/track/open/{campaign_id}/{recipient.id}"
-            personalized_body = _replace_tags(campaign.body_html, lead, unsub_url)
+            personalized_body = _process_dynamic_blocks(campaign.body_html, lead)
+            personalized_body = _replace_tags(personalized_body, lead, unsub_url)
             tracked_body = personalized_body + f'<img src="{pixel_url}" width="1" height="1" style="display:none" />'
             tracked_body = _rewrite_links(tracked_body, campaign_id, recipient.id, base_url, db)
 
@@ -436,7 +469,8 @@ def _do_ab_send(campaign_id: int, db: Session):
                 unsub_url = f"{base_url}/campaigns/unsubscribe/{unsub_token}"
 
                 pixel_url = f"{base_url}/campaigns/track/open/{campaign_id}/{recipient.id}"
-                personalized_body = _replace_tags(variant.body_html, lead, unsub_url)
+                personalized_body = _process_dynamic_blocks(variant.body_html, lead)
+                personalized_body = _replace_tags(personalized_body, lead, unsub_url)
                 tracked_body = personalized_body + f'<img src="{pixel_url}" width="1" height="1" style="display:none" />'
                 tracked_body = _rewrite_links(tracked_body, campaign_id, recipient.id, base_url, db)
 
@@ -629,8 +663,14 @@ def send_test_email(
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
+    # Process dynamic blocks with dummy lead data
+    class DummyLead:
+        tags = ["vip"]
+        status = "new"
+        source = "website"
+    body = _process_dynamic_blocks(req.body_html, DummyLead())
+
     # Replace merge tags with dummy data
-    body = req.body_html
     replacements = {
         "{{first_name}}": "John",
         "{{last_name}}": "Doe",
