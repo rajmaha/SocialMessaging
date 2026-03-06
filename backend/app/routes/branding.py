@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
 from app.services.branding_service import branding_service
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from typing import Optional, List
 
 router = APIRouter(prefix="/branding", tags=["branding"])
@@ -55,6 +55,12 @@ class EmailValidatorUpdate(BaseModel):
     email_validator_url: Optional[str] = None
     email_validator_secret: Optional[str] = None
     email_validator_risk_threshold: Optional[int] = None
+
+    @validator("email_validator_risk_threshold")
+    def threshold_in_range(cls, v):
+        if v is not None and not (1 <= v <= 100):
+            raise ValueError("email_validator_risk_threshold must be between 1 and 100")
+        return v
 
 @router.get("/")
 def get_branding_public(db: Session = Depends(get_db)):
@@ -246,8 +252,12 @@ def update_email_validator(
     # Don't overwrite the secret if the frontend sent back the masked value
     if "email_validator_secret" in update_dict:
         secret = update_dict["email_validator_secret"]
-        if secret and len(secret) > 4 and all(c == "*" for c in secret[:-4]):
-            del update_dict["email_validator_secret"]
+        if secret:
+            # Skip if secret looks masked: all characters before last 4 are stars,
+            # OR the entire secret is stars (e.g. "****" placeholder for short secrets)
+            is_masked = (len(secret) >= 4 and all(c == "*" for c in secret[:-4])) or all(c == "*" for c in secret)
+            if is_masked:
+                del update_dict["email_validator_secret"]
     branding = branding_service.update_branding(db, **update_dict)
     return {
         "status": "success",

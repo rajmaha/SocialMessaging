@@ -56,7 +56,8 @@ class BrandingService:
             'email_footer_text', 'email_support_url',
             'support_url', 'privacy_url', 'terms_url', 'timezone', 'admin_email',
             'button_primary_color', 'button_primary_hover_color', 'sidebar_text_color',
-            'header_bg_color', 'layout_bg_color'
+            'header_bg_color', 'layout_bg_color',
+            'email_validator_url', 'email_validator_secret', 'email_validator_risk_threshold'
         }
         
         for key, value in kwargs.items():
