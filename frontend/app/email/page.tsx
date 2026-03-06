@@ -27,6 +27,7 @@ import { useBranding } from '@/lib/branding-context'
 import { getAuthToken } from '@/lib/auth'
 import { useEvents } from '@/lib/events-context'
 import { API_URL } from '@/lib/config';
+import EmailAddressInput from '@/components/EmailAddressInput'
 
 interface Email {
   id: number
@@ -3179,30 +3180,39 @@ export default function EmailPage() {
               </div>
               {/* To */}
               <div className="flex items-start gap-3 px-4 py-2.5 border-b border-gray-100">
-                <span className="text-xs font-medium text-gray-400 w-14 flex-shrink-0 pt-1.5">To</span>
                 <div className="flex-1 min-w-0">
-                  <EmailAutocompleteInput value={composeData.to} onChange={(v) => setComposeData({ ...composeData, to: v })} placeholder="Recipients" suggestions={knownEmails} />
-                  {composeData.to && <div className="flex flex-wrap gap-1 mt-1">{parseEmails(composeData.to).map((e, i) => <span key={i} className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full text-xs">{e}</span>)}</div>}
+                  <EmailAddressInput
+                    label="To"
+                    value={composeData.to}
+                    onChange={(val) => setComposeData(prev => ({ ...prev, to: val }))}
+                    placeholder="recipient@example.com"
+                  />
                 </div>
                 {!showCcBcc && <button onClick={() => setShowCcBcc(true)} className="text-xs text-blue-500 hover:underline flex-shrink-0 pt-1.5">Cc Bcc</button>}
               </div>
               {/* CC */}
               {showCcBcc && (
                 <div className="flex items-start gap-3 px-4 py-2.5 border-b border-gray-100">
-                  <span className="text-xs font-medium text-gray-400 w-14 flex-shrink-0 pt-1.5">Cc</span>
                   <div className="flex-1 min-w-0">
-                    <EmailAutocompleteInput value={composeData.cc} onChange={(v) => setComposeData({ ...composeData, cc: v })} placeholder="Cc" suggestions={knownEmails} />
-                    {composeData.cc && <div className="flex flex-wrap gap-1 mt-1">{parseEmails(composeData.cc).map((e, i) => <span key={i} className="bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full text-xs">{e}</span>)}</div>}
+                    <EmailAddressInput
+                      label="CC"
+                      value={composeData.cc}
+                      onChange={(val) => setComposeData(prev => ({ ...prev, cc: val }))}
+                      placeholder="cc@example.com"
+                    />
                   </div>
                 </div>
               )}
               {/* BCC */}
               {showCcBcc && (
                 <div className="flex items-start gap-3 px-4 py-2.5 border-b border-gray-100">
-                  <span className="text-xs font-medium text-gray-400 w-14 flex-shrink-0 pt-1.5">Bcc</span>
                   <div className="flex-1 min-w-0">
-                    <EmailAutocompleteInput value={composeData.bcc} onChange={(v) => setComposeData({ ...composeData, bcc: v })} placeholder="Bcc" suggestions={knownEmails} />
-                    {composeData.bcc && <div className="flex flex-wrap gap-1 mt-1">{parseEmails(composeData.bcc).map((e, i) => <span key={i} className="bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 rounded-full text-xs">{e}</span>)}</div>}
+                    <EmailAddressInput
+                      label="BCC"
+                      value={composeData.bcc}
+                      onChange={(val) => setComposeData(prev => ({ ...prev, bcc: val }))}
+                      placeholder="bcc@example.com"
+                    />
                   </div>
                 </div>
               )}
