@@ -10,6 +10,7 @@ import EmailEditor from "@/components/EmailEditor";
 import EmailTemplateGallery from "@/components/EmailTemplateGallery";
 import SendTestEmailPopover from "@/components/SendTestEmailPopover";
 import { useRouter, useParams } from "next/navigation";
+import { useRef, useCallback } from "react";
 
 const LEAD_STATUSES = ["new", "contacted", "qualified", "lost", "converted"];
 const LEAD_SOURCES = ["conversation", "email", "website", "referral", "phone_call", "existing_client", "other"];
@@ -49,6 +50,9 @@ export default function EditCampaignPage() {
   const [campaignsList, setCampaignsList] = useState<{ id: number; name: string }[]>([]);
   const [engagementCampaignId, setEngagementCampaignId] = useState<number | "">("");
   const [engagementAction, setEngagementAction] = useState<string>("");
+  const [attachments, setAttachments] = useState<{ id: number; filename: string; size: number }[]>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     axios
@@ -107,6 +111,63 @@ export default function EditCampaignPage() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id, token]);
+
+  // Load attachments
+  useEffect(() => {
+    if (!id) return;
+    axios
+      .get(`${API_URL}/campaigns/${id}/attachments`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then(res => setAttachments(res.data || []))
+      .catch(() => {});
+  }, [id, token]);
+
+  const formatFileSize = useCallback((bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }, []);
+
+  const uploadAttachment = async (file: File) => {
+    if (attachments.length >= 3) {
+      setError("Maximum 3 attachments allowed.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("File size must be under 10 MB.");
+      return;
+    }
+    setUploadingAttachment(true);
+    setError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await axios.post(`${API_URL}/campaigns/${id}/attachments`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      setAttachments(prev => [...prev, res.data]);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Failed to upload attachment");
+    } finally {
+      setUploadingAttachment(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removeAttachment = async (attachmentId: number) => {
+    try {
+      await axios.delete(`${API_URL}/campaigns/${id}/attachments/${attachmentId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAttachments(prev => prev.filter(a => a.id !== attachmentId));
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Failed to remove attachment");
+    }
+  };
 
   const previewAudience = async () => {
     try {
@@ -558,6 +619,80 @@ export default function EditCampaignPage() {
                 </span>
               )}
             </div>
+          </div>
+
+          {/* Attachments */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-700">Attachments</h2>
+              <span className="text-xs text-gray-400">{attachments.length}/3 attachments</span>
+            </div>
+
+            {attachments.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {attachments.map(att => (
+                  <div
+                    key={att.id}
+                    className="flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg className="h-4 w-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+                      </svg>
+                      <span className="text-sm text-gray-700 truncate">{att.filename}</span>
+                      <span className="text-xs text-gray-400 flex-shrink-0">{formatFileSize(att.size)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(att.id)}
+                      className="ml-2 text-gray-400 hover:text-red-500 transition flex-shrink-0"
+                      title="Remove attachment"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {attachments.length < 3 ? (
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) uploadAttachment(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingAttachment}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {uploadingAttachment ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                      Add Attachment
+                    </>
+                  )}
+                </button>
+                <p className="text-xs text-gray-400 mt-2">Max 10 MB per file. Up to 3 attachments.</p>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">Maximum attachments reached. Remove one to add another.</p>
+            )}
           </div>
 
           {/* Schedule */}

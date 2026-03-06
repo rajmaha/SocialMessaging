@@ -501,6 +501,21 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
+          {/* Attachments */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-700">Attachments</h2>
+              <span className="text-xs text-gray-400">0/3 attachments</span>
+            </div>
+            <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50/50">
+              <svg className="mx-auto h-8 w-8 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+              </svg>
+              <p className="text-sm text-gray-500">Save the campaign first to add attachments.</p>
+              <p className="text-xs text-gray-400 mt-1">After saving, you can attach up to 3 files (max 10 MB each) from the edit page.</p>
+            </div>
+          </div>
+
           {/* Schedule */}
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="font-semibold text-gray-700 mb-3">Schedule (optional)</h2>
