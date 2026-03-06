@@ -1,5 +1,5 @@
 # backend/app/log_database.py
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 
@@ -26,3 +26,9 @@ def get_log_db():
 def init_log_db():
     """Create tables in logs.db. Call from main.py at startup."""
     LogBase.metadata.create_all(bind=log_engine)
+    with log_engine.connect() as conn:
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_user_id ON audit_logs (user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_error_logs_severity ON error_logs (severity)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_error_logs_source ON error_logs (source)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_error_logs_user_id ON error_logs (user_id)"))
+        conn.commit()
