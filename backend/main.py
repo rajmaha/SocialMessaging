@@ -1414,6 +1414,19 @@ def _run_inline_migrations():
             )
         """))
 
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS email_validator_url VARCHAR
+        """))
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS email_validator_secret VARCHAR
+        """))
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS email_validator_risk_threshold INTEGER DEFAULT 60
+        """))
+
         conn.commit()
 
 # ── Log DB Init ────────────────────────────────────────────────────────────

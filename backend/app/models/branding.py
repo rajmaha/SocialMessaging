@@ -53,6 +53,11 @@ class BrandingSettings(Base):
     allowed_file_types = Column(JSON, nullable=True)   # list of MIME strings; None = use defaults
     max_file_size_mb = Column(Integer, default=10)     # per-upload cap in MB
 
+    # Email Validator
+    email_validator_url = Column(String, nullable=True)
+    email_validator_secret = Column(String, nullable=True)
+    email_validator_risk_threshold = Column(Integer, default=60)
+
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
