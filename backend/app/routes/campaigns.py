@@ -364,6 +364,111 @@ def preview_audience(
     return {"count": len(leads)}
 
 
+# ===== SEND TEST EMAIL =====
+
+@router.post("/send-test")
+def send_test_email(
+    req: SendTestRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send a test email with dummy merge tag data."""
+    from app.services.branding_service import branding_service
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    # Replace merge tags with dummy data
+    body = req.body_html
+    replacements = {
+        "{{first_name}}": "John",
+        "{{last_name}}": "Doe",
+        "{{email}}": req.to_email,
+        "{{company}}": "Acme Corp",
+        "{{unsubscribe_link}}": "#",
+    }
+    for tag, value in replacements.items():
+        body = body.replace(tag, value)
+
+    smtp_config = branding_service.get_smtp_config(db)
+    if not smtp_config.get("smtp_password"):
+        raise HTTPException(status_code=400, detail="SMTP not configured. Set up email in Admin > Branding.")
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"[TEST] {req.subject}"
+        msg["From"] = smtp_config.get("smtp_from_email", "no-reply@example.com")
+        msg["To"] = req.to_email
+        msg.attach(MIMEText(body, "html"))
+
+        with smtplib.SMTP(smtp_config["smtp_server"], smtp_config["smtp_port"]) as server:
+            if smtp_config.get("smtp_use_tls", True):
+                server.starttls()
+            server.login(smtp_config["smtp_username"], smtp_config["smtp_password"])
+            server.sendmail(smtp_config["smtp_from_email"], req.to_email, msg.as_string())
+
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ===== SUPPRESSION LIST =====
+
+@router.get("/suppression-list")
+def list_suppressed(
+    search: str = "",
+    reason: str = "",
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List suppressed emails with optional search and filter."""
+    query = db.query(EmailSuppression).filter(
+        (EmailSuppression.resubscribed_at.is_(None)) |
+        (EmailSuppression.resubscribed_at < EmailSuppression.unsubscribed_at)
+    )
+    if search:
+        query = query.filter(EmailSuppression.email.ilike(f"%{search}%"))
+    if reason:
+        query = query.filter(EmailSuppression.reason == reason)
+
+    total = query.count()
+    items = query.order_by(desc(EmailSuppression.unsubscribed_at)).offset((page - 1) * page_size).limit(page_size).all()
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "items": [
+            {
+                "id": s.id,
+                "email": s.email,
+                "reason": s.reason,
+                "campaign_id": s.campaign_id,
+                "unsubscribed_at": s.unsubscribed_at,
+                "created_at": s.created_at,
+            }
+            for s in items
+        ],
+    }
+
+
+@router.delete("/suppression-list/{suppression_id}")
+def remove_suppression(
+    suppression_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove an email from the suppression list (admin action)."""
+    sup = db.query(EmailSuppression).filter(EmailSuppression.id == suppression_id).first()
+    if not sup:
+        raise HTTPException(status_code=404, detail="Suppression entry not found")
+    db.delete(sup)
+    db.commit()
+    return {"status": "removed"}
+
+
 # ===== CRUD =====
 
 @router.post("", response_model=CampaignResponse)
