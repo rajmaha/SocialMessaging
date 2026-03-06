@@ -1427,6 +1427,11 @@ def _run_inline_migrations():
             ADD COLUMN IF NOT EXISTS email_validator_risk_threshold INTEGER DEFAULT 60
         """))
 
+        conn.execute(text("""
+            ALTER TABLE leads
+            ADD COLUMN IF NOT EXISTS email_valid BOOLEAN
+        """))
+
         conn.commit()
 
 # ── Log DB Init ────────────────────────────────────────────────────────────

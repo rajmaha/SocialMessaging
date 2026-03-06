@@ -91,6 +91,9 @@ class Lead(Base):
     # Tags
     tags = Column(JSON, default=[])
 
+    # Email validation
+    email_valid = Column(Boolean, nullable=True)  # NULL=unchecked, True=passed, False=failed
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
