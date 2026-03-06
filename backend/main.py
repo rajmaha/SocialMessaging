@@ -1866,6 +1866,24 @@ def retry_outbox_emails():
         logger.error(f"Error in retry_outbox_emails: {str(e)}")
 
 
+def purge_old_logs():
+    """Delete audit and error log entries older than 90 days."""
+    try:
+        from app.log_database import LogSessionLocal as _LogSess
+        from app.models.logs import AuditLog, ErrorLog
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(days=90)
+        _ldb = _LogSess()
+        audit_deleted = _ldb.query(AuditLog).filter(AuditLog.timestamp < cutoff).delete()
+        error_deleted = _ldb.query(ErrorLog).filter(ErrorLog.timestamp < cutoff).delete()
+        _ldb.commit()
+        _ldb.close()
+        logger.info("Log purge: deleted %d audit entries, %d error entries older than 90 days",
+                    audit_deleted, error_deleted)
+    except Exception as e:
+        logger.error("Log purge error: %s", e)
+
+
 def apply_email_rules(email_obj, db):
     """Apply user inbox rules to a newly synced email."""
     try:
@@ -2418,6 +2436,7 @@ async def startup_event():
                 db.close()
 
         scheduler.add_job(run_due_backup_jobs, 'interval', minutes=1, id='run_due_backup_jobs')
+        scheduler.add_job(purge_old_logs, 'interval', hours=24, id='purge_old_logs')
         scheduler.start()
 
         # Wire scheduler reference for routes
