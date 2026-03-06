@@ -1,9 +1,7 @@
 'use client'
 
-import { useState, useRef, KeyboardEvent } from 'react'
-import axios from 'axios'
-import { getAuthToken } from '@/lib/auth'
-import { API_URL } from '@/lib/config'
+import { useState, useRef, useEffect, KeyboardEvent } from 'react'
+import { api } from '@/lib/api'
 
 type ChipStatus = 'pending' | 'valid' | 'risky' | 'invalid' | 'unchecked'
 
@@ -23,19 +21,15 @@ interface Props {
 
 async function validateEmail(email: string): Promise<{ status: ChipStatus; riskScore?: number; reason?: string }> {
   try {
-    const token = getAuthToken()
-    const res = await axios.post(
-      `${API_URL}/email-validator/validate`,
-      { email },
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
+    const res = await api.post('/email-validator/validate', { email })
     const data = res.data
     if (data.unchecked) return { status: 'unchecked' }
     const riskScore: number = data.risk_score ?? 0
     if (data.is_valid === false) {
       return { status: 'invalid', riskScore, reason: data.reason ?? 'Invalid address' }
     }
-    if (riskScore >= 40) {
+    // is_valid=true but elevated risk score — treat as risky (UI indicator only; pass/fail decided by backend)
+    if (riskScore > 0 && riskScore >= 50) {
       return { status: 'risky', riskScore }
     }
     return { status: 'valid', riskScore }
@@ -69,32 +63,24 @@ export default function EmailAddressInput({ label, value, onChange, placeholder 
   const [inputVal, setInputVal] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const emitChange = (updated: Chip[]) => {
-    onChange(updated.map(c => c.email).join(', '))
-  }
+  useEffect(() => {
+    onChange(chips.map(c => c.email).join(', '))
+  }, [chips])
 
   const addChip = async (raw: string) => {
     const email = raw.trim().toLowerCase()
     if (!email || chips.some(c => c.email === email)) return
     const chip: Chip = { email, status: 'pending' }
-    const updated = [...chips, chip]
-    setChips(updated)
-    emitChange(updated)
+    setChips(prev => [...prev, chip])
 
     const result = await validateEmail(email)
-    setChips(prev => {
-      const next = prev.map(c =>
-        c.email === email ? { ...c, ...result } : c
-      )
-      emitChange(next)
-      return next
-    })
+    setChips(prev =>
+      prev.map(c => c.email === email ? { ...c, ...result } : c)
+    )
   }
 
   const removeChip = (email: string) => {
-    const updated = chips.filter(c => c.email !== email)
-    setChips(updated)
-    emitChange(updated)
+    setChips(prev => prev.filter(c => c.email !== email))
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -141,6 +127,7 @@ export default function EmailAddressInput({ label, value, onChange, placeholder 
             {chip.email}
             <button
               type="button"
+              aria-label={`Remove ${chip.email}`}
               onClick={e => { e.stopPropagation(); removeChip(chip.email) }}
               className="ml-1 text-gray-400 hover:text-gray-600 leading-none"
             >
