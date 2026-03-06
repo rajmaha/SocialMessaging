@@ -16,5 +16,6 @@ from .email_suppression import EmailSuppression
 from app.models.role import Role  # noqa: F401
 from .api_server import ApiServer, UserApiCredential
 from .form import Form, FormField, FormSubmission
+from .campaign_attachment import CampaignAttachment  # noqa: F401
 
-__all__ = ["User", "Conversation", "Message", "PlatformAccount", "Team", "UserEmailAccount", "Email", "EmailAttachment", "EmailTemplate", "EmailSignature", "Contact", "EmailThread", "UserPermission", "Organization", "OrganizationContact", "Subscription", "CloudPanelServer", "Lead", "Deal", "Task", "Activity", "KBArticle", "Campaign", "CampaignRecipient", "CampaignLink", "CampaignClick", "CampaignVariant", "EmailSuppression", "Role", "ApiServer", "UserApiCredential", "Form", "FormField", "FormSubmission"]
+__all__ = ["User", "Conversation", "Message", "PlatformAccount", "Team", "UserEmailAccount", "Email", "EmailAttachment", "EmailTemplate", "EmailSignature", "Contact", "EmailThread", "UserPermission", "Organization", "OrganizationContact", "Subscription", "CloudPanelServer", "Lead", "Deal", "Task", "Activity", "KBArticle", "Campaign", "CampaignRecipient", "CampaignLink", "CampaignClick", "CampaignVariant", "EmailSuppression", "Role", "ApiServer", "UserApiCredential", "Form", "FormField", "FormSubmission", "CampaignAttachment"]

@@ -16,6 +16,7 @@ from app.routes import roles as roles_routes
 from app.routes.api_servers import router as api_servers_router, user_router as user_api_creds_router
 from app.routes.forms import admin_router as forms_admin_router, public_router as forms_public_router
 from app.routes.menus import router as menus_router
+from app.routes.campaign_attachments import router as campaign_attachments_router
 from app.routes.user_permission_overrides import router as permission_overrides_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.models.email_suppression import EmailSuppression  # noqa: F401
@@ -1399,6 +1400,18 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ab_test_duration_hours INTEGER DEFAULT 4"))
         conn.execute(text("ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS variant_id INTEGER REFERENCES campaign_variants(id) ON DELETE SET NULL"))
 
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS campaign_attachments (
+                id SERIAL PRIMARY KEY,
+                campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+                filename VARCHAR(255) NOT NULL,
+                file_path VARCHAR(500) NOT NULL,
+                content_type VARCHAR(100) NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+
         conn.commit()
 
 try:
@@ -1618,6 +1631,7 @@ app.include_router(forms_admin_router)
 app.include_router(forms_public_router)
 app.include_router(menus_router)
 app.include_router(permission_overrides_router)
+app.include_router(campaign_attachments_router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")

@@ -276,6 +276,12 @@ def _do_send(campaign_id: int, db: Session):
     sent = 0
     errors = 0
 
+    # Query attachments once (outside the loop)
+    from app.models.campaign_attachment import CampaignAttachment as CA
+    from email.mime.base import MIMEBase
+    from email import encoders
+    attachments = db.query(CA).filter(CA.campaign_id == campaign_id).all()
+
     for lead in audience:
         recipient = None
         try:
@@ -315,6 +321,15 @@ def _do_send(campaign_id: int, db: Session):
             msg["List-Unsubscribe"] = f"<{unsub_url}>"
             msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
             msg.attach(MIMEText(tracked_body, "html"))
+
+            for att in attachments:
+                if os.path.exists(att.file_path):
+                    with open(att.file_path, "rb") as f:
+                        part = MIMEBase("application", "octet-stream")
+                        part.set_payload(f.read())
+                        encoders.encode_base64(part)
+                        part.add_header("Content-Disposition", f"attachment; filename={att.filename}")
+                        msg.attach(part)
 
             if smtp_config.get("smtp_password"):
                 with smtplib.SMTP(smtp_config["smtp_server"], smtp_config["smtp_port"]) as server:
@@ -390,6 +405,12 @@ def _do_ab_send(campaign_id: int, db: Session):
         (variants[1], test_audience[midpoint:]),
     ]
 
+    # Query attachments once (outside the loop)
+    from app.models.campaign_attachment import CampaignAttachment as CA
+    from email.mime.base import MIMEBase
+    from email import encoders
+    ab_attachments = db.query(CA).filter(CA.campaign_id == campaign_id).all()
+
     sent = 0
     for variant, leads in variant_groups:
         for lead in leads:
@@ -426,6 +447,15 @@ def _do_ab_send(campaign_id: int, db: Session):
                 msg["List-Unsubscribe"] = f"<{unsub_url}>"
                 msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
                 msg.attach(MIMEText(tracked_body, "html"))
+
+                for att in ab_attachments:
+                    if os.path.exists(att.file_path):
+                        with open(att.file_path, "rb") as f:
+                            part = MIMEBase("application", "octet-stream")
+                            part.set_payload(f.read())
+                            encoders.encode_base64(part)
+                            part.add_header("Content-Disposition", f"attachment; filename={att.filename}")
+                            msg.attach(part)
 
                 if smtp_config.get("smtp_password"):
                     with smtplib.SMTP(smtp_config["smtp_server"], smtp_config["smtp_port"]) as server:
