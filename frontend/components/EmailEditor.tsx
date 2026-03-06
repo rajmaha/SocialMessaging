@@ -7,7 +7,7 @@ import TextAlign from '@tiptap/extension-text-align'
 import { TextStyleKit } from '@tiptap/extension-text-style'
 import Image from '@tiptap/extension-image'
 import { TableKit } from '@tiptap/extension-table'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import MediaLibraryModal from './MediaLibraryModal'
 import { CustomTableCell, CustomTableHeader } from './tiptap-table-cells'
 
@@ -50,8 +50,14 @@ function ToolBtn({ onClick, active, title, children }: {
   )
 }
 
+const CONDITION_TYPES = ['Tag', 'Status', 'Source'] as const
+
 export default function EmailEditor({ content, onChange }: EmailEditorProps) {
   const [mediaOpen, setMediaOpen] = useState(false)
+  const [dynOpen, setDynOpen] = useState(false)
+  const [dynCondition, setDynCondition] = useState<string>('tag')
+  const [dynValue, setDynValue] = useState('')
+  const dynBtnRef = useRef<HTMLButtonElement>(null)
 
   const editor = useEditor({
     extensions: [
@@ -101,6 +107,61 @@ export default function EmailEditor({ content, onChange }: EmailEditorProps) {
               {tag}
             </button>
           ))}
+
+          <span className="w-px h-4 bg-indigo-200 mx-1 flex-shrink-0 self-center" />
+
+          {/* Dynamic block inserter */}
+          <div className="relative flex-shrink-0">
+            <button ref={dynBtnRef} type="button"
+              onClick={() => setDynOpen(o => !o)}
+              className={`px-2 py-0.5 border rounded text-xs font-medium transition-colors ${
+                dynOpen
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+              }`}>
+              ⚡ Dynamic
+            </button>
+
+            {dynOpen && (
+              <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-64"
+                onClick={e => e.stopPropagation()}>
+                <p className="text-xs font-semibold text-gray-700 mb-2">Insert Dynamic Block</p>
+
+                <label className="block text-xs text-gray-600 mb-1">Condition type</label>
+                <select
+                  value={dynCondition}
+                  onChange={e => setDynCondition(e.target.value)}
+                  className="w-full text-xs border border-gray-300 rounded px-2 py-1 mb-2 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+                  {CONDITION_TYPES.map(t => (
+                    <option key={t} value={t.toLowerCase()}>{t}</option>
+                  ))}
+                </select>
+
+                <label className="block text-xs text-gray-600 mb-1">Value</label>
+                <input
+                  type="text"
+                  value={dynValue}
+                  onChange={e => setDynValue(e.target.value)}
+                  placeholder='e.g. "vip", "active"'
+                  className="w-full text-xs border border-gray-300 rounded px-2 py-1 mb-3 text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                />
+
+                <button type="button"
+                  disabled={!dynValue.trim()}
+                  onClick={() => {
+                    const val = dynValue.trim()
+                    if (!val) return
+                    const block = `{{#if ${dynCondition}="${val}"}}\n<div>Content for matching leads</div>\n{{#else}}\n<div>Content for other leads</div>\n{{/if}}`
+                    editor.chain().focus().insertContent(block).run()
+                    setDynValue('')
+                    setDynOpen(false)
+                  }}
+                  className="w-full text-xs font-medium bg-indigo-600 text-white rounded px-3 py-1.5 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  Insert Block
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ── Main toolbar ── */}
