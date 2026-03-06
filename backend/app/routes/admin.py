@@ -11,6 +11,8 @@ from app.schemas.email import EmailAccountCreate, EmailAccountUpdate, EmailAccou
 from app.schemas.role import UserRoleUpdate
 from app.models.role import Role
 from pydantic import BaseModel
+from app.log_database import LogSessionLocal as _LogSessionLocal
+from app.services.log_service import log_audit as _log_audit
 import json
 import os
 
@@ -220,7 +222,13 @@ async def create_user(
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(_ldb, action="user.created", entity_type="user", entity_id=db_user.id, detail={"email": db_user.email, "role": db_user.role})
+        _ldb.close()
+    except Exception:
+        pass
+
     return db_user
 
 @router.get("/users/{user_id}", response_model=UserResponse)
@@ -272,6 +280,12 @@ async def update_user(
     user.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(user)
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(_ldb, action="user.updated", entity_type="user", entity_id=user.id)
+        _ldb.close()
+    except Exception:
+        pass
     return user
 
 @router.put("/users/{user_id}/role")
@@ -352,7 +366,13 @@ async def deactivate_user(
     user.is_active = False
     user.updated_at = datetime.utcnow()
     db.commit()
-    
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(_ldb, action="user.deleted", entity_type="user", entity_id=user_id, detail={"email": user.email})
+        _ldb.close()
+    except Exception:
+        pass
+
     return {
         "status": "success",
         "message": "User deactivated",

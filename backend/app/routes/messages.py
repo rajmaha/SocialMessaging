@@ -11,6 +11,8 @@ from app.services.platform_service import (
 from app.services.events_service import events_service, EventTypes
 from app.dependencies import get_current_user
 from app.models.user import User
+from app.log_database import LogSessionLocal as _LogSessionLocal
+from app.services.log_service import log_audit as _log_audit
 import asyncio
 import os
 import re
@@ -265,6 +267,12 @@ async def send_message(
             conversation.first_response_at = _dt.utcnow()
         db.commit()
         db.refresh(db_message)
+        try:
+            _ldb = _LogSessionLocal()
+            _log_audit(_ldb, action="message.sent", entity_type="message", entity_id=db_message.id, detail={"platform": getattr(db_message, 'platform', None), "conversation_id": getattr(db_message, 'conversation_id', None)})
+            _ldb.close()
+        except Exception:
+            pass
 
         # For webchat: push agent reply to visitor WebSocket after DB commit (real id + timestamp)
         if platform == "webchat":

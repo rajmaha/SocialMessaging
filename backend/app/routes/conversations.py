@@ -11,6 +11,8 @@ from app.models.team import Team
 from app.schemas.conversation import ConversationResponse
 from app.dependencies import get_current_user
 from app.services.events_service import events_service
+from app.log_database import LogSessionLocal as _LogSessionLocal
+from app.services.log_service import log_audit as _log_audit
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -157,6 +159,12 @@ def update_conversation_status(
     elif body.status != "resolved":
         conv.resolved_at = None
     db.commit()
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(_ldb, action="conversation.status_changed", entity_type="conversation", entity_id=conv.id, detail={"status": conv.status})
+        _ldb.close()
+    except Exception:
+        pass
     return {"success": True, "status": conv.status}
 
 
@@ -203,6 +211,12 @@ async def assign_conversation(
         # Individual assignment clears team
         conv.assigned_team_id = None
     db.commit()
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(_ldb, action="conversation.assigned", entity_type="conversation", entity_id=conv.id, detail={"assigned_to": body.user_id})
+        _ldb.close()
+    except Exception:
+        pass
 
     # Insert a system/handover message so the reason is visible in conversation history
     assigner_name = current_user.display_name or current_user.full_name or current_user.username
