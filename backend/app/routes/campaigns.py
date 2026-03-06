@@ -284,6 +284,8 @@ def _do_send(campaign_id: int, db: Session):
                 CampaignRecipient.campaign_id == campaign_id,
                 CampaignRecipient.email == lead.email,
             ).first()
+            if recipient and recipient.sent_at:
+                continue  # Already sent (e.g. A/B test recipient)
             if not recipient:
                 recipient = CampaignRecipient(
                     campaign_id=campaign_id,
@@ -344,6 +346,104 @@ def _do_send(campaign_id: int, db: Session):
     campaign.sent_count = sent
     campaign.sent_at = datetime.utcnow()
     campaign.status = "sent" if errors == 0 else "failed"
+    db.commit()
+
+
+def _do_ab_send(campaign_id: int, db: Session):
+    """Send A/B test variants to a subset of the audience."""
+    from app.models.campaign_variant import CampaignVariant
+    from app.services.branding_service import branding_service
+    import smtplib
+    import random
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign or not campaign.is_ab_test:
+        return
+
+    campaign.status = "ab_testing"
+    db.commit()
+
+    smtp_config = branding_service.get_smtp_config(db)
+    audience = _build_audience(db, campaign.target_filter or {})
+
+    variants = db.query(CampaignVariant).filter(
+        CampaignVariant.campaign_id == campaign_id
+    ).order_by(CampaignVariant.variant_label).all()
+    if len(variants) != 2:
+        campaign.status = "failed"
+        db.commit()
+        return
+
+    base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+
+    # Calculate test audience size
+    test_size = max(1, int(len(audience) * (campaign.ab_test_size_pct or 20) / 100))
+    random.shuffle(audience)
+    test_audience = audience[:test_size]
+
+    # Split test audience between variant A and variant B
+    midpoint = len(test_audience) // 2
+    variant_groups = [
+        (variants[0], test_audience[:midpoint]),
+        (variants[1], test_audience[midpoint:]),
+    ]
+
+    sent = 0
+    for variant, leads in variant_groups:
+        for lead in leads:
+            recipient = None
+            try:
+                recipient = db.query(CampaignRecipient).filter(
+                    CampaignRecipient.campaign_id == campaign_id,
+                    CampaignRecipient.email == lead.email,
+                ).first()
+                if not recipient:
+                    recipient = CampaignRecipient(
+                        campaign_id=campaign_id,
+                        lead_id=lead.id,
+                        email=lead.email,
+                        name=f"{lead.first_name} {lead.last_name or ''}".strip(),
+                        status="sent",
+                        variant_id=variant.id,
+                    )
+                    db.add(recipient)
+                    db.flush()
+
+                unsub_token = _make_unsub_token(lead.email, campaign_id)
+                unsub_url = f"{base_url}/campaigns/unsubscribe/{unsub_token}"
+
+                pixel_url = f"{base_url}/campaigns/track/open/{campaign_id}/{recipient.id}"
+                personalized_body = _replace_tags(variant.body_html, lead, unsub_url)
+                tracked_body = personalized_body + f'<img src="{pixel_url}" width="1" height="1" style="display:none" />'
+                tracked_body = _rewrite_links(tracked_body, campaign_id, recipient.id, base_url, db)
+
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = variant.subject
+                msg["From"] = smtp_config.get("smtp_from_email", "no-reply@example.com")
+                msg["To"] = lead.email
+                msg["List-Unsubscribe"] = f"<{unsub_url}>"
+                msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+                msg.attach(MIMEText(tracked_body, "html"))
+
+                if smtp_config.get("smtp_password"):
+                    with smtplib.SMTP(smtp_config["smtp_server"], smtp_config["smtp_port"]) as server:
+                        if smtp_config.get("smtp_use_tls", True):
+                            server.starttls()
+                        server.login(smtp_config["smtp_username"], smtp_config["smtp_password"])
+                        server.sendmail(smtp_config["smtp_from_email"], lead.email, msg.as_string())
+
+                recipient.sent_at = datetime.utcnow()
+                recipient.status = "sent"
+                sent += 1
+                variant.sent_count = (variant.sent_count or 0) + 1
+            except Exception:
+                if recipient:
+                    recipient.status = "failed"
+
+    campaign.sent_count = sent
+    campaign.sent_at = datetime.utcnow()
     db.commit()
 
 
@@ -687,6 +787,9 @@ def send_campaign(
         raise HTTPException(status_code=400, detail="Campaign is already sending")
     if c.status == "sent":
         raise HTTPException(status_code=400, detail="Campaign already sent")
+    if c.is_ab_test:
+        background_tasks.add_task(_do_ab_send, campaign_id, db)
+        return {"status": "ab_testing"}
     background_tasks.add_task(_do_send, campaign_id, db)
     return {"status": "sending"}
 

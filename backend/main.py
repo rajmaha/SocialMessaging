@@ -2289,6 +2289,57 @@ async def startup_event():
 
         scheduler.add_job(send_scheduled_campaigns, 'interval', minutes=1, id='send_scheduled_campaigns_job')
 
+        def pick_ab_winners():
+            """Check A/B test campaigns and pick winners after the test duration has elapsed."""
+            from app.models.campaign import Campaign
+            from app.models.campaign_variant import CampaignVariant
+            from app.routes.campaigns import _do_send
+            from datetime import timedelta
+
+            db = SessionLocal()
+            try:
+                now = datetime.utcnow()
+                ab_campaigns = db.query(Campaign).filter(
+                    Campaign.status == "ab_testing",
+                    Campaign.sent_at.isnot(None),
+                ).all()
+
+                for campaign in ab_campaigns:
+                    try:
+                        duration_hours = campaign.ab_test_duration_hours or 4
+                        if now < campaign.sent_at + timedelta(hours=duration_hours):
+                            continue  # Test period not yet elapsed
+
+                        variants = db.query(CampaignVariant).filter(
+                            CampaignVariant.campaign_id == campaign.id
+                        ).all()
+                        if len(variants) != 2:
+                            continue
+
+                        # Pick winner based on criteria
+                        criteria = campaign.ab_winner_criteria or "open_rate"
+                        if criteria == "click_rate":
+                            winner = max(variants, key=lambda v: (v.clicked_count or 0) / max(v.sent_count or 1, 1))
+                        else:
+                            winner = max(variants, key=lambda v: (v.opened_count or 0) / max(v.sent_count or 1, 1))
+
+                        campaign.ab_winner_variant_id = winner.id
+                        campaign.subject = winner.subject
+                        campaign.body_html = winner.body_html
+                        campaign.status = "draft"
+                        db.commit()
+
+                        # Send to remaining audience (non-test recipients)
+                        _do_send(campaign.id, db)
+                    except Exception as e:
+                        logger.error(f"A/B winner pick error (campaign {campaign.id}): {e}")
+            except Exception as e:
+                logger.error(f"pick_ab_winners error: {e}")
+            finally:
+                db.close()
+
+        scheduler.add_job(pick_ab_winners, 'interval', minutes=5, id='pick_ab_winners_job')
+
         def run_due_backup_jobs():
             """Poll BackupJob table every minute and run jobs whose next_run_at is due."""
             from app.database import SessionLocal
