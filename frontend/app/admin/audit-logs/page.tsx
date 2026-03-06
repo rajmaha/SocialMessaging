@@ -66,13 +66,23 @@ export default function AuditLogsPage() {
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
-  const exportCsv = () => {
+  const exportCsv = async () => {
     const params = new URLSearchParams();
     if (filterAction) params.set('action', filterAction);
     if (filterUserId) params.set('user_id', filterUserId);
     if (filterFrom) params.set('date_from', filterFrom);
     if (filterTo) params.set('date_to', filterTo);
-    window.open(`${API_URL}/logs/audit/export?${params}&token=${getAuthToken()}`, '_blank');
+    const res = await fetch(`${API_URL}/logs/audit/export?${params}`, {
+      headers: { Authorization: `Bearer ${getAuthToken()}` },
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'audit_logs.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
