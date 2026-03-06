@@ -30,6 +30,14 @@ export default function NewCampaignPage() {
       engagement: {} as Record<string, number>,
     },
     scheduled_at: "",
+    is_ab_test: false,
+    ab_test_size_pct: 20,
+    ab_winner_criteria: "open_rate",
+    ab_test_duration_hours: 4,
+    variant_a_subject: "",
+    variant_a_body: "",
+    variant_b_subject: "",
+    variant_b_body: "",
   });
   const [saving, setSaving] = useState(false);
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
@@ -111,27 +119,64 @@ export default function NewCampaignPage() {
   };
 
   const save = async (publish: boolean) => {
-    if (!form.name || !form.subject || !form.body_html) {
-      setError("Name, subject, and body are required.");
-      return;
+    if (form.is_ab_test) {
+      if (!form.name || !form.variant_a_subject || !form.variant_a_body || !form.variant_b_subject || !form.variant_b_body) {
+        setError("Name, and both variant subjects and bodies are required for A/B tests.");
+        return;
+      }
+    } else {
+      if (!form.name || !form.subject || !form.body_html) {
+        setError("Name, subject, and body are required.");
+        return;
+      }
     }
     setSaving(true);
     setError("");
     try {
-      const payload = {
+      const payload: any = {
         ...form,
         scheduled_at: form.scheduled_at ? new Date(form.scheduled_at).toISOString() : null,
         status: publish
           ? (form.scheduled_at ? "scheduled" : "draft")
           : "draft",
       };
+      // If A/B test, use variant A as the main subject/body for the campaign record
+      if (form.is_ab_test) {
+        payload.subject = form.variant_a_subject || form.subject;
+        payload.body_html = form.variant_a_body || form.body_html;
+      }
+      // Remove variant fields from campaign payload (they go to /variants endpoint)
+      delete payload.variant_a_subject;
+      delete payload.variant_a_body;
+      delete payload.variant_b_subject;
+      delete payload.variant_b_body;
+
       const res = await axios.post(`${API_URL}/campaigns`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      const campaignId = res.data.id;
+
+      // Create variants if A/B test
+      if (form.is_ab_test) {
+        const headers = { Authorization: `Bearer ${token}` };
+        await Promise.all([
+          axios.post(`${API_URL}/campaigns/${campaignId}/variants`, {
+            variant_label: "A",
+            subject: form.variant_a_subject,
+            body_html: form.variant_a_body,
+          }, { headers }),
+          axios.post(`${API_URL}/campaigns/${campaignId}/variants`, {
+            variant_label: "B",
+            subject: form.variant_b_subject,
+            body_html: form.variant_b_body,
+          }, { headers }),
+        ]);
+      }
+
       if (publish) {
-        router.push(`/admin/campaigns/${res.data.id}`);
+        router.push(`/admin/campaigns/${campaignId}`);
       } else {
-        router.push(`/admin/campaigns/${res.data.id}/edit`);
+        router.push(`/admin/campaigns/${campaignId}/edit`);
       }
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to save campaign");
@@ -168,30 +213,143 @@ export default function NewCampaignPage() {
                 placeholder="e.g. March Newsletter"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">Email Subject *</label>
-              <input
-                type="text"
-                value={form.subject}
-                onChange={e => setForm({ ...form, subject: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g. Special offer just for you"
-              />
+            {!form.is_ab_test && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Email Subject *</label>
+                  <input
+                    type="text"
+                    value={form.subject}
+                    onChange={e => setForm({ ...form, subject: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. Special offer just for you"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-gray-600">Email Body *</label>
+                    <div className="flex items-center gap-2">
+                      <SendTestEmailPopover subject={form.subject} bodyHtml={form.body_html} />
+                      <EmailTemplateGallery onSelect={html => setForm(prev => ({ ...prev, body_html: html }))} />
+                    </div>
+                  </div>
+                  <EmailEditor
+                    content={form.body_html}
+                    onChange={html => setForm(prev => ({ ...prev, body_html: html }))}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Use the template gallery to pick a pre-built design, or write your own. A tracking pixel is appended automatically on send.</p>
+                </div>
+              </>
+            )}
+
+            {/* A/B Test Toggle */}
+            <div className="flex items-center gap-3 pt-2">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.is_ab_test}
+                  onChange={e => setForm(prev => ({ ...prev, is_ab_test: e.target.checked }))}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
+              </label>
+              <span className="text-sm font-medium text-gray-700">Enable A/B Test</span>
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-gray-600">Email Body *</label>
-                <div className="flex items-center gap-2">
-                  <SendTestEmailPopover subject={form.subject} bodyHtml={form.body_html} />
-                  <EmailTemplateGallery onSelect={html => setForm(prev => ({ ...prev, body_html: html }))} />
+
+            {/* A/B Variant Editors */}
+            {form.is_ab_test && (
+              <div className="space-y-4 pt-2">
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Variant A */}
+                  <div className="border border-blue-200 rounded-lg p-4 bg-blue-50/30">
+                    <h3 className="text-sm font-semibold text-blue-700 mb-3">Variant A</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Subject *</label>
+                        <input
+                          type="text"
+                          value={form.variant_a_subject}
+                          onChange={e => setForm(prev => ({ ...prev, variant_a_subject: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Subject line for variant A"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Body *</label>
+                        <EmailEditor
+                          content={form.variant_a_body}
+                          onChange={html => setForm(prev => ({ ...prev, variant_a_body: html }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  {/* Variant B */}
+                  <div className="border border-purple-200 rounded-lg p-4 bg-purple-50/30">
+                    <h3 className="text-sm font-semibold text-purple-700 mb-3">Variant B</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Subject *</label>
+                        <input
+                          type="text"
+                          value={form.variant_b_subject}
+                          onChange={e => setForm(prev => ({ ...prev, variant_b_subject: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Subject line for variant B"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Body *</label>
+                        <EmailEditor
+                          content={form.variant_b_body}
+                          onChange={html => setForm(prev => ({ ...prev, variant_b_body: html }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* A/B Test Settings */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50/50">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">A/B Test Settings</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Test Size %</label>
+                      <input
+                        type="number"
+                        min={10}
+                        max={50}
+                        value={form.ab_test_size_pct}
+                        onChange={e => setForm(prev => ({ ...prev, ab_test_size_pct: Number(e.target.value) }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">% of audience for testing</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Winner Criteria</label>
+                      <select
+                        value={form.ab_winner_criteria}
+                        onChange={e => setForm(prev => ({ ...prev, ab_winner_criteria: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="open_rate">Open Rate</option>
+                        <option value="click_rate">Click Rate</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Test Duration (hours)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={form.ab_test_duration_hours}
+                        onChange={e => setForm(prev => ({ ...prev, ab_test_duration_hours: Number(e.target.value) }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">Hours before picking winner</p>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <EmailEditor
-                content={form.body_html}
-                onChange={html => setForm(prev => ({ ...prev, body_html: html }))}
-              />
-              <p className="text-xs text-gray-400 mt-1">Use the template gallery to pick a pre-built design, or write your own. A tracking pixel is appended automatically on send.</p>
-            </div>
+            )}
           </div>
 
           {/* Audience */}

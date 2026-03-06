@@ -110,6 +110,60 @@ export default function CampaignStatsPage() {
           </div>
         </div>
 
+        {/* A/B Test Results */}
+        {stats?.is_ab_test && stats?.variants && stats.variants.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-gray-800 mb-3">A/B Test Results</h2>
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              {stats.variants.map((v: any) => (
+                <div
+                  key={v.variant_label}
+                  className={`bg-white rounded-lg shadow p-5 relative ${
+                    v.is_winner ? "ring-2 ring-green-500" : ""
+                  }`}
+                >
+                  {v.is_winner && (
+                    <span className="absolute top-3 right-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      Winner
+                    </span>
+                  )}
+                  <h3 className="text-sm font-semibold text-gray-700 mb-1">
+                    Variant {v.variant_label}
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-4 truncate" title={v.subject}>
+                    Subject: {v.subject}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase">Sent</p>
+                      <p className="text-2xl font-bold text-gray-900">{v.sent_count ?? 0}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase">Opened</p>
+                      <p className="text-2xl font-bold text-green-600">{v.opened_count ?? 0}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase">Open Rate</p>
+                      <p className="text-2xl font-bold text-indigo-600">{v.open_rate ?? 0}%</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase">Clicked</p>
+                      <p className="text-2xl font-bold text-amber-600">{v.clicked_count ?? 0}</p>
+                    </div>
+                    <div className="text-center col-span-2">
+                      <p className="text-xs text-gray-400 uppercase">Click Rate</p>
+                      <p className="text-2xl font-bold text-amber-600">{v.click_rate ?? 0}%</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500">
+              Winner criteria: <span className="font-medium">{stats.ab_winner_criteria === "click_rate" ? "Click Rate" : "Open Rate"}</span>
+            </p>
+          </div>
+        )}
+
         {/* Engagement breakdowns */}
         {hasBreakdowns && (
           <div className="grid grid-cols-3 gap-4 mb-6">
