@@ -315,6 +315,7 @@ def _do_send(campaign_id: int, db: Session):
 
     validator_config = email_validator_service.get_validator_config(db)
     if validator_config and audience:
+        _, _, threshold = validator_config
         try:
             audience_emails = [lead.email for lead in audience]
             bulk_results = email_validator_service.validate_bulk(audience_emails, db)
@@ -327,21 +328,30 @@ def _do_send(campaign_id: int, db: Session):
                     # No result for this email — fail open, include
                     filtered_audience.append(lead)
                     continue
-                passed = result.get("is_valid", True)
+                risk_score = result.get("risk_score", 0)
+                passed = result.get("is_valid", True) and risk_score < threshold
                 if passed:
                     lead.email_valid = True
                     filtered_audience.append(lead)
                 else:
                     lead.email_valid = False
+                    # Only add "invalid" suppression if no suppression row already exists for this email
                     existing_sup = db.query(_ES).filter(
                         _ES.email == lead.email,
+                        _ES.reason == "invalid",
                     ).first()
-                    if existing_sup:
-                        existing_sup.reason = "invalid"
-                    else:
-                        db.add(_ES(email=lead.email, reason="invalid", campaign_id=campaign_id))
+                    if not existing_sup:
+                        # Check for any existing suppression (unsubscribed/bounced) — if so, skip insert
+                        any_sup = db.query(_ES).filter(_ES.email == lead.email).first()
+                        if not any_sup:
+                            db.add(_ES(email=lead.email, reason="invalid", campaign_id=campaign_id))
                     validation_skipped_count += 1
             db.commit()
+            import logging as _logging
+            _logging.getLogger(__name__).info(
+                "Pre-send validation excluded %d leads for campaign %d",
+                validation_skipped_count, campaign_id
+            )
             audience = filtered_audience
         except Exception as exc:
             import logging as _logging
