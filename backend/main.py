@@ -26,6 +26,7 @@ from app.models.backup_run import BackupRun  # noqa: F401
 from app.models.automation import AutomationRule, EmailSequence, EmailSequenceStep, EmailSequenceEnrollment  # noqa: F401
 from app.models import pms  # noqa: F401
 from app.models.user_permission_override import UserPermissionOverride  # noqa: F401 — ensures table creation
+from app.models.campaign_link import CampaignLink, CampaignClick  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -1351,6 +1352,30 @@ def _run_inline_migrations():
         conn.execute(text(
             "ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'sent'"
         ))
+
+        # Click tracking tables
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS campaign_links (
+                id SERIAL PRIMARY KEY,
+                campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+                original_url TEXT NOT NULL,
+                click_count INTEGER DEFAULT 0,
+                first_clicked_at TIMESTAMPTZ,
+                last_clicked_at TIMESTAMPTZ
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS campaign_clicks (
+                id SERIAL PRIMARY KEY,
+                link_id INTEGER REFERENCES campaign_links(id) ON DELETE CASCADE,
+                recipient_id INTEGER REFERENCES campaign_recipients(id) ON DELETE CASCADE,
+                clicked_at TIMESTAMPTZ DEFAULT NOW(),
+                ip_address VARCHAR(45),
+                user_agent TEXT
+            )
+        """))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS clicked_count INTEGER DEFAULT 0"))
+        conn.execute(text("ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMPTZ"))
 
         conn.commit()
 

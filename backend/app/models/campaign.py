@@ -18,6 +18,7 @@ class Campaign(Base):
     sent_at = Column(DateTime(timezone=True), nullable=True)
     sent_count = Column(Integer, default=0)
     opened_count = Column(Integer, default=0)
+    clicked_count = Column(Integer, default=0)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -35,3 +36,4 @@ class CampaignRecipient(Base):
     opened_at = Column(DateTime(timezone=True), nullable=True)
     open_count = Column(Integer, default=0)
     status = Column(String(50), default="sent")  # sent | bounced | failed
+    clicked_at = Column(DateTime(timezone=True), nullable=True)
