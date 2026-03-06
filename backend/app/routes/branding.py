@@ -246,7 +246,7 @@ def update_email_validator(
     # Don't overwrite the secret if the frontend sent back the masked value
     if "email_validator_secret" in update_dict:
         secret = update_dict["email_validator_secret"]
-        if secret and all(c == "*" for c in secret[:-4]):
+        if secret and len(secret) > 4 and all(c == "*" for c in secret[:-4]):
             del update_dict["email_validator_secret"]
     branding = branding_service.update_branding(db, **update_dict)
     return {
