@@ -148,13 +148,6 @@ def _enrich_recipient(recipient_id: int, ip: str, user_agent: str):
 
 def _build_audience(db: Session, target_filter: dict) -> list:
     """Return leads matching the campaign's target_filter, excluding suppressed emails."""
-    # Get actively suppressed emails
-    suppressed_q = db.query(EmailSuppression.email).filter(
-        (EmailSuppression.resubscribed_at.is_(None)) |
-        (EmailSuppression.resubscribed_at < EmailSuppression.unsubscribed_at)
-    )
-    suppressed_emails = {row[0] for row in suppressed_q.all()}
-
     query = db.query(Lead).filter(Lead.email.isnot(None))
     statuses = target_filter.get("statuses", [])
     sources = target_filter.get("sources", [])
@@ -164,6 +157,56 @@ def _build_audience(db: Session, target_filter: dict) -> list:
         query = query.filter(Lead.source.in_(sources))
 
     leads = query.all()
+
+    # Tag filters
+    tags_filter = target_filter.get("tags", {})
+    include_tags = tags_filter.get("include", [])
+    exclude_tags = tags_filter.get("exclude", [])
+
+    if include_tags or exclude_tags:
+        filtered_leads = []
+        for lead in leads:
+            lead_tags = lead.tags if isinstance(lead.tags, list) else []
+            if include_tags and not all(t in lead_tags for t in include_tags):
+                continue
+            if exclude_tags and any(t in lead_tags for t in exclude_tags):
+                continue
+            filtered_leads.append(lead)
+        leads = filtered_leads
+
+    # Engagement filters
+    engagement = target_filter.get("engagement", {})
+    if engagement.get("opened_campaign"):
+        cid = engagement["opened_campaign"]
+        opened_emails = {r.email for r in db.query(CampaignRecipient.email).filter(
+            CampaignRecipient.campaign_id == cid,
+            CampaignRecipient.opened_at.isnot(None),
+        ).all()}
+        leads = [l for l in leads if l.email in opened_emails]
+
+    if engagement.get("not_opened_campaign"):
+        cid = engagement["not_opened_campaign"]
+        opened_emails = {r.email for r in db.query(CampaignRecipient.email).filter(
+            CampaignRecipient.campaign_id == cid,
+            CampaignRecipient.opened_at.isnot(None),
+        ).all()}
+        leads = [l for l in leads if l.email not in opened_emails]
+
+    if engagement.get("clicked_campaign"):
+        cid = engagement["clicked_campaign"]
+        clicked_emails = {r.email for r in db.query(CampaignRecipient.email).filter(
+            CampaignRecipient.campaign_id == cid,
+            CampaignRecipient.clicked_at.isnot(None),
+        ).all()}
+        leads = [l for l in leads if l.email in clicked_emails]
+
+    # Suppression filter (must be last)
+    suppressed_q = db.query(EmailSuppression.email).filter(
+        (EmailSuppression.resubscribed_at.is_(None)) |
+        (EmailSuppression.resubscribed_at < EmailSuppression.unsubscribed_at)
+    )
+    suppressed_emails = {row[0] for row in suppressed_q.all()}
+
     return [lead for lead in leads if lead.email not in suppressed_emails]
 
 
