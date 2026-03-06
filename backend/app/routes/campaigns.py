@@ -207,7 +207,11 @@ def _build_audience(db: Session, target_filter: dict) -> list:
     )
     suppressed_emails = {row[0] for row in suppressed_q.all()}
 
-    return [lead for lead in leads if lead.email not in suppressed_emails]
+    # Also exclude leads that have been marked as invalid by the email validator
+    return [
+        lead for lead in leads
+        if lead.email not in suppressed_emails and lead.email_valid is not False
+    ]
 
 
 def _process_dynamic_blocks(html: str, lead) -> str:
@@ -303,6 +307,46 @@ def _do_send(campaign_id: int, db: Session):
 
     smtp_config = branding_service.get_smtp_config(db)
     audience = _build_audience(db, campaign.target_filter or {})
+
+    # Pre-send bulk email validation (skip if validator not configured)
+    from app.services.email_validator_service import email_validator_service
+    from app.models.email_suppression import EmailSuppression as _ES
+    validation_skipped_count = 0
+
+    validator_config = email_validator_service.get_validator_config(db)
+    if validator_config and audience:
+        try:
+            audience_emails = [lead.email for lead in audience]
+            bulk_results = email_validator_service.validate_bulk(audience_emails, db)
+            # Build a map: email -> result
+            result_map = {r.get("email"): r for r in bulk_results if r.get("email")}
+            filtered_audience = []
+            for lead in audience:
+                result = result_map.get(lead.email)
+                if result is None:
+                    # No result for this email — fail open, include
+                    filtered_audience.append(lead)
+                    continue
+                passed = result.get("is_valid", True)
+                if passed:
+                    lead.email_valid = True
+                    filtered_audience.append(lead)
+                else:
+                    lead.email_valid = False
+                    existing_sup = db.query(_ES).filter(
+                        _ES.email == lead.email,
+                    ).first()
+                    if existing_sup:
+                        existing_sup.reason = "invalid"
+                    else:
+                        db.add(_ES(email=lead.email, reason="invalid", campaign_id=campaign_id))
+                    validation_skipped_count += 1
+            db.commit()
+            audience = filtered_audience
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger(__name__).warning("Pre-send bulk validation failed: %s", exc)
+            # Fail open — proceed with original audience
 
     base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
     sent = 0
