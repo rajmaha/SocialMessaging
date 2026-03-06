@@ -147,7 +147,14 @@ def _enrich_recipient(recipient_id: int, ip: str, user_agent: str):
 
 
 def _build_audience(db: Session, target_filter: dict) -> list:
-    """Return leads matching the campaign's target_filter."""
+    """Return leads matching the campaign's target_filter, excluding suppressed emails."""
+    # Get actively suppressed emails
+    suppressed_q = db.query(EmailSuppression.email).filter(
+        (EmailSuppression.resubscribed_at.is_(None)) |
+        (EmailSuppression.resubscribed_at < EmailSuppression.unsubscribed_at)
+    )
+    suppressed_emails = {row[0] for row in suppressed_q.all()}
+
     query = db.query(Lead).filter(Lead.email.isnot(None))
     statuses = target_filter.get("statuses", [])
     sources = target_filter.get("sources", [])
@@ -155,10 +162,12 @@ def _build_audience(db: Session, target_filter: dict) -> list:
         query = query.filter(Lead.status.in_(statuses))
     if sources:
         query = query.filter(Lead.source.in_(sources))
-    return query.all()
+
+    leads = query.all()
+    return [lead for lead in leads if lead.email not in suppressed_emails]
 
 
-def _replace_tags(html: str, lead) -> str:
+def _replace_tags(html: str, lead, unsub_url: str = "#unsubscribe") -> str:
     """Replace {{merge_tags}} with lead data for personalized emails."""
     name_parts = (lead.name or "").split()
     replacements = {
@@ -166,7 +175,7 @@ def _replace_tags(html: str, lead) -> str:
         "{{last_name}}": " ".join(name_parts[1:]) if len(name_parts) > 1 else "",
         "{{email}}": lead.email or "",
         "{{company}}": lead.company or "",
-        "{{unsubscribe_link}}": "#unsubscribe",
+        "{{unsubscribe_link}}": unsub_url,
     }
     for tag, value in replacements.items():
         html = html.replace(tag, value)
@@ -195,6 +204,7 @@ def _do_send(campaign_id: int, db: Session):
     errors = 0
 
     for lead in audience:
+        recipient = None
         try:
             # Create or find recipient row
             recipient = db.query(CampaignRecipient).filter(
@@ -207,19 +217,27 @@ def _do_send(campaign_id: int, db: Session):
                     lead_id=lead.id,
                     email=lead.email,
                     name=f"{lead.first_name} {lead.last_name or ''}".strip(),
+                    status="sent",
                 )
                 db.add(recipient)
                 db.flush()  # get id
 
+            # Build per-recipient unsubscribe URL
+            unsub_token = _make_unsub_token(lead.email, campaign_id)
+            unsub_url = f"{base_url}/campaigns/unsubscribe/{unsub_token}"
+
             # Personalise + inject tracking pixel into body
             pixel_url = f"{base_url}/campaigns/track/open/{campaign_id}/{recipient.id}"
-            personalized_body = _replace_tags(campaign.body_html, lead)
+            personalized_body = _replace_tags(campaign.body_html, lead, unsub_url)
             tracked_body = personalized_body + f'<img src="{pixel_url}" width="1" height="1" style="display:none" />'
 
             msg = MIMEMultipart("alternative")
             msg["Subject"] = campaign.subject
             msg["From"] = smtp_config.get("smtp_from_email", "no-reply@example.com")
             msg["To"] = lead.email
+            # RFC 8058 one-click unsubscribe headers
+            msg["List-Unsubscribe"] = f"<{unsub_url}>"
+            msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
             msg.attach(MIMEText(tracked_body, "html"))
 
             if smtp_config.get("smtp_password"):
@@ -230,8 +248,23 @@ def _do_send(campaign_id: int, db: Session):
                     server.sendmail(smtp_config["smtp_from_email"], lead.email, msg.as_string())
 
             recipient.sent_at = datetime.utcnow()
+            recipient.status = "sent"
             sent += 1
-        except Exception as e:
+        except smtplib.SMTPRecipientsRefused:
+            # Hard bounce — auto-suppress this email
+            if recipient:
+                recipient.status = "bounced"
+            existing_sup = db.query(EmailSuppression).filter(EmailSuppression.email == lead.email).first()
+            if not existing_sup:
+                db.add(EmailSuppression(email=lead.email, reason="bounced", campaign_id=campaign_id))
+            errors += 1
+        except (smtplib.SMTPDataError, smtplib.SMTPServerDisconnected):
+            if recipient:
+                recipient.status = "failed"
+            errors += 1
+        except Exception:
+            if recipient:
+                recipient.status = "failed"
             errors += 1
 
     campaign.sent_count = sent
