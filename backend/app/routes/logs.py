@@ -6,11 +6,21 @@ from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.log_database import get_log_db
 from app.models.logs import AuditLog, ErrorLog
 from app.database import get_db
 from app.models.user import User
+
+class FrontendErrorPayload(BaseModel):
+    message: str
+    error_type: Optional[str] = None
+    stack: Optional[str] = None
+    url: Optional[str] = None
+    line: Optional[int] = None
+    col: Optional[int] = None
+
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -186,10 +196,10 @@ def export_error_logs(
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["id", "timestamp", "severity", "source", "error_type", "message",
+    writer.writerow(["id", "timestamp", "severity", "source", "error_type", "message", "traceback",
                      "user_id", "request_path", "request_method", "context"])
     for r in rows:
-        writer.writerow([r.id, r.timestamp, r.severity, r.source, r.error_type, r.message,
+        writer.writerow([r.id, r.timestamp, r.severity, r.source, r.error_type, r.message, r.traceback,
                          r.user_id, r.request_path, r.request_method, r.context])
     output.seek(0)
     return StreamingResponse(
@@ -201,7 +211,7 @@ def export_error_logs(
 
 @router.post("/frontend-error")
 def receive_frontend_error(
-    payload: dict,
+    payload: FrontendErrorPayload,
     request: Request,
     log_db: Session = Depends(get_log_db),
 ):
@@ -209,16 +219,16 @@ def receive_frontend_error(
     from app.services.log_service import log_error
     log_error(
         log_db,
-        message=payload.get("message", "Unknown frontend error"),
+        message=payload.message,
         source="frontend",
         severity="error",
-        error_type=payload.get("error_type", "JavaScriptError"),
-        request_path=payload.get("url"),
+        error_type=payload.error_type or "JavaScriptError",
+        request_path=payload.url,
         context={
-            "stack": payload.get("stack"),
+            "stack": payload.stack,
             "user_agent": request.headers.get("user-agent"),
-            "col": payload.get("col"),
-            "line": payload.get("line"),
+            "col": payload.col,
+            "line": payload.line,
         },
     )
     return {"ok": True}
