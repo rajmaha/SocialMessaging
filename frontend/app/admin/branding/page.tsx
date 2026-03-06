@@ -43,6 +43,12 @@ interface SmtpData {
   email_footer_text: string
 }
 
+interface EmailValidatorData {
+  email_validator_url: string
+  email_validator_secret: string
+  email_validator_risk_threshold: number
+}
+
 export default function BrandingAdmin() {
   const user = authAPI.getUser();
   const router = useRouter()
@@ -50,7 +56,7 @@ export default function BrandingAdmin() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [activeTab, setActiveTab] = useState<'company' | 'colors' | 'smtp' | 'links' | 'attachments'>('company')
+  const [activeTab, setActiveTab] = useState<'company' | 'colors' | 'smtp' | 'links' | 'attachments' | 'email-validator'>('company')
 
   const [branding, setBranding] = useState<BrandingData>({
     company_name: 'Social Media Messenger',
@@ -89,6 +95,13 @@ export default function BrandingAdmin() {
   })
 
   const [testingSmtp, setTestingSmtp] = useState(false)
+
+  const [validator, setValidator] = useState<EmailValidatorData>({
+    email_validator_url: '',
+    email_validator_secret: '',
+    email_validator_risk_threshold: 60,
+  })
+  const [showValidatorSecret, setShowValidatorSecret] = useState(false)
 
   useEffect(() => {
     loadBrandingData()
@@ -139,6 +152,12 @@ export default function BrandingAdmin() {
           smtp_from_name: data.smtp_from_name || '',
           smtp_use_tls: data.smtp_use_tls !== false,
           email_footer_text: data.email_footer_text || '',
+        })
+
+        setValidator({
+          email_validator_url: data.email_validator_url || '',
+          email_validator_secret: data.email_validator_secret || '',
+          email_validator_risk_threshold: data.email_validator_risk_threshold ?? 60,
         })
       }
     } catch (err: any) {
@@ -207,6 +226,25 @@ export default function BrandingAdmin() {
       setTimeout(() => setSuccess(''), 3000)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to save SMTP settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveValidator = async () => {
+    setSaving(true)
+    setError('')
+    setSuccess('')
+    try {
+      const token = getAuthToken()
+      await axios.post(
+        `${API_URL}/branding/email-validator`,
+        validator,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      setSuccess('Email validator settings saved')
+    } catch {
+      setError('Failed to save validator settings')
     } finally {
       setSaving(false)
     }
@@ -283,6 +321,16 @@ export default function BrandingAdmin() {
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
+          <button
+            onClick={() => setActiveTab('email-validator')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'email-validator'
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            Email Validator
+          </button>
         </div>
 
         {/* Company Information */}
@@ -903,6 +951,77 @@ export default function BrandingAdmin() {
             </div>
           )
         })()}
+        {/* Email Validator */}
+        {activeTab === 'email-validator' && (
+          <div className="bg-white rounded-lg shadow p-6 space-y-6">
+            <p className="text-sm text-gray-600">
+              Configure the external email validation API. When set, emails are validated in real-time
+              during compose and in bulk before campaign sends.
+            </p>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Validator URL</label>
+              <input
+                type="url"
+                value={validator.email_validator_url}
+                onChange={(e) => setValidator(prev => ({ ...prev, email_validator_url: e.target.value }))}
+                placeholder="https://hooks.yourdomain.com"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Base URL of the validation API (e.g. https://hooks.yourdomain.com)
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Secret Key</label>
+              <div className="relative">
+                <input
+                  type={showValidatorSecret ? 'text' : 'password'}
+                  value={validator.email_validator_secret}
+                  onChange={(e) => setValidator(prev => ({ ...prev, email_validator_secret: e.target.value }))}
+                  placeholder="Bearer token"
+                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowValidatorSecret(!showValidatorSecret)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm"
+                >
+                  {showValidatorSecret ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Sent as <code>Authorization: Bearer &lt;secret&gt;</code>
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Risk Threshold</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={validator.email_validator_risk_threshold}
+                onChange={(e) =>
+                  setValidator(prev => ({ ...prev, email_validator_risk_threshold: parseInt(e.target.value) || 60 }))
+                }
+                className="w-32 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Emails with risk score ≥ this value will be rejected (default: 60, range: 1–100)
+              </p>
+            </div>
+
+            <button
+              onClick={saveValidator}
+              disabled={saving}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+            >
+              {saving ? 'Saving...' : 'Save Validator Settings'}
+            </button>
+          </div>
+        )}
       </main>
     </div>
   )
