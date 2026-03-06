@@ -24,13 +24,30 @@ export default function EditCampaignPage() {
     name: "",
     subject: "",
     body_html: "",
-    target_filter: { statuses: [] as string[], sources: [] as string[] },
+    target_filter: {
+      statuses: [] as string[],
+      sources: [] as string[],
+      tags: { include: [] as string[], exclude: [] as string[] },
+      engagement: {} as Record<string, number>,
+    },
     scheduled_at: "",
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [includeTagInput, setIncludeTagInput] = useState("");
+  const [excludeTagInput, setExcludeTagInput] = useState("");
+  const [campaignsList, setCampaignsList] = useState<{ id: number; name: string }[]>([]);
+  const [engagementCampaignId, setEngagementCampaignId] = useState<number | "">("");
+  const [engagementAction, setEngagementAction] = useState<string>("");
+
+  useEffect(() => {
+    axios
+      .get(`${API_URL}/campaigns`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => setCampaignsList(res.data))
+      .catch(() => {});
+  }, [token]);
 
   useEffect(() => {
     if (!id) return;
@@ -40,15 +57,32 @@ export default function EditCampaignPage() {
       })
       .then(res => {
         const c = res.data;
+        const tf = c.target_filter || {};
+        const tags = tf.tags || { include: [], exclude: [] };
+        const engagement = tf.engagement || {};
         setForm({
           name: c.name || "",
           subject: c.subject || "",
           body_html: c.body_html || "",
-          target_filter: c.target_filter || { statuses: [], sources: [] },
+          target_filter: {
+            statuses: tf.statuses || [],
+            sources: tf.sources || [],
+            tags: { include: tags.include || [], exclude: tags.exclude || [] },
+            engagement,
+          },
           scheduled_at: c.scheduled_at
             ? new Date(c.scheduled_at).toISOString().slice(0, 16)
             : "",
         });
+        // Restore engagement UI state from saved data
+        const engKeys = ["opened_campaign", "not_opened_campaign", "clicked_campaign"];
+        for (const key of engKeys) {
+          if (engagement[key]) {
+            setEngagementCampaignId(engagement[key]);
+            setEngagementAction(key);
+            break;
+          }
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -69,6 +103,51 @@ export default function EditCampaignPage() {
       const next = arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value];
       return { ...prev, target_filter: { ...prev.target_filter, [type]: next } };
     });
+    setAudienceCount(null);
+  };
+
+  const addTag = (type: "include" | "exclude", tag: string) => {
+    const trimmed = tag.trim().toLowerCase();
+    if (!trimmed) return;
+    setForm(prev => {
+      const current = prev.target_filter.tags[type];
+      if (current.includes(trimmed)) return prev;
+      return {
+        ...prev,
+        target_filter: {
+          ...prev.target_filter,
+          tags: { ...prev.target_filter.tags, [type]: [...current, trimmed] },
+        },
+      };
+    });
+    setAudienceCount(null);
+  };
+
+  const removeTag = (type: "include" | "exclude", tag: string) => {
+    setForm(prev => ({
+      ...prev,
+      target_filter: {
+        ...prev.target_filter,
+        tags: {
+          ...prev.target_filter.tags,
+          [type]: prev.target_filter.tags[type].filter(t => t !== tag),
+        },
+      },
+    }));
+    setAudienceCount(null);
+  };
+
+  const setEngagement = (campaignId: number | "", action: string) => {
+    setEngagementCampaignId(campaignId);
+    setEngagementAction(action);
+    const engagement: Record<string, number> = {};
+    if (campaignId && action) {
+      engagement[action] = campaignId as number;
+    }
+    setForm(prev => ({
+      ...prev,
+      target_filter: { ...prev.target_filter, engagement },
+    }));
     setAudienceCount(null);
   };
 
@@ -205,6 +284,94 @@ export default function EditCampaignPage() {
                     {s.replace(/_/g, " ")}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Tag Filters */}
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2">Filter by Tags</label>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Include tags (leads must have ALL these tags)</label>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {form.target_filter.tags.include.map(tag => (
+                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        {tag}
+                        <button type="button" onClick={() => removeTag("include", tag)} className="hover:text-green-600">x</button>
+                      </span>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={includeTagInput}
+                    onChange={e => setIncludeTagInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addTag("include", includeTagInput);
+                        setIncludeTagInput("");
+                      }
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="Type a tag and press Enter"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Exclude tags (leads must NOT have these tags)</label>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {form.target_filter.tags.exclude.map(tag => (
+                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        {tag}
+                        <button type="button" onClick={() => removeTag("exclude", tag)} className="hover:text-red-600">x</button>
+                      </span>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={excludeTagInput}
+                    onChange={e => setExcludeTagInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addTag("exclude", excludeTagInput);
+                        setExcludeTagInput("");
+                      }
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="Type a tag and press Enter"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Engagement Filters */}
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2">Engagement Filters</label>
+              <p className="text-xs text-gray-500 mb-2">Target leads based on their interaction with a past campaign.</p>
+              <div className="flex flex-wrap gap-3">
+                <select
+                  value={engagementCampaignId}
+                  onChange={e => {
+                    const val = e.target.value ? Number(e.target.value) : "";
+                    setEngagement(val, engagementAction);
+                  }}
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a past campaign</option>
+                  {campaignsList.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={engagementAction}
+                  onChange={e => setEngagement(engagementCampaignId, e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select action</option>
+                  <option value="opened_campaign">Opened</option>
+                  <option value="not_opened_campaign">Did not open</option>
+                  <option value="clicked_campaign">Clicked</option>
+                </select>
               </div>
             </div>
 
