@@ -58,6 +58,13 @@ const sidebarGroups = [
         ],
     },
     {
+        label: 'Logs',
+        items: [
+            { href: '/admin/audit-logs', label: 'Audit Log', icon: '📋' },
+            { href: '/admin/error-logs', label: 'Error Log', icon: '🚨' },
+        ],
+    },
+    {
         label: 'Applications',
         items: [
             { href: '/admin/callcenter', label: 'Call Center', icon: '📞', pageKey: 'callcenter' },
