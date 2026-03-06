@@ -16,6 +16,13 @@ from app.models.user import User
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse, RecipientResponse
 from app.dependencies import get_current_user, require_page
 
+import hmac
+import hashlib
+
+from app.config import settings
+from app.models.email_suppression import EmailSuppression
+from app.schemas.email_suppression import SendTestRequest
+
 # Public router — no auth required (used for email tracking pixels)
 public_router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -26,6 +33,31 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"], dependencies=[Depend
 TRACKING_PIXEL = base64.b64decode(
     "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
 )
+
+
+def _make_unsub_token(email: str, campaign_id: int) -> str:
+    """Create HMAC-signed unsubscribe token: base64url(email:campaign_id:signature)."""
+    payload = f"{email}:{campaign_id}"
+    sig = hmac.new(settings.SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+    token = base64.urlsafe_b64encode(f"{payload}:{sig}".encode()).decode()
+    return token
+
+
+def _verify_unsub_token(token: str) -> tuple | None:
+    """Verify and decode unsubscribe token. Returns (email, campaign_id) or None."""
+    try:
+        decoded = base64.urlsafe_b64decode(token).decode()
+        parts = decoded.rsplit(":", 2)
+        if len(parts) != 3:
+            return None
+        email, campaign_id_str, sig = parts
+        payload = f"{email}:{campaign_id_str}"
+        expected = hmac.new(settings.SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+        if not hmac.compare_digest(sig, expected):
+            return None
+        return email, int(campaign_id_str)
+    except Exception:
+        return None
 
 
 # ── Tracking helpers ─────────────────────────────────────────────────────────
