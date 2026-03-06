@@ -118,114 +118,6 @@ const SMART_FOLDERS = [
   { id: 'attachments', label: 'With Attachments', icon: '📎', type: 'smart' },
 ]
 
-function EmailAutocompleteInput({
-  value,
-  onChange,
-  placeholder,
-  suggestions,
-}: {
-  value: string
-  onChange: (v: string) => void
-  placeholder: string
-  suggestions: string[]
-}) {
-  const [open, setOpen] = React.useState(false)
-  const [filtered, setFiltered] = React.useState<string[]>([])
-  const [highlightedIndex, setHighlightedIndex] = React.useState(-1)
-  const ref = React.useRef<HTMLDivElement>(null)
-
-  // Reset highlight when filtered list changes
-  React.useEffect(() => { setHighlightedIndex(-1) }, [filtered])
-
-  // Current segment being typed (after the last semicolon)
-  const getCurrentSegment = (v: string) => {
-    const parts = v.split(';')
-    return parts[parts.length - 1].trim()
-  }
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value
-    onChange(v)
-    const segment = getCurrentSegment(v)
-    if (segment.length >= 1) {
-      const matches = suggestions.filter(
-        s => s.toLowerCase().includes(segment.toLowerCase()) && !v.split(';').map(p => p.trim()).includes(s)
-      ).slice(0, 8)
-      setFiltered(matches)
-      setOpen(matches.length > 0)
-    } else {
-      setOpen(false)
-    }
-  }
-
-  const selectSuggestion = (email: string) => {
-    const parts = value.split(';')
-    parts[parts.length - 1] = ' ' + email
-    onChange(parts.join(';') + '; ')
-    setOpen(false)
-  }
-
-  // Close on outside click
-  React.useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  return (
-    <div ref={ref} className="relative">
-      <input
-        type="text"
-        placeholder={placeholder}
-        value={value}
-        onChange={handleChange}
-        onFocus={() => {
-          const segment = getCurrentSegment(value)
-          if (segment.length >= 1) {
-            const matches = suggestions.filter(
-              s => s.toLowerCase().includes(segment.toLowerCase()) && !value.split(';').map(p => p.trim()).includes(s)
-            ).slice(0, 8)
-            setFiltered(matches)
-            setOpen(matches.length > 0)
-          }
-        }}
-        onKeyDown={(e) => {
-          if (!open) return
-          if (e.key === 'Escape') { setOpen(false); return }
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            setHighlightedIndex(i => Math.min(i + 1, filtered.length - 1))
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            setHighlightedIndex(i => Math.max(i - 1, 0))
-          } else if (e.key === 'Enter' && filtered.length > 0) {
-            e.preventDefault()
-            selectSuggestion(filtered[highlightedIndex >= 0 ? highlightedIndex : 0])
-          }
-        }}
-        className="w-full bg-transparent border-0 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-0 py-1"
-      />
-      {open && (
-        <ul className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-b shadow-lg max-h-48 overflow-y-auto">
-          {filtered.map((email, index) => (
-            <li
-              key={email}
-              onMouseDown={(e) => { e.preventDefault(); selectSuggestion(email) }}
-              onMouseEnter={() => setHighlightedIndex(index)}
-              className={`px-3 py-2 text-sm cursor-pointer flex items-center gap-2 ${highlightedIndex === index ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
-            >
-              <span className="text-gray-400">✉</span>
-              <span>{email}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
 // TipTap Image extension extended with a resizable `width` attribute
 const ResizableImage = Image.extend({
   addAttributes() {
@@ -1448,13 +1340,6 @@ export default function EmailPage() {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
     showToast(`✓ Downloaded ${knownEmails.length} unique email addresses`)
-  }
-
-  const parseEmails = (emailString: string): string[] => {
-    return emailString
-      .split(';')
-      .map((email) => email.trim())
-      .filter((email) => email.length > 0)
   }
 
   const resetCompose = () => {

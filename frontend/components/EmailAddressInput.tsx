@@ -63,9 +63,21 @@ export default function EmailAddressInput({ label, value, onChange, placeholder 
   const [inputVal, setInputVal] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const onChangeRef = useRef(onChange)
+  useEffect(() => { onChangeRef.current = onChange })
+
   useEffect(() => {
-    onChange(chips.map(c => c.email).join(', '))
+    onChangeRef.current(chips.map(c => c.email).join(', '))
   }, [chips])
+
+  // Sync chips when value is externally cleared (e.g. compose reset)
+  const prevValueRef = useRef(value)
+  useEffect(() => {
+    if (value === '' && prevValueRef.current !== '') {
+      setChips([])
+    }
+    prevValueRef.current = value
+  }, [value])
 
   const addChip = async (raw: string) => {
     const email = raw.trim().toLowerCase()
