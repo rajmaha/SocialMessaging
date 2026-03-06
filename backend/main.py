@@ -1506,6 +1506,30 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# ── Global error handler → writes to error_logs ────────────────────────────
+from fastapi import Request as _Request
+from fastapi.responses import JSONResponse as _JSONResponse
+from app.log_database import LogSessionLocal as _LogSessionLocal
+from app.services.log_service import log_error as _log_error
+
+@app.exception_handler(Exception)
+async def global_exception_handler(_request: _Request, exc: Exception):
+    try:
+        _db = _LogSessionLocal()
+        _log_error(
+            _db,
+            message=str(exc),
+            source="api",
+            severity="error",
+            exc=exc,
+            request_path=str(_request.url.path),
+            request_method=_request.method,
+        )
+        _db.close()
+    except Exception:
+        pass
+    return _JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 # Dynamic CORS middleware — reads allowed origins from DB at request time
 # so admins can add remote site origins without redeploying.
 from starlette.middleware.base import BaseHTTPMiddleware
