@@ -182,6 +182,36 @@ def _replace_tags(html: str, lead, unsub_url: str = "#unsubscribe") -> str:
     return html
 
 
+import re as _re
+
+
+def _rewrite_links(html: str, campaign_id: int, recipient_id: int, base_url: str, db: Session) -> str:
+    """Replace all <a href="..."> with tracked redirect URLs."""
+    from app.models.campaign_link import CampaignLink
+
+    link_cache = {}  # original_url -> link_id
+
+    def replace_href(match):
+        url = match.group(1)
+        # Skip unsubscribe links and tracking pixels
+        if "unsubscribe" in url or "track/open" in url or url.startswith("#") or url.startswith("mailto:"):
+            return match.group(0)
+        if url not in link_cache:
+            link = db.query(CampaignLink).filter(
+                CampaignLink.campaign_id == campaign_id,
+                CampaignLink.original_url == url,
+            ).first()
+            if not link:
+                link = CampaignLink(campaign_id=campaign_id, original_url=url)
+                db.add(link)
+                db.flush()
+            link_cache[url] = link.id
+        tracked_url = f"{base_url}/campaigns/track/click/{campaign_id}/{link_cache[url]}/{recipient_id}"
+        return match.group(0).replace(url, tracked_url)
+
+    return _re.sub(r'href=["\']([^"\']+)["\']', replace_href, html)
+
+
 def _do_send(campaign_id: int, db: Session):
     """Core send logic — called by background task and scheduler."""
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
@@ -230,6 +260,7 @@ def _do_send(campaign_id: int, db: Session):
             pixel_url = f"{base_url}/campaigns/track/open/{campaign_id}/{recipient.id}"
             personalized_body = _replace_tags(campaign.body_html, lead, unsub_url)
             tracked_body = personalized_body + f'<img src="{pixel_url}" width="1" height="1" style="display:none" />'
+            tracked_body = _rewrite_links(tracked_body, campaign_id, recipient.id, base_url, db)
 
             msg = MIMEMultipart("alternative")
             msg["Subject"] = campaign.subject
@@ -349,6 +380,53 @@ def resubscribe(token: str, db: Session = Depends(get_db)):
         db.commit()
 
     return HTMLResponse(content=_unsub_page("Welcome back! You've been re-subscribed.", token, resubscribed=True))
+
+
+@public_router.get("/track/click/{campaign_id}/{link_id}/{recipient_id}")
+def track_click(
+    campaign_id: int,
+    link_id: int,
+    recipient_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Log click and 302-redirect to original URL."""
+    from fastapi.responses import RedirectResponse
+    from app.models.campaign_link import CampaignLink, CampaignClick
+
+    link = db.query(CampaignLink).filter(
+        CampaignLink.id == link_id,
+        CampaignLink.campaign_id == campaign_id,
+    ).first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    # Log click
+    click = CampaignClick(
+        link_id=link_id,
+        recipient_id=recipient_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent", ""),
+    )
+    db.add(click)
+
+    # Update link stats
+    link.click_count = (link.click_count or 0) + 1
+    now = datetime.utcnow()
+    if not link.first_clicked_at:
+        link.first_clicked_at = now
+    link.last_clicked_at = now
+
+    # Update recipient first-click
+    recipient = db.query(CampaignRecipient).filter(CampaignRecipient.id == recipient_id).first()
+    if recipient and not recipient.clicked_at:
+        recipient.clicked_at = now
+        campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+        if campaign:
+            campaign.clicked_count = (campaign.clicked_count or 0) + 1
+
+    db.commit()
+    return RedirectResponse(url=link.original_url, status_code=302)
 
 
 # ===== AUDIENCE PREVIEW (no campaign_id) =====
@@ -585,6 +663,7 @@ def get_campaign_stats(
         CampaignRecipient.campaign_id == campaign_id
     ).all()
     open_rate = round((c.opened_count / c.sent_count * 100), 1) if c.sent_count else 0
+    click_rate = round((c.clicked_count / c.sent_count * 100), 1) if c.sent_count else 0
 
     # Build breakdown summaries from recipients that have opened
     from collections import Counter
@@ -593,13 +672,22 @@ def get_campaign_stats(
     client_breakdown = dict(Counter(r.email_client for r in opened_recipients if r.email_client))
     country_breakdown = dict(Counter(r.country for r in opened_recipients if r.country))
 
+    from app.models.campaign_link import CampaignLink
+    links = db.query(CampaignLink).filter(CampaignLink.campaign_id == campaign_id).order_by(desc(CampaignLink.click_count)).all()
+
     return {
         "sent_count": c.sent_count,
         "opened_count": c.opened_count,
         "open_rate": open_rate,
+        "clicked_count": c.clicked_count,
+        "click_rate": click_rate,
         "device_breakdown": device_breakdown,
         "client_breakdown": client_breakdown,
         "country_breakdown": country_breakdown,
+        "top_links": [
+            {"url": l.original_url, "clicks": l.click_count, "first_click": l.first_clicked_at, "last_click": l.last_clicked_at}
+            for l in links[:10]
+        ],
         "recipients": [
             {
                 "id": r.id,
@@ -608,6 +696,7 @@ def get_campaign_stats(
                 "sent_at": r.sent_at,
                 "opened_at": r.opened_at,
                 "open_count": r.open_count,
+                "clicked_at": r.clicked_at,
                 "country": r.country,
                 "city": r.city,
                 "device_type": r.device_type,
