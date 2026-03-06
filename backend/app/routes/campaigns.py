@@ -13,7 +13,7 @@ from app.database import get_db
 from app.models.campaign import Campaign, CampaignRecipient
 from app.models.crm import Lead
 from app.models.user import User
-from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse, RecipientResponse
+from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse, RecipientResponse, VariantCreate
 from app.dependencies import get_current_user, require_page
 
 import hmac
@@ -690,6 +690,57 @@ def remove_suppression(
     return {"status": "removed"}
 
 
+# ===== A/B TEST VARIANTS =====
+
+@router.post("/{campaign_id}/variants")
+def create_variant(
+    campaign_id: int,
+    data: VariantCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.campaign_variant import CampaignVariant
+    c = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    existing = db.query(CampaignVariant).filter(
+        CampaignVariant.campaign_id == campaign_id,
+        CampaignVariant.variant_label == data.variant_label,
+    ).first()
+    if existing:
+        existing.subject = data.subject
+        existing.body_html = data.body_html
+    else:
+        existing = CampaignVariant(
+            campaign_id=campaign_id,
+            variant_label=data.variant_label,
+            subject=data.subject,
+            body_html=data.body_html,
+        )
+        db.add(existing)
+    db.commit()
+    db.refresh(existing)
+    return {"id": existing.id, "variant_label": existing.variant_label, "subject": existing.subject}
+
+
+@router.get("/{campaign_id}/variants")
+def list_variants(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.campaign_variant import CampaignVariant
+    variants = db.query(CampaignVariant).filter(CampaignVariant.campaign_id == campaign_id).order_by(CampaignVariant.variant_label).all()
+    return [
+        {
+            "id": v.id, "variant_label": v.variant_label, "subject": v.subject,
+            "body_html": v.body_html, "sent_count": v.sent_count,
+            "opened_count": v.opened_count, "clicked_count": v.clicked_count,
+        }
+        for v in variants
+    ]
+
+
 # ===== CRUD =====
 
 @router.post("", response_model=CampaignResponse)
@@ -821,12 +872,29 @@ def get_campaign_stats(
     from app.models.campaign_link import CampaignLink
     links = db.query(CampaignLink).filter(CampaignLink.campaign_id == campaign_id).order_by(desc(CampaignLink.click_count)).all()
 
+    from app.models.campaign_variant import CampaignVariant
+    variants = db.query(CampaignVariant).filter(CampaignVariant.campaign_id == campaign_id).all()
+    variant_stats = []
+    for v in variants:
+        v_open_rate = round((v.opened_count / v.sent_count * 100), 1) if v.sent_count else 0
+        v_click_rate = round((v.clicked_count / v.sent_count * 100), 1) if v.sent_count else 0
+        variant_stats.append({
+            "id": v.id, "label": v.variant_label, "subject": v.subject,
+            "sent_count": v.sent_count, "opened_count": v.opened_count,
+            "clicked_count": v.clicked_count, "open_rate": v_open_rate,
+            "click_rate": v_click_rate,
+            "is_winner": v.id == c.ab_winner_variant_id,
+        })
+
     return {
         "sent_count": c.sent_count,
         "opened_count": c.opened_count,
         "open_rate": open_rate,
         "clicked_count": c.clicked_count,
         "click_rate": click_rate,
+        "is_ab_test": c.is_ab_test,
+        "ab_winner_criteria": c.ab_winner_criteria,
+        "variants": variant_stats,
         "device_breakdown": device_breakdown,
         "client_breakdown": client_breakdown,
         "country_breakdown": country_breakdown,
