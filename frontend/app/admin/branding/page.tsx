@@ -237,9 +237,30 @@ export default function BrandingAdmin() {
     setSuccess('')
     try {
       const token = getAuthToken()
+      if (!token) { router.push('/login'); return }
+
+      const payload: Record<string, unknown> = {
+        email_validator_url: validator.email_validator_url,
+        email_validator_risk_threshold: validator.email_validator_risk_threshold,
+      }
+
+      // Only include secret if it was explicitly changed by the user:
+      // - If it looks masked (all chars before last 4 are '*', or all stars), skip it
+      // - If it's empty, include it so the backend can detect the user wants to clear it
+      //   (backend skips empty string via `if secret:`, so actually we skip it too —
+      //    but we keep this here for explicit intent)
+      const secret = validator.email_validator_secret
+      if (secret) {
+        const isMasked = (secret.length >= 4 && secret.slice(0, -4).split('').every(c => c === '*'))
+                      || secret.split('').every(c => c === '*')
+        if (!isMasked) {
+          payload.email_validator_secret = secret
+        }
+      }
+
       await axios.post(
         `${API_URL}/branding/email-validator`,
-        validator,
+        payload,
         { headers: { Authorization: `Bearer ${token}` } }
       )
       setSuccess('Email validator settings saved')
@@ -323,11 +344,10 @@ export default function BrandingAdmin() {
           ))}
           <button
             onClick={() => setActiveTab('email-validator')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              activeTab === 'email-validator'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
+            className={`px-4 py-3 font-medium border-b-2 ${activeTab === 'email-validator'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
           >
             Email Validator
           </button>
