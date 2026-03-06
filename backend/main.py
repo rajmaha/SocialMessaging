@@ -29,6 +29,7 @@ from app.models import pms  # noqa: F401
 from app.models.user_permission_override import UserPermissionOverride  # noqa: F401 — ensures table creation
 from app.models.campaign_link import CampaignLink, CampaignClick  # noqa: F401
 from app.models.campaign_variant import CampaignVariant  # noqa: F401
+from app.models.logs import AuditLog, ErrorLog  # noqa: F401 — ensures log table creation
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -1413,6 +1414,10 @@ def _run_inline_migrations():
         """))
 
         conn.commit()
+
+# ── Log DB Init ────────────────────────────────────────────────────────────
+from app.log_database import init_log_db
+init_log_db()
 
 try:
     _run_inline_migrations()
