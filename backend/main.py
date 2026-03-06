@@ -19,6 +19,7 @@ from app.routes.menus import router as menus_router
 from app.routes.campaign_attachments import router as campaign_attachments_router
 from app.routes.user_permission_overrides import router as permission_overrides_router
 from app.routes.logs import router as logs_router
+from app.routes.email_validator import router as email_validator_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.models.email_suppression import EmailSuppression  # noqa: F401
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
@@ -1681,6 +1682,7 @@ app.include_router(menus_router)
 app.include_router(permission_overrides_router)
 app.include_router(campaign_attachments_router)
 app.include_router(logs_router)
+app.include_router(email_validator_router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
