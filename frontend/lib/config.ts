@@ -11,10 +11,22 @@
 function resolveApiUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_URL || '';
 
-  // If we have a full URL and the page is served over HTTPS, upgrade to HTTPS
-  if (envUrl && typeof window !== 'undefined' && window.location.protocol === 'https:') {
-    return envUrl.replace(/^http:/, 'https:');
+  if (envUrl && typeof window !== 'undefined') {
+    const isLocalhostUrl = /localhost|127\.0\.0\.1/.test(envUrl);
+    const isLocalhostOrigin = /localhost|127\.0\.0\.1/.test(window.location.hostname);
+
+    // In production (non-localhost), ignore localhost API URLs and use
+    // same-origin rewrites instead (Next.js proxies to backend internally)
+    if (isLocalhostUrl && !isLocalhostOrigin) {
+      return '';
+    }
+
+    // Upgrade http → https when page is served over HTTPS
+    if (window.location.protocol === 'https:') {
+      return envUrl.replace(/^http:/, 'https:');
+    }
   }
+
   return envUrl;
 }
 
