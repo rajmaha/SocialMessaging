@@ -15,6 +15,12 @@ const nextConfig = {
   async rewrites() {
     const backendUrl = process.env.BACKEND_INTERNAL_URL || 'http://backend:8000';
     return [
+      // Static file storage (logos, avatars, attachments, audio)
+      { source: '/logos/:path*', destination: `${backendUrl}/logos/:path*` },
+      { source: '/avatars/:path*', destination: `${backendUrl}/avatars/:path*` },
+      { source: '/attachments/:path*', destination: `${backendUrl}/attachments/:path*` },
+      { source: '/audio/:path*', destination: `${backendUrl}/audio/:path*` },
+      { source: '/subscription-logos/:path*', destination: `${backendUrl}/subscription-logos/:path*` },
       // WebSocket upgrade for live chat widget
       { source: '/webchat/:path*', destination: `${backendUrl}/webchat/:path*` },
       // SSE events stream

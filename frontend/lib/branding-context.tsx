@@ -51,13 +51,23 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
     root.style.setProperty('--layout-bg', settings.layout_bg_color)
   }
 
+  // Convert absolute localhost backend URLs to relative paths so they work
+  // in production via Next.js rewrites (e.g. http://localhost:8000/logos/x → /logos/x)
+  const normalizeUrl = (url: string | null): string | null => {
+    if (!url) return null
+    return url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//, '/')
+  }
+
   const fetchBranding = async () => {
     setLoading(true)
     setError(null)
     try {
       const response = await axios.get(`${API_URL}/branding/`)
       if (response.data && response.data.data) {
-        setBranding(response.data.data)
+        const data = response.data.data
+        data.logo_url = normalizeUrl(data.logo_url)
+        data.favicon_url = normalizeUrl(data.favicon_url)
+        setBranding(data)
         applyBrandingColors(response.data.data)
 
         // Update favicon if available
