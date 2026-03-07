@@ -1574,6 +1574,49 @@ async def global_exception_handler(_request: _Request, exc: Exception):
         pass
     return _JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
+from fastapi import HTTPException as _HTTPException
+from fastapi.exception_handlers import http_exception_handler as _default_http_handler
+from fastapi.exceptions import RequestValidationError as _RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler as _default_validation_handler
+
+@app.exception_handler(_HTTPException)
+async def logging_http_exception_handler(_request: _Request, exc: _HTTPException):
+    """Log HTTP 5xx errors and CORS-relevant 4xx errors, then return normal response."""
+    if exc.status_code >= 500:
+        try:
+            _db = _LogSessionLocal()
+            _log_error(
+                _db,
+                message=f"HTTP {exc.status_code}: {exc.detail}",
+                source="api",
+                severity="error",
+                request_path=str(_request.url.path),
+                request_method=_request.method,
+            )
+            _db.close()
+        except Exception:
+            pass
+    return await _default_http_handler(_request, exc)
+
+@app.exception_handler(_RequestValidationError)
+async def logging_validation_exception_handler(_request: _Request, exc: _RequestValidationError):
+    """Log all 422 request validation errors so bad API calls are visible in error logs."""
+    try:
+        _db = _LogSessionLocal()
+        _log_error(
+            _db,
+            message=f"Request validation failed on {_request.method} {_request.url.path}: {exc.errors()}",
+            source="api",
+            severity="warning",
+            error_type="RequestValidationError",
+            request_path=str(_request.url.path),
+            request_method=_request.method,
+        )
+        _db.close()
+    except Exception:
+        pass
+    return await _default_validation_handler(_request, exc)
+
 # Dynamic CORS middleware — reads allowed origins from DB at request time
 # so admins can add remote site origins without redeploying.
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -1627,11 +1670,40 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
                 resp.headers["Access-Control-Max-Age"] = "3600"
             return resp
 
+        # Log blocked CORS origins so they appear in the error log
+        if origin and not origin_allowed:
+            try:
+                _db = _LogSessionLocal()
+                _log_error(
+                    _db,
+                    message=f"CORS blocked: origin '{origin}' is not in the allowed list",
+                    source="api",
+                    severity="warning",
+                    request_path=str(request.url.path),
+                    request_method=request.method,
+                )
+                _db.close()
+            except Exception:
+                pass
+
         try:
             response = await call_next(request)
         except Exception as exc:
-            # Ensure CORS headers are present even for unhandled exceptions
-            # so the browser shows the real error instead of a misleading CORS error
+            # Log the exception and ensure CORS headers are present
+            try:
+                _db = _LogSessionLocal()
+                _log_error(
+                    _db,
+                    message=str(exc),
+                    source="api",
+                    severity="error",
+                    exc=exc,
+                    request_path=str(request.url.path),
+                    request_method=request.method,
+                )
+                _db.close()
+            except Exception:
+                pass
             from starlette.responses import JSONResponse
             response = JSONResponse(
                 status_code=500,
@@ -1740,6 +1812,24 @@ os.makedirs(MIGRATION_DIR, exist_ok=True)
 # Auto-sync scheduler
 scheduler = None
 
+
+def _log_job_error(message: str, exc: Exception = None, job_name: str = None):
+    """Write a scheduler job error to the error_logs table. Never raises."""
+    try:
+        _db = _LogSessionLocal()
+        _log_error(
+            _db,
+            message=message,
+            source="scheduler",
+            severity="error",
+            error_type=f"JobError:{job_name}" if job_name else "JobError",
+            exc=exc,
+        )
+        _db.close()
+    except Exception:
+        pass
+
+
 def auto_sync_emails():
     """Scheduled task to sync all emails and broadcast new-email events."""
     try:
@@ -1762,9 +1852,11 @@ def auto_sync_emails():
                     )
             except Exception as e:
                 logger.error(f"Auto-sync error for {account.email_address}: {str(e)}")
+                _log_job_error(f"Auto-sync error for {account.email_address}: {e}", exc=e, job_name="auto_sync_emails")
         db.close()
     except Exception as e:
         logger.error(f"Error in scheduled email sync: {str(e)}")
+        _log_job_error(f"Error in scheduled email sync: {e}", exc=e, job_name="auto_sync_emails")
 
 
 def send_scheduled_emails():
@@ -1836,9 +1928,11 @@ def send_scheduled_emails():
                 except Exception:
                     pass
                 logger.error(f"Failed to send scheduled email {email.id}: {str(e)}")
+                _log_job_error(f"Failed to send scheduled email {email.id}: {e}", exc=e, job_name="send_scheduled_emails")
         db.close()
     except Exception as e:
         logger.error(f"Error in send_scheduled_emails: {str(e)}")
+        _log_job_error(f"Error in send_scheduled_emails: {e}", exc=e, job_name="send_scheduled_emails")
 
 
 def unsnooze_emails():
@@ -1859,6 +1953,7 @@ def unsnooze_emails():
         db.close()
     except Exception as e:
         logger.error(f"Error in unsnooze_emails: {str(e)}")
+        _log_job_error(f"Error in unsnooze_emails: {e}", exc=e, job_name="unsnooze_emails")
 
 
 def retry_outbox_emails():
@@ -1905,9 +2000,11 @@ def retry_outbox_emails():
                     logger.info(f"✅ Outbox retry: email {email.id} sent to {email.to_address}")
                 except Exception as e:
                     logger.warning(f"Outbox retry failed for email {email.id}: {str(e)}")
+                    _log_job_error(f"Outbox retry failed for email {email.id}: {e}", exc=e, job_name="retry_outbox_emails")
         db.close()
     except Exception as e:
         logger.error(f"Error in retry_outbox_emails: {str(e)}")
+        _log_job_error(f"Error in retry_outbox_emails: {e}", exc=e, job_name="retry_outbox_emails")
 
 
 def purge_old_logs():
@@ -1926,6 +2023,7 @@ def purge_old_logs():
                     audit_deleted, error_deleted)
     except Exception as e:
         logger.error("Log purge error: %s", e)
+        _log_job_error(f"Log purge error: {e}", exc=e, job_name="purge_old_logs")
 
 
 def apply_email_rules(email_obj, db):
@@ -2016,6 +2114,7 @@ async def startup_event():
                 db.close()
             except Exception as e:
                 logger.error("CDR sync error: %s", e)
+                _log_job_error(f"CDR sync error: {e}", exc=e, job_name="freepbx_cdr_sync")
         scheduler.add_job(sync_freepbx_cdr, 'interval', minutes=5, id='freepbx_cdr_sync')
         # Process due reminder calls every minute
         def run_reminder_calls():
@@ -2028,6 +2127,7 @@ async def startup_event():
                 db.close()
             except Exception as e:
                 logger.error("Reminder call scheduler error: %s", e)
+                _log_job_error(f"Reminder call scheduler error: {e}", exc=e, job_name="reminder_calls")
         scheduler.add_job(run_reminder_calls, 'interval', minutes=1, id='reminder_calls')
         # Process due notification calls every minute
         def run_notification_calls():
@@ -2040,6 +2140,7 @@ async def startup_event():
                 db.close()
             except Exception as e:
                 logger.error("Notification call scheduler error: %s", e)
+                _log_job_error(f"Notification call scheduler error: {e}", exc=e, job_name="notification_calls")
         scheduler.add_job(run_notification_calls, 'interval', minutes=1, id='notification_calls')
         # Check for overdue reminders every minute
         def check_overdue_reminders():
@@ -2071,6 +2172,7 @@ async def startup_event():
                 db.close()
             except Exception as e:
                 logger.error("Overdue reminders check error: %s", e)
+                _log_job_error(f"Overdue reminders check error: {e}", exc=e, job_name="check_overdue_reminders")
         scheduler.add_job(check_overdue_reminders, 'interval', minutes=1, id='check_overdue_reminders')
 
         def check_overdue_crm_tasks():
@@ -2110,6 +2212,7 @@ async def startup_event():
                             logger.warning(f"CRM task overdue broadcast error: {e}")
             except Exception as e:
                 logger.error(f"check_overdue_crm_tasks error: {e}")
+                _log_job_error(f"check_overdue_crm_tasks error: {e}", exc=e, job_name="check_overdue_crm_tasks")
             finally:
                 db.close()
 
@@ -2148,6 +2251,7 @@ async def startup_event():
                     db.commit()
             except Exception as e:
                 logger.error("PMS overdue check error: %s", e)
+                _log_job_error(f"PMS overdue check error: {e}", exc=e, job_name="pms_overdue_check")
             finally:
                 db.close()
 
@@ -2225,9 +2329,11 @@ async def startup_event():
                         email_service.send_system_email(user_obj.email, subject, html_body)
                     except Exception as e:
                         logger.error("PMS digest email to %s failed: %s", user_obj.email, e)
+                        _log_job_error(f"PMS digest email to {user_obj.email} failed: {e}", exc=e, job_name="pms_overdue_digest")
 
             except Exception as e:
                 logger.error("PMS overdue digest error: %s", e)
+                _log_job_error(f"PMS overdue digest error: {e}", exc=e, job_name="pms_overdue_digest")
             finally:
                 db.close()
 
@@ -2291,6 +2397,7 @@ async def startup_event():
                         db.rollback()
             except Exception as e:
                 logger.error(f"evaluate_automation_rules error: {e}")
+                _log_job_error(f"evaluate_automation_rules error: {e}", exc=e, job_name="evaluate_automation_rules")
             finally:
                 db.close()
 
@@ -2354,6 +2461,7 @@ async def startup_event():
                         db.rollback()
             except Exception as e:
                 logger.error(f"process_email_sequences error: {e}")
+                _log_job_error(f"process_email_sequences error: {e}", exc=e, job_name="process_email_sequences")
             finally:
                 db.close()
 
@@ -2371,6 +2479,7 @@ async def startup_event():
                 db.close()
             except Exception as e:
                 logger.error("Calendar token refresh error: %s", e)
+                _log_job_error(f"Calendar token refresh error: {e}", exc=e, job_name="refresh_calendar_tokens")
         scheduler.add_job(refresh_calendar_tokens, 'interval', minutes=30, id='refresh_calendar_tokens')
 
         def send_scheduled_campaigns():
@@ -2389,8 +2498,10 @@ async def startup_event():
                         _do_send(campaign.id, db)
                     except Exception as e:
                         logger.error(f"Campaign send error (id={campaign.id}): {e}")
+                        _log_job_error(f"Campaign send error (id={campaign.id}): {e}", exc=e, job_name="send_scheduled_campaigns")
             except Exception as e:
                 logger.error(f"send_scheduled_campaigns error: {e}")
+                _log_job_error(f"send_scheduled_campaigns error: {e}", exc=e, job_name="send_scheduled_campaigns")
             finally:
                 db.close()
 
@@ -2440,8 +2551,10 @@ async def startup_event():
                         _do_send(campaign.id, db)
                     except Exception as e:
                         logger.error(f"A/B winner pick error (campaign {campaign.id}): {e}")
+                        _log_job_error(f"A/B winner pick error (campaign {campaign.id}): {e}", exc=e, job_name="pick_ab_winners")
             except Exception as e:
                 logger.error(f"pick_ab_winners error: {e}")
+                _log_job_error(f"pick_ab_winners error: {e}", exc=e, job_name="pick_ab_winners")
             finally:
                 db.close()
 
@@ -2476,6 +2589,7 @@ async def startup_event():
                         db.commit()
                     except Exception as e:
                         logger.error(f"Scheduled backup job {job.id} error: {e}")
+                        _log_job_error(f"Scheduled backup job {job.id} error: {e}", exc=e, job_name="run_due_backup_jobs")
             finally:
                 db.close()
 

@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { API_URL } from './config'
 import { getAuthToken } from './auth'
+import { reportError } from './error-reporter'
 
 export const conversationAPI = {
   getConversations: (userId: number, platform?: string) => {
@@ -62,6 +63,24 @@ api.interceptors.request.use(cfg => {
   if (token) cfg.headers = { ...cfg.headers, Authorization: `Bearer ${token}` } as any
   return cfg
 })
+// Report server-side errors (5xx) from API calls to the frontend error log.
+// 4xx errors are intentional (validation, auth) and are not reported.
+api.interceptors.response.use(
+  res => res,
+  err => {
+    const status: number = err?.response?.status ?? 0
+    const url: string = err?.config?.url ?? ''
+    // Skip self-reporting loop and expected client errors
+    if (status >= 500 && !url.includes('/logs/frontend-error')) {
+      reportError({
+        message: `API ${status} on ${err?.config?.method?.toUpperCase() ?? 'REQUEST'} ${url}: ${err?.response?.data?.detail ?? err.message}`,
+        error_type: 'APIError',
+        url: typeof window !== 'undefined' ? window.location.href : url,
+      })
+    }
+    return Promise.reject(err)
+  }
+)
 
 export const getBackupDestinations = () =>
   api.get('/backups/destinations').then(r => r.data);

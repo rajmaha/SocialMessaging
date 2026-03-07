@@ -20,6 +20,7 @@ class FrontendErrorPayload(BaseModel):
     url: Optional[str] = None
     line: Optional[int] = None
     col: Optional[int] = None
+    user_id: Optional[int] = None
 
 
 router = APIRouter(prefix="/logs", tags=["logs"])
@@ -223,6 +224,7 @@ def receive_frontend_error(
         source="frontend",
         severity="error",
         error_type=payload.error_type or "JavaScriptError",
+        user_id=payload.user_id,
         request_path=payload.url,
         context={
             "stack": payload.stack,

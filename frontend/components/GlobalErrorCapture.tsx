@@ -2,29 +2,39 @@
 'use client';
 
 import { useEffect } from 'react';
-import { API_URL } from '@/lib/config';
+import { reportError } from '@/lib/error-reporter';
 
+/**
+ * Mounted at the root layout. Attaches global listeners for:
+ *   - Unhandled JS exceptions     (window 'error')
+ *   - Unhandled Promise rejections (window 'unhandledrejection')
+ *
+ * React render errors are caught separately by <ErrorBoundary>.
+ * API-level 5xx errors are captured by the axios response interceptor in lib/api.ts.
+ */
 export default function GlobalErrorCapture() {
   useEffect(() => {
-    const sendError = (message: string, stack?: string, url?: string, line?: number, col?: number) => {
-      fetch(`${API_URL}/logs/frontend-error`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, stack, url, line, col, error_type: 'JavaScriptError' }),
-      }).catch(() => {}); // swallow any fetch errors silently
-    };
-
     const onError = (event: ErrorEvent) => {
-      sendError(event.message, event.error?.stack, event.filename, event.lineno, event.colno);
+      reportError({
+        message: event.message || 'Unknown error',
+        // Use error.name for the specific JS type (TypeError, ReferenceError, …)
+        error_type: event.error?.name || 'JavaScriptError',
+        stack: event.error?.stack,
+        // Page URL is more useful than the script filename for debugging
+        url: window.location.href,
+        line: event.lineno,
+        col: event.colno,
+      });
     };
 
     const onUnhandledRejection = (event: PromiseRejectionEvent) => {
       const reason = event.reason;
-      sendError(
-        reason?.message || String(reason),
-        reason?.stack,
-        window.location.href,
-      );
+      reportError({
+        message: reason?.message || String(reason) || 'Unhandled Promise rejection',
+        error_type: reason?.name || 'UnhandledRejection',
+        stack: reason?.stack,
+        url: window.location.href,
+      });
     };
 
     window.addEventListener('error', onError);
