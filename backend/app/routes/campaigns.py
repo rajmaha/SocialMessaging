@@ -1029,6 +1029,7 @@ def get_campaign_stats(
         "recipients": [
             {
                 "id": r.id,
+                "lead_id": r.lead_id,
                 "email": r.email,
                 "name": r.name,
                 "sent_at": r.sent_at,
@@ -1039,6 +1040,11 @@ def get_campaign_stats(
                 "city": r.city,
                 "device_type": r.device_type,
                 "email_client": r.email_client,
+                "email_valid": (
+                    db.query(Lead.email_valid)
+                    .filter(Lead.id == r.lead_id)
+                    .scalar()
+                ) if r.lead_id else None,
             }
             for r in recipients
         ],

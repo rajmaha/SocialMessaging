@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import axios from "axios";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 
@@ -50,6 +51,24 @@ export default function CampaignStatsPage() {
   const [campaign, setCampaign] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [recheckingLeadId, setRecheckingLeadId] = useState<number | null>(null);
+  const [recheckResults, setRecheckResults] = useState<Record<number, boolean | null>>({});
+
+  const recheckLead = async (leadId: number) => {
+    setRecheckingLeadId(leadId);
+    try {
+      const res = await axios.post(
+        `${API_URL}/email-validator/recheck-lead/${leadId}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setRecheckResults(prev => ({ ...prev, [leadId]: res.data.email_valid }));
+    } catch {
+      // silently fail
+    } finally {
+      setRecheckingLeadId(null);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -234,7 +253,7 @@ export default function CampaignStatsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    {["Name", "Email", "Sent At", "Opened", "Opens", "Clicked", "Location", "Device", "Client"].map(h => (
+                    {["Name", "Email", "Valid", "Sent At", "Opened", "Opens", "Clicked", "Location", "Device", "Client"].map(h => (
                       <th key={h} className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -244,6 +263,39 @@ export default function CampaignStatsPage() {
                     <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{r.name || "—"}</td>
                       <td className="px-4 py-3 text-gray-500">{r.email}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {(() => {
+                          const validity = r.lead_id !== undefined && recheckResults[r.lead_id] !== undefined
+                            ? recheckResults[r.lead_id]
+                            : r.email_valid;
+                          if (validity === false) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border border-red-300">
+                                ❌ Invalid
+                              </span>
+                            );
+                          }
+                          if (validity === true) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">
+                                ✅ Valid
+                              </span>
+                            );
+                          }
+                          return <span className="text-gray-300">—</span>;
+                        })()}
+                        {r.lead_id && (recheckResults[r.lead_id] !== undefined
+                          ? recheckResults[r.lead_id]
+                          : r.email_valid) === false && (
+                          <button
+                            onClick={() => recheckLead(r.lead_id)}
+                            disabled={recheckingLeadId === r.lead_id}
+                            className="ml-2 px-2 py-0.5 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            {recheckingLeadId === r.lead_id ? '⏳' : 'Re-check'}
+                          </button>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
                         {r.sent_at ? new Date(r.sent_at).toLocaleString() : "—"}
                       </td>
