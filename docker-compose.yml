@@ -4,15 +4,15 @@ services:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-socialmedia}
-      POSTGRES_USER: ${POSTGRES_USER:-socialmedia_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-socialmedia_password}
+      POSTGRES_DB: socialmedia
+      POSTGRES_USER: socialmedia_user
+      POSTGRES_PASSWORD: socialmedia_password
     expose:
       - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-socialmedia_user}"]
+      test: ["CMD-SHELL", "pg_isready -U socialmedia_user"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,12 +23,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    env_file:
-      - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-socialmedia_user}:${POSTGRES_PASSWORD:-socialmedia_password}@db:5432/${POSTGRES_DB:-socialmedia}
+      DATABASE_URL: postgresql://socialmedia_user:socialmedia_password@db:5432/socialmedia
       DEBUG: "False"
-      BACKEND_URL: ${BACKEND_URL:-http://localhost:8000}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      ALGORITHM: HS256
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     expose:
       - "8000"
     depends_on:
@@ -43,9 +43,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     restart: unless-stopped
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8000
     expose:
       - "3000"
     depends_on:

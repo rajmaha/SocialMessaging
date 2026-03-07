@@ -9,9 +9,11 @@ RUN apk add --no-cache python3 make g++ libc6-compat
 
 WORKDIR /app
 
-# Build-time env — declare ARG early so Coolify injection works
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+# Build-time: NEXT_PUBLIC_API_URL is empty so browser calls same origin.
+# Next.js rewrites proxy API calls to the backend container internally.
+ARG NEXT_PUBLIC_API_URL=
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV BACKEND_INTERNAL_URL=http://backend:8000
 
 # Copy package files and install deps
 COPY package.json ./
@@ -29,6 +31,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+# Internal URL for Next.js rewrites to reach the backend container
+ENV BACKEND_INTERNAL_URL=http://backend:8000
 
 RUN adduser --disabled-password --gecos "" appuser
 

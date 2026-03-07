@@ -3,7 +3,9 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
 import { useAuth } from './auth'
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'
+// In Docker/Coolify: WS_URL is empty → uses same origin (window.location.host)
+// Locally: WS_URL = ws://localhost:8000 → connects to backend directly
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || ''
 
 export interface EventMessage {
   type: string
@@ -39,8 +41,11 @@ export function EventsProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrlParts = WS_URL.replace(/^wss?:\/\//, '').replace(/^https?:\/\//, '')
-      const url = `${wsProtocol}//${wsUrlParts}/events/ws/connect?token=${encodeURIComponent(token)}`
+      // If WS_URL is empty (Docker/Coolify), use same origin host
+      const wsHost = WS_URL
+        ? WS_URL.replace(/^wss?:\/\//, '').replace(/^https?:\/\//, '')
+        : window.location.host
+      const url = `${wsProtocol}//${wsHost}/events/ws/connect?token=${encodeURIComponent(token)}`
 
       websocketRef.current = new WebSocket(url)
 
