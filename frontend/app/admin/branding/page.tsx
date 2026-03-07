@@ -8,7 +8,8 @@ import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
 import AdminNav from '@/components/AdminNav'
-import { API_URL } from '@/lib/config';
+import { API_URL } from '@/lib/config'
+import { useBranding } from '@/lib/branding-context';
 
 interface BrandingData {
   company_name: string
@@ -53,6 +54,7 @@ interface EmailValidatorData {
 export default function BrandingAdmin() {
   const user = authAPI.getUser();
   const router = useRouter()
+  const { refetch: refetchBranding } = useBranding()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -103,6 +105,7 @@ export default function BrandingAdmin() {
     email_validator_secret: '',
     email_validator_risk_threshold: 60,
   })
+  const [showSmtpPassword, setShowSmtpPassword] = useState(false)
   const [showValidatorSecret, setShowValidatorSecret] = useState(false)
 
   useEffect(() => {
@@ -149,7 +152,7 @@ export default function BrandingAdmin() {
           smtp_server: data.smtp_server || 'smtp.gmail.com',
           smtp_port: data.smtp_port || 587,
           smtp_username: data.smtp_username || '',
-          smtp_password: data.smtp_password ? '***' : '',
+          smtp_password: data.smtp_password || '',
           smtp_from_email: data.smtp_from_email || '',
           smtp_from_name: data.smtp_from_name || '',
           smtp_use_tls: data.smtp_use_tls !== false,
@@ -196,6 +199,7 @@ export default function BrandingAdmin() {
 
       setSuccess('Company branding updated successfully!')
       setTimeout(() => setSuccess(''), 3000)
+      await refetchBranding()
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to save branding')
     } finally {
@@ -216,10 +220,6 @@ export default function BrandingAdmin() {
       }
 
       const smtpPayload = { ...smtp }
-      // Only include password if it's not the masked version
-      if (smtpPayload.smtp_password === '***') {
-        delete (smtpPayload as any).smtp_password
-      }
 
       await axios.post(`${API_URL}/branding/smtp`, smtpPayload, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -736,13 +736,22 @@ export default function BrandingAdmin() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   SMTP Password
                 </label>
-                <input
-                  type="password"
-                  value={smtp.smtp_password}
-                  onChange={(e) => handleSmtpChange('smtp_password', e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showSmtpPassword ? 'text' : 'password'}
+                    value={smtp.smtp_password}
+                    onChange={(e) => handleSmtpChange('smtp_password', e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pr-16"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSmtpPassword(!showSmtpPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    {showSmtpPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
 
               <div>

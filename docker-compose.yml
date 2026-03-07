@@ -37,6 +37,9 @@ services:
     volumes:
       - backend_avatars:/app/app/avatar_storage
       - backend_attachments:/app/app/attachment_storage
+      - backend_logos:/app/app/logo_storage
+      - backend_audio:/app/app/audio_storage
+      - backend_sub_logos:/app/app/subscription_logo_storage
 
   # ── Next.js Frontend ──
   frontend:
@@ -58,4 +61,10 @@ volumes:
   backend_avatars:
     driver: local
   backend_attachments:
+    driver: local
+  backend_logos:
+    driver: local
+  backend_audio:
+    driver: local
+  backend_sub_logos:
     driver: local

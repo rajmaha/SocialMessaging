@@ -1220,6 +1220,19 @@ def _run_inline_migrations():
                 ON CONFLICT (slug) DO NOTHING
             """), {"name": name, "slug": slug, "is_system": is_system, "pages": pages})
 
+        # Seed default teams (upsert by name)
+        default_teams = [
+            ('Support',     'Handles customer support and live chat conversations'),
+            ('Sales',       'Manages sales conversations and CRM follow-ups'),
+            ('Development', 'Internal development and QA team'),
+        ]
+        for team_name, team_desc in default_teams:
+            conn.execute(text("""
+                INSERT INTO teams (name, description)
+                VALUES (:name, :description)
+                ON CONFLICT (name) DO NOTHING
+            """), {"name": team_name, "description": team_desc})
+
         # Migrate old role values: 'user' -> 'support', keep 'admin'
         conn.execute(text("""
             UPDATE users SET role = 'support' WHERE role = 'user'

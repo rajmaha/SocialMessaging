@@ -48,6 +48,7 @@ class SmtpUpdate(BaseModel):
     smtp_from_email: Optional[str] = None
     smtp_from_name: Optional[str] = None
     smtp_use_tls: Optional[bool] = None
+    smtp_use_ssl: Optional[bool] = None
     email_footer_text: Optional[str] = None
     email_support_url: Optional[str] = None
 
@@ -112,10 +113,11 @@ def get_branding_admin(
             "smtp_server": branding.smtp_server,
             "smtp_port": branding.smtp_port,
             "smtp_username": branding.smtp_username,
-            "smtp_password": "***" if branding.smtp_password else None,
+            "smtp_password": branding.smtp_password or None,
             "smtp_from_email": branding.smtp_from_email,
             "smtp_from_name": branding.smtp_from_name,
             "smtp_use_tls": branding.smtp_use_tls,
+            "smtp_use_ssl": branding.smtp_use_ssl,
             "email_footer_text": branding.email_footer_text,
             "email_support_url": branding.email_support_url,
             "support_url": branding.support_url,
@@ -224,8 +226,9 @@ def test_smtp(
         
         message.attach(MIMEText(html_body, "html"))
         
-        with smtplib.SMTP(branding.smtp_server, branding.smtp_port) as server:
-            if branding.smtp_use_tls:
+        server_class = smtplib.SMTP_SSL if branding.smtp_use_ssl else smtplib.SMTP
+        with server_class(branding.smtp_server, branding.smtp_port) as server:
+            if not branding.smtp_use_ssl and branding.smtp_use_tls:
                 server.starttls()
             server.login(branding.smtp_username, branding.smtp_password)
             server.sendmail(branding.smtp_from_email, user.email, message.as_string())

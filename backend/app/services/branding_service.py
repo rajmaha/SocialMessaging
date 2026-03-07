@@ -52,7 +52,7 @@ class BrandingService:
             'company_name', 'company_description', 'logo_url', 'favicon_url',
             'primary_color', 'secondary_color', 'accent_color',
             'smtp_server', 'smtp_port', 'smtp_username', 'smtp_password',
-            'smtp_from_email', 'smtp_from_name', 'smtp_use_tls',
+            'smtp_from_email', 'smtp_from_name', 'smtp_use_tls', 'smtp_use_ssl',
             'email_footer_text', 'email_support_url',
             'support_url', 'privacy_url', 'terms_url', 'timezone', 'admin_email',
             'button_primary_color', 'button_primary_hover_color', 'sidebar_text_color',
@@ -81,6 +81,7 @@ class BrandingService:
             "smtp_from_email": branding.smtp_from_email,
             "smtp_from_name": branding.smtp_from_name,
             "smtp_use_tls": branding.smtp_use_tls,
+            "smtp_use_ssl": branding.smtp_use_ssl,
         }
 
 # Singleton instance
