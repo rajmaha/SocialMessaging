@@ -29,13 +29,12 @@ export default function Softphone() {
 
     // Watch dialNumber from context — when set, populate number and auto-dial
     useEffect(() => {
-        if (dialNumber) {
-            setNumber(dialNumber);
-            const timeout = setTimeout(() => {
-                handleCallRef.current();
-            }, 500);
-            return () => clearTimeout(timeout);
-        }
+        if (!dialNumber) return;
+        setNumber(dialNumber);
+        const timeout = setTimeout(() => {
+            handleCallRef.current();
+        }, 500);
+        return () => clearTimeout(timeout);
     }, [dialNumber]);
 
     const formatTime = (secs: number) => {
