@@ -2,10 +2,14 @@
 
 # Stage 1: Install deps + build
 FROM node:22-alpine AS builder
+
+# Native build tools for npm packages that need compilation
+RUN apk add --no-cache python3 make g++ libc6-compat
+
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+COPY package.json package-lock.json ./
+RUN npm install
 
 # Build-time env — override at build via --build-arg
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
