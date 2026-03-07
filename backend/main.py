@@ -1200,6 +1200,13 @@ def _run_inline_migrations():
         conn.execute(text("""
             ALTER TABLE roles ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
         """))
+        # Backfill any existing rows that have NULL permissions or created_at (production upgrade safety)
+        conn.execute(text("""
+            UPDATE roles SET permissions = '{}'::jsonb WHERE permissions IS NULL;
+        """))
+        conn.execute(text("""
+            UPDATE roles SET created_at = NOW() WHERE created_at IS NULL;
+        """))
 
         # Seed fixed system roles (upsert by slug)
         fixed_roles = [
