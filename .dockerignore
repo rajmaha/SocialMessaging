@@ -3,7 +3,7 @@ __pycache__/
 .Python
 env/
 venv/
-.venv
+.venv/
 *.egg-info/
 dist/
 build/
@@ -11,12 +11,18 @@ build/
 node_modules/
 .next/
 npm-debug.log
+
 .env
 .env.local
+.env.production.local
 
 .DS_Store
 .idea/
 .vscode/
+.claude/
+.worktrees/
+docs/
 
 *.log
 .gitkeep
+.git/
