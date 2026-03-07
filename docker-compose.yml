@@ -51,13 +51,6 @@ services:
       - "3000"
     depends_on:
       - backend
-    networks:
-      - default
-      - coolify
-
-networks:
-  coolify:
-    external: true
 
 volumes:
   postgres_data:
