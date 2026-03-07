@@ -54,14 +54,6 @@ services:
     networks:
       - default
       - coolify
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.frontend.rule=Host(`workspace.saraloms.com`)
-      - traefik.http.routers.frontend.entrypoints=https
-      - traefik.http.routers.frontend.tls=true
-      - traefik.http.routers.frontend.tls.certresolver=letsencrypt
-      - traefik.http.services.frontend.loadbalancer.server.port=3000
-      - traefik.docker.network=coolify
 
 networks:
   coolify:
