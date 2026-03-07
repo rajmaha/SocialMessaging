@@ -1427,6 +1427,10 @@ def _run_inline_migrations():
             ALTER TABLE branding_settings
             ADD COLUMN IF NOT EXISTS email_validator_risk_threshold INTEGER DEFAULT 60
         """))
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS smtp_use_ssl BOOLEAN DEFAULT FALSE
+        """))
 
         conn.execute(text("""
             ALTER TABLE leads

@@ -40,6 +40,7 @@ interface SmtpData {
   smtp_from_email: string
   smtp_from_name: string
   smtp_use_tls: boolean
+  smtp_use_ssl: boolean
   email_footer_text: string
 }
 
@@ -91,6 +92,7 @@ export default function BrandingAdmin() {
     smtp_from_email: '',
     smtp_from_name: 'Social Media Messenger',
     smtp_use_tls: true,
+    smtp_use_ssl: false,
     email_footer_text: '© 2026 Social Media Messenger. All rights reserved.',
   })
 
@@ -151,6 +153,7 @@ export default function BrandingAdmin() {
           smtp_from_email: data.smtp_from_email || '',
           smtp_from_name: data.smtp_from_name || '',
           smtp_use_tls: data.smtp_use_tls !== false,
+          smtp_use_ssl: data.smtp_use_ssl === true,
           email_footer_text: data.email_footer_text || '',
         })
 
@@ -768,15 +771,39 @@ export default function BrandingAdmin() {
             </div>
 
             <div>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={smtp.smtp_use_tls}
-                  onChange={(e) => handleSmtpChange('smtp_use_tls', e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300"
-                />
-                <span className="text-sm font-medium text-gray-700">Use TLS</span>
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Security</label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="smtp_security"
+                    checked={!smtp.smtp_use_tls && !smtp.smtp_use_ssl}
+                    onChange={() => { handleSmtpChange('smtp_use_tls', false); handleSmtpChange('smtp_use_ssl', false); }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700">None (port 25)</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="smtp_security"
+                    checked={smtp.smtp_use_tls && !smtp.smtp_use_ssl}
+                    onChange={() => { handleSmtpChange('smtp_use_tls', true); handleSmtpChange('smtp_use_ssl', false); }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700">STARTTLS (port 587)</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="smtp_security"
+                    checked={smtp.smtp_use_ssl}
+                    onChange={() => { handleSmtpChange('smtp_use_ssl', true); handleSmtpChange('smtp_use_tls', false); }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700">SSL/TLS (port 465)</span>
+                </label>
+              </div>
             </div>
 
             <div>

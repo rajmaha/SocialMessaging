@@ -33,6 +33,7 @@ class BrandingSettings(Base):
     smtp_from_email = Column(String, default="noreply@socialmedia.com")
     smtp_from_name = Column(String, default="Social Media Messenger")
     smtp_use_tls = Column(Boolean, default=True)
+    smtp_use_ssl = Column(Boolean, default=False)
     
     # Email Templates
     email_footer_text = Column(String, default="© 2026 Social Media Messenger. All rights reserved.")

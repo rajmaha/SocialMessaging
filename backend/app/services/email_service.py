@@ -103,8 +103,9 @@ class EmailService:
             message.attach(MIMEText(html_body, "html"))
             
             print(f"📤 Sending email via SMTP to {to_email}...")
-            with smtplib.SMTP(smtp_config["smtp_server"], smtp_config["smtp_port"]) as server:
-                if smtp_config.get("smtp_use_tls", True):
+            _smtp_cls = smtplib.SMTP_SSL if smtp_config.get("smtp_use_ssl", False) else smtplib.SMTP
+            with _smtp_cls(smtp_config["smtp_server"], smtp_config["smtp_port"]) as server:
+                if not smtp_config.get("smtp_use_ssl", False) and smtp_config.get("smtp_use_tls", True):
                     server.starttls()
                 server.login(smtp_config["smtp_username"], smtp_config["smtp_password"])
                 server.sendmail(smtp_config["smtp_from_email"], to_email, message.as_string())
@@ -166,8 +167,9 @@ class EmailService:
             message["To"] = to_email
             message.attach(MIMEText(html_body, "html"))
 
-            with smtplib.SMTP(smtp_config["smtp_server"], smtp_config["smtp_port"]) as server:
-                if smtp_config.get("smtp_use_tls", True):
+            _smtp_cls = smtplib.SMTP_SSL if smtp_config.get("smtp_use_ssl", False) else smtplib.SMTP
+            with _smtp_cls(smtp_config["smtp_server"], smtp_config["smtp_port"]) as server:
+                if not smtp_config.get("smtp_use_ssl", False) and smtp_config.get("smtp_use_tls", True):
                     server.starttls()
                 server.login(smtp_config["smtp_username"], smtp_config["smtp_password"])
                 server.sendmail(smtp_config["smtp_from_email"], to_email, message.as_string())
@@ -245,8 +247,9 @@ class EmailService:
                 ics_part.add_header("Content-Disposition", "attachment", filename="reminder.ics")
                 message.attach(ics_part)
 
-            with smtplib.SMTP(smtp_config["smtp_server"], int(smtp_config["smtp_port"])) as server:
-                if smtp_config.get("smtp_use_tls", True):
+            _smtp_cls = smtplib.SMTP_SSL if smtp_config.get("smtp_use_ssl", False) else smtplib.SMTP
+            with _smtp_cls(smtp_config["smtp_server"], int(smtp_config["smtp_port"])) as server:
+                if not smtp_config.get("smtp_use_ssl", False) and smtp_config.get("smtp_use_tls", True):
                     server.starttls()
                 server.login(smtp_config["smtp_username"], smtp_config["smtp_password"])
                 server.sendmail(smtp_config["smtp_from_email"], to_email, message.as_string())
@@ -347,8 +350,9 @@ class EmailService:
             msg["To"] = admin_email
             msg.attach(MIMEText(html_body, "html"))
 
-            with smtplib.SMTP(smtp_config["smtp_server"], smtp_config["smtp_port"]) as server:
-                if smtp_config.get("smtp_use_tls", True):
+            _smtp_cls = smtplib.SMTP_SSL if smtp_config.get("smtp_use_ssl", False) else smtplib.SMTP
+            with _smtp_cls(smtp_config["smtp_server"], smtp_config["smtp_port"]) as server:
+                if not smtp_config.get("smtp_use_ssl", False) and smtp_config.get("smtp_use_tls", True):
                     server.starttls()
                 server.login(smtp_config["smtp_username"], smtp_config["smtp_password"])
                 server.sendmail(smtp_config["smtp_from_email"], admin_email, msg.as_string())
@@ -382,8 +386,9 @@ class EmailService:
             message["To"] = to_email
             message.attach(MIMEText(html_body, "html"))
 
-            with smtplib.SMTP(smtp_config["smtp_server"], int(smtp_config["smtp_port"])) as server:
-                if smtp_config.get("smtp_use_tls", True):
+            _smtp_cls = smtplib.SMTP_SSL if smtp_config.get("smtp_use_ssl", False) else smtplib.SMTP
+            with _smtp_cls(smtp_config["smtp_server"], int(smtp_config["smtp_port"])) as server:
+                if not smtp_config.get("smtp_use_ssl", False) and smtp_config.get("smtp_use_tls", True):
                     server.starttls()
                 server.login(smtp_config["smtp_username"], smtp_config["smtp_password"])
                 server.sendmail(smtp_config["smtp_from_email"], to_email, message.as_string())
