@@ -8,7 +8,7 @@ class EmailSuppression(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
-    reason = Column(String(50), nullable=False)  # unsubscribed | bounced | complaint
+    reason = Column(String(50), nullable=False)  # unsubscribed | bounced | complaint | invalid
     campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True)
     unsubscribed_at = Column(DateTime(timezone=True), server_default=func.now())
     resubscribed_at = Column(DateTime(timezone=True), nullable=True)

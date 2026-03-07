@@ -1,5 +1,6 @@
 import os
 import base64
+import logging
 import threading
 import urllib.request
 import json as _json
@@ -22,6 +23,8 @@ import hashlib
 from app.config import settings
 from app.models.email_suppression import EmailSuppression
 from app.schemas.email_suppression import SendTestRequest
+
+logger = logging.getLogger(__name__)
 
 # Public router — no auth required (used for email tracking pixels)
 public_router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -329,7 +332,8 @@ def _do_send(campaign_id: int, db: Session):
                     filtered_audience.append(lead)
                     continue
                 risk_score = result.get("risk_score", 0)
-                passed = result.get("is_valid", True) and risk_score < threshold
+                # is_valid is already normalised against threshold by validate_bulk
+                passed = result.get("is_valid", True)
                 if passed:
                     lead.email_valid = True
                     filtered_audience.append(lead)
@@ -347,15 +351,13 @@ def _do_send(campaign_id: int, db: Session):
                             db.add(_ES(email=lead.email, reason="invalid", campaign_id=campaign_id))
                     validation_skipped_count += 1
             db.commit()
-            import logging as _logging
-            _logging.getLogger(__name__).info(
+            logger.info(
                 "Pre-send validation excluded %d leads for campaign %d",
                 validation_skipped_count, campaign_id
             )
             audience = filtered_audience
         except Exception as exc:
-            import logging as _logging
-            _logging.getLogger(__name__).warning("Pre-send bulk validation failed: %s", exc)
+            logger.warning("Pre-send bulk validation failed: %s", exc)
             # Fail open — proceed with original audience
 
     base_url = os.getenv("BACKEND_URL", "http://localhost:8000")

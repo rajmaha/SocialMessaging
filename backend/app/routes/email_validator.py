@@ -74,9 +74,10 @@ def recheck_lead_email(
 
     if passed:
         lead.email_valid = True
-        # Remove any existing suppression for this email (validator says it's good now)
+        # Only remove "invalid" suppressions — preserve unsubscribed/bounced/complaint rows
         db.query(EmailSuppression).filter(
             EmailSuppression.email == lead.email,
+            EmailSuppression.reason == "invalid",
         ).delete(synchronize_session=False)
     else:
         lead.email_valid = False
