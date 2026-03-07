@@ -4,7 +4,9 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import AdminNav from '@/components/AdminNav'
 import MainHeader from '@/components/MainHeader'
-import { Plus, Search, User, Phone, Mail, ChevronRight } from 'lucide-react'
+import { Plus, Search, User, ChevronRight } from 'lucide-react'
+import ClickablePhone from '@/components/ClickablePhone'
+import ClickableEmail from '@/components/ClickableEmail'
 import axios from 'axios'
 import { useRouter } from 'next/navigation'
 import { useAuth, getAuthToken } from '@/lib/auth'
@@ -141,20 +143,14 @@ export default function IndividualsPage() {
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         {ind.phone_numbers && ind.phone_numbers.length > 0 ? (
-                                                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                                <Phone className="w-3.5 h-3.5 text-gray-400" />
-                                                                {ind.phone_numbers[0]}
-                                                            </div>
+                                                            <ClickablePhone number={ind.phone_numbers[0]} className="text-sm" />
                                                         ) : (
                                                             <span className="text-gray-300 text-xs">No phone</span>
                                                         )}
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         {ind.email ? (
-                                                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                                <Mail className="w-3.5 h-3.5 text-gray-400" />
-                                                                {ind.email}
-                                                            </div>
+                                                            <ClickableEmail email={ind.email} className="text-sm" />
                                                         ) : (
                                                             <span className="text-gray-300 text-xs">No email</span>
                                                         )}

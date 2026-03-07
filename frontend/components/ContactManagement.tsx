@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, User, Mail, Phone, Trash2, Edit2, X, AlertCircle } from 'lucide-react'
+import { Plus, User, Trash2, Edit2, X, AlertCircle } from 'lucide-react'
+import ClickablePhone from '@/components/ClickablePhone'
+import ClickableEmail from '@/components/ClickableEmail'
 import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
 import { API_URL } from '@/lib/config';
@@ -197,14 +199,8 @@ export default function ContactManagement({ organizationId }: ContactManagementP
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col gap-1">
-                                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                    <Mail className="w-3 h-3" />
-                                                    {contact.email || 'N/A'}
-                                                </div>
-                                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                    <Phone className="w-3 h-3" />
-                                                    {contact.phone_no?.[0] || 'N/A'}
-                                                </div>
+                                                <ClickableEmail email={contact.email} className="text-sm" />
+                                                <ClickablePhone number={contact.phone_no?.[0]} className="text-sm" />
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">

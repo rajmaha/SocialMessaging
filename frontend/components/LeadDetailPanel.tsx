@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import ClickablePhone from '@/components/ClickablePhone';
+import ClickableEmail from '@/components/ClickableEmail';
 
 const STATUS_COLORS: Record<string, string> = {
   new: "bg-blue-100 text-blue-800",
@@ -256,8 +258,8 @@ export default function LeadDetailPanel({ leadId, onClose, onDeleted }: LeadDeta
             <div>
               <h3 className="text-sm font-semibold text-gray-800 mb-3">Contact Information</h3>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
-                <Field label="Email" value={lead.email} />
-                <Field label="Phone" value={lead.phone} />
+                <Field label="Email" value={lead.email ? <ClickableEmail email={lead.email} /> : null} />
+                <Field label="Phone" value={lead.phone ? <ClickablePhone number={lead.phone} /> : null} />
                 <Field label="Company" value={lead.company} />
                 <Field label="Position" value={lead.position} />
                 <Field label="Source" value={lead.source} />

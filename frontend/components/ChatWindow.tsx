@@ -8,6 +8,8 @@ import { useEvents } from '@/lib/events-context'
 import { useBranding } from '@/lib/branding-context'
 import { API_URL } from '@/lib/config';
 import CrmSidebar from './CrmSidebar';
+import ClickablePhone from '@/components/ClickablePhone';
+import ClickableEmail from '@/components/ClickableEmail';
 
 interface Message {
   id: number
@@ -680,8 +682,8 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
         <div className="border-b bg-white px-6 py-3 grid grid-cols-3 gap-4 text-sm">
           <div>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Contact</p>
-            {crmLead.email && <p className="text-gray-700">📧 {crmLead.email}</p>}
-            {crmLead.phone && <p className="text-gray-700">📞 {crmLead.phone}</p>}
+            {crmLead.email && <ClickableEmail email={crmLead.email} />}
+            {crmLead.phone && <ClickablePhone number={crmLead.phone} />}
           </div>
           <div>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Active Deals</p>
