@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import { authAPI, getAuthToken } from "@/lib/auth";
@@ -9,6 +9,14 @@ import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 
 export default function NewTaskPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+      <NewTaskPageContent />
+    </Suspense>
+  );
+}
+
+function NewTaskPageContent() {
   const user = authAPI.getUser();
   const router = useRouter();
   const params = useSearchParams();
