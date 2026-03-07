@@ -39,6 +39,8 @@ export default function LeadDetailPage() {
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [mergeLoading, setMergeLoading] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
+  const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [emailValidState, setEmailValidState] = useState<boolean | null | undefined>(undefined);
 
   const handleStatusChange = async (newStatus: string) => {
     try {
@@ -96,10 +98,28 @@ export default function LeadDetailPage() {
     }
   };
 
+  const verifyEmail = async () => {
+    if (!lead?.id) return;
+    setVerifyingEmail(true);
+    try {
+      const res = await axios.post(
+        `${API_URL}/email-validator/recheck-lead/${lead.id}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setEmailValidState(res.data.email_valid);
+    } catch {
+      // silently fail
+    } finally {
+      setVerifyingEmail(false);
+    }
+  };
+
   useEffect(() => {
     if (!id) return;
     const fetchLead = async () => {
       setLoading(true);
+      setEmailValidState(undefined); // reset on lead change
       try {
         const res = await axios.get(`${API_URL}/crm/leads/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -218,7 +238,33 @@ export default function LeadDetailPage() {
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-base font-semibold text-gray-800 mb-4">Contact Information</h2>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
-                <Field label="Email" value={lead.email} />
+                <div>
+                  <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Email</dt>
+                  <dd className="mt-1 text-sm text-gray-900 flex flex-wrap items-center gap-1">
+                    <span>{lead.email || "—"}</span>
+                    {/* Email validity badge */}
+                    {(() => {
+                      const validity = emailValidState !== undefined ? emailValidState : lead?.email_valid;
+                      if (validity === true) {
+                        return <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">✅ Valid</span>;
+                      }
+                      if (validity === false) {
+                        return <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border border-red-300">❌ Invalid</span>;
+                      }
+                      return <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-500 border border-gray-200">— Not checked</span>;
+                    })()}
+                    {/* Verify Email button */}
+                    {lead?.email && (
+                      <button
+                        onClick={verifyEmail}
+                        disabled={verifyingEmail}
+                        className="ml-2 px-3 py-1 text-xs bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {verifyingEmail ? "⏳ Verifying..." : "🔍 Verify Email"}
+                      </button>
+                    )}
+                  </dd>
+                </div>
                 <Field label="Phone" value={lead.phone} />
                 <Field label="Company" value={lead.company} />
                 <Field label="Position" value={lead.position} />
