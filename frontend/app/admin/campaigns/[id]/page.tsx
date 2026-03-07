@@ -263,38 +263,38 @@ export default function CampaignStatsPage() {
                     <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{r.name || "—"}</td>
                       <td className="px-4 py-3 text-gray-500">{r.email}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="px-4 py-3 whitespace-nowrap text-sm">
                         {(() => {
-                          const validity = r.lead_id !== undefined && recheckResults[r.lead_id] !== undefined
-                            ? recheckResults[r.lead_id]
-                            : r.email_valid;
-                          if (validity === false) {
-                            return (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border border-red-300">
-                                ❌ Invalid
-                              </span>
-                            );
-                          }
-                          if (validity === true) {
-                            return (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">
-                                ✅ Valid
-                              </span>
-                            );
-                          }
-                          return <span className="text-gray-300">—</span>;
+                          const validity = recheckResults[r.lead_id] ?? r.email_valid
+                          return (
+                            <span className="inline-flex items-center gap-2">
+                              {validity === true && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">
+                                  ✅ Valid
+                                </span>
+                              )}
+                              {validity === false && (
+                                <>
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border border-red-300">
+                                    ❌ Invalid
+                                  </span>
+                                  {r.lead_id && (
+                                    <button
+                                      onClick={() => recheckLead(r.lead_id)}
+                                      disabled={recheckingLeadId === r.lead_id}
+                                      className="px-2 py-0.5 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                      {recheckingLeadId === r.lead_id ? '⏳' : 'Re-check'}
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                              {(validity === null || validity === undefined) && (
+                                <span className="text-gray-400 text-xs">—</span>
+                              )}
+                            </span>
+                          )
                         })()}
-                        {r.lead_id && (recheckResults[r.lead_id] !== undefined
-                          ? recheckResults[r.lead_id]
-                          : r.email_valid) === false && (
-                          <button
-                            onClick={() => recheckLead(r.lead_id)}
-                            disabled={recheckingLeadId === r.lead_id}
-                            className="ml-2 px-2 py-0.5 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
-                          >
-                            {recheckingLeadId === r.lead_id ? '⏳' : 'Re-check'}
-                          </button>
-                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
                         {r.sent_at ? new Date(r.sent_at).toLocaleString() : "—"}

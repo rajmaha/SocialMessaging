@@ -1010,6 +1010,13 @@ def get_campaign_stats(
             "is_winner": v.id == c.ab_winner_variant_id,
         })
 
+    # Bulk-fetch email_valid for all leads in one query (avoid N+1)
+    lead_ids = [r.lead_id for r in recipients if r.lead_id]
+    lead_validity_map: dict = {}
+    if lead_ids:
+        validity_rows = db.query(Lead.id, Lead.email_valid).filter(Lead.id.in_(lead_ids)).all()
+        lead_validity_map = {row.id: row.email_valid for row in validity_rows}
+
     return {
         "sent_count": c.sent_count,
         "opened_count": c.opened_count,
@@ -1040,11 +1047,7 @@ def get_campaign_stats(
                 "city": r.city,
                 "device_type": r.device_type,
                 "email_client": r.email_client,
-                "email_valid": (
-                    db.query(Lead.email_valid)
-                    .filter(Lead.id == r.lead_id)
-                    .scalar()
-                ) if r.lead_id else None,
+                "email_valid": lead_validity_map.get(r.lead_id) if r.lead_id else None,
             }
             for r in recipients
         ],
