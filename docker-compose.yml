@@ -8,8 +8,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-socialmedia}
       POSTGRES_USER: ${POSTGRES_USER:-socialmedia_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-socialmedia_password}
-    ports:
-      - "${DB_PORT:-5432}:5432"
+    # No host port — only accessible within Docker network
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -31,8 +32,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-socialmedia_user}:${POSTGRES_PASSWORD:-socialmedia_password}@db:5432/${POSTGRES_DB:-socialmedia}
       DEBUG: "False"
       BACKEND_URL: ${BACKEND_URL:-http://localhost:8000}
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
+    # No host port — nginx proxies to backend:8000 internally
+    expose:
+      - "8000"
     depends_on:
       db:
         condition: service_healthy
@@ -49,8 +51,9 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     container_name: socialmedia_frontend
     restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+    # No host port — nginx proxies to frontend:3000 internally
+    expose:
+      - "3000"
     depends_on:
       - backend
 
