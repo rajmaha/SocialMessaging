@@ -34,6 +34,7 @@ from app.models.campaign_link import CampaignLink, CampaignClick  # noqa: F401
 from app.models.campaign_variant import CampaignVariant  # noqa: F401
 from app.models.logs import AuditLog, ErrorLog  # noqa: F401 — ensures log table creation
 from app.models.ci_cd import CICDRepo, CICDDeployment, CICDScriptLog, CICDMigrationLog  # noqa: F401
+from app.models.visitors import VisitorLocation, VisitorProfile, Visit  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -1876,6 +1877,12 @@ app.mount("/logos", StaticFiles(directory=LOGO_DIR), name="logos")
 SUB_LOGO_DIR = os.path.join(os.path.dirname(__file__), "subscription_logo_storage")
 os.makedirs(SUB_LOGO_DIR, exist_ok=True)
 app.mount("/subscription-logos", StaticFiles(directory=SUB_LOGO_DIR), name="subscription_logos")
+
+# Serve visitor profile photos and CCTV captures
+os.makedirs("app/attachment_storage/visitors/profiles", exist_ok=True)
+os.makedirs("app/attachment_storage/visitors/cctv", exist_ok=True)
+app.mount("/visitor-photos", StaticFiles(directory="app/attachment_storage/visitors/profiles"), name="visitor-photos")
+app.mount("/visitor-cctv", StaticFiles(directory="app/attachment_storage/visitors/cctv"), name="visitor-cctv")
 
 # Serve nothing from migration_storage — files are private SQL, not served publicly
 MIGRATION_DIR = os.path.join(os.path.dirname(__file__), "migration_storage")
