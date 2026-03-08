@@ -12,7 +12,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_admin_user, get_current_user
+from app.dependencies import get_admin_user
 from app.models.user import User
 from app.models.visitors import Visit, VisitorLocation, VisitorProfile
 from app.schemas.visitors import (
@@ -66,7 +66,7 @@ def _notify_host(host_agent_id: int, visit: Visit, profile: VisitorProfile,
                  location_name: Optional[str]):
     """Fire-and-forget SSE notification to host agent."""
     event = EventTypes.create_event(
-        "visitor_checkin",
+        EventTypes.VISITOR_CHECKIN,
         {
             "visit_id": visit.id,
             "visitor_name": profile.name,
@@ -77,8 +77,7 @@ def _notify_host(host_agent_id: int, visit: Visit, profile: VisitorProfile,
         },
     )
     try:
-        loop = asyncio.get_event_loop()
-        loop.create_task(events_service.broadcast_to_user(host_agent_id, event))
+        asyncio.ensure_future(events_service.broadcast_to_user(host_agent_id, event))
     except RuntimeError:
         pass
 
@@ -174,11 +173,17 @@ def search_profiles(q: str = Query(..., min_length=2), db: Session = Depends(get
 @router.post("/upload-photo")
 async def upload_visitor_photo(file: UploadFile = File(...)):
     """Public endpoint — upload webcam capture, returns filename."""
+    ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+    MAX_SIZE_MB = 5
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are allowed")
+    content = await file.read()
+    if len(content) > MAX_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"File too large (max {MAX_SIZE_MB}MB)")
     os.makedirs(PROFILE_PHOTO_DIR, exist_ok=True)
     ext = os.path.splitext(file.filename or "photo.jpg")[1] or ".jpg"
     fname = f"{uuid.uuid4().hex}{ext}"
     fpath = os.path.join(PROFILE_PHOTO_DIR, fname)
-    content = await file.read()
     with open(fpath, "wb") as f:
         f.write(content)
     return {"path": fpath, "url": f"/visitor-photos/{fname}"}
@@ -209,8 +214,7 @@ def kiosk_active_visits(contact_no: str = Query(...), db: Session = Depends(get_
 @router.get("/agents/list")
 def list_agents(db: Session = Depends(get_db)):
     """Public endpoint — returns minimal user list for host dropdown in kiosk."""
-    from app.models.user import User as UserModel
-    users = db.query(UserModel).filter(UserModel.is_active == True).order_by(UserModel.email).all()
+    users = db.query(User).filter(User.is_active == True).order_by(User.email).all()
     return [
         {"id": u.id, "name": u.display_name or u.email, "email": u.email}
         for u in users
