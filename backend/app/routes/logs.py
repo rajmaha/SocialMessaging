@@ -78,7 +78,7 @@ def list_audit_logs(
         "items": [
             {
                 "id": r.id,
-                "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+                "timestamp": r.timestamp.strftime("%Y-%m-%dT%H:%M:%S") if r.timestamp else None,
                 "user_id": r.user_id,
                 "user_email": r.user_email,
                 "user_role": r.user_role,
@@ -124,7 +124,7 @@ def list_error_logs(
         "items": [
             {
                 "id": r.id,
-                "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+                "timestamp": r.timestamp.strftime("%Y-%m-%dT%H:%M:%S") if r.timestamp else None,
                 "severity": r.severity,
                 "source": r.source,
                 "error_type": r.error_type,

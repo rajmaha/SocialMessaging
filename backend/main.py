@@ -20,6 +20,7 @@ from app.routes.campaign_attachments import router as campaign_attachments_route
 from app.routes.user_permission_overrides import router as permission_overrides_router
 from app.routes.logs import router as logs_router
 from app.routes.email_validator import router as email_validator_router
+from app.routes.ci_cd import router as ci_cd_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.models.email_suppression import EmailSuppression  # noqa: F401
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
@@ -32,6 +33,7 @@ from app.models.user_permission_override import UserPermissionOverride  # noqa: 
 from app.models.campaign_link import CampaignLink, CampaignClick  # noqa: F401
 from app.models.campaign_variant import CampaignVariant  # noqa: F401
 from app.models.logs import AuditLog, ErrorLog  # noqa: F401 — ensures log table creation
+from app.models.ci_cd import CICDRepo, CICDDeployment, CICDScriptLog, CICDMigrationLog  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -1196,6 +1198,75 @@ def _run_inline_migrations():
             )
         """))
 
+        # ── CI/CD tables ──────────────────────────────────────────────────────
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS cicd_repos (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                repo_url VARCHAR NOT NULL,
+                branch VARCHAR NOT NULL DEFAULT 'main',
+                local_path VARCHAR NOT NULL,
+                auth_type VARCHAR NOT NULL DEFAULT 'https',
+                ssh_private_key TEXT,
+                access_token VARCHAR,
+                db_host VARCHAR,
+                db_port INTEGER DEFAULT 5432,
+                db_username VARCHAR,
+                db_password VARCHAR,
+                schedule_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                schedule_cron VARCHAR,
+                last_deployed_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS cicd_deployments (
+                id SERIAL PRIMARY KEY,
+                repo_id INTEGER NOT NULL REFERENCES cicd_repos(id) ON DELETE CASCADE,
+                status VARCHAR NOT NULL DEFAULT 'running',
+                triggered_by VARCHAR NOT NULL DEFAULT 'manual',
+                git_output TEXT,
+                error TEXT,
+                started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                finished_at TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS cicd_script_logs (
+                id SERIAL PRIMARY KEY,
+                repo_id INTEGER NOT NULL REFERENCES cicd_repos(id) ON DELETE CASCADE,
+                deployment_id INTEGER NOT NULL REFERENCES cicd_deployments(id) ON DELETE CASCADE,
+                script_filename VARCHAR NOT NULL,
+                exit_code INTEGER,
+                stdout TEXT,
+                stderr TEXT,
+                executed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_cicd_script_repo UNIQUE (repo_id, script_filename)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS cicd_migration_logs (
+                id SERIAL PRIMARY KEY,
+                repo_id INTEGER NOT NULL REFERENCES cicd_repos(id) ON DELETE CASCADE,
+                deployment_id INTEGER NOT NULL REFERENCES cicd_deployments(id) ON DELETE CASCADE,
+                database_name VARCHAR NOT NULL,
+                sql_filename VARCHAR NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'success',
+                error TEXT,
+                executed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_cicd_migration_repo_db UNIQUE (repo_id, database_name, sql_filename)
+            )
+        """))
+        # Migrate cicd_repos.server_id FK from cicd_servers → cloudpanel_servers
+        # Drop old column (pointing to cicd_servers) and re-add pointing to cloudpanel_servers.
+        # Safe: no production data existed in server_id when this migration runs.
+        conn.execute(text("ALTER TABLE cicd_repos DROP COLUMN IF EXISTS server_id"))
+        conn.execute(text("""
+            ALTER TABLE cicd_repos
+                ADD COLUMN IF NOT EXISTS server_id INTEGER REFERENCES cloudpanel_servers(id) ON DELETE SET NULL
+        """))
+        conn.commit()
+
         # Add permissions column to roles table
         conn.execute(text("""
             ALTER TABLE roles ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
@@ -1779,6 +1850,7 @@ app.include_router(permission_overrides_router)
 app.include_router(campaign_attachments_router)
 app.include_router(logs_router)
 app.include_router(email_validator_router)
+app.include_router(ci_cd_router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
@@ -2596,6 +2668,32 @@ async def startup_event():
         scheduler.add_job(run_due_backup_jobs, 'interval', minutes=1, id='run_due_backup_jobs')
         scheduler.add_job(purge_old_logs, 'interval', hours=24, id='purge_old_logs')
         scheduler.start()
+
+        # ── Seed CI/CD scheduled deployments from DB ──────────────────────────
+        try:
+            from app.models.ci_cd import CICDRepo as _CICDRepo
+            from app.routes.ci_cd import _deploy_in_thread as _cicd_deploy
+            from apscheduler.triggers.cron import CronTrigger as _CronTrigger
+            _cicd_db = SessionLocal()
+            _active_repos = _cicd_db.query(_CICDRepo).filter(
+                _CICDRepo.schedule_enabled == True,
+                _CICDRepo.schedule_cron != None,
+            ).all()
+            for _repo in _active_repos:
+                try:
+                    scheduler.add_job(
+                        _cicd_deploy,
+                        _CronTrigger.from_crontab(_repo.schedule_cron),
+                        id=f"cicd_deploy_{_repo.id}",
+                        args=[_repo.id, "scheduled"],
+                        replace_existing=True,
+                    )
+                    logger.info("CI/CD: scheduled deploy for repo '%s' (%s)", _repo.name, _repo.schedule_cron)
+                except Exception as _e:
+                    logger.warning("CI/CD: could not schedule repo %d: %s", _repo.id, _e)
+            _cicd_db.close()
+        except Exception as _e:
+            logger.warning("CI/CD scheduler seeding error: %s", _e)
 
         # Wire scheduler reference for routes
         import app.scheduler_ref as _sched_ref

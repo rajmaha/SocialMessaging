@@ -73,6 +73,7 @@ const sidebarGroups = [
             { href: '/admin/organizations', label: 'Organizations', icon: '🏢', permission: () => hasModuleAccess('organizations') },
             { href: '/admin/individuals', label: 'Individuals', icon: '👤', permission: () => hasModuleAccess('individuals') },
             { href: '/admin/subscription-modules', label: 'Subscription Modules', icon: '📦', permission: () => hasModuleAccess('subscriptions') },
+            { href: '/admin/cicd', label: 'CI/CD Manager', icon: '🔄', adminOnly: true },
             { href: '/admin/cloudpanel/servers', label: 'CloudPanel Servers', icon: '☁️', permission: () => hasAdminFeature('manage_cloudpanel') },
             { href: '/admin/cloudpanel/templates', label: 'Site Templates', icon: '📁', permission: () => hasAdminFeature('manage_cloudpanel') },
             { href: '/admin/cloudpanel/deploy', label: 'Deploy New Site', icon: '🚀', permission: () => hasAdminFeature('deploy_site') },
@@ -161,6 +162,7 @@ function AdminNavInner() {
     const [crmBadge, setCrmBadge] = useState(0)
     const [dynamicMenus, setDynamicMenus] = useState<any[]>([])
     const [isPm, setIsPm] = useState(false)
+    const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
     useEffect(() => {
         setIsMounted(true)
@@ -172,6 +174,11 @@ function AdminNavInner() {
                 console.error('Failed to parse user from localStorage', e)
             }
         }
+        // Restore collapsed groups
+        try {
+            const saved = localStorage.getItem('adminNavCollapsed')
+            if (saved) setCollapsedGroups(new Set(JSON.parse(saved)))
+        } catch {}
         // Check PM status for PMS nav
         if (hasPageAccess('pms')) {
             pmsApi.getDashboard(7)
@@ -179,6 +186,16 @@ function AdminNavInner() {
                 .catch(() => {})
         }
     }, [])
+
+    const toggleGroup = (label: string) => {
+        setCollapsedGroups(prev => {
+            const next = new Set(prev)
+            if (next.has(label)) next.delete(label)
+            else next.add(label)
+            try { localStorage.setItem('adminNavCollapsed', JSON.stringify([...next])) } catch {}
+            return next
+        })
+    }
 
     // Load dynamic menus after mount
     useEffect(() => {
@@ -260,7 +277,7 @@ function AdminNavInner() {
                     color: 'var(--sidebar-text)'
                 }}
             >
-                <nav ref={navRef} onScroll={handleNavScroll} className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
+                <nav ref={navRef} onScroll={handleNavScroll} className="flex-1 overflow-y-auto py-2 px-3 space-y-3">
                     {sidebarGroups.map(group => {
                         // Filter items based on permissions and role
                         const visibleItems = group.items.filter((item: any) => {
@@ -282,39 +299,50 @@ function AdminNavInner() {
 
                         if (visibleItems.length === 0) return null;
 
+                        const isCollapsed = collapsedGroups.has(group.label)
                         return (
                             <div key={group.label}>
-                                <p className="text-xs font-bold uppercase tracking-widest text-gray-500 px-2 mb-1.5">
-                                    {group.label}
-                                </p>
-                                <ul className="space-y-0.5">
-                                    {visibleItems.map(item => {
-                                        const active = isActive(item.href)
-                                        return (
-                                            <li key={item.href}>
-                                                <Link
-                                                    href={item.href}
-                                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${active
-                                                        ? 'text-white font-semibold'
-                                                        : 'text-gray-300 hover:bg-white/10 hover:text-white'
-                                                        }`}
-                                                    style={active ? { backgroundColor: 'var(--accent-color)', color: 'var(--sidebar-text)' } : { color: 'var(--sidebar-text)', opacity: 0.8 }}
-                                                >
-                                                    <span className="text-base w-5 text-center flex-shrink-0">{item.icon}</span>
-                                                    <span className="truncate">{item.label}</span>
-                                                    {crmBadge > 0 && item.href.startsWith('/admin/crm') && (
-                                                        <span className="ml-auto bg-red-500 text-white text-xs rounded-full h-5 min-w-[20px] flex items-center justify-center px-1 flex-shrink-0">
-                                                            {crmBadge > 99 ? '99+' : crmBadge}
-                                                        </span>
-                                                    )}
-                                                    {active && crmBadge === 0 && (
-                                                        <span className="ml-auto w-2 h-2 rounded-full bg-indigo-300 flex-shrink-0" />
-                                                    )}
-                                                </Link>
-                                            </li>
-                                        )
-                                    })}
-                                </ul>
+                                <button
+                                    onClick={() => toggleGroup(group.label)}
+                                    className="w-full flex items-center justify-between px-2 mb-1.5 group/hdr"
+                                >
+                                    <span className="text-xs font-bold uppercase tracking-widest text-gray-500 group-hover/hdr:text-gray-300 transition-colors">
+                                        {group.label}
+                                    </span>
+                                    <span className={`text-gray-600 group-hover/hdr:text-gray-400 transition-transform duration-200 text-xl leading-none ${isCollapsed ? '-rotate-90' : ''}`}>
+                                        ▾
+                                    </span>
+                                </button>
+                                {!isCollapsed && (
+                                    <ul className="space-y-0.5">
+                                        {visibleItems.map(item => {
+                                            const active = isActive(item.href)
+                                            return (
+                                                <li key={item.href}>
+                                                    <Link
+                                                        href={item.href}
+                                                        className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-all ${active
+                                                            ? 'text-white font-semibold'
+                                                            : 'text-gray-300 hover:bg-white/10 hover:text-white'
+                                                            }`}
+                                                        style={active ? { backgroundColor: 'var(--accent-color)', color: 'var(--sidebar-text)' } : { color: 'var(--sidebar-text)', opacity: 0.8 }}
+                                                    >
+                                                        <span className="text-base w-5 text-center flex-shrink-0">{item.icon}</span>
+                                                        <span className="truncate">{item.label}</span>
+                                                        {crmBadge > 0 && item.href.startsWith('/admin/crm') && (
+                                                            <span className="ml-auto bg-red-500 text-white text-xs rounded-full h-5 min-w-[20px] flex items-center justify-center px-1 flex-shrink-0">
+                                                                {crmBadge > 99 ? '99+' : crmBadge}
+                                                            </span>
+                                                        )}
+                                                        {active && crmBadge === 0 && (
+                                                            <span className="ml-auto w-2 h-2 rounded-full bg-indigo-300 flex-shrink-0" />
+                                                        )}
+                                                    </Link>
+                                                </li>
+                                            )
+                                        })}
+                                    </ul>
+                                )}
                             </div>
                         )
                     })}
@@ -325,12 +353,22 @@ function AdminNavInner() {
                         if (activeItems.length === 0) return null
                         // Check permission for dynamic menu group
                         if (userRole !== 'admin' && !hasModuleAccess(`menu_${group.slug}`)) return null
+                        const dynLabel = `dyn-${group.id}`
+                        const isDynCollapsed = collapsedGroups.has(dynLabel)
                         return (
                             <div key={`menu-${group.id}`}>
-                                <p className="text-xs font-bold uppercase tracking-widest text-gray-500 px-2 mb-1.5">
-                                    {group.icon} {group.name}
-                                </p>
-                                <ul className="space-y-0.5">
+                                <button
+                                    onClick={() => toggleGroup(dynLabel)}
+                                    className="w-full flex items-center justify-between px-2 mb-1.5 group/hdr"
+                                >
+                                    <span className="text-xs font-bold uppercase tracking-widest text-gray-500 group-hover/hdr:text-gray-300 transition-colors">
+                                        {group.icon} {group.name}
+                                    </span>
+                                    <span className={`text-gray-600 group-hover/hdr:text-gray-400 transition-transform duration-200 text-xl leading-none ${isDynCollapsed ? '-rotate-90' : ''}`}>
+                                        ▾
+                                    </span>
+                                </button>
+                                {!isDynCollapsed && <ul className="space-y-0.5">
                                     {activeItems.map((item: any) => {
                                         const href = item.link_type === 'form' ? `/forms/${item.link_value}` : item.link_value
                                         const isExternal = item.link_type === 'external'
@@ -353,7 +391,7 @@ function AdminNavInner() {
                                                     <Link
                                                         href={href}
                                                         target={item.open_in_new_tab ? '_blank' : undefined}
-                                                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${active
+                                                        className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-all ${active
                                                             ? 'text-white font-semibold'
                                                             : 'text-gray-300 hover:bg-white/10 hover:text-white'
                                                             }`}
@@ -369,7 +407,7 @@ function AdminNavInner() {
                                             </li>
                                         )
                                     })}
-                                </ul>
+                                </ul>}
                             </div>
                         )
                     })}

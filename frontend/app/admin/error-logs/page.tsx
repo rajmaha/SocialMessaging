@@ -94,9 +94,8 @@ export default function ErrorLogsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <MainHeader user={user!} />
-      <div className="flex">
-        <AdminNav />
-        <main className="flex-1 p-6">
+      <AdminNav />
+        <main className="ml-60 pt-14 p-6">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold text-gray-800">Error Logs</h1>
             <button
@@ -220,7 +219,6 @@ export default function ErrorLogsPage() {
             </div>
           </div>
         </main>
-      </div>
     </div>
   );
 }

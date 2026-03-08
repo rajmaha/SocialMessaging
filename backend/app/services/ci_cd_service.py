@@ -1,0 +1,359 @@
+# backend/app/services/ci_cd_service.py
+"""
+CI/CD deployment service.
+
+Deployment order: git clone/pull → shell scripts (once) → SQL migrations (once per DB).
+
+If a CloudPanelServer is attached to the repo, all commands run on that server via SSH.
+Migrations run via `psql` on the target server — no DB credentials required.
+If no server is attached, everything runs locally.
+"""
+import contextlib
+import json
+import logging
+import os
+import subprocess
+import tempfile
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from app.models.ci_cd import CICDDeployment, CICDMigrationLog, CICDRepo, CICDScriptLog
+from app.models.cloudpanel_server import CloudPanelServer
+
+logger = logging.getLogger(__name__)
+
+# Default CloudPanel v2 SQLite DB path
+CLOUDPANEL_DEFAULT_DB = "/home/cloudpanel/service/cloud-panel.db"
+
+
+# ── SSH helpers ───────────────────────────────────────────────────────────────
+
+@contextlib.contextmanager
+def _server_key_file(server: Optional[CloudPanelServer]):
+    if server and server.ssh_key:
+        fd, path = tempfile.mkstemp(prefix="cicd_key_", suffix=".pem")
+        try:
+            os.write(fd, server.ssh_key.encode())
+            os.close(fd)
+            os.chmod(path, 0o600)
+            yield path
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+    else:
+        yield None
+
+
+def _ssh_run(server: CloudPanelServer, command: str, key_file: Optional[str],
+             timeout: int = 300) -> tuple[int, str, str]:
+    args = [
+        "ssh",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "BatchMode=yes",
+        "-p", str(server.ssh_port or 22),
+    ]
+    if key_file:
+        args += ["-i", key_file]
+    args.append(f"{server.ssh_user}@{server.host}")
+    args.append(command)
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    return result.returncode, result.stdout, result.stderr
+
+
+# ── CloudPanel site listing ───────────────────────────────────────────────────
+
+def fetch_cloudpanel_sites(server: CloudPanelServer) -> list:
+    """
+    SSH into a CloudPanel server and query its SQLite DB to list all sites.
+    Returns list of dicts: {domain, path, user}.
+    """
+    db_path = CLOUDPANEL_DEFAULT_DB
+    query_cmd = (
+        f"python3 -c \""
+        f"import sqlite3,json; "
+        f"c=sqlite3.connect('{db_path}').cursor(); "
+        f"c.execute('SELECT domain_name,root_directory,user FROM site WHERE deleted=0 ORDER BY domain_name'); "
+        f"print(json.dumps([{{\\\"domain\\\":r[0],\\\"path\\\":r[1],\\\"user\\\":r[2]}} for r in c.fetchall()]))"
+        f"\""
+    )
+    with _server_key_file(server) as kf:
+        rc, out, err = _ssh_run(server, query_cmd, kf, timeout=15)
+
+    if rc != 0:
+        raise RuntimeError(f"SSH query failed (exit {rc}): {err.strip()}")
+
+    try:
+        return json.loads(out.strip())
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Could not parse CloudPanel response: {e}\nOutput: {out[:500]}")
+
+
+# ── Git helpers ───────────────────────────────────────────────────────────────
+
+def _build_https_url(repo_url: str, access_token: str) -> str:
+    if "://" in repo_url:
+        scheme, rest = repo_url.split("://", 1)
+        return f"{scheme}://{access_token}@{rest}"
+    return repo_url
+
+
+def git_pull_or_clone(repo: CICDRepo, server: Optional[CloudPanelServer] = None) -> str:
+    if server:
+        return _git_remote(repo, server)
+    return _git_local(repo)
+
+
+def _git_local(repo: CICDRepo) -> str:
+    local = Path(repo.local_path)
+    env = os.environ.copy()
+    ssh_key_file: Optional[str] = None
+    try:
+        if repo.auth_type == "ssh" and repo.ssh_private_key:
+            fd, ssh_key_file = tempfile.mkstemp(prefix="cicd_ssh_", suffix=".pem")
+            os.write(fd, repo.ssh_private_key.encode())
+            os.close(fd)
+            os.chmod(ssh_key_file, 0o600)
+            env["GIT_SSH_COMMAND"] = f"ssh -i {ssh_key_file} -o StrictHostKeyChecking=no -o BatchMode=yes"
+            clone_url = repo.repo_url
+        elif repo.auth_type == "https" and repo.access_token:
+            clone_url = _build_https_url(repo.repo_url, repo.access_token)
+        else:
+            clone_url = repo.repo_url
+
+        output_parts = []
+        git_dot = local / ".git"
+        if git_dot.exists():
+            for cmd, label in [
+                (["git", "-C", str(local), "fetch", "origin", repo.branch], f"git fetch origin {repo.branch}"),
+                (["git", "-C", str(local), "reset", "--hard", f"origin/{repo.branch}"], f"git reset --hard origin/{repo.branch}"),
+            ]:
+                result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=300)
+                output_parts.append(f"$ {label}\n{result.stdout}{result.stderr}")
+                if result.returncode != 0:
+                    raise RuntimeError(f"{label} failed (exit {result.returncode}):\n{result.stderr}")
+        else:
+            local.mkdir(parents=True, exist_ok=True)
+            result = subprocess.run(
+                ["git", "clone", "--branch", repo.branch, "--single-branch", clone_url, str(local)],
+                capture_output=True, text=True, env=env, timeout=300,
+            )
+            output_parts.append(f"$ git clone ...\n{result.stdout}{result.stderr}")
+            if result.returncode != 0:
+                raise RuntimeError(f"git clone failed (exit {result.returncode}):\n{result.stderr}")
+        return "\n".join(output_parts)
+    finally:
+        if ssh_key_file and os.path.exists(ssh_key_file):
+            os.unlink(ssh_key_file)
+
+
+def _git_remote(repo: CICDRepo, server: CloudPanelServer) -> str:
+    local = repo.local_path
+    branch = repo.branch
+
+    if repo.auth_type == "ssh" and repo.ssh_private_key:
+        escaped_key = repo.ssh_private_key.replace("'", "'\\''")
+        git_script = (
+            f"GIT_KEY=$(mktemp) && chmod 600 \"$GIT_KEY\" && "
+            f"printf '%s' '{escaped_key}' > \"$GIT_KEY\" && "
+            f"export GIT_SSH_COMMAND=\"ssh -i $GIT_KEY -o StrictHostKeyChecking=no -o BatchMode=yes\" && "
+            f"if [ -d '{local}/.git' ]; then "
+            f"  git -C '{local}' fetch origin {branch} && git -C '{local}' reset --hard origin/{branch}; "
+            f"else mkdir -p '{local}' && git clone --branch {branch} --single-branch '{repo.repo_url}' '{local}'; fi; "
+            f"EC=$?; rm -f \"$GIT_KEY\"; exit $EC"
+        )
+    elif repo.auth_type == "https" and repo.access_token:
+        clone_url = _build_https_url(repo.repo_url, repo.access_token)
+        git_script = (
+            f"if [ -d '{local}/.git' ]; then "
+            f"  git -C '{local}' fetch origin {branch} && git -C '{local}' reset --hard origin/{branch}; "
+            f"else mkdir -p '{local}' && git clone --branch {branch} --single-branch '{clone_url}' '{local}'; fi"
+        )
+    else:
+        git_script = (
+            f"if [ -d '{local}/.git' ]; then "
+            f"  git -C '{local}' fetch origin {branch} && git -C '{local}' reset --hard origin/{branch}; "
+            f"else mkdir -p '{local}' && git clone --branch {branch} --single-branch '{repo.repo_url}' '{local}'; fi"
+        )
+
+    with _server_key_file(server) as kf:
+        rc, out, err = _ssh_run(server, git_script, kf, timeout=300)
+
+    if rc != 0:
+        raise RuntimeError(f"git failed on {server.host} (exit {rc}):\n{err}")
+    return f"$ git pull/clone on {server.host}\n{out}{err}"
+
+
+# ── Script execution ──────────────────────────────────────────────────────────
+
+def run_scripts(repo: CICDRepo, deployment: CICDDeployment, db: Session,
+                server: Optional[CloudPanelServer] = None) -> list:
+    scripts_dir = f"{repo.local_path}/scripts"
+
+    if server:
+        with _server_key_file(server) as kf:
+            rc, out, _ = _ssh_run(server, f"ls '{scripts_dir}'/*.sh 2>/dev/null | sort", kf)
+        if rc != 0 or not out.strip():
+            return []
+        script_names = sorted([Path(f.strip()).name for f in out.splitlines() if f.strip()])
+    else:
+        sd = Path(repo.local_path) / "scripts"
+        if not sd.is_dir():
+            return []
+        script_names = [p.name for p in sorted(sd.glob("*.sh"))]
+
+    already_run = {
+        row.script_filename
+        for row in db.query(CICDScriptLog.script_filename)
+        .filter(CICDScriptLog.repo_id == repo.id).all()
+    }
+
+    logs = []
+    for fname in script_names:
+        if fname in already_run:
+            continue
+        try:
+            if server:
+                with _server_key_file(server) as kf:
+                    rc, out, err = _ssh_run(server, f"bash '{scripts_dir}/{fname}'", kf, timeout=600)
+                exit_code, stdout, stderr = rc, out[:50_000], err[:50_000]
+            else:
+                result = subprocess.run(
+                    ["bash", str(Path(repo.local_path) / "scripts" / fname)],
+                    capture_output=True, text=True, cwd=repo.local_path, timeout=600,
+                )
+                exit_code, stdout, stderr = result.returncode, result.stdout[:50_000], result.stderr[:50_000]
+        except subprocess.TimeoutExpired:
+            exit_code, stdout, stderr = -1, "", "Script timed out after 600 seconds."
+        except Exception as exc:
+            exit_code, stdout, stderr = -1, "", str(exc)
+
+        log = CICDScriptLog(
+            repo_id=repo.id, deployment_id=deployment.id, script_filename=fname,
+            exit_code=exit_code, stdout=stdout, stderr=stderr, executed_at=datetime.utcnow(),
+        )
+        db.add(log)
+        db.flush()
+        logs.append(log)
+    return logs
+
+
+# ── Migration execution ───────────────────────────────────────────────────────
+
+def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
+                   server: Optional[CloudPanelServer] = None) -> list:
+    database_dir = f"{repo.local_path}/database"
+    db_host = repo.db_host or "localhost"
+    db_port = repo.db_port or 5432
+
+    if server:
+        with _server_key_file(server) as kf:
+            rc, csv_content, _ = _ssh_run(server, f"cat '{database_dir}/db.csv' 2>/dev/null", kf)
+        if rc != 0 or not csv_content.strip():
+            return []
+    else:
+        csv_file = Path(repo.local_path) / "database" / "db.csv"
+        if not csv_file.exists():
+            return []
+        csv_content = csv_file.read_text()
+
+    db_names = [n for line in csv_content.splitlines() for n in (p.strip() for p in line.split(",")) if n]
+    if not db_names:
+        return []
+
+    if server:
+        with _server_key_file(server) as kf:
+            rc, out, _ = _ssh_run(server, f"ls '{database_dir}'/*.sql 2>/dev/null | sort", kf)
+        sql_files = sorted([Path(f.strip()).name for f in out.splitlines() if f.strip()])
+    else:
+        sql_files = sorted([p.name for p in (Path(repo.local_path) / "database").glob("*.sql")])
+
+    if not sql_files:
+        return []
+
+    logs = []
+    for db_name in db_names:
+        already_run = {
+            row.sql_filename
+            for row in db.query(CICDMigrationLog.sql_filename)
+            .filter(
+                CICDMigrationLog.repo_id == repo.id,
+                CICDMigrationLog.database_name == db_name,
+                CICDMigrationLog.status == "success",
+            ).all()
+        }
+        for fname in sql_files:
+            if fname in already_run:
+                continue
+            sql_path = f"{database_dir}/{fname}"
+            mig_status = "success"
+            mig_error: Optional[str] = None
+            try:
+                if server:
+                    psql_cmd = f"psql -h {db_host} -p {db_port} -d '{db_name}' -f '{sql_path}' 2>&1"
+                    with _server_key_file(server) as kf:
+                        rc, out, err = _ssh_run(server, psql_cmd, kf, timeout=120)
+                    if rc != 0:
+                        mig_status = "failed"
+                        mig_error = (out + err)[:4000]
+                else:
+                    result = subprocess.run(
+                        ["psql", "-h", db_host, "-p", str(db_port), "-d", db_name,
+                         "-f", str(Path(repo.local_path) / "database" / fname)],
+                        capture_output=True, text=True, timeout=120,
+                    )
+                    if result.returncode != 0:
+                        mig_status = "failed"
+                        mig_error = (result.stdout + result.stderr)[:4000]
+            except Exception as exc:
+                mig_status = "failed"
+                mig_error = str(exc)[:4000]
+
+            log = CICDMigrationLog(
+                repo_id=repo.id, deployment_id=deployment.id,
+                database_name=db_name, sql_filename=fname,
+                status=mig_status, error=mig_error, executed_at=datetime.utcnow(),
+            )
+            db.add(log)
+            db.flush()
+            logs.append(log)
+            if mig_status == "failed":
+                break
+    return logs
+
+
+# ── Main deploy entry point ────────────────────────────────────────────────────
+
+def deploy(repo_id: int, triggered_by: str, db: Session) -> CICDDeployment:
+    repo = db.query(CICDRepo).filter(CICDRepo.id == repo_id).first()
+    if not repo:
+        raise ValueError(f"CICDRepo {repo_id} not found")
+
+    server = db.query(CloudPanelServer).filter(CloudPanelServer.id == repo.server_id).first() if repo.server_id else None
+
+    deployment = CICDDeployment(
+        repo_id=repo_id, status="running",
+        triggered_by=triggered_by, started_at=datetime.utcnow(),
+    )
+    db.add(deployment)
+    db.commit()
+    db.refresh(deployment)
+
+    try:
+        deployment.git_output = git_pull_or_clone(repo, server)
+        run_scripts(repo, deployment, db, server)
+        run_migrations(repo, deployment, db, server)
+        deployment.status = "success"
+    except Exception as exc:
+        logger.error("CICD deploy repo %d failed: %s", repo_id, exc)
+        deployment.status = "failed"
+        deployment.error = str(exc)[:4000]
+    finally:
+        deployment.finished_at = datetime.utcnow()
+        repo.last_deployed_at = datetime.utcnow()
+        db.commit()
+        db.refresh(deployment)
+
+    return deployment
