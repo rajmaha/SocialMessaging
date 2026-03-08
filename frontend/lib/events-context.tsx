@@ -144,13 +144,17 @@ export function EventsProvider({ children }: { children: React.ReactNode }) {
   )
 
   useEffect(() => {
-    if (token) {
-      connect()
-    } else {
+    if (!token) {
       disconnect()
+      return
     }
-
+    // Short defer so React StrictMode's mount→cleanup→mount cycle
+    // (dev-only) doesn't open a WebSocket on the phantom mount.
+    // The cleanup cancels the timer before it fires; only the real
+    // final mount reaches connect().
+    const timer = setTimeout(connect, 50)
     return () => {
+      clearTimeout(timer)
       disconnect()
     }
   }, [token, connect, disconnect])
