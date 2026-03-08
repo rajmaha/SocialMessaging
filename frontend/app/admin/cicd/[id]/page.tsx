@@ -191,7 +191,7 @@ export default function CICDDetailPage() {
             {activeTab === 'deployments' && (
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                 {deployments.length === 0 ? (
-                  <div className="text-center py-12 text-gray-400 text-sm">No deployments yet. Click "Deploy Now" to start.</div>
+                  <div className="text-center py-12 text-gray-400 text-sm">No deployments yet. Click &quot;Deploy Now&quot; to start.</div>
                 ) : (
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
