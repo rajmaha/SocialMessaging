@@ -131,3 +131,5 @@ class EventTypes:
     CRM_LEAD_ASSIGNED = "crm_lead_assigned"
     CRM_DEAL_STAGE_CHANGED = "crm_deal_stage_changed"
     CRM_TASK_OVERDUE = "crm_task_overdue"
+    # Visitors events
+    VISITOR_CHECKIN = "visitor_checkin"
