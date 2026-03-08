@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import AdminNav from '@/components/AdminNav'
 import { api } from '@/lib/api'
+import { useBranding } from '@/lib/branding-context'
+import { formatDateWithTimezone } from '@/lib/date-utils'
 
 interface Visit {
   id: number
@@ -23,6 +25,8 @@ interface Visit {
 export default function VisitDetailPage() {
   const { id } = useParams()
   const router = useRouter()
+  const { branding } = useBranding()
+  const tz = branding?.timezone || 'UTC'
   const [visit, setVisit] = useState<Visit | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -39,7 +43,7 @@ export default function VisitDetailPage() {
     loadVisit()
   }
 
-  const fmt = (dt?: string) => dt ? new Date(dt).toLocaleString() : '—'
+  const fmt = (dt?: string) => dt ? formatDateWithTimezone(dt, tz) : '—'
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   if (loading) return (

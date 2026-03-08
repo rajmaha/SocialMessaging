@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import AdminNav from '@/components/AdminNav'
 import { api } from '@/lib/api'
 import Link from 'next/link'
+import { useBranding } from '@/lib/branding-context'
+import { formatDateWithTimezone } from '@/lib/date-utils'
 
 interface Visit {
   id: number
@@ -19,6 +21,9 @@ interface Visit {
 }
 
 export default function VisitorsPage() {
+  const { branding } = useBranding()
+  const tz = branding?.timezone || 'UTC'
+
   const [visits, setVisits] = useState<Visit[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -48,7 +53,7 @@ export default function VisitorsPage() {
     load()
   }
 
-  const fmt = (dt?: string) => dt ? new Date(dt).toLocaleString() : '—'
+  const fmt = (dt?: string) => dt ? formatDateWithTimezone(dt, tz) : '—'
 
   return (
     <>

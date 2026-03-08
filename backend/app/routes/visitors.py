@@ -65,7 +65,7 @@ def _visit_out(visit: Visit, db: Session) -> VisitOut:
 def _notify_host(host_agent_id: int, visit: Visit, profile: VisitorProfile,
                  location_name: Optional[str]):
     """Fire-and-forget SSE notification to host agent."""
-    event = EventTypes.create_event(
+    event = events_service.create_event(
         EventTypes.VISITOR_CHECKIN,
         {
             "visit_id": visit.id,
