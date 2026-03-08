@@ -84,7 +84,7 @@ export default function NewVisitPage() {
   return (
     <>
       <AdminNav />
-      <main className="ml-60 pt-14 p-6 max-w-3xl">
+      <main className="ml-60 pt-14 p-6 max-w-5xl">
         <div className="mb-6">
           <button onClick={() => router.back()} className="text-sm text-gray-400 hover:text-gray-600 mb-1">
             ← Back
@@ -95,33 +95,64 @@ export default function NewVisitPage() {
         {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">{error}</div>}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="bg-white rounded-xl border p-5 grid grid-cols-2 gap-4">
-            <h2 className="col-span-2 font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Details</h2>
-            {([
-              ['visitor_name', 'Full Name *', 'text', true],
-              ['visitor_organization', 'Organisation', 'text', false],
-              ['visitor_contact_no', 'Phone', 'tel', false],
-              ['visitor_email', 'Email', 'email', false],
-            ] as [string, string, string, boolean][]).map(([key, label, type, required]) => (
-              <div key={key}>
-                <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                <input
-                  type={type}
-                  required={required}
+          {/* Visitor Details + Photo side by side */}
+          <div className="grid grid-cols-2 gap-5 items-start">
+            <div className="bg-white rounded-xl border p-5 grid grid-cols-2 gap-4">
+              <h2 className="col-span-2 font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Details</h2>
+              {([
+                ['visitor_name', 'Full Name *', 'text', true],
+                ['visitor_organization', 'Organisation', 'text', false],
+                ['visitor_contact_no', 'Phone', 'tel', false],
+                ['visitor_email', 'Email', 'email', false],
+              ] as [string, string, string, boolean][]).map(([key, label, type, required]) => (
+                <div key={key}>
+                  <label className="block text-xs text-gray-500 mb-1">{label}</label>
+                  <input
+                    type={type}
+                    required={required}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={(form as any)[key]}
+                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                  />
+                </div>
+              ))}
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Address</label>
+                <textarea
                   className="w-full border rounded-lg px-3 py-2 text-sm"
-                  value={(form as any)[key]}
-                  onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                  rows={2}
+                  value={form.visitor_address}
+                  onChange={e => setForm(f => ({ ...f, visitor_address: e.target.value }))}
                 />
               </div>
-            ))}
-            <div className="col-span-2">
-              <label className="block text-xs text-gray-500 mb-1">Address</label>
-              <textarea
-                className="w-full border rounded-lg px-3 py-2 text-sm"
-                rows={2}
-                value={form.visitor_address}
-                onChange={e => setForm(f => ({ ...f, visitor_address: e.target.value }))}
-              />
+            </div>
+
+            {/* Webcam — right of Visitor Details */}
+            <div className="bg-white rounded-xl border p-5 flex flex-col gap-3">
+              <h2 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Photo</h2>
+              {photoUrl ? (
+                <div className="flex flex-col items-center gap-3">
+                  <img src={`${API_URL}${photoUrl}`} alt="Captured"
+                    className="w-full max-h-52 object-cover rounded-lg border" />
+                  <button type="button" onClick={() => { setPhotoUrl(null); setPhotoPath(null) }}
+                    className="text-sm text-red-500 hover:underline">Retake</button>
+                </div>
+              ) : stream ? (
+                <div className="space-y-2">
+                  <video ref={videoRef} autoPlay className="w-full rounded-lg border" />
+                  <canvas ref={canvasRef} className="hidden" />
+                  <button type="button" onClick={capturePhoto}
+                    className="w-full bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700">
+                    Capture Photo
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={startCamera}
+                  className="flex-1 border-2 border-dashed border-gray-300 rounded-lg px-6 py-8 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-500 flex flex-col items-center justify-center gap-2">
+                  <span className="text-3xl">📷</span>
+                  <span>Open Camera</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -157,33 +188,6 @@ export default function NewVisitPage() {
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </div>
-          </div>
-
-          {/* Webcam */}
-          <div className="bg-white rounded-xl border p-5">
-            <h2 className="font-semibold text-sm text-gray-700 uppercase tracking-wide mb-3">Visitor Photo</h2>
-            {photoUrl ? (
-              <div className="flex items-center gap-4">
-                <img src={`${API_URL}${photoUrl}`} alt="Captured"
-                  className="w-24 h-24 object-cover rounded-lg border" />
-                <button type="button" onClick={() => { setPhotoUrl(null); setPhotoPath(null) }}
-                  className="text-sm text-red-500 hover:underline">Retake</button>
-              </div>
-            ) : stream ? (
-              <div className="space-y-2">
-                <video ref={videoRef} autoPlay className="w-full max-w-xs rounded-lg border" />
-                <canvas ref={canvasRef} className="hidden" />
-                <button type="button" onClick={capturePhoto}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700">
-                  Capture Photo
-                </button>
-              </div>
-            ) : (
-              <button type="button" onClick={startCamera}
-                className="border-2 border-dashed border-gray-300 rounded-lg px-6 py-4 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-500">
-                📷 Open Camera
-              </button>
-            )}
           </div>
 
           <button type="submit" disabled={saving}
