@@ -184,6 +184,39 @@ async def upload_visitor_photo(file: UploadFile = File(...)):
     return {"path": fpath, "url": f"/visitor-photos/{fname}"}
 
 
+# ── Kiosk: find active visits by phone (for checkout) ─────────────────────────
+
+@router.get("/kiosk/active-visits")
+def kiosk_active_visits(contact_no: str = Query(...), db: Session = Depends(get_db)):
+    """Public endpoint — find open visits for a visitor (by phone) for kiosk checkout."""
+    profile = db.query(VisitorProfile).filter(
+        VisitorProfile.contact_no == contact_no
+    ).first()
+    if not profile:
+        return []
+    visits = (
+        db.query(Visit)
+        .filter(Visit.visitor_profile_id == profile.id, Visit.check_out_at.is_(None))
+        .order_by(Visit.check_in_at.desc())
+        .limit(5)
+        .all()
+    )
+    return [_visit_out(v, db) for v in visits]
+
+
+# ── Agent list (for host dropdown in kiosk) ───────────────────────────────────
+
+@router.get("/agents/list")
+def list_agents(db: Session = Depends(get_db)):
+    """Public endpoint — returns minimal user list for host dropdown in kiosk."""
+    from app.models.user import User as UserModel
+    users = db.query(UserModel).filter(UserModel.is_active == True).order_by(UserModel.email).all()
+    return [
+        {"id": u.id, "name": u.display_name or u.email, "email": u.email}
+        for u in users
+    ]
+
+
 # ── Visits ────────────────────────────────────────────────────────────────────
 
 @router.get("/", response_model=List[VisitOut])
@@ -323,36 +356,3 @@ def checkout_visit(visit_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(visit)
     return _visit_out(visit, db)
-
-
-# ── Kiosk: find active visits by phone (for checkout) ─────────────────────────
-
-@router.get("/kiosk/active-visits")
-def kiosk_active_visits(contact_no: str = Query(...), db: Session = Depends(get_db)):
-    """Public endpoint — find open visits for a visitor (by phone) for kiosk checkout."""
-    profile = db.query(VisitorProfile).filter(
-        VisitorProfile.contact_no == contact_no
-    ).first()
-    if not profile:
-        return []
-    visits = (
-        db.query(Visit)
-        .filter(Visit.visitor_profile_id == profile.id, Visit.check_out_at.is_(None))
-        .order_by(Visit.check_in_at.desc())
-        .limit(5)
-        .all()
-    )
-    return [_visit_out(v, db) for v in visits]
-
-
-# ── Agent list (for host dropdown in kiosk) ───────────────────────────────────
-
-@router.get("/agents/list")
-def list_agents(db: Session = Depends(get_db)):
-    """Public endpoint — returns minimal user list for host dropdown in kiosk."""
-    from app.models.user import User as UserModel
-    users = db.query(UserModel).filter(UserModel.is_active == True).order_by(UserModel.email).all()
-    return [
-        {"id": u.id, "name": u.display_name or u.email, "email": u.email}
-        for u in users
-    ]
