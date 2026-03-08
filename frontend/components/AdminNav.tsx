@@ -65,6 +65,13 @@ const sidebarGroups = [
         ],
     },
     {
+        label: 'Visitors',
+        items: [
+            { href: '/admin/visitors', label: 'Visits', icon: '🏢', adminOnly: true },
+            { href: '/admin/visitors/locations', label: 'Locations', icon: '📍', adminOnly: true },
+        ],
+    },
+    {
         label: 'Applications',
         items: [
             { href: '/admin/callcenter', label: 'Call Center', icon: '📞', pageKey: 'callcenter' },
