@@ -1879,10 +1879,12 @@ os.makedirs(SUB_LOGO_DIR, exist_ok=True)
 app.mount("/subscription-logos", StaticFiles(directory=SUB_LOGO_DIR), name="subscription_logos")
 
 # Serve visitor profile photos and CCTV captures
-os.makedirs("app/attachment_storage/visitors/profiles", exist_ok=True)
-os.makedirs("app/attachment_storage/visitors/cctv", exist_ok=True)
-app.mount("/visitor-photos", StaticFiles(directory="app/attachment_storage/visitors/profiles"), name="visitor-photos")
-app.mount("/visitor-cctv", StaticFiles(directory="app/attachment_storage/visitors/cctv"), name="visitor-cctv")
+VISITOR_PHOTO_DIR = os.path.join(os.path.dirname(__file__), "app", "attachment_storage", "visitors", "profiles")
+VISITOR_CCTV_DIR = os.path.join(os.path.dirname(__file__), "app", "attachment_storage", "visitors", "cctv")
+os.makedirs(VISITOR_PHOTO_DIR, exist_ok=True)
+os.makedirs(VISITOR_CCTV_DIR, exist_ok=True)
+app.mount("/visitor-photos", StaticFiles(directory=VISITOR_PHOTO_DIR), name="visitor-photos")
+app.mount("/visitor-cctv", StaticFiles(directory=VISITOR_CCTV_DIR), name="visitor-cctv")
 
 # Serve nothing from migration_storage — files are private SQL, not served publicly
 MIGRATION_DIR = os.path.join(os.path.dirname(__file__), "migration_storage")
