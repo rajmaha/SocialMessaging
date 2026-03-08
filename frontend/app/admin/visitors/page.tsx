@@ -6,6 +6,8 @@ import Link from 'next/link'
 import { useBranding } from '@/lib/branding-context'
 import { formatDateWithTimezone } from '@/lib/date-utils'
 
+const PAGE_SIZE = 25
+
 interface Visit {
   id: number
   visitor_name: string
@@ -30,30 +32,48 @@ export default function VisitorsPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
 
-  const load = async () => {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  const load = async (p = page) => {
     setLoading(true)
     try {
-      const params: Record<string, string> = {}
+      const params: Record<string, string> = { page: String(p), page_size: String(PAGE_SIZE) }
       if (search) params.search = search
       if (statusFilter) params.status = statusFilter
       if (dateFrom) params.date_from = dateFrom
       if (dateTo) params.date_to = dateTo
       const res = await api.get('/visitors/', { params })
       setVisits(res.data)
+      const count = parseInt(res.headers['x-total-count'] || '0', 10)
+      setTotal(count)
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { load() }, [search, statusFilter, dateFrom, dateTo])
+  // Reset to page 1 whenever filters change
+  useEffect(() => {
+    setPage(1)
+    load(1)
+  }, [search, statusFilter, dateFrom, dateTo])
+
+  // Load when page changes (but not on filter changes — handled above)
+  useEffect(() => { load(page) }, [page])
 
   const handleCheckout = async (visitId: number) => {
     await api.patch(`/visitors/${visitId}/checkout`)
-    load()
+    load(page)
   }
 
   const fmt = (dt?: string) => dt ? formatDateWithTimezone(dt, tz) : '—'
+
+  const goTo = (p: number) => {
+    if (p < 1 || p > totalPages) return
+    setPage(p)
+  }
 
   return (
     <>
@@ -150,6 +170,67 @@ export default function VisitorsPage() {
               ))}
             </tbody>
           </table>
+
+          {/* Pagination footer */}
+          {total > PAGE_SIZE && (
+            <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50 text-sm text-gray-500">
+              <span>
+                Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => goTo(1)}
+                  disabled={page === 1}
+                  className="px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-default">
+                  «
+                </button>
+                <button
+                  onClick={() => goTo(page - 1)}
+                  disabled={page === 1}
+                  className="px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-default">
+                  ‹
+                </button>
+
+                {/* Page number buttons — show up to 5 around current page */}
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+                  .reduce<(number | '…')[]>((acc, p, idx, arr) => {
+                    if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('…')
+                    acc.push(p)
+                    return acc
+                  }, [])
+                  .map((p, idx) =>
+                    p === '…'
+                      ? <span key={`ellipsis-${idx}`} className="px-2">…</span>
+                      : (
+                        <button
+                          key={p}
+                          onClick={() => goTo(p as number)}
+                          className={`px-3 py-1 rounded font-medium ${
+                            p === page
+                              ? 'bg-blue-600 text-white'
+                              : 'hover:bg-gray-200'
+                          }`}>
+                          {p}
+                        </button>
+                      )
+                  )}
+
+                <button
+                  onClick={() => goTo(page + 1)}
+                  disabled={page === totalPages}
+                  className="px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-default">
+                  ›
+                </button>
+                <button
+                  onClick={() => goTo(totalPages)}
+                  disabled={page === totalPages}
+                  className="px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-default">
+                  »
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </>

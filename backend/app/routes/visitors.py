@@ -231,9 +231,10 @@ def list_visits(
     date_to: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page_size: int = Query(25, ge=1, le=200),
     db: Session = Depends(get_db),
     _: User = Depends(get_admin_user),
+    response: Response = None,
 ):
     q = db.query(Visit)
     if location_id:
@@ -255,7 +256,13 @@ def list_visits(
             ).all()
         ]
         q = q.filter(Visit.visitor_profile_id.in_(profile_ids))
+    total = q.count()
     visits = q.order_by(Visit.check_in_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    if response is not None:
+        response.headers["X-Total-Count"] = str(total)
+        response.headers["X-Page"] = str(page)
+        response.headers["X-Page-Size"] = str(page_size)
+        response.headers["Access-Control-Expose-Headers"] = "X-Total-Count, X-Page, X-Page-Size"
     return [_visit_out(v, db) for v in visits]
 
 
