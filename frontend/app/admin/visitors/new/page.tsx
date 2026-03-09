@@ -44,6 +44,8 @@ export default function NewVisitPage() {
   })
   const [availableCards, setAvailableCards] = useState<PassCard[]>([])
   const [passCardId, setPassCardId] = useState<string>('')
+  type PhotoSource = 'cctv' | 'webcam' | null
+  const [photoSource, setPhotoSource] = useState<PhotoSource>(null)
 
   useEffect(() => {
     api.get('/visitors/agents/list').then(r => setAgents(r.data))
@@ -197,9 +199,16 @@ export default function NewVisitPage() {
     setPhotoPath(null)
     setImgNaturalSize(null)
     setVideoReady(false)
-    // If CCTV is available, don't open webcam — the CCTV capture button will be shown
     const loc = locations.find(l => l.id === parseInt(form.location_id))
-    if (!loc?.ip_camera_url) startCamera()
+    if (loc?.ip_camera_url) {
+      // Reset to source selection — let agent choose again
+      stopCctvPlayer()
+      stream?.getTracks().forEach(t => t.stop())
+      setStream(null)
+      setPhotoSource(null)
+    } else {
+      startCamera()
+    }
   }
 
   const captureFromCctv = async (locId: number) => {
@@ -249,6 +258,19 @@ export default function NewVisitPage() {
     setCctvStatus('idle')
   }, [])
 
+  // Start the chosen photo source; stops the other one first
+  const selectPhotoSource = (source: 'cctv' | 'webcam') => {
+    setPhotoSource(source)
+    if (source === 'cctv') {
+      stream?.getTracks().forEach(t => t.stop())
+      setStream(null)
+      startCctvStream(parseInt(form.location_id))
+    } else {
+      stopCctvPlayer()
+      startCamera()
+    }
+  }
+
   // Start CCTV stream for the selected location
   const startCctvStream = useCallback(async (locId: number) => {
     setCctvStatus('starting')
@@ -287,14 +309,14 @@ export default function NewVisitPage() {
     }
   }, [])
 
-  // When location changes, stop any existing stream and start for the new one if it has a camera
+  // When location changes: stop everything, reset photo source selection
   useEffect(() => {
     stopCctvPlayer()
-    if (!form.location_id) return
-    const loc = locations.find(l => l.id === parseInt(form.location_id))
-    if (loc?.ip_camera_url) {
-      startCctvStream(loc.id)
-    }
+    setStream(prev => { prev?.getTracks().forEach(t => t.stop()); return null })
+    setPhotoSource(null)
+    setCapturedDataUrl(null)
+    setPhotoUrl(null)
+    setPhotoPath(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.location_id])
 
