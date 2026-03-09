@@ -71,7 +71,13 @@ function CameraPlayer({ locationId, locationName }: { locationId: number; locati
       // Chrome / Firefox — use hls.js
       import('hls.js').then(({ default: Hls }) => {
         if (Hls.isSupported()) {
-          const hls = new Hls({ enableWorker: true, lowLatencyMode: true })
+          const hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            liveBackBufferLength: 5,    // discard segments more than 5s behind live
+            maxBufferLength: 8,         // don't buffer more than 8s ahead (default 30)
+            liveSyncDurationCount: 2,   // sync to 2 segments from live edge (default 3)
+          })
           hls.loadSource(streamUrl)
           hls.attachMedia(video)
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
