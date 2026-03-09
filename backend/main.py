@@ -1559,6 +1559,15 @@ def _run_inline_migrations():
 
         conn.commit()
 
+    # Unique index: only one active visit may hold a given pass card at a time
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_visits_pass_card_active
+                ON visits (pass_card_id)
+                WHERE check_out_at IS NULL AND pass_card_id IS NOT NULL
+        """))
+        conn.commit()
+
 # ── Log DB Init ────────────────────────────────────────────────────────────
 from app.log_database import init_log_db
 init_log_db()

@@ -62,7 +62,7 @@ def _capture_rtsp_snapshot(rtsp_url: str, output_path: str) -> bool:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _visit_out(visit: Visit, db: Session) -> VisitOut:
+def _visit_out(visit: Visit, db: Session, pass_card_map: dict | None = None) -> VisitOut:
     profile = db.query(VisitorProfile).filter(VisitorProfile.id == visit.visitor_profile_id).first()
     location = db.query(VisitorLocation).filter(VisitorLocation.id == visit.location_id).first() if visit.location_id else None
     host = db.query(User).filter(User.id == visit.host_agent_id).first() if visit.host_agent_id else None
@@ -75,7 +75,10 @@ def _visit_out(visit: Visit, db: Session) -> VisitOut:
 
     pass_card_no: Optional[str] = None
     if visit.pass_card_id:
-        card = db.query(VisitorPassCard).filter(VisitorPassCard.id == visit.pass_card_id).first()
+        if pass_card_map is not None:
+            card = pass_card_map.get(visit.pass_card_id)
+        else:
+            card = db.query(VisitorPassCard).filter(VisitorPassCard.id == visit.pass_card_id).first()
         pass_card_no = card.card_no if card else None
 
     return VisitOut(
@@ -585,7 +588,13 @@ def list_visits(
         response.headers["X-Page"] = str(page)
         response.headers["X-Page-Size"] = str(page_size)
         response.headers["Access-Control-Expose-Headers"] = "X-Total-Count, X-Page, X-Page-Size"
-    return [_visit_out(v, db) for v in visits]
+    # Batch load pass cards to avoid N+1 queries
+    card_ids = [v.pass_card_id for v in visits if v.pass_card_id]
+    pass_card_map = {}
+    if card_ids:
+        cards = db.query(VisitorPassCard).filter(VisitorPassCard.id.in_(card_ids)).all()
+        pass_card_map = {c.id: c for c in cards}
+    return [_visit_out(v, db, pass_card_map=pass_card_map) for v in visits]
 
 
 @router.get("/{visit_id}", response_model=VisitOut)
