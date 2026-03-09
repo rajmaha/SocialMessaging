@@ -20,6 +20,7 @@ interface Visit {
   check_in_at: string
   check_out_at?: string
   status: string
+  pass_card_no?: string
 }
 
 export default function VisitDetailPage() {
@@ -84,6 +85,7 @@ export default function VisitDetailPage() {
               ['Purpose', visit.purpose],
               ['Host', visit.host_agent_name || '—'],
               ['Location', visit.location_name || '—'],
+              ['Pass Card', visit.pass_card_no ? `Card #${visit.pass_card_no}` : '—'],
               ['Group Size', String(visit.num_visitors)],
               ['Status', visit.status === 'checked_in' ? 'Checked In' : 'Checked Out'],
               ['Checked In', fmt(visit.check_in_at)],
