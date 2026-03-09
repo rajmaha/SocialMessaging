@@ -1,6 +1,6 @@
 # backend/app/models/visitors.py
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
 from app.database import Base
 
 
@@ -11,6 +11,16 @@ class VisitorLocation(Base):
     name = Column(String, nullable=False)
     ip_camera_url = Column(String, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class VisitorPassCard(Base):
+    __tablename__ = "visitor_pass_cards"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    location_id = Column(Integer, ForeignKey("visitor_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    card_no     = Column(String, nullable=False)
+    is_active   = Column(Boolean, nullable=False, default=True)
+    created_at  = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class VisitorProfile(Base):
@@ -39,5 +49,6 @@ class Visit(Base):
     check_out_at = Column(DateTime, nullable=True)
     visitor_photo_path = Column(String, nullable=True)
     cctv_photo_path = Column(String, nullable=True)
+    pass_card_id = Column(Integer, ForeignKey("visitor_pass_cards.id", ondelete="SET NULL"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

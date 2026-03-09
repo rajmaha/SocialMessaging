@@ -1538,6 +1538,25 @@ def _run_inline_migrations():
             ADD COLUMN IF NOT EXISTS email_valid BOOLEAN
         """))
 
+        # visitor_pass_cards table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS visitor_pass_cards (
+                id          SERIAL PRIMARY KEY,
+                location_id INTEGER NOT NULL REFERENCES visitor_locations(id) ON DELETE CASCADE,
+                card_no     VARCHAR NOT NULL,
+                is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (location_id, card_no)
+            )
+        """))
+
+        # Add pass_card_id to visits
+        conn.execute(text("""
+            ALTER TABLE visits
+                ADD COLUMN IF NOT EXISTS pass_card_id INTEGER
+                REFERENCES visitor_pass_cards(id) ON DELETE SET NULL
+        """))
+
         conn.commit()
 
 # ── Log DB Init ────────────────────────────────────────────────────────────
