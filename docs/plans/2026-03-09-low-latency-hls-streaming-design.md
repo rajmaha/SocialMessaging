@@ -19,7 +19,8 @@ Add to the beginning of the ffmpeg command (before `-i`):
 -fflags nobuffer
 -flags low_delay
 -analyzeduration 0
--probesize 32
+-probesize 500000
+# Note: 32 bytes is too small for RTSP; 500KB is minimal but reliable
 ```
 
 #### 2. Codec: copy-first, transcode fallback

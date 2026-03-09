@@ -245,7 +245,7 @@ async def start_camera_stream(loc_id: int, db: Session = Depends(get_db)):
     try:
         # Attempt 1: copy (passthrough — fastest, zero CPU)
         cmd = _build_ffmpeg_cmd(loc.ip_camera_url, out_dir, codec="copy")
-        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         await asyncio.sleep(2)
 
         if proc.poll() is not None:
