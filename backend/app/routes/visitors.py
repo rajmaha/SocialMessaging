@@ -3,6 +3,7 @@ import asyncio
 import logging
 import os
 import subprocess
+import time
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -185,9 +186,51 @@ def get_cctv_snapshot(loc_id: int, db: Session = Depends(get_db)):
             raise HTTPException(status_code=502, detail=f"Camera unreachable: {exc}")
 
 
+def _build_ffmpeg_cmd(rtsp_url: str, out_dir: str, codec: str = "copy") -> list:
+    """Build the ffmpeg command for low-latency HLS output.
+    codec: 'copy' for passthrough, 'transcode' for libx264 re-encoding fallback.
+    """
+    base = [
+        "ffmpeg", "-y",
+        # Low-latency input flags
+        "-fflags", "nobuffer",
+        "-flags", "low_delay",
+        "-analyzeduration", "0",
+        "-probesize", "32",
+        "-rtsp_transport", "tcp",
+        "-i", rtsp_url,
+    ]
+
+    if codec == "copy":
+        video_flags = ["-c:v", "copy"]
+    else:
+        video_flags = [
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-tune", "zerolatency",
+            "-g", "30",
+            "-sc_threshold", "0",
+        ]
+
+    hls_flags = [
+        "-an",                  # no audio (avoids sync issues in copy mode)
+        "-f", "hls",
+        "-hls_time", "1",       # 1s segments (was 2)
+        "-hls_list_size", "3",  # 3s total buffer (was 5 = 10s)
+        "-hls_flags", "delete_segments+omit_endlist+split_by_time",
+        os.path.join(out_dir, "index.m3u8"),
+    ]
+
+    return base + video_flags + hls_flags
+
+
 @router.post("/locations/{loc_id}/stream/start")
 def start_camera_stream(loc_id: int, db: Session = Depends(get_db)):
-    """Start a live HLS stream from the location's RTSP (or HTTP MJPEG) camera via ffmpeg."""
+    """Start a live HLS stream from the location's RTSP camera via ffmpeg.
+
+    Tries codec copy first (zero CPU if camera outputs H.264). If ffmpeg
+    exits within 2 seconds (incompatible codec), restarts with libx264.
+    """
     loc = db.query(VisitorLocation).filter(VisitorLocation.id == loc_id).first()
     if not loc or not loc.ip_camera_url:
         raise HTTPException(status_code=404, detail="No camera configured for this location")
@@ -200,26 +243,21 @@ def start_camera_stream(loc_id: int, db: Session = Depends(get_db)):
     out_dir = os.path.join(HLS_OUTPUT_DIR, str(loc_id))
     os.makedirs(out_dir, exist_ok=True)
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-rtsp_transport", "tcp",
-        "-i", loc.ip_camera_url,
-        "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-tune", "zerolatency",
-        "-g", "30",
-        "-sc_threshold", "0",
-        "-f", "hls",
-        "-hls_time", "2",
-        "-hls_list_size", "5",
-        "-hls_flags", "delete_segments+omit_endlist",
-        os.path.join(out_dir, "index.m3u8"),
-    ]
-
     try:
+        # Attempt 1: copy (passthrough — fastest, zero CPU)
+        cmd = _build_ffmpeg_cmd(loc.ip_camera_url, out_dir, codec="copy")
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(2)
+
+        if proc.poll() is not None:
+            # Copy failed (camera likely uses non-H.264 codec) — fall back to transcode
+            logger.info("Stream copy mode failed for loc %s, retrying with libx264", loc_id)
+            cmd = _build_ffmpeg_cmd(loc.ip_camera_url, out_dir, codec="transcode")
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
         _stream_processes[loc_id] = proc
         return {"ok": True, "stream_url": f"/hls/{loc_id}/index.m3u8", "already_running": False}
+
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="ffmpeg not installed on server")
     except Exception as exc:
