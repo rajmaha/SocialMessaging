@@ -2,7 +2,9 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import AdminNav from '@/components/AdminNav'
+import MainHeader from '@/components/MainHeader'
 import { api } from '@/lib/api'
+import { authAPI } from '@/lib/auth'
 
 interface Location {
   id: number
@@ -311,8 +313,10 @@ function CamerasContent() {
 }
 
 export default function CamerasPage() {
+  const user = authAPI.getUser()
   return (
     <>
+      <MainHeader user={user!} />
       <AdminNav />
       <Suspense fallback={<main className="ml-60 pt-14 p-6"><p className="text-gray-400">Loading…</p></main>}>
         <CamerasContent />

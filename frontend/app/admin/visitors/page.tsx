@@ -1,7 +1,9 @@
 'use client'
 import { useEffect, useState } from 'react'
 import AdminNav from '@/components/AdminNav'
+import MainHeader from '@/components/MainHeader'
 import { api } from '@/lib/api'
+import { authAPI } from '@/lib/auth'
 import Link from 'next/link'
 import { useBranding } from '@/lib/branding-context'
 import { formatDateWithTimezone } from '@/lib/date-utils'
@@ -23,6 +25,7 @@ interface Visit {
 }
 
 export default function VisitorsPage() {
+  const user = authAPI.getUser()
   const { branding } = useBranding()
   const tz = branding?.timezone || 'UTC'
 
@@ -77,6 +80,7 @@ export default function VisitorsPage() {
 
   return (
     <>
+      <MainHeader user={user!} />
       <AdminNav />
       <main className="ml-60 pt-14 p-6">
         <div className="flex items-center justify-between mb-6">

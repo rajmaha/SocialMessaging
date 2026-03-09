@@ -1,7 +1,9 @@
 'use client'
 import { useEffect, useState } from 'react'
 import AdminNav from '@/components/AdminNav'
+import MainHeader from '@/components/MainHeader'
 import { api } from '@/lib/api'
+import { authAPI } from '@/lib/auth'
 import Link from 'next/link'
 
 interface Location { id: number; name: string; ip_camera_url?: string }
@@ -15,6 +17,7 @@ interface PassCard {
 }
 
 export default function VisitorLocationsPage() {
+  const user = authAPI.getUser()
   const [locations, setLocations] = useState<Location[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -127,6 +130,7 @@ export default function VisitorLocationsPage() {
 
   return (
     <>
+      <MainHeader user={user!} />
       <AdminNav />
       <main className="ml-60 pt-14 p-6 max-w-3xl">
         <div className="flex items-center justify-between mb-6">

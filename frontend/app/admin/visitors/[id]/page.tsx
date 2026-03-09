@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import AdminNav from '@/components/AdminNav'
+import MainHeader from '@/components/MainHeader'
 import { api } from '@/lib/api'
+import { authAPI } from '@/lib/auth'
 import { useBranding } from '@/lib/branding-context'
 import { formatDateWithTimezone } from '@/lib/date-utils'
 
@@ -24,6 +26,7 @@ interface Visit {
 }
 
 export default function VisitDetailPage() {
+  const user = authAPI.getUser()
   const { id } = useParams()
   const router = useRouter()
   const { branding } = useBranding()
@@ -48,14 +51,15 @@ export default function VisitDetailPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   if (loading) return (
-    <><AdminNav /><main className="ml-60 pt-14 p-6 text-gray-400">Loading…</main></>
+    <><MainHeader user={user!} /><AdminNav /><main className="ml-60 pt-14 p-6 text-gray-400">Loading…</main></>
   )
   if (!visit) return (
-    <><AdminNav /><main className="ml-60 pt-14 p-6 text-red-500">Visit not found</main></>
+    <><MainHeader user={user!} /><AdminNav /><main className="ml-60 pt-14 p-6 text-red-500">Visit not found</main></>
   )
 
   return (
     <>
+      <MainHeader user={user!} />
       <AdminNav />
       <main className="ml-60 pt-14 p-6 max-w-4xl">
         <div className="flex items-center justify-between mb-6">

@@ -2,7 +2,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import AdminNav from '@/components/AdminNav'
+import MainHeader from '@/components/MainHeader'
 import { api } from '@/lib/api'
+import { authAPI } from '@/lib/auth'
 
 interface Agent { id: number; name: string; email: string }
 interface Location { id: number; name: string; ip_camera_url?: string }
@@ -10,6 +12,7 @@ interface CropRect { x: number; y: number; w: number; h: number }
 interface PassCard { id: number; card_no: string }
 
 export default function NewVisitPage() {
+  const user = authAPI.getUser()
   const router = useRouter()
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -365,6 +368,7 @@ export default function NewVisitPage() {
 
   return (
     <>
+      <MainHeader user={user!} />
       <AdminNav />
       <main className="ml-60 pt-14 p-6 max-w-5xl">
         <div className="mb-6">
