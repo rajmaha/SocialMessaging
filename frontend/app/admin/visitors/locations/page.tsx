@@ -84,6 +84,10 @@ export default function VisitorLocationsPage() {
     setLoadingCards(true)
     api.get(`/visitors/pass-cards?location_id=${locId}`)
       .then(r => setPassCards(r.data))
+      .catch(() => {
+        setPassCards([])
+        alert('Failed to load pass cards. Please try again.')
+      })
       .finally(() => setLoadingCards(false))
   }
 
