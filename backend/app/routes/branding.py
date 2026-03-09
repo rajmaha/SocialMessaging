@@ -51,6 +51,8 @@ class SmtpUpdate(BaseModel):
     smtp_use_ssl: Optional[bool] = None
     email_footer_text: Optional[str] = None
     email_support_url: Optional[str] = None
+    postal_server_url: Optional[str] = None
+    postal_api_key: Optional[str] = None
 
 class EmailValidatorUpdate(BaseModel):
     email_validator_url: Optional[str] = None
@@ -139,6 +141,12 @@ def get_branding_admin(
                 else ("****" if branding.email_validator_secret else None)
             ),
             "email_validator_risk_threshold": branding.email_validator_risk_threshold or 60,
+            "postal_server_url": branding.postal_server_url,
+            "postal_api_key": (
+                ("*" * (len(branding.postal_api_key) - 4) + branding.postal_api_key[-4:])
+                if branding.postal_api_key and len(branding.postal_api_key) > 4
+                else ("****" if branding.postal_api_key else None)
+            ),
             "created_at": branding.created_at,
             "updated_at": branding.updated_at,
         }
@@ -175,6 +183,13 @@ def update_smtp(
     """Update SMTP settings (admin only)"""
     
     update_dict = smtp_data.dict(exclude_unset=True)
+    if "postal_api_key" in update_dict:
+        secret = update_dict["postal_api_key"]
+        if secret:
+            is_masked = (len(secret) >= 4 and all(c == "*" for c in secret[:-4])) or all(c == "*" for c in secret)
+            if is_masked:
+                del update_dict["postal_api_key"]
+
     branding = branding_service.update_branding(db, **update_dict)
     
     return {

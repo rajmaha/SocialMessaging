@@ -1522,6 +1522,14 @@ def _run_inline_migrations():
         """))
         conn.execute(text("""
             ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS postal_server_url VARCHAR
+        """))
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS postal_api_key VARCHAR
+        """))
+        conn.execute(text("""
+            ALTER TABLE branding_settings
             ADD COLUMN IF NOT EXISTS smtp_use_ssl BOOLEAN DEFAULT FALSE
         """))
 

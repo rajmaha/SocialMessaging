@@ -811,8 +811,35 @@ def remove_suppression(
     sup = db.query(EmailSuppression).filter(EmailSuppression.id == suppression_id).first()
     if not sup:
         raise HTTPException(status_code=404, detail="Suppression entry not found")
+        
+    email_to_remove = sup.email
     db.delete(sup)
     db.commit()
+    
+    # Attempt to remove from Postal Server if configured
+    try:
+        from app.services.branding_service import branding_service
+        import json as _json
+        import urllib.request
+        
+        branding = branding_service.get_branding(db)
+        if branding.postal_server_url and branding.postal_api_key:
+            url = f"{branding.postal_server_url.rstrip('/')}/api/v1/suppressions/remove"
+            headers = {
+                "X-Server-API-Key": branding.postal_api_key,
+                "Content-Type": "application/json"
+            }
+            payload = _json.dumps({"address": email_to_remove}).encode("utf-8")
+            req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    pass  # Success
+            except urllib.error.URLError as e:
+                # e.g., HTTPError for 404, 401, etc.
+                logger.warning("Failed to remove suppression from Postal API: %s", getattr(e, 'reason', e))
+    except Exception as e:
+        logger.warning("Error integrating with Postal API for suppression remove: %s", e)
+
     return {"status": "removed"}
 
 

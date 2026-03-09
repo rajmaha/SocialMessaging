@@ -59,6 +59,10 @@ class BrandingSettings(Base):
     email_validator_secret = Column(String, nullable=True)
     email_validator_risk_threshold = Column(Integer, default=60)
 
+    # Postal Server Integration
+    postal_server_url = Column(String, nullable=True)
+    postal_api_key = Column(String, nullable=True)
+
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -43,6 +43,8 @@ interface SmtpData {
   smtp_use_tls: boolean
   smtp_use_ssl: boolean
   email_footer_text: string
+  postal_server_url: string
+  postal_api_key: string
 }
 
 interface EmailValidatorData {
@@ -96,6 +98,8 @@ export default function BrandingAdmin() {
     smtp_use_tls: true,
     smtp_use_ssl: false,
     email_footer_text: '© 2026 Social Media Messenger. All rights reserved.',
+    postal_server_url: '',
+    postal_api_key: '',
   })
 
   const [testingSmtp, setTestingSmtp] = useState(false)
@@ -158,6 +162,8 @@ export default function BrandingAdmin() {
           smtp_use_tls: data.smtp_use_tls !== false,
           smtp_use_ssl: data.smtp_use_ssl === true,
           email_footer_text: data.email_footer_text || '',
+          postal_server_url: data.postal_server_url || '',
+          postal_api_key: data.postal_api_key || '',
         })
 
         setValidator({
@@ -255,7 +261,7 @@ export default function BrandingAdmin() {
       const secret = validator.email_validator_secret
       if (secret) {
         const isMasked = (secret.length >= 4 && secret.slice(0, -4).split('').every(c => c === '*'))
-                      || secret.split('').every(c => c === '*')
+          || secret.split('').every(c => c === '*')
         if (!isMasked) {
           payload.email_validator_secret = secret
         }
@@ -825,6 +831,40 @@ export default function BrandingAdmin() {
                 rows={2}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+
+            <div className="pt-4 border-t border-gray-200">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Postal Server Integration</h3>
+              <p className="text-sm text-gray-500 mb-6">
+                Connect your Postal mail server to automatically remove emails from its suppression list when deleted locally.
+              </p>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Postal Server URL
+                  </label>
+                  <input
+                    type="url"
+                    value={smtp.postal_server_url}
+                    onChange={(e) => handleSmtpChange('postal_server_url', e.target.value)}
+                    placeholder="https://postal.example.com"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Postal API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={smtp.postal_api_key}
+                    onChange={(e) => handleSmtpChange('postal_api_key', e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-4">
