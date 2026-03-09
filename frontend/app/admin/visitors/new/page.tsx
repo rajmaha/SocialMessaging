@@ -461,8 +461,34 @@ export default function NewVisitPage() {
           <div className="bg-white rounded-xl border p-5 flex flex-col gap-3">
             <h2 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Photo</h2>
 
+            {/* Photo source toggle — only when location has CCTV and no photo in progress */}
+            {hasCctv && !photoUrl && !capturedDataUrl && !stream && (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => selectPhotoSource('webcam')}
+                  className={`flex-1 py-2 text-sm rounded-lg border font-medium transition-colors ${
+                    photoSource === 'webcam'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'text-gray-600 border-gray-200 hover:border-blue-400 hover:text-blue-600'
+                  }`}>
+                  📷 Webcam
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectPhotoSource('cctv')}
+                  className={`flex-1 py-2 text-sm rounded-lg border font-medium transition-colors ${
+                    photoSource === 'cctv'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'text-gray-600 border-gray-200 hover:border-blue-400 hover:text-blue-600'
+                  }`}>
+                  📹 CCTV
+                </button>
+              </div>
+            )}
+
             {/* CCTV Live Feed */}
-            {form.location_id && locations.find(l => l.id === parseInt(form.location_id))?.ip_camera_url && (
+            {photoSource === 'cctv' && (
               <>
                 <div className="rounded-xl border overflow-hidden">
                   <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
@@ -576,7 +602,7 @@ export default function NewVisitPage() {
                 <canvas ref={canvasRef} className="hidden" />
                 <div className="flex gap-2 pt-1">
                   <button type="button"
-                    onClick={() => { setCapturedDataUrl(null); setImgNaturalSize(null); if (!hasCctv) startCamera() }}
+                    onClick={retakePhoto}
                     className="flex-1 border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
                     Retake
                   </button>
@@ -610,33 +636,27 @@ export default function NewVisitPage() {
                 </button>
               </div>
 
-            ) : hasCctv ? (
+            ) : hasCctv && photoSource === 'cctv' ? (
               /* ── CCTV capture prompt ── */
-              <div className="flex flex-col gap-2">
-                <button type="button"
-                  onClick={() => captureFromCctv(parseInt(form.location_id))}
-                  disabled={capturingCctv || cctvStatus === 'starting'}
-                  className="w-full bg-green-600 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2">
-                  {capturingCctv ? (
-                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Capturing from CCTV…</>
-                  ) : cctvStatus === 'starting' ? (
-                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Waiting for camera feed…</>
-                  ) : '📸 Capture Photo from CCTV'}
-                </button>
-                <button type="button" onClick={startCamera}
-                  className="text-xs text-gray-400 hover:text-blue-500 text-center py-1">
-                  Use my webcam instead
-                </button>
-              </div>
+              <button type="button"
+                onClick={() => captureFromCctv(parseInt(form.location_id))}
+                disabled={capturingCctv || cctvStatus === 'starting'}
+                className="w-full bg-green-600 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                {capturingCctv ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Capturing from CCTV…</>
+                ) : cctvStatus === 'starting' ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Waiting for camera feed…</>
+                ) : '📸 Capture Photo from CCTV'}
+              </button>
 
-            ) : (
-              /* ── Open camera prompt ── */
+            ) : !hasCctv ? (
+              /* ── No CCTV: open webcam prompt ── */
               <button type="button" onClick={startCamera}
                 className="flex-1 border-2 border-dashed border-gray-300 rounded-lg px-6 py-8 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-500 flex flex-col items-center justify-center gap-2">
                 <span className="text-3xl">📷</span>
                 <span>Open Camera</span>
               </button>
-            )}
+            ) : null}
           </div>
 
         </form>
