@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+import subprocess
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -27,6 +28,35 @@ router = APIRouter(prefix="/visitors", tags=["visitors"])
 
 PROFILE_PHOTO_DIR = os.path.join(os.path.dirname(__file__), "..", "attachment_storage", "visitors", "profiles")
 CCTV_PHOTO_DIR = os.path.join(os.path.dirname(__file__), "..", "attachment_storage", "visitors", "cctv")
+HLS_OUTPUT_DIR = "/tmp/hls"
+
+# In-memory map of location_id → running ffmpeg subprocess
+_stream_processes: dict = {}
+
+
+def _is_rtsp(url: str) -> bool:
+    return url.lower().startswith("rtsp://") or url.lower().startswith("rtsps://")
+
+
+def _capture_rtsp_snapshot(rtsp_url: str, output_path: str) -> bool:
+    """Use ffmpeg to grab a single frame from an RTSP stream and save as JPEG."""
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-rtsp_transport", "tcp",
+                "-i", rtsp_url,
+                "-frames:v", "1",
+                "-q:v", "2",
+                output_path,
+            ],
+            timeout=15,
+            capture_output=True,
+        )
+        return result.returncode == 0 and os.path.exists(output_path)
+    except Exception as exc:
+        logger.warning("ffmpeg RTSP snapshot failed: %s", exc)
+        return False
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -124,17 +154,100 @@ def delete_location(loc_id: int, db: Session = Depends(get_db), _: User = Depend
 
 @router.get("/locations/{loc_id}/snapshot")
 def get_cctv_snapshot(loc_id: int, db: Session = Depends(get_db)):
-    """Proxy a single frame from the IP camera — no auth needed (used by kiosk)."""
+    """Proxy a single frame from the IP camera — no auth needed (used by kiosk).
+    Supports both HTTP (MJPEG/snapshot) and RTSP cameras via ffmpeg."""
     loc = db.query(VisitorLocation).filter(VisitorLocation.id == loc_id).first()
     if not loc or not loc.ip_camera_url:
         raise HTTPException(status_code=404, detail="No camera configured for this location")
+
+    if _is_rtsp(loc.ip_camera_url):
+        # Use ffmpeg to grab a single frame from RTSP
+        tmp_path = f"/tmp/snapshot_{loc_id}_{uuid.uuid4().hex}.jpg"
+        ok = _capture_rtsp_snapshot(loc.ip_camera_url, tmp_path)
+        if not ok:
+            raise HTTPException(status_code=502, detail="RTSP camera unreachable or ffmpeg not installed")
+        try:
+            with open(tmp_path, "rb") as f:
+                data = f.read()
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        return Response(content=data, media_type="image/jpeg")
+    else:
+        try:
+            resp = http_requests.get(loc.ip_camera_url, timeout=5, stream=True)
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "image/jpeg")
+            return Response(content=resp.content, media_type=content_type)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Camera unreachable: {exc}")
+
+
+@router.post("/locations/{loc_id}/stream/start")
+def start_camera_stream(loc_id: int, db: Session = Depends(get_db)):
+    """Start a live HLS stream from the location's RTSP (or HTTP MJPEG) camera via ffmpeg."""
+    loc = db.query(VisitorLocation).filter(VisitorLocation.id == loc_id).first()
+    if not loc or not loc.ip_camera_url:
+        raise HTTPException(status_code=404, detail="No camera configured for this location")
+
+    # If already running, return its URL
+    existing = _stream_processes.get(loc_id)
+    if existing and existing.poll() is None:
+        return {"ok": True, "stream_url": f"/hls/{loc_id}/index.m3u8", "already_running": True}
+
+    out_dir = os.path.join(HLS_OUTPUT_DIR, str(loc_id))
+    os.makedirs(out_dir, exist_ok=True)
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-rtsp_transport", "tcp",
+        "-i", loc.ip_camera_url,
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-tune", "zerolatency",
+        "-g", "30",
+        "-sc_threshold", "0",
+        "-f", "hls",
+        "-hls_time", "2",
+        "-hls_list_size", "5",
+        "-hls_flags", "delete_segments+omit_endlist",
+        os.path.join(out_dir, "index.m3u8"),
+    ]
+
     try:
-        resp = http_requests.get(loc.ip_camera_url, timeout=5, stream=True)
-        resp.raise_for_status()
-        content_type = resp.headers.get("content-type", "image/jpeg")
-        return Response(content=resp.content, media_type=content_type)
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _stream_processes[loc_id] = proc
+        return {"ok": True, "stream_url": f"/hls/{loc_id}/index.m3u8", "already_running": False}
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="ffmpeg not installed on server")
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Camera unreachable: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to start stream: {exc}")
+
+
+@router.post("/locations/{loc_id}/stream/stop")
+def stop_camera_stream(loc_id: int):
+    """Stop the live HLS stream for a location."""
+    proc = _stream_processes.pop(loc_id, None)
+    if proc:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    return {"ok": True}
+
+
+@router.get("/locations/{loc_id}/stream/status")
+def camera_stream_status(loc_id: int):
+    """Check whether the live HLS stream for a location is currently running."""
+    proc = _stream_processes.get(loc_id)
+    running = proc is not None and proc.poll() is None
+    return {
+        "running": running,
+        "stream_url": f"/hls/{loc_id}/index.m3u8" if running else None,
+    }
 
 
 # ── Profile search (kiosk lookup) ─────────────────────────────────────────────
@@ -316,20 +429,27 @@ def create_visit(
         db.add(profile)
         db.flush()
 
-    # Grab CCTV snapshot
+    # Grab CCTV snapshot (supports both HTTP and RTSP cameras)
     cctv_path: Optional[str] = None
     loc = None
     if payload.location_id:
         loc = db.query(VisitorLocation).filter(VisitorLocation.id == payload.location_id).first()
         if loc and loc.ip_camera_url:
+            os.makedirs(CCTV_PHOTO_DIR, exist_ok=True)
+            fname = f"{uuid.uuid4().hex}.jpg"
+            dest = os.path.join(CCTV_PHOTO_DIR, fname)
             try:
-                resp = http_requests.get(loc.ip_camera_url, timeout=5)
-                if resp.ok:
-                    os.makedirs(CCTV_PHOTO_DIR, exist_ok=True)
-                    fname = f"{uuid.uuid4().hex}.jpg"
-                    cctv_path = os.path.join(CCTV_PHOTO_DIR, fname)
-                    with open(cctv_path, "wb") as f:
-                        f.write(resp.content)
+                if _is_rtsp(loc.ip_camera_url):
+                    if _capture_rtsp_snapshot(loc.ip_camera_url, dest):
+                        cctv_path = dest
+                    else:
+                        logger.warning("RTSP snapshot failed for location %s", payload.location_id)
+                else:
+                    resp = http_requests.get(loc.ip_camera_url, timeout=5)
+                    if resp.ok:
+                        with open(dest, "wb") as f:
+                            f.write(resp.content)
+                        cctv_path = dest
             except Exception as e:
                 logger.warning("CCTV snapshot failed: %s", e)
 

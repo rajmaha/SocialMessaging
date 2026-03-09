@@ -5,7 +5,7 @@ import AdminNav from '@/components/AdminNav'
 import { api } from '@/lib/api'
 
 interface Agent { id: number; name: string; email: string }
-interface Location { id: number; name: string }
+interface Location { id: number; name: string; ip_camera_url?: string }
 interface CropRect { x: number; y: number; w: number; h: number }
 
 export default function NewVisitPage() {
@@ -27,6 +27,14 @@ export default function NewVisitPage() {
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [videoReady, setVideoReady] = useState(false)
+  const [capturingCctv, setCapturingCctv] = useState(false)
+  const [, forceUpdate] = useState(0) // triggers re-render after crop image mounts
+
+  // CCTV live feed
+  const cctvVideoRef = useRef<HTMLVideoElement>(null)
+  const cctvHlsRef = useRef<unknown>(null)
+  const [cctvStatus, setCctvStatus] = useState<'idle' | 'starting' | 'live' | 'error'>('idle')
 
   const [form, setForm] = useState({
     visitor_name: '', visitor_organization: '', visitor_contact_no: '',
@@ -40,21 +48,40 @@ export default function NewVisitPage() {
   }, [])
 
   const startCamera = async () => {
+    setVideoReady(false)
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: true })
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
       setStream(s)
-      if (videoRef.current) videoRef.current.srcObject = s
+      // NOTE: do NOT try to set srcObject here — videoRef.current is null because the
+      // <video> element only mounts after the setStream() re-render.
+      // The useEffect below handles srcObject once the element is in the DOM.
     } catch { setError('Camera permission denied') }
   }
+
+  // Set srcObject on the webcam video element once it mounts (after stream state update)
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream
+    }
+  }, [stream])
 
   const capturePhoto = () => {
     if (!videoRef.current || !canvasRef.current) return
     const vw = videoRef.current.videoWidth
     const vh = videoRef.current.videoHeight
+    // Guard: video not ready yet (happens when srcObject hasn't emitted a frame)
+    if (!vw || !vh) {
+      setError('Camera not ready — please wait a moment and try again')
+      return
+    }
     canvasRef.current.width = vw
     canvasRef.current.height = vh
     canvasRef.current.getContext('2d')!.drawImage(videoRef.current, 0, 0)
     const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.95)
+    if (!dataUrl || dataUrl === 'data:,') {
+      setError('Failed to capture — please try again')
+      return
+    }
     // Default crop: centred square at 85% of shorter side
     const size = Math.round(Math.min(vw, vh) * 0.85)
     setCrop({ x: Math.round((vw - size) / 2), y: Math.round((vh - size) / 2), w: size, h: size })
@@ -157,8 +184,113 @@ export default function NewVisitPage() {
     setPhotoUrl(null)
     setPhotoPath(null)
     setImgNaturalSize(null)
-    startCamera()
+    setVideoReady(false)
+    // If CCTV is available, don't open webcam — the CCTV capture button will be shown
+    const loc = locations.find(l => l.id === parseInt(form.location_id))
+    if (!loc?.ip_camera_url) startCamera()
   }
+
+  const captureFromCctv = async (locId: number) => {
+    setCapturingCctv(true)
+    setError(null)
+    try {
+      const res = await api.get(`/visitors/locations/${locId}/snapshot`, { responseType: 'blob' })
+      const blob: Blob = res.data
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        const img = new Image()
+        img.onload = () => {
+          const w = img.naturalWidth || 640
+          const h = img.naturalHeight || 480
+          const size = Math.round(Math.min(w, h) * 0.85)
+          setCrop({ x: Math.round((w - size) / 2), y: Math.round((h - size) / 2), w: size, h: size })
+          setImgNaturalSize({ w, h })
+          setCapturedDataUrl(dataUrl)
+          setCapturingCctv(false)
+        }
+        img.onerror = () => {
+          setError('Failed to load CCTV snapshot')
+          setCapturingCctv(false)
+        }
+        img.src = dataUrl
+      }
+      reader.onerror = () => {
+        setError('Failed to read CCTV snapshot')
+        setCapturingCctv(false)
+      }
+      reader.readAsDataURL(blob)
+    } catch {
+      setError('Failed to capture from CCTV — try again')
+      setCapturingCctv(false)
+    }
+  }
+
+  // Stop CCTV HLS player
+  const stopCctvPlayer = useCallback(() => {
+    if (cctvHlsRef.current) {
+      const hls = cctvHlsRef.current as { destroy: () => void }
+      hls.destroy()
+      cctvHlsRef.current = null
+    }
+    if (cctvVideoRef.current) cctvVideoRef.current.src = ''
+    setCctvStatus('idle')
+  }, [])
+
+  // Start CCTV stream for the selected location
+  const startCctvStream = useCallback(async (locId: number) => {
+    setCctvStatus('starting')
+    try {
+      const res = await api.post(`/visitors/locations/${locId}/stream/start`)
+      const streamUrl = `${API_URL}${res.data.stream_url}`
+      // Give ffmpeg a moment to write the first segments
+      await new Promise(r => setTimeout(r, 3000))
+      const video = cctvVideoRef.current
+      if (!video) { setCctvStatus('error'); return }
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = streamUrl
+        video.play().catch(() => {})
+        setCctvStatus('live')
+      } else {
+        import('hls.js').then(({ default: Hls }) => {
+          if (Hls.isSupported()) {
+            const hls = new Hls({ enableWorker: true, lowLatencyMode: true })
+            hls.loadSource(streamUrl)
+            hls.attachMedia(video)
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+              video.play().catch(() => {})
+              setCctvStatus('live')
+            })
+            hls.on(Hls.Events.ERROR, (_e: unknown, data: { fatal?: boolean }) => {
+              if (data.fatal) setCctvStatus('error')
+            })
+            cctvHlsRef.current = hls
+          } else {
+            setCctvStatus('error')
+          }
+        })
+      }
+    } catch {
+      setCctvStatus('error')
+    }
+  }, [])
+
+  // When location changes, stop any existing stream and start for the new one if it has a camera
+  useEffect(() => {
+    stopCctvPlayer()
+    if (!form.location_id) return
+    const loc = locations.find(l => l.id === parseInt(form.location_id))
+    if (loc?.ip_camera_url) {
+      startCctvStream(loc.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.location_id])
+
+  // Clean up HLS on unmount
+  useEffect(() => {
+    return () => { stopCctvPlayer() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -182,6 +314,7 @@ export default function NewVisitPage() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   const dc = getDisplayCrop()
+  const hasCctv = !!(form.location_id && locations.find(l => l.id === parseInt(form.location_id))?.ip_camera_url)
 
   return (
     <>
@@ -196,192 +329,267 @@ export default function NewVisitPage() {
 
         {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">{error}</div>}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Visitor Details + Photo side by side */}
-          <div className="grid grid-cols-2 gap-5 items-start">
-            <div className="bg-white rounded-xl border p-5 grid grid-cols-2 gap-4">
-              <h2 className="col-span-2 font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Details</h2>
-              {([
-                ['visitor_name', 'Full Name *', 'text', true],
-                ['visitor_organization', 'Organisation', 'text', false],
-                ['visitor_contact_no', 'Phone', 'tel', false],
-                ['visitor_email', 'Email', 'email', false],
-              ] as [string, string, string, boolean][]).map(([key, label, type, required]) => (
-                <div key={key}>
-                  <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                  <input
-                    type={type}
-                    required={required}
-                    className="w-full border rounded-lg px-3 py-2 text-sm"
-                    value={(form as any)[key]}
-                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                  />
-                </div>
-              ))}
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Address</label>
-                <textarea
+        {/* Main layout: left col = Visitor Details, right col = Photo + Visit Details */}
+        <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5 items-start">
+
+          {/* ── LEFT: Visitor Details ── */}
+          <div className="bg-white rounded-xl border p-5 grid grid-cols-2 gap-4">
+            <h2 className="col-span-2 font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Details</h2>
+            {([
+              ['visitor_name', 'Full Name *', 'text', true],
+              ['visitor_organization', 'Organisation', 'text', false],
+              ['visitor_contact_no', 'Phone', 'tel', false],
+              ['visitor_email', 'Email', 'email', false],
+            ] as [string, string, string, boolean][]).map(([key, label, type, required]) => (
+              <div key={key}>
+                <label className="block text-xs text-gray-500 mb-1">{label}</label>
+                <input
+                  type={type}
+                  required={required}
                   className="w-full border rounded-lg px-3 py-2 text-sm"
-                  rows={2}
-                  value={form.visitor_address}
-                  onChange={e => setForm(f => ({ ...f, visitor_address: e.target.value }))}
+                  value={(form as any)[key]}
+                  onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                 />
+              </div>
+            ))}
+            <div className="col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">Address</label>
+              <textarea
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                rows={2}
+                value={form.visitor_address}
+                onChange={e => setForm(f => ({ ...f, visitor_address: e.target.value }))}
+              />
+            </div>
+
+            {/* ── Visit Details (moved here, below visitor fields) ── */}
+            <div className="col-span-2 border-t pt-4 mt-1">
+              <h2 className="font-semibold text-sm text-gray-700 uppercase tracking-wide mb-3">Visit Details</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-xs text-gray-500 mb-1">Purpose *</label>
+                  <input required className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={form.purpose}
+                    onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">No. of Visitors</label>
+                  <input type="number" min={1} className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={form.num_visitors}
+                    onChange={e => setForm(f => ({ ...f, num_visitors: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Host Agent</label>
+                  <select className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={form.host_agent_id}
+                    onChange={e => setForm(f => ({ ...f, host_agent_id: e.target.value }))}>
+                    <option value="">— Select host —</option>
+                    {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs text-gray-500 mb-1">Location</label>
+                  <select className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={form.location_id}
+                    onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}>
+                    <option value="">— Select location —</option>
+                    {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
 
-            {/* Webcam — right of Visitor Details */}
-            <div className="bg-white rounded-xl border p-5 flex flex-col gap-3">
-              <h2 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Photo</h2>
+            {/* Submit button inside left col, full width */}
+            <div className="col-span-2 pt-1">
+              <button type="submit" disabled={saving}
+                className="w-full bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Checking in…' : 'Check In Visitor'}
+              </button>
+            </div>
+          </div>
 
-              {photoUrl ? (
-                /* ── Final saved photo ── */
-                <div className="flex flex-col items-center gap-3">
-                  <img src={`${API_URL}${photoUrl}`} alt="Captured"
-                    className="w-full max-h-52 object-cover rounded-lg border" />
-                  <button type="button" onClick={retakePhoto}
-                    className="text-sm text-red-500 hover:underline">Retake</button>
-                </div>
+          {/* ── RIGHT: Visitor Photo + CCTV ── */}
+          <div className="bg-white rounded-xl border p-5 flex flex-col gap-3">
+            <h2 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Photo</h2>
 
-              ) : capturedDataUrl ? (
-                /* ── Crop step ── */
-                <div className="flex flex-col gap-2">
-                  <p className="text-xs text-gray-400">
-                    Drag the box to reposition · drag corners to resize
-                  </p>
-                  {/* Crop container */}
-                  <div ref={cropContainerRef} className="relative select-none rounded-lg overflow-hidden border">
-                    <img
-                      ref={cropImgRef}
-                      src={capturedDataUrl}
-                      alt="Preview"
-                      className="w-full block"
-                      draggable={false}
-                    />
-                    {dc && (
-                      <>
-                        {/* Dimmed mask — four regions around the crop box */}
-                        <div className="absolute inset-0 pointer-events-none">
-                          <div className="absolute bg-black/50"
-                            style={{ top: 0, left: 0, right: 0, height: dc.top }} />
-                          <div className="absolute bg-black/50"
-                            style={{ top: dc.top + dc.height, left: 0, right: 0, bottom: 0 }} />
-                          <div className="absolute bg-black/50"
-                            style={{ top: dc.top, left: 0, width: dc.left, height: dc.height }} />
-                          <div className="absolute bg-black/50"
-                            style={{ top: dc.top, left: dc.left + dc.width, right: 0, height: dc.height }} />
-                        </div>
-
-                        {/* Crop box */}
-                        <div
-                          className="absolute border-2 border-white cursor-move"
-                          style={{ left: dc.left, top: dc.top, width: dc.width, height: dc.height }}
-                          onMouseDown={e => onDragStart(e, 'move')}
-                        >
-                          {/* Rule-of-thirds guide lines */}
-                          <div className="absolute inset-0 pointer-events-none">
-                            {[33.3, 66.6].map(pct => (
-                              <div key={`h${pct}`} className="absolute left-0 right-0 border-t border-white/25"
-                                style={{ top: `${pct}%` }} />
-                            ))}
-                            {[33.3, 66.6].map(pct => (
-                              <div key={`v${pct}`} className="absolute top-0 bottom-0 border-l border-white/25"
-                                style={{ left: `${pct}%` }} />
-                            ))}
-                          </div>
-
-                          {/* Corner handles */}
-                          {(['nw', 'ne', 'sw', 'se'] as const).map(handle => (
-                            <div
-                              key={handle}
-                              className="absolute w-4 h-4 bg-white border-2 border-blue-500 rounded-sm z-10"
-                              style={{
-                                ...(handle.includes('n') ? { top: -6 } : { bottom: -6 }),
-                                ...(handle.includes('w') ? { left: -6 } : { right: -6 }),
-                                cursor: (handle === 'nw' || handle === 'se') ? 'nwse-resize' : 'nesw-resize',
-                              }}
-                              onMouseDown={e => { e.stopPropagation(); onDragStart(e, handle) }}
-                            />
-                          ))}
-                        </div>
-                      </>
+            {/* CCTV Live Feed */}
+            {form.location_id && locations.find(l => l.id === parseInt(form.location_id))?.ip_camera_url && (
+              <>
+                <div className="rounded-xl border overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${cctvStatus === 'live' ? 'bg-red-500 animate-pulse' : 'bg-gray-300'}`} />
+                      <span className="text-xs font-medium text-gray-700">
+                        CCTV — {locations.find(l => l.id === parseInt(form.location_id))?.name}
+                      </span>
+                      {cctvStatus === 'live' && (
+                        <span className="text-xs text-red-500 font-semibold tracking-wide">LIVE</span>
+                      )}
+                    </div>
+                    {cctvStatus === 'error' && (
+                      <button type="button"
+                        onClick={() => startCctvStream(parseInt(form.location_id))}
+                        className="text-xs text-blue-600 hover:underline">
+                        Retry
+                      </button>
                     )}
                   </div>
-
-                  <canvas ref={canvasRef} className="hidden" />
-
-                  <div className="flex gap-2 pt-1">
-                    <button type="button"
-                      onClick={() => { setCapturedDataUrl(null); setImgNaturalSize(null); startCamera() }}
-                      className="flex-1 border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
-                      Retake
-                    </button>
-                    <button type="button" onClick={applyCrop} disabled={uploading}
-                      className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
-                      {uploading ? 'Saving…' : 'Use Photo ✓'}
-                    </button>
+                  <div className="relative bg-black" style={{ aspectRatio: '16/9' }}>
+                    <video ref={cctvVideoRef} className="w-full h-full object-contain" autoPlay muted playsInline />
+                    {cctvStatus === 'starting' && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                        <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin mb-2" />
+                        <p className="text-xs">Connecting to camera…</p>
+                      </div>
+                    )}
+                    {cctvStatus === 'error' && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-red-400 p-4">
+                        <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                            d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p className="text-xs text-center">Could not connect to camera</p>
+                      </div>
+                    )}
                   </div>
                 </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 border-t border-gray-200" />
+                  <span className="text-xs text-gray-400 whitespace-nowrap">Capture Visitor Photo</span>
+                  <div className="flex-1 border-t border-gray-200" />
+                </div>
+              </>
+            )}
 
-              ) : stream ? (
-                /* ── Live camera feed ── */
-                <div className="space-y-2">
-                  <video ref={videoRef} autoPlay className="w-full rounded-lg border" />
-                  <canvas ref={canvasRef} className="hidden" />
-                  <button type="button" onClick={capturePhoto}
-                    className="w-full bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700">
-                    Capture Photo
+            {photoUrl ? (
+              /* ── Final saved photo ── */
+              <div className="flex flex-col items-center gap-3">
+                <img src={`${API_URL}${photoUrl}`} alt="Captured"
+                  className="w-full max-h-64 object-cover rounded-lg border" />
+                <button type="button" onClick={retakePhoto}
+                  className="text-sm text-red-500 hover:underline">Retake</button>
+              </div>
+
+            ) : capturedDataUrl ? (
+              /* ── Crop step ── */
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-gray-400">Drag the box to reposition · drag corners to resize</p>
+                <div ref={cropContainerRef} className="relative select-none rounded-lg overflow-hidden border">
+                  <img
+                    ref={cropImgRef}
+                    src={capturedDataUrl}
+                    alt="Preview"
+                    className="w-full block"
+                    draggable={false}
+                    onLoad={() => forceUpdate(n => n + 1)}
+                  />
+                  {dc && (
+                    <>
+                      {/* Dimmed mask */}
+                      <div className="absolute inset-0 pointer-events-none">
+                        <div className="absolute bg-black/50" style={{ top: 0, left: 0, right: 0, height: dc.top }} />
+                        <div className="absolute bg-black/50" style={{ top: dc.top + dc.height, left: 0, right: 0, bottom: 0 }} />
+                        <div className="absolute bg-black/50" style={{ top: dc.top, left: 0, width: dc.left, height: dc.height }} />
+                        <div className="absolute bg-black/50" style={{ top: dc.top, left: dc.left + dc.width, right: 0, height: dc.height }} />
+                      </div>
+                      {/* Crop box */}
+                      <div
+                        className="absolute border-2 border-white cursor-move"
+                        style={{ left: dc.left, top: dc.top, width: dc.width, height: dc.height }}
+                        onMouseDown={e => onDragStart(e, 'move')}
+                      >
+                        {/* Rule-of-thirds lines */}
+                        <div className="absolute inset-0 pointer-events-none">
+                          {[33.3, 66.6].map(pct => (
+                            <div key={`h${pct}`} className="absolute left-0 right-0 border-t border-white/25" style={{ top: `${pct}%` }} />
+                          ))}
+                          {[33.3, 66.6].map(pct => (
+                            <div key={`v${pct}`} className="absolute top-0 bottom-0 border-l border-white/25" style={{ left: `${pct}%` }} />
+                          ))}
+                        </div>
+                        {/* Corner handles */}
+                        {(['nw', 'ne', 'sw', 'se'] as const).map(handle => (
+                          <div
+                            key={handle}
+                            className="absolute w-4 h-4 bg-white border-2 border-blue-500 rounded-sm z-10"
+                            style={{
+                              ...(handle.includes('n') ? { top: -6 } : { bottom: -6 }),
+                              ...(handle.includes('w') ? { left: -6 } : { right: -6 }),
+                              cursor: (handle === 'nw' || handle === 'se') ? 'nwse-resize' : 'nesw-resize',
+                            }}
+                            onMouseDown={e => { e.stopPropagation(); onDragStart(e, handle) }}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <canvas ref={canvasRef} className="hidden" />
+                <div className="flex gap-2 pt-1">
+                  <button type="button"
+                    onClick={() => { setCapturedDataUrl(null); setImgNaturalSize(null); if (!hasCctv) startCamera() }}
+                    className="flex-1 border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+                    Retake
+                  </button>
+                  <button type="button" onClick={applyCrop} disabled={uploading}
+                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+                    {uploading ? 'Saving…' : 'Use Photo ✓'}
                   </button>
                 </div>
+              </div>
 
-              ) : (
-                /* ── Open camera prompt ── */
-                <button type="button" onClick={startCamera}
-                  className="flex-1 border-2 border-dashed border-gray-300 rounded-lg px-6 py-8 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-500 flex flex-col items-center justify-center gap-2">
-                  <span className="text-3xl">📷</span>
-                  <span>Open Camera</span>
+            ) : stream ? (
+              /* ── Live webcam feed ── */
+              <div className="space-y-2">
+                <div className="relative">
+                  <video ref={videoRef} autoPlay playsInline muted
+                    className="w-full rounded-lg border"
+                    onCanPlay={() => setVideoReady(true)} />
+                  {!videoReady && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-lg">
+                      <div className="flex flex-col items-center gap-2 text-white">
+                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span className="text-xs">Starting camera…</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <canvas ref={canvasRef} className="hidden" />
+                <button type="button" onClick={capturePhoto} disabled={!videoReady}
+                  className="w-full bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-wait">
+                  {videoReady ? 'Capture Photo' : 'Waiting for camera…'}
                 </button>
-              )}
-            </div>
+              </div>
+
+            ) : hasCctv ? (
+              /* ── CCTV capture prompt ── */
+              <div className="flex flex-col gap-2">
+                <button type="button"
+                  onClick={() => captureFromCctv(parseInt(form.location_id))}
+                  disabled={capturingCctv || cctvStatus === 'starting'}
+                  className="w-full bg-green-600 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                  {capturingCctv ? (
+                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Capturing from CCTV…</>
+                  ) : cctvStatus === 'starting' ? (
+                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Waiting for camera feed…</>
+                  ) : '📸 Capture Photo from CCTV'}
+                </button>
+                <button type="button" onClick={startCamera}
+                  className="text-xs text-gray-400 hover:text-blue-500 text-center py-1">
+                  Use my webcam instead
+                </button>
+              </div>
+
+            ) : (
+              /* ── Open camera prompt ── */
+              <button type="button" onClick={startCamera}
+                className="flex-1 border-2 border-dashed border-gray-300 rounded-lg px-6 py-8 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-500 flex flex-col items-center justify-center gap-2">
+                <span className="text-3xl">📷</span>
+                <span>Open Camera</span>
+              </button>
+            )}
           </div>
 
-          <div className="bg-white rounded-xl border p-5 grid grid-cols-2 gap-4">
-            <h2 className="col-span-2 font-semibold text-sm text-gray-700 uppercase tracking-wide">Visit Details</h2>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Purpose *</label>
-              <input required className="w-full border rounded-lg px-3 py-2 text-sm"
-                value={form.purpose}
-                onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">No. of Visitors</label>
-              <input type="number" min={1} className="w-full border rounded-lg px-3 py-2 text-sm"
-                value={form.num_visitors}
-                onChange={e => setForm(f => ({ ...f, num_visitors: e.target.value }))} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Host Agent</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm"
-                value={form.host_agent_id}
-                onChange={e => setForm(f => ({ ...f, host_agent_id: e.target.value }))}>
-                <option value="">— Select host —</option>
-                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Location</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm"
-                value={form.location_id}
-                onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}>
-                <option value="">— Select location —</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <button type="submit" disabled={saving}
-            className="w-full bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50">
-            {saving ? 'Checking in…' : 'Check In Visitor'}
-          </button>
         </form>
       </main>
     </>

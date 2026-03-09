@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import AdminNav from '@/components/AdminNav'
 import { api } from '@/lib/api'
+import Link from 'next/link'
 
 interface Location { id: number; name: string; ip_camera_url?: string }
 
@@ -95,8 +96,15 @@ export default function VisitorLocationsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {loc.ip_camera_url && (
-                    <button onClick={() => testSnapshot(loc.id)}
-                      className="text-xs text-blue-600 hover:underline">Test Snapshot</button>
+                    <>
+                      <Link
+                        href={`/admin/visitors/cameras?loc=${loc.id}`}
+                        className="text-xs text-red-600 hover:underline font-medium">
+                        📹 Live View
+                      </Link>
+                      <button onClick={() => testSnapshot(loc.id)}
+                        className="text-xs text-blue-600 hover:underline">Snapshot</button>
+                    </>
                   )}
                   <button onClick={() => openEdit(loc)}
                     className="text-xs text-gray-500 hover:text-gray-700">Edit</button>
