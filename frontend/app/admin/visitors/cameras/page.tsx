@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import AdminNav from '@/components/AdminNav'
 import { api } from '@/lib/api'
@@ -178,7 +178,7 @@ function CameraPlayer({ locationId, locationName }: { locationId: number; locati
   )
 }
 
-export default function CamerasPage() {
+function CamerasContent() {
   const searchParams = useSearchParams()
   const preselectedLocId = searchParams.get('loc') ? parseInt(searchParams.get('loc')!) : null
 
@@ -209,76 +209,84 @@ export default function CamerasPage() {
   const activeCameras = locations.filter(l => selectedIds.includes(l.id))
 
   return (
-    <>
-      <AdminNav />
-      <main className="ml-60 pt-14 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">Live Camera View</h1>
-            <p className="text-sm text-gray-400 mt-0.5">Real-time CCTV feeds via RTSP stream</p>
+    <main className="ml-60 pt-14 p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">Live Camera View</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Real-time CCTV feeds via RTSP stream</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-gray-400">Loading cameras…</p>
+      ) : locations.length === 0 ? (
+        <div className="bg-white rounded-xl border p-10 text-center">
+          <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+          <p className="text-gray-500 font-medium">No cameras configured</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Add an RTSP URL to a location in{' '}
+            <a href="/admin/visitors/locations" className="text-blue-600 hover:underline">Visitor Locations</a>.
+          </p>
+        </div>
+      ) : (
+        <div className="flex gap-6">
+          {/* Sidebar: location selector */}
+          {locations.length > 1 && (
+            <div className="w-52 shrink-0">
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">Cameras</p>
+              <div className="space-y-1">
+                {locations.map(loc => (
+                  <button
+                    key={loc.id}
+                    onClick={() => toggleLocation(loc.id)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+                      selectedIds.includes(loc.id)
+                        ? 'bg-red-50 text-red-700 font-medium border border-red-200'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${
+                      selectedIds.includes(loc.id) ? 'bg-red-500' : 'bg-gray-300'
+                    }`} />
+                    {loc.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Camera grid */}
+          <div className={`flex-1 grid gap-4 ${
+            activeCameras.length === 1
+              ? 'grid-cols-1 max-w-3xl'
+              : activeCameras.length === 2
+              ? 'grid-cols-2'
+              : 'grid-cols-2 xl:grid-cols-3'
+          }`}>
+            {activeCameras.map(loc => (
+              <CameraPlayer key={loc.id} locationId={loc.id} locationName={loc.name} />
+            ))}
+            {activeCameras.length === 0 && (
+              <p className="text-gray-400 text-sm col-span-full">
+                Select a camera from the list to view its live feed.
+              </p>
+            )}
           </div>
         </div>
+      )}
+    </main>
+  )
+}
 
-        {loading ? (
-          <p className="text-gray-400">Loading cameras…</p>
-        ) : locations.length === 0 ? (
-          <div className="bg-white rounded-xl border p-10 text-center">
-            <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-            <p className="text-gray-500 font-medium">No cameras configured</p>
-            <p className="text-sm text-gray-400 mt-1">
-              Add an RTSP URL to a location in{' '}
-              <a href="/admin/visitors/locations" className="text-blue-600 hover:underline">Visitor Locations</a>.
-            </p>
-          </div>
-        ) : (
-          <div className="flex gap-6">
-            {/* Sidebar: location selector */}
-            {locations.length > 1 && (
-              <div className="w-52 shrink-0">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">Cameras</p>
-                <div className="space-y-1">
-                  {locations.map(loc => (
-                    <button
-                      key={loc.id}
-                      onClick={() => toggleLocation(loc.id)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
-                        selectedIds.includes(loc.id)
-                          ? 'bg-red-50 text-red-700 font-medium border border-red-200'
-                          : 'text-gray-600 hover:bg-gray-100'
-                      }`}>
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${
-                        selectedIds.includes(loc.id) ? 'bg-red-500' : 'bg-gray-300'
-                      }`} />
-                      {loc.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Camera grid */}
-            <div className={`flex-1 grid gap-4 ${
-              activeCameras.length === 1
-                ? 'grid-cols-1 max-w-3xl'
-                : activeCameras.length === 2
-                ? 'grid-cols-2'
-                : 'grid-cols-2 xl:grid-cols-3'
-            }`}>
-              {activeCameras.map(loc => (
-                <CameraPlayer key={loc.id} locationId={loc.id} locationName={loc.name} />
-              ))}
-              {activeCameras.length === 0 && (
-                <p className="text-gray-400 text-sm col-span-full">
-                  Select a camera from the list to view its live feed.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
+export default function CamerasPage() {
+  return (
+    <>
+      <AdminNav />
+      <Suspense fallback={<main className="ml-60 pt-14 p-6"><p className="text-gray-400">Loading…</p></main>}>
+        <CamerasContent />
+      </Suspense>
     </>
   )
 }
