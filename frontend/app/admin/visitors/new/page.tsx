@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 interface Agent { id: number; name: string; email: string }
 interface Location { id: number; name: string; ip_camera_url?: string }
 interface CropRect { x: number; y: number; w: number; h: number }
+interface PassCard { id: number; card_no: string }
 
 export default function NewVisitPage() {
   const router = useRouter()
@@ -41,11 +42,22 @@ export default function NewVisitPage() {
     visitor_email: '', visitor_address: '', purpose: '',
     host_agent_id: '', location_id: '', num_visitors: '1',
   })
+  const [availableCards, setAvailableCards] = useState<PassCard[]>([])
+  const [passCardId, setPassCardId] = useState<string>('')
 
   useEffect(() => {
     api.get('/visitors/agents/list').then(r => setAgents(r.data))
     api.get('/visitors/locations').then(r => setLocations(r.data))
   }, [])
+
+  useEffect(() => {
+    setPassCardId('')
+    setAvailableCards([])
+    if (!form.location_id) return
+    api.get(`/visitors/pass-cards/available?location_id=${form.location_id}`)
+      .then(r => setAvailableCards(r.data))
+      .catch(() => {})
+  }, [form.location_id])
 
   const startCamera = async () => {
     setVideoReady(false)
@@ -303,6 +315,7 @@ export default function NewVisitPage() {
         host_agent_id: form.host_agent_id ? parseInt(form.host_agent_id) : null,
         location_id: form.location_id ? parseInt(form.location_id) : null,
         visitor_photo_path: photoPath,
+        pass_card_id: passCardId ? parseInt(passCardId) : null,
       })
       router.push('/admin/visitors')
     } catch (e: any) {
@@ -396,6 +409,20 @@ export default function NewVisitPage() {
                     {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </div>
+                {availableCards.length > 0 && (
+                  <div className="col-span-2">
+                    <label className="block text-xs text-gray-500 mb-1">Pass Card</label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                      value={passCardId}
+                      onChange={e => setPassCardId(e.target.value)}>
+                      <option value="">— No card —</option>
+                      {availableCards.map(c => (
+                        <option key={c.id} value={c.id}>Card #{c.card_no}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
