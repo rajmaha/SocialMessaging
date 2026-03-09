@@ -24,8 +24,32 @@ function CameraPlayer({ locationId, locationName }: { locationId: number; locati
     try {
       const res = await api.post(`/visitors/locations/${locationId}/stream/start`)
       const streamUrl = `${API_URL}${res.data.stream_url}`
-      // Wait a moment for ffmpeg to generate the first segments
-      await new Promise(r => setTimeout(r, 3000))
+
+      // Poll /stream/ready every 500ms instead of a hardcoded sleep.
+      // Max 15 attempts = 7.5s timeout.
+      const MAX_POLLS = 15
+      const POLL_INTERVAL_MS = 500
+      let ready = false
+
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+        try {
+          const readyRes = await api.get(`/visitors/locations/${locationId}/stream/ready`)
+          if (readyRes.data.ready) {
+            ready = true
+            break
+          }
+        } catch {
+          // ignore transient poll errors, keep trying
+        }
+      }
+
+      if (!ready) {
+        setStatus('error')
+        setErrorMsg('Stream took too long to start. Check camera connection.')
+        return
+      }
+
       attachPlayer(streamUrl)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
