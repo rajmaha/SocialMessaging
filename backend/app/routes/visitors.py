@@ -318,23 +318,38 @@ def list_pass_cards(
 ):
     """List all pass cards, optionally filtered by location. Includes in_use status."""
     q = db.query(VisitorPassCard)
-    if location_id:
+    if location_id is not None:
         q = q.filter(VisitorPassCard.location_id == location_id)
     cards = q.order_by(VisitorPassCard.location_id, VisitorPassCard.card_no).all()
 
+    if not cards:
+        return []
+
+    card_ids = [c.id for c in cards]
+
+    # Single query: get all active visits that reference any of these cards
+    active_visits = (
+        db.query(Visit)
+        .filter(Visit.pass_card_id.in_(card_ids), Visit.check_out_at.is_(None))
+        .all()
+    )
+    # Map card_id -> active visit
+    active_visit_map = {v.pass_card_id: v for v in active_visits}
+
+    # Single query: get all profiles for visitors in those active visits
+    profile_ids = [v.visitor_profile_id for v in active_visits if v.visitor_profile_id]
+    profile_map = {}
+    if profile_ids:
+        profiles = db.query(VisitorProfile).filter(VisitorProfile.id.in_(profile_ids)).all()
+        profile_map = {p.id: p for p in profiles}
+
     result = []
     for card in cards:
-        active_visit = (
-            db.query(Visit)
-            .filter(Visit.pass_card_id == card.id, Visit.check_out_at.is_(None))
-            .first()
-        )
+        active_visit = active_visit_map.get(card.id)
         in_use = active_visit is not None
         held_by = None
-        if in_use and active_visit:
-            profile = db.query(VisitorProfile).filter(
-                VisitorProfile.id == active_visit.visitor_profile_id
-            ).first()
+        if active_visit and active_visit.visitor_profile_id:
+            profile = profile_map.get(active_visit.visitor_profile_id)
             held_by = profile.name if profile else None
         result.append(PassCardOut(
             id=card.id,
@@ -388,18 +403,30 @@ def available_pass_cards(
         VisitorPassCard.is_active.is_(True),
     ).order_by(VisitorPassCard.card_no).all()
 
-    result = []
-    for card in cards:
-        in_use = db.query(Visit).filter(
-            Visit.pass_card_id == card.id,
+    if not cards:
+        return []
+
+    card_ids = [c.id for c in cards]
+
+    # Single query: find all card IDs currently in use
+    in_use_ids = {
+        row.pass_card_id
+        for row in db.query(Visit.pass_card_id)
+        .filter(
+            Visit.pass_card_id.in_(card_ids),
             Visit.check_out_at.is_(None),
-        ).first() is not None
-        if not in_use:
-            result.append(PassCardOut(
-                id=card.id, location_id=card.location_id, card_no=card.card_no,
-                is_active=card.is_active, in_use=False,
-            ))
-    return result
+        )
+        .all()
+    }
+
+    return [
+        PassCardOut(
+            id=card.id, location_id=card.location_id, card_no=card.card_no,
+            is_active=card.is_active, in_use=False,
+        )
+        for card in cards
+        if card.id not in in_use_ids
+    ]
 
 
 @router.delete("/pass-cards/{card_id}")
