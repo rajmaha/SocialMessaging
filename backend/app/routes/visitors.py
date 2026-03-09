@@ -6,7 +6,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import requests as http_requests
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
@@ -186,7 +186,7 @@ def get_cctv_snapshot(loc_id: int, db: Session = Depends(get_db)):
             raise HTTPException(status_code=502, detail=f"Camera unreachable: {exc}")
 
 
-def _build_ffmpeg_cmd(rtsp_url: str, out_dir: str, codec: str = "copy") -> list:
+def _build_ffmpeg_cmd(rtsp_url: str, out_dir: str, codec: Literal["copy", "transcode"] = "copy") -> list:
     """Build the ffmpeg command for low-latency HLS output.
     codec: 'copy' for passthrough, 'transcode' for libx264 re-encoding fallback.
     """
@@ -196,7 +196,7 @@ def _build_ffmpeg_cmd(rtsp_url: str, out_dir: str, codec: str = "copy") -> list:
         "-fflags", "nobuffer",
         "-flags", "low_delay",
         "-analyzeduration", "0",
-        "-probesize", "32",
+        "-probesize", "500000",
         "-rtsp_transport", "tcp",
         "-i", rtsp_url,
     ]
@@ -225,7 +225,7 @@ def _build_ffmpeg_cmd(rtsp_url: str, out_dir: str, codec: str = "copy") -> list:
 
 
 @router.post("/locations/{loc_id}/stream/start")
-def start_camera_stream(loc_id: int, db: Session = Depends(get_db)):
+async def start_camera_stream(loc_id: int, db: Session = Depends(get_db)):
     """Start a live HLS stream from the location's RTSP camera via ffmpeg.
 
     Tries codec copy first (zero CPU if camera outputs H.264). If ffmpeg
@@ -246,8 +246,8 @@ def start_camera_stream(loc_id: int, db: Session = Depends(get_db)):
     try:
         # Attempt 1: copy (passthrough — fastest, zero CPU)
         cmd = _build_ffmpeg_cmd(loc.ip_camera_url, out_dir, codec="copy")
-        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(2)
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        await asyncio.sleep(2)
 
         if proc.poll() is not None:
             # Copy failed (camera likely uses non-H.264 codec) — fall back to transcode
