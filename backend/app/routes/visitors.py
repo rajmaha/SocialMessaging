@@ -287,6 +287,26 @@ def camera_stream_status(loc_id: int):
     }
 
 
+@router.get("/locations/{loc_id}/stream/ready")
+def camera_stream_ready(loc_id: int):
+    """Return ready=true once the HLS manifest has at least one .ts segment.
+
+    The frontend polls this every 500ms instead of using a hardcoded sleep.
+    Returns 200 always (never 404) so the frontend can poll without error handling.
+    """
+    manifest_path = os.path.join(HLS_OUTPUT_DIR, str(loc_id), "index.m3u8")
+    if not os.path.exists(manifest_path):
+        return {"ready": False}
+    try:
+        with open(manifest_path) as f:
+            content = f.read()
+        # Ready when at least one transport stream segment is listed
+        ready = ".ts" in content
+    except OSError:
+        return {"ready": False}
+    return {"ready": ready}
+
+
 # ── Profile search (kiosk lookup) ─────────────────────────────────────────────
 
 @router.get("/profiles/search", response_model=List[VisitorProfileOut])
