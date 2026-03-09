@@ -462,7 +462,7 @@ export default function NewVisitPage() {
             <h2 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Photo</h2>
 
             {/* Photo source toggle — only when location has CCTV and no photo in progress */}
-            {hasCctv && !photoUrl && !capturedDataUrl && !stream && (
+            {hasCctv && !photoUrl && !capturedDataUrl && !stream && photoSource === null && (
               <div className="flex gap-2">
                 <button
                   type="button"
