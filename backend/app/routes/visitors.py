@@ -73,6 +73,11 @@ def _visit_out(visit: Visit, db: Session) -> VisitOut:
         fname = os.path.basename(path)
         return f"/{prefix}/{fname}"
 
+    pass_card_no: Optional[str] = None
+    if visit.pass_card_id:
+        card = db.query(VisitorPassCard).filter(VisitorPassCard.id == visit.pass_card_id).first()
+        pass_card_no = card.card_no if card else None
+
     return VisitOut(
         id=visit.id,
         visitor_profile_id=visit.visitor_profile_id,
@@ -90,6 +95,8 @@ def _visit_out(visit: Visit, db: Session) -> VisitOut:
         cctv_photo_url=_photo_url(visit.cctv_photo_path, "visitor-cctv"),
         created_by=visit.created_by,
         status="checked_out" if visit.check_out_at else "checked_in",
+        pass_card_id=visit.pass_card_id,
+        pass_card_no=pass_card_no,
     )
 
 
@@ -655,6 +662,22 @@ def create_visit(
             except Exception as e:
                 logger.warning("CCTV snapshot failed: %s", e)
 
+    # Validate pass card if provided
+    if payload.pass_card_id:
+        card = db.query(VisitorPassCard).filter(VisitorPassCard.id == payload.pass_card_id).first()
+        if not card:
+            raise HTTPException(status_code=404, detail="Pass card not found")
+        # Card must belong to the visit's location
+        if payload.location_id and card.location_id != payload.location_id:
+            raise HTTPException(status_code=400, detail="Pass card does not belong to the selected location")
+        # Card must not be in use
+        active = db.query(Visit).filter(
+            Visit.pass_card_id == payload.pass_card_id,
+            Visit.check_out_at.is_(None),
+        ).first()
+        if active:
+            raise HTTPException(status_code=409, detail="Pass card is already in use")
+
     visit = Visit(
         visitor_profile_id=profile.id,
         location_id=payload.location_id,
@@ -664,6 +687,7 @@ def create_visit(
         visitor_photo_path=payload.visitor_photo_path,
         cctv_photo_path=cctv_path,
         check_in_at=datetime.utcnow(),
+        pass_card_id=payload.pass_card_id,
     )
     db.add(visit)
     db.commit()
