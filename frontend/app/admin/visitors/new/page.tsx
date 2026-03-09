@@ -201,11 +201,16 @@ export default function NewVisitPage() {
     setVideoReady(false)
     const loc = locations.find(l => l.id === parseInt(form.location_id))
     if (loc?.ip_camera_url) {
-      // Reset to source selection — let agent choose again
-      stopCctvPlayer()
-      stream?.getTracks().forEach(t => t.stop())
-      setStream(null)
-      setPhotoSource(null)
+      // Restart whichever source was active so agent can capture again
+      if (photoSource === 'cctv') {
+        stopCctvPlayer()
+        startCctvStream(parseInt(form.location_id))
+      } else if (photoSource === 'webcam') {
+        stream?.getTracks().forEach(t => t.stop())
+        setStream(null)
+        startCamera()
+      }
+      // photoSource === null: toggle shown, agent will select a source
     } else {
       startCamera()
     }
@@ -260,6 +265,13 @@ export default function NewVisitPage() {
 
   // Start the chosen photo source; stops the other one first
   const selectPhotoSource = (source: 'cctv' | 'webcam') => {
+    if (photoSource === source) return // already on this source
+    // Clear any in-progress capture when switching sources
+    setCapturedDataUrl(null)
+    setPhotoUrl(null)
+    setPhotoPath(null)
+    setImgNaturalSize(null)
+    setVideoReady(false)
     setPhotoSource(source)
     if (source === 'cctv') {
       stream?.getTracks().forEach(t => t.stop())
@@ -461,8 +473,8 @@ export default function NewVisitPage() {
           <div className="bg-white rounded-xl border p-5 flex flex-col gap-3">
             <h2 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Photo</h2>
 
-            {/* Photo source toggle — only when location has CCTV and no photo in progress */}
-            {hasCctv && !photoUrl && !capturedDataUrl && !stream && photoSource === null && (
+            {/* Photo source toggle — always visible when location has CCTV */}
+            {hasCctv && (
               <div className="flex gap-2">
                 <button
                   type="button"

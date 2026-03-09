@@ -48,7 +48,8 @@ def _capture_rtsp_snapshot(rtsp_url: str, output_path: str) -> bool:
                 "-rtsp_transport", "tcp",
                 "-i", rtsp_url,
                 "-frames:v", "1",
-                "-q:v", "2",
+                "-q:v", "1",          # highest JPEG quality (1=best, 31=worst)
+                "-vf", "unsharp=5:5:1.0:5:5:0.0",  # sharpen to improve perceived detail
                 output_path,
             ],
             timeout=15,
@@ -216,8 +217,9 @@ def _build_ffmpeg_cmd(rtsp_url: str, out_dir: str, codec: Literal["copy", "trans
     else:
         video_flags = [
             "-c:v", "libx264",
-            "-preset", "ultrafast",
+            "-preset", "fast",      # was ultrafast — better quality with modest CPU cost
             "-tune", "zerolatency",
+            "-crf", "20",           # quality (18=high, 28=low); lower = sharper image
             "-g", "30",
             "-sc_threshold", "0",
         ]
