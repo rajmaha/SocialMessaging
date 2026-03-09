@@ -15,11 +15,12 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_admin_user
 from app.models.user import User
-from app.models.visitors import Visit, VisitorLocation, VisitorProfile
+from app.models.visitors import Visit, VisitorLocation, VisitorPassCard, VisitorProfile
 from app.schemas.visitors import (
     VisitCreate, VisitOut,
     VisitorLocationCreate, VisitorLocationOut, VisitorLocationUpdate,
     VisitorProfileOut,
+    PassCardCreate, PassCardOut,
 )
 from app.services.events_service import EventTypes, events_service
 
@@ -305,6 +306,123 @@ def camera_stream_ready(loc_id: int):
     except OSError:
         return {"ready": False}
     return {"ready": ready}
+
+
+# ── Pass Cards ────────────────────────────────────────────────────────────────
+
+@router.get("/pass-cards", response_model=List[PassCardOut])
+def list_pass_cards(
+    location_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    """List all pass cards, optionally filtered by location. Includes in_use status."""
+    q = db.query(VisitorPassCard)
+    if location_id:
+        q = q.filter(VisitorPassCard.location_id == location_id)
+    cards = q.order_by(VisitorPassCard.location_id, VisitorPassCard.card_no).all()
+
+    result = []
+    for card in cards:
+        active_visit = (
+            db.query(Visit)
+            .filter(Visit.pass_card_id == card.id, Visit.check_out_at.is_(None))
+            .first()
+        )
+        in_use = active_visit is not None
+        held_by = None
+        if in_use and active_visit:
+            profile = db.query(VisitorProfile).filter(
+                VisitorProfile.id == active_visit.visitor_profile_id
+            ).first()
+            held_by = profile.name if profile else None
+        result.append(PassCardOut(
+            id=card.id,
+            location_id=card.location_id,
+            card_no=card.card_no,
+            is_active=card.is_active,
+            in_use=in_use,
+            held_by=held_by,
+        ))
+    return result
+
+
+@router.post("/pass-cards", response_model=PassCardOut)
+def create_pass_card(
+    payload: PassCardCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    """Create a new pass card for a location. card_no must be unique within the location."""
+    # Verify location exists
+    loc = db.query(VisitorLocation).filter(VisitorLocation.id == payload.location_id).first()
+    if not loc:
+        raise HTTPException(status_code=404, detail="Location not found")
+
+    # Check uniqueness
+    existing = db.query(VisitorPassCard).filter(
+        VisitorPassCard.location_id == payload.location_id,
+        VisitorPassCard.card_no == payload.card_no,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Card number already exists for this location")
+
+    card = VisitorPassCard(location_id=payload.location_id, card_no=payload.card_no)
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+    return PassCardOut(id=card.id, location_id=card.location_id, card_no=card.card_no,
+                       is_active=card.is_active, in_use=False)
+
+
+@router.get("/pass-cards/available", response_model=List[PassCardOut])
+def available_pass_cards(
+    location_id: int,
+    db: Session = Depends(get_db),
+):
+    """Return active pass cards not currently held by any checked-in visitor.
+    No auth required — used by the check-in form.
+    """
+    cards = db.query(VisitorPassCard).filter(
+        VisitorPassCard.location_id == location_id,
+        VisitorPassCard.is_active.is_(True),
+    ).order_by(VisitorPassCard.card_no).all()
+
+    result = []
+    for card in cards:
+        in_use = db.query(Visit).filter(
+            Visit.pass_card_id == card.id,
+            Visit.check_out_at.is_(None),
+        ).first() is not None
+        if not in_use:
+            result.append(PassCardOut(
+                id=card.id, location_id=card.location_id, card_no=card.card_no,
+                is_active=card.is_active, in_use=False,
+            ))
+    return result
+
+
+@router.delete("/pass-cards/{card_id}")
+def delete_pass_card(
+    card_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    """Delete a pass card. Blocked if card is currently assigned to an active visit."""
+    card = db.query(VisitorPassCard).filter(VisitorPassCard.id == card_id).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Pass card not found")
+
+    active = db.query(Visit).filter(
+        Visit.pass_card_id == card_id,
+        Visit.check_out_at.is_(None),
+    ).first()
+    if active:
+        raise HTTPException(status_code=409, detail="Cannot delete a card that is currently in use")
+
+    db.delete(card)
+    db.commit()
+    return {"ok": True}
 
 
 # ── Profile search (kiosk lookup) ─────────────────────────────────────────────
