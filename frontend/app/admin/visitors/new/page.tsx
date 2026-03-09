@@ -56,7 +56,7 @@ export default function NewVisitPage() {
     if (!form.location_id) return
     api.get(`/visitors/pass-cards/available?location_id=${form.location_id}`)
       .then(r => setAvailableCards(r.data))
-      .catch(() => {})
+      .catch(() => { console.warn('Failed to load available pass cards') })
   }, [form.location_id])
 
   const startCamera = async () => {
