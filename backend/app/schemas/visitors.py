@@ -26,6 +26,25 @@ class VisitorLocationOut(BaseModel):
         from_attributes = True
 
 
+# ── Pass Cards ────────────────────────────────────────────────────────────────
+
+class PassCardCreate(BaseModel):
+    location_id: int
+    card_no: str
+
+
+class PassCardOut(BaseModel):
+    id: int
+    location_id: int
+    card_no: str
+    is_active: bool
+    in_use: bool = False          # True if an active visit holds this card
+    held_by: Optional[str] = None # visitor name if in_use
+
+    class Config:
+        from_attributes = True
+
+
 # ── Profile ───────────────────────────────────────────────────────────────────
 
 class VisitorProfileOut(BaseModel):
@@ -57,6 +76,7 @@ class VisitCreate(BaseModel):
     num_visitors: int = 1
     purpose: str
     host_agent_id: Optional[int] = None
+    pass_card_id: Optional[int] = None
 
 
 class VisitOut(BaseModel):
@@ -76,6 +96,8 @@ class VisitOut(BaseModel):
     cctv_photo_url: Optional[str] = None
     created_by: Optional[int] = None
     status: str  # "checked_in" | "checked_out"
+    pass_card_id: Optional[int] = None
+    pass_card_no: Optional[str] = None   # denormalised for display
 
     class Config:
         from_attributes = True
