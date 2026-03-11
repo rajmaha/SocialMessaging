@@ -31,6 +31,7 @@ from app.models.backup_run import BackupRun  # noqa: F401
 from app.models.automation import AutomationRule, EmailSequence, EmailSequenceStep, EmailSequenceEnrollment  # noqa: F401
 from app.models import pms  # noqa: F401
 from app.models.user_permission_override import UserPermissionOverride  # noqa: F401 — ensures table creation
+from app.models.webchat_otp import WebchatOtp  # noqa: F401 — ensures table creation
 from app.models.campaign_link import CampaignLink, CampaignClick  # noqa: F401
 from app.models.campaign_variant import CampaignVariant  # noqa: F401
 from app.models.logs import AuditLog, ErrorLog  # noqa: F401 — ensures log table creation
@@ -1573,6 +1574,19 @@ def _run_inline_migrations():
             ALTER TABLE telephony_settings
                 ADD COLUMN IF NOT EXISTS freepbx_port INTEGER DEFAULT 443
         """))
+
+        # Webchat OTP table (replaces in-memory store — safe across multiple workers)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS webchat_otp (
+                id         SERIAL PRIMARY KEY,
+                email      VARCHAR NOT NULL,
+                otp        VARCHAR NOT NULL,
+                name       VARCHAR NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_webchat_otp_email ON webchat_otp (email)"))
 
         conn.commit()
 

@@ -83,6 +83,7 @@ export default function WidgetPage() {
   const [otpError, setOtpError] = useState('')
   const [otpSending, setOtpSending] = useState(false)
   const [otpResendCooldown, setOtpResendCooldown] = useState(0)
+  const [otpToken, setOtpToken] = useState('')
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [linkPreviews, setLinkPreviews] = useState<Record<string, any>>({})
@@ -222,6 +223,7 @@ export default function WidgetPage() {
         setOtpError(data.detail || 'Failed to send code. Try again.')
         return
       }
+      setOtpToken(data.token || '')
       setOtpResendCooldown(60)
       setPhase('otp')
     } catch {
@@ -244,7 +246,7 @@ export default function WidgetPage() {
       const resp = await fetch(`${API_URL}/webchat/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp }),
+        body: JSON.stringify({ email, otp, token: otpToken }),
       })
       const data = await resp.json()
       if (!resp.ok) {

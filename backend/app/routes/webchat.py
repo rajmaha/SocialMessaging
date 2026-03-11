@@ -26,6 +26,11 @@ import re
 import random
 import ipaddress
 import socket
+import hmac
+import hashlib
+import base64
+import json
+import time
 
 import httpx
 
@@ -36,6 +41,7 @@ from app.models.message import Message
 from app.models.user import User
 from app.models.branding import BrandingSettings
 from app.models.bot import BotSettings, BotQA
+from app.models.webchat_otp import WebchatOtp
 from app.services.bot_service import handle_incoming, handle_bot_selection, bot_suggest
 from app.services.ai_service import ai_reply as _ai_reply
 from app.services.webchat_service import webchat_service
@@ -44,12 +50,35 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# In-memory OTP store: normalised_email → {otp, expires, name}
-# (cleared automatically on verification or expiry)
-_otp_store: dict = {}
-
 router = APIRouter(prefix="/webchat", tags=["webchat"])
 
+# ─────────────────────────────────────────
+# HMAC-signed OTP token helpers
+# (stateless — works with any number of workers)
+# ─────────────────────────────────────────
+
+def _sign_otp_token(email: str, otp: str, name: str) -> str:
+    """Return a tamper-proof token containing email + OTP + name + expiry (10 min)."""
+    from app.config import settings
+    payload = json.dumps({"e": email, "o": otp, "n": name, "x": time.time() + 600}, separators=(',', ':'))
+    b64 = base64.urlsafe_b64encode(payload.encode()).decode()
+    sig = hmac.new(settings.SECRET_KEY.encode(), b64.encode(), hashlib.sha256).hexdigest()
+    return f"{b64}.{sig}"
+
+def _decode_otp_token(token: str, email: str, otp: str):
+    """Return payload dict if valid, else None."""
+    from app.config import settings
+    try:
+        b64, sig = token.rsplit('.', 1)
+        expected = hmac.new(settings.SECRET_KEY.encode(), b64.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        payload = json.loads(base64.urlsafe_b64decode(b64).decode())
+        if payload.get('e') != email or payload.get('o') != otp or time.time() >= payload.get('x', 0):
+            return None
+        return payload
+    except Exception:
+        return None
 
 # ─────────────────────────────────────────
 # Helpers
@@ -149,6 +178,7 @@ class OtpRequest(BaseModel):
 class OtpVerify(BaseModel):
     email: str
     otp: str
+    token: Optional[str] = None
 
 
 @router.post("/request-otp")
@@ -163,11 +193,7 @@ def request_otp(req: OtpRequest, db: Session = Depends(get_db)):
     name = req.name.strip() or email.split("@")[0]
     otp = str(random.randint(100000, 999999))
 
-    _otp_store[email] = {
-        "otp": otp,
-        "expires": datetime.utcnow() + timedelta(minutes=10),
-        "name": name,
-    }
+    token = _sign_otp_token(email, otp, name)
 
     email_service.send_otp_email(
         to_email=email,
@@ -177,7 +203,7 @@ def request_otp(req: OtpRequest, db: Session = Depends(get_db)):
         db=db,
     )
 
-    return {"status": "otp_sent", "message": "A 6-digit code has been sent to your email."}
+    return {"status": "otp_sent", "message": "A 6-digit code has been sent to your email.", "token": token}
 
 
 @router.post("/verify-otp")
@@ -185,21 +211,30 @@ def verify_otp(req: OtpVerify, db: Session = Depends(get_db)):
     """Verify OTP and return (or create) a permanent chat session for this email."""
     email = req.email.strip().lower()
 
-    record = _otp_store.get(email)
-    if not record:
-        raise HTTPException(
-            status_code=400,
-            detail="No verification code found for this email. Please request a new code.",
-        )
-    if datetime.utcnow() > record["expires"]:
-        _otp_store.pop(email, None)
-        raise HTTPException(status_code=400, detail="Code has expired. Please request a new one.")
-    if record["otp"] != req.otp.strip():
-        raise HTTPException(status_code=400, detail="Incorrect code. Please try again.")
+    otp = req.otp.strip()
+    visitor_name = email.split('@')[0]  # default fallback
 
-    # OTP valid — remove it
-    visitor_name = record["name"]
-    _otp_store.pop(email, None)
+    # Primary: verify via HMAC-signed token (stateless, works with multiple workers)
+    token_payload = _decode_otp_token(req.token, email, otp) if req.token else None
+    if token_payload:
+        visitor_name = token_payload.get('n') or visitor_name
+    else:
+        # Fallback: DB lookup (covers clients without token)
+        record = db.query(WebchatOtp).filter(WebchatOtp.email == email).order_by(WebchatOtp.id.desc()).first()
+        if not record:
+            raise HTTPException(
+                status_code=400,
+                detail="Verification code not found or expired. Please request a new code.",
+            )
+        if datetime.utcnow() > record.expires_at:
+            db.delete(record)
+            db.commit()
+            raise HTTPException(status_code=400, detail="Code has expired. Please request a new one.")
+        if record.otp != otp:
+            raise HTTPException(status_code=400, detail="Incorrect code. Please try again.")
+        visitor_name = record.name
+        db.delete(record)
+        db.commit()
 
     # Look up existing conversation by email (permanent contact_id)
     conv = db.query(Conversation).filter(
