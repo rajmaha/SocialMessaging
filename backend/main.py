@@ -1557,6 +1557,23 @@ def _run_inline_migrations():
                 REFERENCES visitor_pass_cards(id) ON DELETE SET NULL
         """))
 
+        # Rename port → ami_port on telephony_settings (separate AMI port from API port)
+        conn.execute(text("""
+            ALTER TABLE telephony_settings
+                ADD COLUMN IF NOT EXISTS ami_port INTEGER DEFAULT 5038
+        """))
+        # Migrate existing port values to ami_port if ami_port is still default
+        conn.execute(text("""
+            UPDATE telephony_settings
+               SET ami_port = port
+             WHERE port IS NOT NULL AND port != 443 AND ami_port = 5038
+        """))
+        # Add dedicated FreePBX API HTTPS port column
+        conn.execute(text("""
+            ALTER TABLE telephony_settings
+                ADD COLUMN IF NOT EXISTS freepbx_port INTEGER DEFAULT 443
+        """))
+
         conn.commit()
 
     # Unique index: only one active visit may hold a given pass card at a time

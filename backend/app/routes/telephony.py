@@ -47,8 +47,10 @@ def update_telephony_settings(
         settings.pbx_type = settings_update.pbx_type
     if settings_update.host is not None:
         settings.host = settings_update.host
-    if settings_update.port is not None:
-        settings.port = settings_update.port
+    if settings_update.freepbx_port is not None:
+        settings.freepbx_port = settings_update.freepbx_port
+    if settings_update.ami_port is not None:
+        settings.ami_port = settings_update.ami_port
     if settings_update.ami_username is not None:
         settings.ami_username = settings_update.ami_username
     if settings_update.ami_secret is not None:
@@ -86,6 +88,10 @@ def test_freepbx_connection(
     host = settings.host.rstrip("/")
     if not host.startswith("http"):
         host = f"https://{host}"
+    # Append custom port if not already in the URL and not a standard port
+    fpbx_port = settings.freepbx_port or 443
+    if fpbx_port not in (80, 443) and ":" not in host.split("//", 1)[-1]:
+        host = f"{host}:{fpbx_port}"
 
     username = settings.freepbx_api_key
     password = settings.freepbx_api_secret
@@ -212,7 +218,7 @@ def test_ami_connection(
             host = host[len(prefix):]
             break
 
-    port = settings.port if settings.port else 5038
+    port = settings.ami_port if settings.ami_port else 5038
 
     try:
         sock = socket.create_connection((host, port), timeout=8)

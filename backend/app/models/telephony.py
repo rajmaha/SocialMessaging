@@ -7,7 +7,8 @@ class TelephonySettings(Base):
     id = Column(Integer, primary_key=True, index=True)
     pbx_type = Column(String, nullable=False, default="asterisk") # "asterisk", "freepbx", etc
     host = Column(String, nullable=True) # Domain or IP of the PBX
-    port = Column(Integer, nullable=True, default=5038) # AMI Port
+    freepbx_port = Column(Integer, nullable=True, default=443) # FreePBX API HTTPS port (default 443)
+    ami_port = Column(Integer, nullable=True, default=5038) # AMI TCP port (default 5038)
     ami_username = Column(String, nullable=True)
     ami_secret = Column(String, nullable=True)
     webrtc_wss_url = Column(String, nullable=True)   # e.g. wss://pbx.domain.com:8089/ws

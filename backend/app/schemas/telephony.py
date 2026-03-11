@@ -5,7 +5,8 @@ from datetime import datetime
 class TelephonySettingsBase(BaseModel):
     pbx_type: str = "asterisk"
     host: Optional[str] = None
-    port: Optional[int] = 5038
+    freepbx_port: Optional[int] = 443
+    ami_port: Optional[int] = 5038
     ami_username: Optional[str] = None
     ami_secret: Optional[str] = None
     webrtc_wss_url: Optional[str] = None

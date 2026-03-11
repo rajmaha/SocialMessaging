@@ -34,11 +34,17 @@ class FreePBXService:
     #  Internal helpers
     # ---------------------------------------------------------------
 
-    def _base_url(self, host: str) -> str:
+    def _base_url(self, host: str, port: int = None) -> str:
         host = host.rstrip("/")
+        scheme = "http" if port == 80 else "https"
         if host.startswith("http"):
+            # Append custom port if not already in the URL and not a standard port
+            if port and port not in (80, 443) and ":" not in host.split("//", 1)[-1]:
+                return f"{host}:{port}"
             return host
-        return f"https://{host}"
+        if port and port not in (80, 443):
+            return f"{scheme}://{host}:{port}"
+        return f"{scheme}://{host}"
 
     def _get_auth(self, host: str, port: int, api_key: str, api_secret: str) -> Optional[dict]:
         """
@@ -56,7 +62,7 @@ class FreePBXService:
         if cache_key in self._auth_cache:
             return self._auth_cache[cache_key]
 
-        base = self._base_url(host)
+        base = self._base_url(host, port)
 
         # --- Strategy 1: PBX API module OAuth2 (FreePBX 17) ---
         # api_key = OAuth2 client_id, api_secret = OAuth2 client_secret
@@ -164,7 +170,7 @@ class FreePBXService:
                 return None
             return {
                 "host": settings.host,
-                "port": settings.port or 443,
+                "port": settings.freepbx_port or 443,
                 "api_key": settings.freepbx_api_key,
                 "api_secret": settings.freepbx_api_secret,
             }
@@ -283,7 +289,19 @@ class FreePBXService:
                 "extensionId": extension,
                 "input": {
                     "user": {"name": display_name or f"Agent {extension}"},
-                    "endpoint": {"secret": sip_password},
+                    "endpoint": {
+                        "secret": sip_password,
+                        # WebRTC settings — enables softphone in browser
+                        "media_encryption": "dtls",
+                        "webrtc": "yes",
+                        "dtls_verify": "fingerprint",
+                        "dtls_setup": "actpass",
+                        "ice_support": "yes",
+                        "rtcp_mux": "yes",
+                        "use_avpf": "yes",
+                        "force_rport": "yes",
+                        "rewrite_contact": "yes",
+                    },
                 },
             }
         else:
@@ -303,7 +321,19 @@ class FreePBXService:
                         "name": display_name or f"Agent {extension}",
                         "email": email,
                     },
-                    "endpoint": {"secret": sip_password},
+                    "endpoint": {
+                        "secret": sip_password,
+                        # WebRTC settings — enables softphone in browser
+                        "media_encryption": "dtls",
+                        "webrtc": "yes",
+                        "dtls_verify": "fingerprint",
+                        "dtls_setup": "actpass",
+                        "ice_support": "yes",
+                        "rtcp_mux": "yes",
+                        "use_avpf": "yes",
+                        "force_rport": "yes",
+                        "rewrite_contact": "yes",
+                    },
                 },
             }
         try:
@@ -357,7 +387,7 @@ class FreePBXService:
         if not auth:
             return False
 
-        base = self._base_url(cfg["host"])
+        base = self._base_url(cfg["host"], cfg.get("port"))
         if auth["mode"] == "bpx":
             return self._bpx_create_or_update(base, auth["token"], extension, sip_password, display_name, email)
         else:
@@ -386,7 +416,7 @@ class FreePBXService:
         if not auth:
             return False
 
-        base = self._base_url(cfg["host"])
+        base = self._base_url(cfg["host"], cfg.get("port"))
         state = "enabled" if enabled else "disabled"
 
         if auth["mode"] == "bpx":
@@ -433,7 +463,7 @@ class FreePBXService:
         if not auth:
             return False
 
-        base = self._base_url(cfg["host"])
+        base = self._base_url(cfg["host"], cfg.get("port"))
         if auth["mode"] == "bpx":
             return self._bpx_delete(base, auth["token"], extension)
         else:

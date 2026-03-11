@@ -23,7 +23,8 @@ export default function TelephonySettings() {
     const [settings, setSettings] = useState({
         pbx_type: 'freepbx',
         host: '',
-        port: 5038,
+        freepbx_port: 443,
+        ami_port: 5038,
         ami_username: '',
         ami_secret: '',
         webrtc_wss_url: '',
@@ -50,7 +51,8 @@ export default function TelephonySettings() {
                 setSettings({
                     pbx_type: data.pbx_type || 'freepbx',
                     host: data.host || '',
-                    port: data.port || 5038,
+                    freepbx_port: data.freepbx_port || 443,
+                    ami_port: data.ami_port || 5038,
                     ami_username: data.ami_username || '',
                     ami_secret: data.ami_secret || '',
                     webrtc_wss_url: data.webrtc_wss_url || '',
@@ -275,8 +277,8 @@ export default function TelephonySettings() {
                                     <label className={labelClass}>HTTPS Port</label>
                                     <input
                                         type="number"
-                                        value={settings.port}
-                                        onChange={(e) => setSettings({ ...settings, port: parseInt(e.target.value) || 5038 })}
+                                        value={settings.freepbx_port}
+                                        onChange={(e) => setSettings({ ...settings, freepbx_port: parseInt(e.target.value) || 443 })}
                                         className={inputClass}
                                         placeholder="443"
                                     />
@@ -322,8 +324,8 @@ export default function TelephonySettings() {
                                     <label className={labelClass}>AMI Port</label>
                                     <input
                                         type="number"
-                                        value={settings.port}
-                                        onChange={(e) => setSettings({ ...settings, port: parseInt(e.target.value) || 5038 })}
+                                        value={settings.ami_port}
+                                        onChange={(e) => setSettings({ ...settings, ami_port: parseInt(e.target.value) || 5038 })}
                                         className={inputClass}
                                         placeholder="5038"
                                     />
