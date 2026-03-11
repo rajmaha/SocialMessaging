@@ -16,7 +16,7 @@ export default function TelephonySettings() {
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
-    const [testResult, setTestResult] = useState<{ status: string; message: string } | null>(null);
+    const [testResult, setTestResult] = useState<{ status: string; message: string; diagnostics?: string[]; help?: string; method?: string } | null>(null);
 
     const [settings, setSettings] = useState({
         pbx_type: 'freepbx',
@@ -95,6 +95,12 @@ export default function TelephonySettings() {
         setTestResult(null);
         try {
             const token = getAuthToken();
+            // Save current form values first so the test uses the latest credentials
+            await fetch(`${API_URL}/admin/telephony/settings`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings),
+            });
             const response = await fetch(`${API_URL}/admin/telephony/test-freepbx`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -153,9 +159,11 @@ export default function TelephonySettings() {
                         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                             <div className="flex items-center justify-between mb-4 border-b pb-3">
                                 <div>
-                                    <h3 className="text-lg font-semibold text-gray-900">FreePBX REST API Credentials</h3>
+                                    <h3 className="text-lg font-semibold text-gray-900">FreePBX API Credentials</h3>
                                     <p className="text-sm text-gray-500 mt-0.5">
-                                        Used to auto-create/update/delete extensions. Get API keys from FreePBX: <em>Admin → User Management → API Keys</em>.
+                                        Used to auto-create/update/delete extensions.{' '}
+                                        <strong>FreePBX 17:</strong> enter your FreePBX <em>admin username &amp; password</em> — no extra module needed.{' '}
+                                        <strong>FreePBX 15/16:</strong> install the free <em>REST API</em> module → <em>Admin → User Management → API Keys</em>.
                                     </p>
                                 </div>
                                 <button
@@ -170,12 +178,27 @@ export default function TelephonySettings() {
                             </div>
 
                             {testResult && (
-                                <div className={`flex items-start gap-2 p-3 rounded-lg mb-5 text-sm ${testResult.status === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                                    {testResult.status === 'success'
-                                        ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                                        : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                                    }
-                                    {testResult.message}
+                                <div className={`p-3 rounded-lg mb-5 text-sm ${testResult.status === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                                    <div className="flex items-start gap-2">
+                                        {testResult.status === 'success'
+                                            ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                                            : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                                        }
+                                        <span>{testResult.message}</span>
+                                    </div>
+                                    {testResult.diagnostics && testResult.diagnostics.length > 0 && (
+                                        <div className="mt-2 ml-6">
+                                            <p className="font-semibold mb-1">Auth attempts:</p>
+                                            <ul className="space-y-0.5 font-mono text-xs break-all">
+                                                {testResult.diagnostics.map((d, i) => (
+                                                    <li key={i} className="opacity-80">• {d}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    {testResult.help && (
+                                        <p className="mt-2 ml-6 text-xs opacity-75">{testResult.help}</p>
+                                    )}
                                 </div>
                             )}
 
@@ -193,18 +216,19 @@ export default function TelephonySettings() {
                                 </div>
 
                                 <div>
-                                    <label className={labelClass}>FreePBX API Key (Client ID)</label>
+                                    <label className={labelClass}>FreePBX Username / API Client ID</label>
                                     <input
                                         type="text"
                                         value={settings.freepbx_api_key}
                                         onChange={(e) => setSettings({ ...settings, freepbx_api_key: e.target.value })}
                                         className={inputClass}
-                                        placeholder="API key from FreePBX User Management"
+                                        placeholder="admin"
                                     />
+                                    <p className="mt-1 text-xs text-gray-500">FreePBX 17: use your admin username. FreePBX 15/16: use the API Client ID.</p>
                                 </div>
 
                                 <div>
-                                    <label className={labelClass}>FreePBX API Secret</label>
+                                    <label className={labelClass}>FreePBX Password / API Secret</label>
                                     <input
                                         type="password"
                                         value={settings.freepbx_api_secret}
@@ -212,6 +236,7 @@ export default function TelephonySettings() {
                                         className={inputClass}
                                         placeholder="••••••••••••"
                                     />
+                                    <p className="mt-1 text-xs text-gray-500">FreePBX 17: use your admin password. FreePBX 15/16: use the API Secret.</p>
                                 </div>
 
                                 <div>

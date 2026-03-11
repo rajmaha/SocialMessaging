@@ -72,8 +72,9 @@ def test_freepbx_connection(
     current_user: User = Depends(require_telephony)
 ):
     """Test the FreePBX REST API connection using stored credentials."""
-    from app.services.freepbx_service import freepbx_service
-    import requests
+    import requests as req
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     settings = db.query(TelephonySettings).first()
     if not settings or not settings.host:
@@ -81,19 +82,66 @@ def test_freepbx_connection(
     if not settings.freepbx_api_key or not settings.freepbx_api_secret:
         raise HTTPException(status_code=400, detail="FreePBX REST API key/secret not configured.")
 
-    token = freepbx_service._get_token(
-        settings.host,
-        settings.port or 443,
-        settings.freepbx_api_key,
-        settings.freepbx_api_secret,
-    )
-    if token:
-        return {
-            "status": "success",
-            "message": f"✅ Connected to FreePBX at {settings.host} successfully.",
-        }
-    else:
-        return {
-            "status": "error",
-            "message": f"❌ Could not connect to FreePBX at {settings.host}. Check credentials and ensure REST API module is enabled.",
-        }
+    host = settings.host.rstrip("/")
+    if not host.startswith("http"):
+        host = f"https://{host}"
+
+    diagnostics = []
+
+    # Try each auth method and capture real HTTP responses for diagnosis
+    attempts = [
+        # FreePBX 17 built-in admin API (no extra module — use admin username/password)
+        ("FreePBX 17 admin API /admin/api/api/rest/login", "json", f"{host}/admin/api/api/rest/login",
+         {"username": settings.freepbx_api_key, "password": settings.freepbx_api_secret}),
+        ("FreePBX 17 admin API /admin/api/api/rest/login (api=true)", "json", f"{host}/admin/api/api/rest/login",
+         {"username": settings.freepbx_api_key, "password": settings.freepbx_api_secret, "api": True}),
+        # FreePBX 15/16 REST API module
+        ("FreePBX 15/16 REST API /api/rest/login", "json", f"{host}/api/rest/login",
+         {"username": settings.freepbx_api_key, "password": settings.freepbx_api_secret, "api": True}),
+        ("FreePBX 15/16 REST API /api/rest/login (no flag)", "json", f"{host}/api/rest/login",
+         {"username": settings.freepbx_api_key, "password": settings.freepbx_api_secret}),
+    ]
+
+    for label, body_type, url, payload in attempts:
+        try:
+            if body_type == "json":
+                r = req.post(url, json=payload, timeout=10, verify=False)
+            else:
+                r = req.post(url, data=payload,
+                             headers={"Content-Type": "application/x-www-form-urlencoded"},
+                             timeout=10, verify=False)
+
+            if r.status_code == 200:
+                data = r.json()
+                token = (data.get("token") or data.get("access_token")
+                         or (data.get("data") or {}).get("token"))
+                if token:
+                    # Invalidate old cache so next real call uses new token
+                    from app.services.freepbx_service import freepbx_service
+                    freepbx_service._auth_cache.clear()
+                    return {
+                        "status": "success",
+                        "message": f"✅ Connected to FreePBX at {settings.host} using {label}.",
+                        "method": label,
+                    }
+                diagnostics.append(f"{label} → HTTP 200 but no token field. Response: {str(data)[:200]}")
+            else:
+                diagnostics.append(f"{label} → HTTP {r.status_code}: {r.text[:200]}")
+        except req.exceptions.ConnectionError as e:
+            diagnostics.append(f"{label} → Connection error: {str(e)[:200]}")
+        except req.exceptions.Timeout:
+            diagnostics.append(f"{label} → Timeout after 10s")
+        except Exception as e:
+            diagnostics.append(f"{label} → Error: {str(e)[:200]}")
+
+    return {
+        "status": "error",
+        "message": f"Could not connect to FreePBX at {settings.host}.",
+        "diagnostics": diagnostics,
+        "help": (
+            "FreePBX 17: enter your FreePBX admin username and password in the credential fields — "
+            "the built-in admin API at /admin/api/ is used, no extra module required. "
+            "FreePBX 15/16: install the free 'REST API' module via Module Admin, "
+            "then create API keys under Admin → User Management → API Keys."
+        ),
+    }
