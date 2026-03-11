@@ -17,8 +17,10 @@ export default function CorsSettingsPage() {
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
     const [success, setSuccess] = useState('')
+    const [frontendOrigin, setFrontendOrigin] = useState('')
 
     useEffect(() => {
+        setFrontendOrigin(window.location.origin)
         fetchOrigins()
     }, [])
 
@@ -78,13 +80,9 @@ export default function CorsSettingsPage() {
 
     const embedCode = `<!-- Chat Widget Embed Code -->
 <script>
-  window.__CHAT_WIDGET_CONFIG__ = {
-    apiUrl: '${API_URL}',
-    widgetColor: '#2563eb',
-    greeting: 'Hello! How can we help you?'
-  };
+  window.SocialChatConfig = { serverUrl: '${frontendOrigin}' };
 </script>
-<script src="${API_URL}/widget.js" defer></script>`
+<script src="${frontendOrigin}/chat-widget.js" async></script>`
 
     return (
         <div className="ml-60 pt-14 min-h-screen bg-gray-50">

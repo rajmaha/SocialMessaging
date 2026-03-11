@@ -4,6 +4,13 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { FiSend, FiMessageCircle, FiPaperclip } from 'react-icons/fi'
 import { API_URL } from '@/lib/config';
 
+// Resolve image URLs — if already absolute, use as-is; otherwise prepend API_URL
+function resolveUrl(url: string | null | undefined): string {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//')) return url
+  return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`
+}
+
 // Singleton AudioContext — created on first user gesture; reused for all sounds
 let _audioCtx: AudioContext | null = null
 
@@ -504,7 +511,7 @@ export default function WidgetPage() {
       <div className="flex flex-col h-screen bg-white">
         <div className="flex items-center gap-3 px-4 py-3 text-white flex-shrink-0" style={{ background: headerBg }}>
           {branding.logo_url && (
-            <img src={`${API_URL}${branding.logo_url}`} alt="logo" className="h-7 w-auto object-contain" />
+            <img src={resolveUrl(branding.logo_url)} alt="logo" className="h-7 w-auto object-contain" />
           )}
           <span className="font-bold text-base truncate">{branding.company_name}</span>
         </div>
@@ -559,7 +566,7 @@ export default function WidgetPage() {
       <div className="flex flex-col h-screen bg-white">
         <div className="flex items-center gap-3 px-4 py-3 text-white flex-shrink-0" style={{ background: headerBg }}>
           {branding.logo_url && (
-            <img src={`${API_URL}${branding.logo_url}`} alt="logo" className="h-7 w-auto object-contain" />
+            <img src={resolveUrl(branding.logo_url)} alt="logo" className="h-7 w-auto object-contain" />
           )}
           <span className="font-bold text-base truncate">{branding.company_name}</span>
         </div>
@@ -625,7 +632,7 @@ export default function WidgetPage() {
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 text-white flex-shrink-0 shadow-sm" style={{ background: headerBg }}>
         {branding.logo_url && (
-          <img src={`${API_URL}${branding.logo_url}`} alt="logo" className="h-6 w-auto object-contain" />
+          <img src={resolveUrl(branding.logo_url)} alt="logo" className="h-6 w-auto object-contain" />
         )}
         <div className="flex-1 min-w-0">
           <p className="font-bold text-sm leading-tight truncate">{branding.company_name}</p>
