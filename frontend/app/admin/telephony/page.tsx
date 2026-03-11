@@ -15,13 +15,15 @@ export default function TelephonySettings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
+    const [testingAmi, setTestingAmi] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
-    const [testResult, setTestResult] = useState<{ status: string; message: string; diagnostics?: string[]; help?: string; method?: string } | null>(null);
+    const [testResult, setTestResult] = useState<{ status: string; message: string; diagnostics?: string[]; help?: string; method?: string; instructions?: string[] } | null>(null);
+    const [amiTestResult, setAmiTestResult] = useState<{ status: string; message: string } | null>(null);
 
     const [settings, setSettings] = useState({
         pbx_type: 'freepbx',
         host: '',
-        port: 443,
+        port: 5038,
         ami_username: '',
         ami_secret: '',
         webrtc_wss_url: '',
@@ -48,7 +50,7 @@ export default function TelephonySettings() {
                 setSettings({
                     pbx_type: data.pbx_type || 'freepbx',
                     host: data.host || '',
-                    port: data.port || 443,
+                    port: data.port || 5038,
                     ami_username: data.ami_username || '',
                     ami_secret: data.ami_secret || '',
                     webrtc_wss_url: data.webrtc_wss_url || '',
@@ -111,6 +113,33 @@ export default function TelephonySettings() {
             setTestResult({ status: 'error', message: '❌ Connection test failed. Check network/host settings.' });
         } finally {
             setTesting(false);
+        }
+    };
+
+    const testAMI = async () => {
+        setTestingAmi(true);
+        setAmiTestResult(null);
+        try {
+            const token = getAuthToken();
+            await fetch(`${API_URL}/admin/telephony/settings`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings),
+            });
+            const response = await fetch(`${API_URL}/admin/telephony/test-ami`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                setAmiTestResult({ status: 'error', message: result.detail || 'Request failed.' });
+            } else {
+                setAmiTestResult(result);
+            }
+        } catch (error) {
+            setAmiTestResult({ status: 'error', message: `❌ AMI test failed: ${error instanceof Error ? error.message : 'Check network/host settings.'}` });
+        } finally {
+            setTestingAmi(false);
         }
     };
 
@@ -178,26 +207,29 @@ export default function TelephonySettings() {
                             </div>
 
                             {testResult && (
-                                <div className={`p-3 rounded-lg mb-5 text-sm ${testResult.status === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                                <div className={`p-3 rounded-lg mb-5 text-sm ${
+                                    testResult.status === 'success' ? 'bg-green-50 text-green-800 border border-green-200'
+                                    : testResult.status === 'warning' ? 'bg-amber-50 text-amber-900 border border-amber-200'
+                                    : 'bg-red-50 text-red-800 border border-red-200'
+                                }`}>
                                     <div className="flex items-start gap-2">
                                         {testResult.status === 'success'
-                                            ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                                            ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 text-green-600" />
+                                            : testResult.status === 'warning'
+                                            ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
                                             : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
                                         }
                                         <span>{testResult.message}</span>
                                     </div>
-                                    {testResult.diagnostics && testResult.diagnostics.length > 0 && (
-                                        <div className="mt-2 ml-6">
-                                            <p className="font-semibold mb-1">Auth attempts:</p>
-                                            <ul className="space-y-0.5 font-mono text-xs break-all">
-                                                {testResult.diagnostics.map((d, i) => (
-                                                    <li key={i} className="opacity-80">• {d}</li>
+                                    {testResult.instructions && (
+                                        <div className="mt-3 ml-6 p-3 bg-white/60 rounded border border-amber-200">
+                                            <p className="font-semibold mb-1 text-amber-800">Next steps to enable API access:</p>
+                                            <ol className="space-y-1 text-xs text-amber-900 font-mono">
+                                                {testResult.instructions.map((step, i) => (
+                                                    <li key={i}>{step}</li>
                                                 ))}
-                                            </ul>
+                                            </ol>
                                         </div>
-                                    )}
-                                    {testResult.help && (
-                                        <p className="mt-2 ml-6 text-xs opacity-75">{testResult.help}</p>
                                     )}
                                 </div>
                             )}
@@ -244,7 +276,7 @@ export default function TelephonySettings() {
                                     <input
                                         type="number"
                                         value={settings.port}
-                                        onChange={(e) => setSettings({ ...settings, port: parseInt(e.target.value) || 443 })}
+                                        onChange={(e) => setSettings({ ...settings, port: parseInt(e.target.value) || 5038 })}
                                         className={inputClass}
                                         placeholder="443"
                                     />
@@ -316,6 +348,32 @@ export default function TelephonySettings() {
                                         placeholder="••••••••"
                                     />
                                 </div>
+                            </div>
+
+                            {/* AMI Test Button + Result */}
+                            <div className="mt-6 pt-4 border-t border-gray-100">
+                                <button
+                                    type="button"
+                                    onClick={testAMI}
+                                    disabled={testingAmi}
+                                    className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                                >
+                                    <Wifi className="w-4 h-4" />
+                                    {testingAmi ? 'Testing AMI…' : 'Test AMI Connection'}
+                                </button>
+
+                                {amiTestResult && (
+                                    <div className={`mt-3 p-3 rounded-lg border flex items-start gap-2 text-sm ${
+                                        amiTestResult.status === 'success'
+                                            ? 'bg-green-50 border-green-200 text-green-800'
+                                            : 'bg-red-50 border-red-200 text-red-800'
+                                    }`}>
+                                        {amiTestResult.status === 'success'
+                                            ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                                            : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />}
+                                        <span>{amiTestResult.message}</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

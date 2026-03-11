@@ -6,13 +6,14 @@ FreePBX 15/16  — REST API module
   Auth:   POST /api/rest/login  → Bearer token
   CRUD:   /api/rest/extension/{ext}
 
-FreePBX 17     — BPX API module (GraphQL)
-  Auth:   POST /admin/api/api/rest/login  → Bearer token
+FreePBX 17     — PBX API module (AGPLv3+, GraphQL)
+  Auth:   POST /admin/api/api/oauth/token (OAuth2 client_credentials)
+          → run `fwconsole pbxapi --addclient` on the server first
   CRUD:   POST /admin/api/api/gql  (GraphQL mutations)
 
 Install the right module first:
   FreePBX 15/16: Admin → Module Admin → "REST API"
-  FreePBX 17:    Admin → Module Admin → "BPX API"
+  FreePBX 17:    Admin → Module Admin → "PBX API" (AGPLv3+)
 """
 
 import logging
@@ -44,6 +45,12 @@ class FreePBXService:
         Try every known FreePBX auth strategy and return
         {"token": "...", "mode": "bpx"|"rest"} on success, None on failure.
         Results are cached per (host, key, secret).
+
+        Strategy order:
+        1. FreePBX 17 PBX API module — OAuth2 client_credentials grant
+           (credentials created via: fwconsole pbxapi --addclient)
+        2. FreePBX 17 admin API — username/password login
+        3. FreePBX 15/16 REST API module — username/password login
         """
         cache_key = (host, api_key, api_secret)
         if cache_key in self._auth_cache:
@@ -51,39 +58,91 @@ class FreePBXService:
 
         base = self._base_url(host)
 
-        strategies = [
-            # FreePBX 17 built-in admin API (no extra module needed — use admin username/password)
-            ("bpx",  f"{base}/admin/api/api/rest/login",
-             {"username": api_key, "password": api_secret}),
-            ("bpx",  f"{base}/admin/api/api/rest/login",
-             {"username": api_key, "password": api_secret, "api": True}),
-            # FreePBX 15/16 REST API module
-            ("rest", f"{base}/api/rest/login",
-             {"username": api_key, "password": api_secret, "api": True}),
-            ("rest", f"{base}/api/rest/login",
-             {"username": api_key, "password": api_secret}),
-        ]
-
-        for mode, url, payload in strategies:
-            try:
-                resp = requests.post(url, json=payload, timeout=10, verify=False)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    token = (
-                        data.get("token")
-                        or data.get("access_token")
-                        or (data.get("data") or {}).get("token")
-                    )
-                    if token:
-                        result = {"token": token, "mode": mode}
-                        self._auth_cache[cache_key] = result
-                        logger.info("FreePBX auth OK via %s (%s)", mode, url)
-                        return result
-                    logger.warning("FreePBX %s login 200 but no token: %s", mode, data)
+        # --- Strategy 1: PBX API module OAuth2 (FreePBX 17) ---
+        # api_key = OAuth2 client_id, api_secret = OAuth2 client_secret
+        for token_url in [
+            f"{base}/admin/api/api/oauth/token",
+            f"{base}/admin/api/api/token",
+        ]:
+            for grant_type in ["client_credentials", "password"]:
+                if grant_type == "client_credentials":
+                    payload = {
+                        "grant_type": "client_credentials",
+                        "client_id": api_key,
+                        "client_secret": api_secret,
+                    }
                 else:
-                    logger.debug("FreePBX %s login HTTP %s from %s", mode, resp.status_code, url)
-            except Exception as e:
-                logger.debug("FreePBX %s login error (%s): %s", mode, url, e)
+                    payload = {
+                        "grant_type": "password",
+                        "username": api_key,
+                        "password": api_secret,
+                        "client_id": "pbxadmin",
+                    }
+                try:
+                    resp = requests.post(
+                        token_url, data=payload,
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                        timeout=10, verify=False,
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        token = data.get("access_token") or data.get("token")
+                        if token:
+                            result = {"token": token, "mode": "bpx"}
+                            self._auth_cache[cache_key] = result
+                            logger.info("FreePBX auth OK via PBX API OAuth2 (%s, %s)", grant_type, token_url)
+                            return result
+                        logger.warning("FreePBX OAuth2 200 but no token: %s", data)
+                except Exception as e:
+                    logger.debug("FreePBX OAuth2 error (%s %s): %s", grant_type, token_url, e)
+
+        # --- Strategy 2: BPX API admin login (FreePBX 17) ---
+        for url in [
+            f"{base}/admin/api/api/rest/login",
+        ]:
+            for payload in [
+                {"username": api_key, "password": api_secret},
+                {"username": api_key, "password": api_secret, "api": True},
+            ]:
+                try:
+                    resp = requests.post(url, json=payload, timeout=10, verify=False)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        token = (
+                            data.get("token")
+                            or data.get("access_token")
+                            or (data.get("data") or {}).get("token")
+                        )
+                        if token:
+                            result = {"token": token, "mode": "bpx"}
+                            self._auth_cache[cache_key] = result
+                            logger.info("FreePBX auth OK via BPX admin login (%s)", url)
+                            return result
+                except Exception as e:
+                    logger.debug("FreePBX BPX login error (%s): %s", url, e)
+
+        # --- Strategy 3: REST API module login (FreePBX 15/16) ---
+        for url in [f"{base}/api/rest/login"]:
+            for payload in [
+                {"username": api_key, "password": api_secret, "api": True},
+                {"username": api_key, "password": api_secret},
+            ]:
+                try:
+                    resp = requests.post(url, json=payload, timeout=10, verify=False)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        token = (
+                            data.get("token")
+                            or data.get("access_token")
+                            or (data.get("data") or {}).get("token")
+                        )
+                        if token:
+                            result = {"token": token, "mode": "rest"}
+                            self._auth_cache[cache_key] = result
+                            logger.info("FreePBX auth OK via REST module login (%s)", url)
+                            return result
+                except Exception as e:
+                    logger.debug("FreePBX REST login error (%s): %s", url, e)
 
         logger.error("All FreePBX auth strategies failed for %s", host)
         return None
