@@ -101,7 +101,7 @@
     transition: 'transform 0.22s cubic-bezier(.4,0,.2,1), opacity 0.22s ease',
   })
 
-  // ── Tab bar (Chat / Menu) — hidden until menus load ───────────────────
+  // ── Tab bar (Chat / Menu / Channels) — hidden until tabs needed ───────
   var tabBar = document.createElement('div')
   tabBar.id = 'sc-chat-tabs'
   Object.assign(tabBar.style, {
@@ -135,8 +135,10 @@
 
   var chatTab = createTab('Chat', true)
   var menuTab = createTab('Menu', false)
+  var channelsTab = createTab('Channels', false)
   tabBar.appendChild(chatTab)
   tabBar.appendChild(menuTab)
+  // channelsTab appended only when channels are available
   container.appendChild(tabBar)
 
   // ── Chat iframe ──────────────────────────────────────────────────────
@@ -166,35 +168,140 @@
   })
   container.appendChild(menuPanel)
 
+  // ── Channels panel ───────────────────────────────────────────────────
+  var channelsPanel = document.createElement('div')
+  channelsPanel.id = 'sc-channels-panel'
+  Object.assign(channelsPanel.style, {
+    display: 'none',
+    flex: '1',
+    overflowY: 'auto',
+    background: '#f9fafb',
+    padding: '20px 16px',
+    borderRadius: '0 0 16px 16px',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  })
+  container.appendChild(channelsPanel)
+
+  // Official brand SVG icons
+  var CHANNEL_ICONS = {
+    whatsapp: '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"><path fill="#25D366" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>',
+    facebook: '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"><path fill="#0099FF" d="M12 0C5.373 0 0 5.373 0 12c0 5.99 4.388 10.954 10.125 11.854V15.47H7.078V12h3.047V9.356c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874V12h3.328l-.532 3.47h-2.796v8.385C19.612 22.954 24 17.99 24 12c0-6.627-5.373-12-12-12z"/></svg>',
+    viber: '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"><path fill="#7360F2" d="M11.4.006C9.395.05 4.7.404 2.103 2.784.493 4.394-.03 6.747.001 9.673c.03 2.95.473 8.713 5.612 10.253v2.355s-.038.998.621 1.2c.693.234 1.09-.198 3.497-2.978 3.967.334 7.013-.43 7.363-.543.8-.26 5.33-.84 6.07-6.856.766-6.2-.372-10.116-2.461-11.876C19.2.487 16.266-.08 11.4.006zm.166 1.875c4.336-.063 6.97.516 8.4 1.79 1.675 1.44 2.611 4.772 1.94 10.136-.617 5.012-4.23 5.354-4.9 5.569-.291.095-3.005.78-6.47.558 0 0-2.567 3.092-3.363 3.898-.13.13-.28.178-.38.153-.14-.034-.177-.2-.175-.442l.021-3.814s-.003-.009-.009-.022c-4.334-1.249-4.708-6.21-4.734-8.823-.026-2.612.417-4.617 1.738-5.936C5.518 2.866 9.565 1.894 11.566 1.881zm.222 2.626c-.278 0-.278.432 0 .436 3.614.028 5.447 1.887 5.472 5.472.004.284.44.28.436 0-.027-3.807-2.101-5.88-5.908-5.908zm-3.256 1.49c-.344-.01-.697.1-.983.332-.001 0-.002.002-.003.003-.43.362-.78.814-.82 1.32-.04.5.138 1.01.493 1.528l.005.006c.8 1.17 1.75 2.21 2.802 3.133a12.75 12.75 0 001.594 1.13c.003.003.007.005.01.007.4.24.802.448 1.208.563l.024.006c.508.137 1.016.084 1.447-.228.344-.264.677-.596.903-.987.194-.336.163-.688-.024-.936l-1.571-1.534c-.228-.28-.562-.376-.862-.226-.301.15-.601.343-.762.574-.107.15-.284.197-.464.122-.517-.218-1.4-.876-2.005-1.674-.574-.78-.92-1.711-.99-2.248-.037-.19.023-.368.183-.46.254-.142.49-.384.666-.664.175-.28.218-.62.06-.91L9.5 6.284c-.17-.258-.494-.387-.768-.291zm4.437.54c-.278 0-.278.432 0 .436 1.986.023 2.996 1.033 3.018 3.018.004.284.44.28.436 0-.025-2.209-1.245-3.428-3.454-3.454zm-1.113 1.137c-.278 0-.278.433 0 .437.99.007 1.48.497 1.488 1.487.003.284.439.28.435 0-.011-1.214-.71-1.913-1.923-1.924z"/></svg>',
+    linkedin: '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"><path fill="#0A66C2" d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>',
+  }
+
+  var CHANNEL_COLORS = {
+    whatsapp: { bg: '#e8fdf0', border: '#b7f0cc', hover: '#d1fae5' },
+    facebook: { bg: '#e8f4ff', border: '#b3d9ff', hover: '#dbeafe' },
+    viber:    { bg: '#f0ecff', border: '#d4c8fc', hover: '#ede9fe' },
+    linkedin: { bg: '#e8f0fb', border: '#b3cbf0', hover: '#dbeafe' },
+  }
+
+  function renderChannels() {
+    channelsPanel.innerHTML = ''
+    if (!channelsData || channelsData.length === 0) {
+      channelsPanel.innerHTML = '<p style="text-align:center;color:#9ca3af;font-size:13px;padding:40px 0;">No channels available.</p>'
+      return
+    }
+    var title = document.createElement('p')
+    title.textContent = 'Connect with us on'
+    Object.assign(title.style, {
+      fontSize: '13px', fontWeight: '700', color: '#374151',
+      marginBottom: '14px', marginTop: '4px', textAlign: 'center',
+    })
+    channelsPanel.appendChild(title)
+
+    channelsData.forEach(function (ch) {
+      var colors = CHANNEL_COLORS[ch.platform] || { bg: '#f9fafb', border: '#e5e7eb', hover: '#f3f4f6' }
+      var icon   = CHANNEL_ICONS[ch.platform] || ''
+
+      var link = document.createElement('a')
+      link.href = ch.url
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      Object.assign(link.style, {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '13px 14px',
+        marginBottom: '8px',
+        background: colors.bg,
+        border: '1px solid ' + colors.border,
+        borderRadius: '12px',
+        textDecoration: 'none',
+        transition: 'all 0.15s ease',
+        cursor: 'pointer',
+      })
+      link.addEventListener('mouseenter', function () { link.style.background = colors.hover })
+      link.addEventListener('mouseleave', function () { link.style.background = colors.bg })
+
+      var iconWrap = document.createElement('span')
+      iconWrap.innerHTML = icon
+      Object.assign(iconWrap.style, { display: 'flex', alignItems: 'center', flexShrink: '0' })
+
+      var textWrap = document.createElement('span')
+      Object.assign(textWrap.style, { display: 'flex', flexDirection: 'column', gap: '1px' })
+
+      var labelEl = document.createElement('span')
+      labelEl.textContent = ch.label
+      Object.assign(labelEl.style, {
+        fontSize: '14px', fontWeight: '600', color: '#111827', lineHeight: '1.3',
+      })
+
+      var subEl = document.createElement('span')
+      subEl.textContent = 'Chat with us on ' + ch.label
+      Object.assign(subEl.style, { fontSize: '11px', color: '#6b7280', lineHeight: '1.3' })
+
+      var arrowEl = document.createElement('span')
+      arrowEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>'
+      Object.assign(arrowEl.style, { marginLeft: 'auto', display: 'flex', alignItems: 'center' })
+
+      textWrap.appendChild(labelEl)
+      textWrap.appendChild(subEl)
+      link.appendChild(iconWrap)
+      link.appendChild(textWrap)
+      link.appendChild(arrowEl)
+      channelsPanel.appendChild(link)
+    })
+  }
+
   var activeTab = 'chat'
   var menuData = []
+  var channelsData = []
+
+  function setTabActive(btn) {
+    ;[chatTab, menuTab, channelsTab].forEach(function (t) {
+      t.style.background = '#f9fafb'
+      t.style.color = '#6b7280'
+      t.style.borderBottom = '2px solid transparent'
+    })
+    btn.style.background = '#fff'
+    btn.style.color = '#4f46e5'
+    btn.style.borderBottom = '2px solid #4f46e5'
+  }
 
   function switchTab(tab) {
     activeTab = tab
+    iframe.style.display = 'none'
+    menuPanel.style.display = 'none'
+    channelsPanel.style.display = 'none'
     if (tab === 'chat') {
       iframe.style.display = 'block'
-      menuPanel.style.display = 'none'
-      chatTab.style.background = '#fff'
-      chatTab.style.color = '#4f46e5'
-      chatTab.style.borderBottom = '2px solid #4f46e5'
-      menuTab.style.background = '#f9fafb'
-      menuTab.style.color = '#6b7280'
-      menuTab.style.borderBottom = '2px solid transparent'
-    } else {
-      iframe.style.display = 'none'
+      setTabActive(chatTab)
+    } else if (tab === 'menu') {
       menuPanel.style.display = 'block'
-      menuTab.style.background = '#fff'
-      menuTab.style.color = '#4f46e5'
-      menuTab.style.borderBottom = '2px solid #4f46e5'
-      chatTab.style.background = '#f9fafb'
-      chatTab.style.color = '#6b7280'
-      chatTab.style.borderBottom = '2px solid transparent'
+      setTabActive(menuTab)
       renderMenu()
+    } else if (tab === 'channels') {
+      channelsPanel.style.display = 'block'
+      setTabActive(channelsTab)
+      renderChannels()
     }
   }
 
   chatTab.addEventListener('click', function () { switchTab('chat') })
   menuTab.addEventListener('click', function () { switchTab('menu') })
+  channelsTab.addEventListener('click', function () { switchTab('channels') })
 
   function renderMenu() {
     menuPanel.innerHTML = ''
@@ -253,13 +360,26 @@
     })
   }
 
-  // Fetch public menus — show tab bar only if menus exist
+  // Fetch public menus + channels — show tab bar only when tabs are needed
+  function _showTabBar() { tabBar.style.display = 'flex' }
+
   fetch(SERVER.replace(':3000', ':8000') + '/menu')
     .then(function (r) { return r.json() })
     .then(function (data) {
       if (data && data.length > 0) {
         menuData = data
-        tabBar.style.display = 'flex'
+        _showTabBar()
+      }
+    })
+    .catch(function () {})
+
+  fetch(SERVER.replace(':3000', ':8000') + '/webchat/channels')
+    .then(function (r) { return r.json() })
+    .then(function (data) {
+      if (data && data.length > 0) {
+        channelsData = data
+        tabBar.appendChild(channelsTab)
+        _showTabBar()
       }
     })
     .catch(function () {})

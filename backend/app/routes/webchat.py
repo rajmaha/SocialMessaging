@@ -365,6 +365,26 @@ def get_webchat_branding(db: Session = Depends(get_db)):
     return _get_branding(db)
 
 
+@router.get("/channels")
+def get_public_channels(db: Session = Depends(get_db)):
+    """Return configured social channel links for the widget channels tab (public)."""
+    from app.models.platform_settings import PlatformSettings
+    platforms = db.query(PlatformSettings).filter(PlatformSettings.is_configured >= 1).all()
+    channels = []
+    for p in platforms:
+        if p.platform == "whatsapp" and p.phone_number:
+            phone = p.phone_number.replace("+", "").replace(" ", "").replace("-", "")
+            channels.append({"platform": "whatsapp", "label": "WhatsApp", "url": f"https://wa.me/{phone}"})
+        elif p.platform == "facebook" and p.page_id:
+            channels.append({"platform": "facebook", "label": "Messenger", "url": f"https://m.me/{p.page_id}"})
+        elif p.platform == "viber" and p.phone_number:
+            phone = p.phone_number.lstrip("+").replace(" ", "").replace("-", "")
+            channels.append({"platform": "viber", "label": "Viber", "url": f"viber://chat?number=%2B{phone}"})
+        elif p.platform == "linkedin" and p.organization_id:
+            channels.append({"platform": "linkedin", "label": "LinkedIn", "url": f"https://www.linkedin.com/company/{p.organization_id}"})
+    return channels
+
+
 @router.post("/typing/{conversation_id}")
 async def agent_typing(
     conversation_id: int,
