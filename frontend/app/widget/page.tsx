@@ -528,7 +528,6 @@ export default function WidgetPage() {
           ) : (
             <div className="w-full max-w-xs space-y-3">
               <input
-                autoFocus
                 type="text"
                 placeholder="Your name"
                 value={nameInput}
@@ -581,7 +580,6 @@ export default function WidgetPage() {
 
           <div className="w-full max-w-xs space-y-3">
             <input
-              autoFocus
               type="text"
               inputMode="numeric"
               maxLength={6}
