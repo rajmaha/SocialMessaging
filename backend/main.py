@@ -1575,6 +1575,9 @@ def _run_inline_migrations():
                 ADD COLUMN IF NOT EXISTS freepbx_port INTEGER DEFAULT 443
         """))
 
+        # Contact phone for email footer
+        conn.execute(text("ALTER TABLE branding_settings ADD COLUMN IF NOT EXISTS contact_phone VARCHAR"))
+
         # Webchat OTP table (replaces in-memory store — safe across multiple workers)
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS webchat_otp (

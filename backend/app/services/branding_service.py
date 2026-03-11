@@ -54,7 +54,7 @@ class BrandingService:
             'smtp_server', 'smtp_port', 'smtp_username', 'smtp_password',
             'smtp_from_email', 'smtp_from_name', 'smtp_use_tls', 'smtp_use_ssl',
             'email_footer_text', 'email_support_url',
-            'support_url', 'privacy_url', 'terms_url', 'timezone', 'admin_email',
+            'support_url', 'privacy_url', 'terms_url', 'timezone', 'admin_email', 'contact_phone',
             'button_primary_color', 'button_primary_hover_color', 'sidebar_text_color',
             'header_bg_color', 'layout_bg_color',
             'email_validator_url', 'email_validator_secret', 'email_validator_risk_threshold'

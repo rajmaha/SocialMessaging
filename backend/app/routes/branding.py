@@ -32,6 +32,7 @@ class BrandingUpdate(BaseModel):
     terms_url: Optional[str] = None
     timezone: Optional[str] = None
     admin_email: Optional[str] = None
+    contact_phone: Optional[str] = None
     allowed_file_types: Optional[List[str]] = None
     max_file_size_mb: Optional[int] = None
     button_primary_color: Optional[str] = None

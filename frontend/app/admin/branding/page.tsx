@@ -29,6 +29,7 @@ interface BrandingData {
   terms_url: string
   timezone: string
   admin_email: string
+  contact_phone: string
   allowed_file_types: string[]
   max_file_size_mb: number
 }
@@ -81,6 +82,7 @@ export default function BrandingAdmin() {
     terms_url: '',
     timezone: 'UTC',
     admin_email: '',
+    contact_phone: '',
     allowed_file_types: [
       'image/jpeg', 'image/png', 'image/gif', 'image/webp',
       'application/pdf',
@@ -143,6 +145,7 @@ export default function BrandingAdmin() {
           terms_url: data.terms_url || '',
           timezone: data.timezone || 'UTC',
           admin_email: data.admin_email || '',
+          contact_phone: data.contact_phone || '',
           allowed_file_types: data.allowed_file_types || ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'],
           max_file_size_mb: data.max_file_size_mb || 10,
           button_primary_color: data.button_primary_color || '#2563eb',
@@ -459,20 +462,37 @@ export default function BrandingAdmin() {
               </p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Admin Contact Email
-              </label>
-              <input
-                type="email"
-                value={branding.admin_email}
-                onChange={(e) => handleBrandingChange('admin_email', e.target.value)}
-                placeholder="admin@example.com"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="mt-2 text-sm text-gray-500">
-                Users without an email account will send their setup requests to this address.
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Contact Email
+                </label>
+                <input
+                  type="email"
+                  value={branding.admin_email}
+                  onChange={(e) => handleBrandingChange('admin_email', e.target.value)}
+                  placeholder="admin@example.com"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Shown in email footers and sent account setup requests.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Contact Phone
+                </label>
+                <input
+                  type="tel"
+                  value={branding.contact_phone}
+                  onChange={(e) => handleBrandingChange('contact_phone', e.target.value)}
+                  placeholder="+1 234 567 8900"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Shown in the footer of all outgoing emails.
+                </p>
+              </div>
             </div>
 
             <button

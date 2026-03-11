@@ -49,6 +49,7 @@ class BrandingSettings(Base):
 
     # Admin Contact
     admin_email = Column(String, nullable=True)
+    contact_phone = Column(String, nullable=True)
 
     # Attachment / file-upload settings
     allowed_file_types = Column(JSON, nullable=True)   # list of MIME strings; None = use defaults

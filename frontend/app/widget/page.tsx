@@ -490,11 +490,7 @@ export default function WidgetPage() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
-    // Typing indicator
+    // Typing indicator (Enter/send is handled by the textarea's onKeyDown directly)
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'typing', is_typing: true }))
       if (typingTimer.current) clearTimeout(typingTimer.current)

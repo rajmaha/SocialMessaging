@@ -26,6 +26,132 @@ ATTACHMENT_STORAGE_DIR = os.path.join(
 
 logger = logging.getLogger(__name__)
 
+
+def _get_email_branding(db) -> dict:
+    """Fetch branding fields needed for the email template. Safe to call with db=None."""
+    defaults = {
+        "company_name": "Social Media Messenger",
+        "primary_color": "#2563eb",
+        "logo_url": None,
+        "admin_email": None,
+        "contact_phone": None,
+        "support_url": None,
+        "privacy_url": None,
+        "terms_url": None,
+    }
+    if not db:
+        return defaults
+    try:
+        from app.models.branding import BrandingSettings
+        from app.config import settings as _cfg
+        b = db.query(BrandingSettings).first()
+        if not b:
+            return defaults
+        logo_url = b.logo_url
+        if logo_url and not logo_url.startswith("http"):
+            logo_url = f"{_cfg.BACKEND_URL.rstrip('/')}/{logo_url.lstrip('/')}"
+        return {
+            "company_name": b.company_name or defaults["company_name"],
+            "primary_color": b.primary_color or defaults["primary_color"],
+            "logo_url": logo_url,
+            "admin_email": b.admin_email,
+            "contact_phone": getattr(b, "contact_phone", None),
+            "support_url": b.support_url,
+            "privacy_url": b.privacy_url,
+            "terms_url": b.terms_url,
+        }
+    except Exception:
+        return defaults
+
+
+def _render_email_template(content_html: str, branding: dict) -> str:
+    """
+    Wrap any email body content with a branded header (logo + company name)
+    and a footer (contact email, phone, links, copyright).
+    """
+    from datetime import datetime as _dt
+    year = _dt.utcnow().year
+    company   = branding["company_name"]
+    color     = branding["primary_color"]
+    logo_url  = branding["logo_url"]
+    email_val = branding["admin_email"]
+    phone_val = branding["contact_phone"]
+
+    # Logo block
+    logo_html = (
+        f'<img src="{logo_url}" alt="{company}" '
+        f'style="max-height:52px;max-width:200px;object-fit:contain;display:block;margin:0 auto 10px;">'
+        if logo_url else ""
+    )
+
+    # Footer contact lines
+    contact_lines = ""
+    if email_val:
+        contact_lines += (
+            f'<p style="margin:4px 0;font-size:13px;color:#4b5563;">'
+            f'<a href="mailto:{email_val}" style="color:#2563eb;text-decoration:none;">{email_val}</a></p>'
+        )
+    if phone_val:
+        contact_lines += (
+            f'<p style="margin:4px 0;font-size:13px;color:#4b5563;">'
+            f'<a href="tel:{phone_val}" style="color:#2563eb;text-decoration:none;">{phone_val}</a></p>'
+        )
+
+    # Footer links
+    links = []
+    if branding.get("support_url"):
+        links.append(f'<a href="{branding["support_url"]}" style="color:#6b7280;text-decoration:none;font-size:11px;">Support</a>')
+    if branding.get("privacy_url"):
+        links.append(f'<a href="{branding["privacy_url"]}" style="color:#6b7280;text-decoration:none;font-size:11px;">Privacy</a>')
+    if branding.get("terms_url"):
+        links.append(f'<a href="{branding["terms_url"]}" style="color:#6b7280;text-decoration:none;font-size:11px;">Terms</a>')
+    links_html = (
+        '<p style="margin:10px 0 0;">' + '&nbsp;&nbsp;·&nbsp;&nbsp;'.join(links) + '</p>'
+        if links else ""
+    )
+
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,'Helvetica Neue',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;">
+    <tr>
+      <td align="center" style="padding:36px 16px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+
+          <!-- HEADER -->
+          <tr>
+            <td style="background:{color};padding:28px 32px;text-align:center;">
+              {logo_html}
+              <div style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;line-height:1.2;">{company}</div>
+            </td>
+          </tr>
+
+          <!-- BODY -->
+          <tr>
+            <td style="padding:36px 36px 28px;color:#1f2937;font-size:15px;line-height:1.7;">
+              {content_html}
+            </td>
+          </tr>
+
+          <!-- FOOTER -->
+          <tr>
+            <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:24px 32px;text-align:center;">
+              <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#1f2937;">{company}</p>
+              {contact_lines}
+              <p style="margin:10px 0 0;font-size:11px;color:#9ca3af;">&copy; {year} {company}. All rights reserved.</p>
+              {links_html}
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
 class EmailService:
     """Service for sending emails"""
     
@@ -58,37 +184,29 @@ class EmailService:
             print(f"   Password: {'***' if smtp_config.get('smtp_password') else 'EMPTY/NOT SET'}")
             print(f"   From Email: {smtp_config.get('smtp_from_email')}")
             
+            branding = _get_email_branding(db)
             app_url = os.getenv("APP_URL", "http://localhost:3000")
             reset_link = f"{app_url}/reset-password?token={reset_token}"
-            subject = "Reset Your Password - Social Media Messenger"
-            html_body = f"""
-            <html>
-                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                        <h2 style="color: #2563eb;">Password Reset Request</h2>
-                        <p>Hi {full_name},</p>
-                        <p>We received a request to reset your password. Click the button below to create a new password:</p>
-                        <p style="margin: 30px 0;">
-                            <a href="{reset_link}" style="background-color: #2563eb; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                                Reset Password
-                            </a>
-                        </p>
-                        <p>Or copy and paste this link in your browser:</p>
-                        <p style="word-break: break-all; background-color: #f3f4f6; padding: 10px; border-radius: 5px;">
-                            {reset_link}
-                        </p>
-                        <p style="color: #ef4444;"><strong>This link will expire in 1 hour.</strong></p>
-                        <p style="margin-top: 30px; color: #666;">
-                            If you didn't request a password reset, please ignore this email or contact support if you have concerns.
-                        </p>
-                        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-                        <p style="font-size: 12px; color: #999;">
-                            © 2026 Social Media Messenger. All rights reserved.
-                        </p>
-                    </div>
-                </body>
-            </html>
+            subject = f"Reset Your Password — {branding['company_name']}"
+            content = f"""
+                <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">Password Reset Request</h2>
+                <p>Hi {full_name},</p>
+                <p>We received a request to reset your password. Click the button below to create a new password:</p>
+                <p style="margin:28px 0;">
+                    <a href="{reset_link}" style="background:{branding['primary_color']};color:#fff;padding:13px 32px;text-decoration:none;border-radius:8px;display:inline-block;font-weight:600;font-size:15px;">
+                        Reset Password
+                    </a>
+                </p>
+                <p style="color:#6b7280;font-size:13px;">Or copy and paste this link in your browser:</p>
+                <p style="word-break:break-all;background:#f3f4f6;padding:12px 14px;border-radius:8px;font-size:13px;color:#374151;">
+                    {reset_link}
+                </p>
+                <p style="color:#ef4444;font-weight:600;">This link will expire in 1 hour.</p>
+                <p style="color:#6b7280;font-size:13px;margin-top:24px;">
+                    If you didn't request a password reset, please ignore this email.
+                </p>
             """
+            html_body = _render_email_template(content, branding)
             # If no SMTP credentials, just log it for development
             if not smtp_config.get("smtp_password"):
                 print(f"\n⚠️ No SMTP password configured - Email would be sent (dev mode):")
@@ -132,28 +250,22 @@ class EmailService:
                 "smtp_use_tls": True,
             }
 
+            branding = _get_email_branding(db)
             action = "verify your email address" if context == "register" else "complete your login"
-            subject = f"Your verification code - Social Media Messenger"
-            html_body = f"""
-            <html>
-                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                        <h2 style="color: #2563eb;">Verification Code</h2>
-                        <p>Hi {full_name},</p>
-                        <p>Use the code below to {action}. The code expires in <strong>10 minutes</strong>.</p>
-                        <div style="margin: 30px 0; text-align: center;">
-                            <span style="font-size: 40px; font-weight: bold; letter-spacing: 12px; color: #1d4ed8; background: #eff6ff; padding: 16px 32px; border-radius: 8px; display: inline-block;">
-                                {otp_code}
-                            </span>
-                        </div>
-                        <p style="color: #ef4444;">Do not share this code with anyone.</p>
-                        <p style="color: #666;">If you did not request this code, please ignore this email.</p>
-                        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-                        <p style="font-size: 12px; color: #999;">© 2026 Social Media Messenger. All rights reserved.</p>
-                    </div>
-                </body>
-            </html>
+            subject = f"Your verification code — {branding['company_name']}"
+            content = f"""
+                <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">Verification Code</h2>
+                <p>Hi {full_name},</p>
+                <p>Use the code below to {action}. The code expires in <strong>10 minutes</strong>.</p>
+                <div style="margin:28px 0;text-align:center;">
+                    <span style="font-size:42px;font-weight:800;letter-spacing:14px;color:{branding['primary_color']};background:#eff6ff;padding:18px 36px;border-radius:12px;display:inline-block;">
+                        {otp_code}
+                    </span>
+                </div>
+                <p style="color:#ef4444;font-weight:600;">Do not share this code with anyone.</p>
+                <p style="color:#6b7280;font-size:13px;">If you did not request this code, please ignore this email.</p>
             """
+            html_body = _render_email_template(content, branding)
 
             if not smtp_config.get("smtp_password"):
                 print(f"\n⚠️  No SMTP password configured - OTP (dev mode):")
@@ -199,32 +311,28 @@ class EmailService:
                 print(f"Dev mode: would send reminder share email to {to_email}")
                 return True
 
+            branding = _get_email_branding(db)
             subject = f"{sharer_name} shared a reminder: {reminder.title}"
             due_str = reminder.due_date.strftime("%Y-%m-%d %H:%M") if reminder.due_date else "No due date"
             priority_label = (reminder.priority or "as_usual").replace("_", " ").title()
             app_url = os.getenv("APP_URL", "http://localhost:3000")
 
-            html_body = f"""
-            <html>
-                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                        <h2 style="color: #2563eb;">Reminder Shared With You</h2>
-                        <p><strong>{sharer_name}</strong> shared a reminder with you:</p>
-                        <div style="background-color: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
-                            <h3 style="margin: 0 0 8px 0;">{reminder.title}</h3>
-                            {f'<p style="margin: 4px 0; color: #555;">{reminder.description}</p>' if reminder.description else ''}
-                            <p style="margin: 4px 0;"><strong>Priority:</strong> {priority_label}</p>
-                            <p style="margin: 4px 0;"><strong>Due:</strong> {due_str}</p>
-                        </div>
-                        <p>
-                            <a href="{app_url}/reminders" style="background-color: #2563eb; color: white; padding: 10px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                                View in App
-                            </a>
-                        </p>
-                    </div>
-                </body>
-            </html>
+            content = f"""
+                <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">Reminder Shared With You</h2>
+                <p><strong>{sharer_name}</strong> shared a reminder with you:</p>
+                <div style="background:#f3f4f6;padding:18px 20px;border-radius:10px;margin:20px 0;border-left:4px solid {branding['primary_color']};">
+                    <h3 style="margin:0 0 8px;color:#111827;">{reminder.title}</h3>
+                    {f'<p style="margin:4px 0;color:#555;">{reminder.description}</p>' if reminder.description else ''}
+                    <p style="margin:6px 0;font-size:13px;"><strong>Priority:</strong> {priority_label}</p>
+                    <p style="margin:6px 0;font-size:13px;"><strong>Due:</strong> {due_str}</p>
+                </div>
+                <p style="margin-top:24px;">
+                    <a href="{app_url}/reminders" style="background:{branding['primary_color']};color:#fff;padding:12px 28px;text-decoration:none;border-radius:8px;display:inline-block;font-weight:600;">
+                        View in App
+                    </a>
+                </p>
             """
+            html_body = _render_email_template(content, branding)
 
             message = MIMEMultipart("mixed")
             message["Subject"] = subject
@@ -308,34 +416,28 @@ class EmailService:
                 "smtp_use_tls": True,
             }
 
+            branding = _get_email_branding(db)
             subject = f"Email Account Request from {requester_name}"
-            html_body = f"""
-            <html>
-                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                        <h2 style="color: #2563eb;">Email Account Setup Request</h2>
-                        <p>A user has requested an email account to be configured for them on Social Media Messenger.</p>
-                        <table style="width:100%; border-collapse:collapse; margin: 20px 0;">
-                            <tr style="background:#f3f4f6;">
-                                <td style="padding:10px; font-weight:bold; width:140px;">Name</td>
-                                <td style="padding:10px;">{requester_name}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding:10px; font-weight:bold;">Login Email</td>
-                                <td style="padding:10px;">{requester_email}</td>
-                            </tr>
-                            <tr style="background:#f3f4f6;">
-                                <td style="padding:10px; font-weight:bold;">Message</td>
-                                <td style="padding:10px;">{message or '(no message provided)'}</td>
-                            </tr>
-                        </table>
-                        <p>Please log in to the admin panel and configure an email account for this user.</p>
-                        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-                        <p style="font-size: 12px; color: #999;">© 2026 Social Media Messenger. All rights reserved.</p>
-                    </div>
-                </body>
-            </html>
+            content = f"""
+                <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">Email Account Setup Request</h2>
+                <p>A user has requested an email account to be configured:</p>
+                <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:14px;">
+                    <tr style="background:#f3f4f6;">
+                        <td style="padding:11px 14px;font-weight:700;width:140px;border:1px solid #e5e7eb;">Name</td>
+                        <td style="padding:11px 14px;border:1px solid #e5e7eb;">{requester_name}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:11px 14px;font-weight:700;border:1px solid #e5e7eb;">Email</td>
+                        <td style="padding:11px 14px;border:1px solid #e5e7eb;">{requester_email}</td>
+                    </tr>
+                    <tr style="background:#f3f4f6;">
+                        <td style="padding:11px 14px;font-weight:700;border:1px solid #e5e7eb;">Message</td>
+                        <td style="padding:11px 14px;border:1px solid #e5e7eb;">{message or '(no message provided)'}</td>
+                    </tr>
+                </table>
+                <p>Please log in to the admin panel and configure an email account for this user.</p>
             """
+            html_body = _render_email_template(content, branding)
 
             if not smtp_config.get("smtp_password"):
                 print(f"\n⚠️  No SMTP password - Email account request (dev mode):")
@@ -399,38 +501,24 @@ class EmailService:
             logger.error("Error sending system email to %s: %s", to_email, e)
             return False
 
-    def send_welcome_email(self, to_email: str, full_name: str):
+    def send_welcome_email(self, to_email: str, full_name: str, db=None):
         """Send welcome email to new user"""
         try:
-            subject = "Welcome to Social Media Messenger"
-            
-            html_body = f"""
-            <html>
-                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                        <h2 style="color: #2563eb;">Welcome to Social Media Messenger!</h2>
-                        
-                        <p>Hi {full_name},</p>
-                        
-                        <p>Thank you for creating an account. You can now log in and start using our unified messaging platform.</p>
-                        
-                        <p style="margin: 30px 0;">
-                            <a href="{self.app_url}/login" style="background-color: #2563eb; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                                Go to Login
-                            </a>
-                        </p>
-                        
-                        <p>You can now connect your WhatsApp, Facebook, Viber, and LinkedIn accounts to manage all your messages in one place.</p>
-                        
-                        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-                        
-                        <p style="font-size: 12px; color: #999;">
-                            © 2026 Social Media Messenger. All rights reserved.
-                        </p>
-                    </div>
-                </body>
-            </html>
+            branding = _get_email_branding(db)
+            subject = f"Welcome to {branding['company_name']}!"
+            content = f"""
+                <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">Welcome, {full_name}! 🎉</h2>
+                <p>Thank you for creating an account. You can now log in and start using our unified messaging platform.</p>
+                <p style="margin:28px 0;">
+                    <a href="{self.app_url}/login" style="background:{branding['primary_color']};color:#fff;padding:13px 32px;text-decoration:none;border-radius:8px;display:inline-block;font-weight:600;font-size:15px;">
+                        Go to Login
+                    </a>
+                </p>
+                <p style="color:#6b7280;font-size:13px;">
+                    Connect your WhatsApp, Facebook, Viber, and LinkedIn accounts to manage all your messages in one place.
+                </p>
             """
+            html_body = _render_email_template(content, branding)
             
             # If no SMTP credentials, just log it for development
             if not self.sender_password:

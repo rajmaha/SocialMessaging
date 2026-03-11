@@ -32,10 +32,16 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8000/docs || exit 1
 
-# Gunicorn with uvicorn workers for production
+# Single uvicorn worker — required for in-memory shared state:
+#   • webchat_service.connections  (visitor WebSocket registry)
+#   • events_service.active_connections  (agent SSE registry)
+#   • bot_service._unmatched  (per-conversation unmatched counter)
+# Multiple workers each have a separate copy of these dicts, so a
+# WebSocket on worker A is invisible to an HTTP handler on worker B.
+# FastAPI + asyncio handles thousands of concurrent connections with 1 worker.
 CMD ["gunicorn", "main:app", \
      "-k", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8000", \
-     "--workers", "4", \
+     "--workers", "1", \
      "--timeout", "120", \
      "--access-logfile", "-"]
