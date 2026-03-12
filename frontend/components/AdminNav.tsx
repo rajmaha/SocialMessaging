@@ -30,6 +30,7 @@ const sidebarGroups = [
         items: [
             { href: '/admin/email-accounts', label: 'Email Account Management', icon: '📧', permission: () => hasAdminFeature('manage_email_accounts') },
             { href: '/admin/settings', label: 'Messenger Config', icon: '⚙️', permission: () => hasAdminFeature('manage_messenger_config') },
+            { href: '/admin/accounts', label: 'Connected Accounts', icon: '🔗', permission: () => hasAdminFeature('manage_messenger_config') },
             { href: '/admin/telephony', label: 'Telephony (VoIP)', icon: '🎧', permission: () => hasAdminFeature('manage_telephony') },
             { href: '/admin/recordings', label: 'Call Records', icon: '🎙️', pageKey: 'callcenter' },
             { href: '/admin/extensions', label: 'SIP Extensions', icon: '📞', permission: () => hasAdminFeature('manage_extensions') },
