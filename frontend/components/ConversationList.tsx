@@ -13,6 +13,7 @@ interface Conversation {
   status?: string
   assigned_to?: number | null
   assigned_to_name?: string | null
+  platform_account_id?: number | null
 }
 
 interface ConversationListProps {
@@ -21,6 +22,7 @@ interface ConversationListProps {
   onSelectConversation: (conversation: Conversation) => void
   loading: boolean
   activeConvIds?: Set<number>
+  accountMap?: Record<number, string>
 }
 
 export default function ConversationList({
@@ -29,6 +31,7 @@ export default function ConversationList({
   onSelectConversation,
   loading,
   activeConvIds = new Set(),
+  accountMap = {},
 }: ConversationListProps) {
   const { timezone } = useEvents()
   const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -109,6 +112,11 @@ export default function ConversationList({
               <span className="font-semibold text-gray-800">
                 {conversation.contact_name}
               </span>
+              {conversation.platform_account_id && accountMap[conversation.platform_account_id] && (
+                <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded ml-1 font-normal">
+                  {accountMap[conversation.platform_account_id]}
+                </span>
+              )}
             </div>
             {!conversation.assigned_to && conversation.unread_count > 0 ? (
               <span className="flex items-center gap-1">

@@ -15,6 +15,7 @@ class ConversationResponse(BaseModel):
     category: Optional[str] = None
     assigned_to: Optional[int] = None
     assigned_to_name: Optional[str] = None
+    platform_account_id: Optional[int] = None
 
     class Config:
         from_attributes = True
