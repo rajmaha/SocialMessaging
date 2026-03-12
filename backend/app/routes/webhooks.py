@@ -15,7 +15,7 @@ import logging
 from datetime import datetime
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -23,6 +23,7 @@ from app.database import SessionLocal, get_db
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.platform_account import PlatformAccount
+from app.models.platform_settings import PlatformSettings
 from app.services.bot_service import handle_incoming
 from app.services.events_service import EventTypes, events_service
 from app.services.platform_service import FacebookService, ViberService, WhatsAppService
@@ -125,11 +126,15 @@ def _first_account(db: Session, platform: str) -> PlatformAccount | None:
 async def whatsapp_verify(
     hub_mode: str = Query(None, alias="hub.mode"),
     hub_challenge: str = Query(None, alias="hub.challenge"),
-    hub_verify_token: str = Query(None, alias="hub.verify.token"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token"),
+    db: Session = Depends(get_db),
 ):
     """Meta webhook verification handshake."""
-    if hub_mode == "subscribe" and hub_verify_token == (settings.WHATSAPP_VERIFY_TOKEN or ""):
-        return int(hub_challenge)
+    # Read verify_token from DB (saved via admin settings UI)
+    ps = db.query(PlatformSettings).filter(PlatformSettings.platform == "whatsapp").first()
+    stored_token = (ps.verify_token if ps and ps.verify_token else None) or settings.WHATSAPP_VERIFY_TOKEN or ""
+    if hub_mode == "subscribe" and hub_verify_token and hub_verify_token == stored_token:
+        return Response(content=hub_challenge, media_type="text/plain")
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
@@ -216,11 +221,15 @@ async def _process_whatsapp(data: dict):
 async def facebook_verify(
     hub_mode: str = Query(None, alias="hub.mode"),
     hub_challenge: str = Query(None, alias="hub.challenge"),
-    hub_verify_token: str = Query(None, alias="hub.verify.token"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token"),
+    db: Session = Depends(get_db),
 ):
     """Meta webhook verification handshake."""
-    if hub_mode == "subscribe" and hub_verify_token == (settings.FACEBOOK_VERIFY_TOKEN or ""):
-        return int(hub_challenge)
+    # Read verify_token from DB (saved via admin settings UI)
+    ps = db.query(PlatformSettings).filter(PlatformSettings.platform == "facebook").first()
+    stored_token = (ps.verify_token if ps and ps.verify_token else None) or settings.FACEBOOK_VERIFY_TOKEN or ""
+    if hub_mode == "subscribe" and hub_verify_token and hub_verify_token == stored_token:
+        return Response(content=hub_challenge, media_type="text/plain")
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
