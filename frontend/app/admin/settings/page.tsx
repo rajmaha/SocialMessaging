@@ -99,6 +99,7 @@ export default function AdminSettings() {
 
     const handlePlatformSelect = async (platform: string) => {
         setSelectedPlatform(platform);
+        setTestResult(null);
         try {
             const token = getAuthToken();
             if (!token) {
@@ -523,22 +524,84 @@ export default function AdminSettings() {
 
                             <div className="flex gap-4 mt-8">
                                 <button
+                                    type="button"
+                                    onClick={() => handleTestConnection(selectedPlatform)}
+                                    disabled={!isTestable(selectedPlatform) || testing}
+                                    className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition flex items-center justify-center gap-2"
+                                >
+                                    {testing ? (
+                                        <>
+                                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                                            </svg>
+                                            Testing…
+                                        </>
+                                    ) : 'Test Connection'}
+                                </button>
+                                <button
                                     type="submit"
-                                    className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition"
+                                    disabled={testing}
+                                    className="flex-1 bg-green-500 hover:bg-green-600 disabled:bg-green-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition"
                                 >
                                     Save Configuration
                                 </button>
                                 <button
                                     type="button"
+                                    disabled={testing}
                                     onClick={() => {
                                         setShowForm(false);
                                         setSelectedPlatform(null);
+                                        setTestResult(null);
                                     }}
-                                    className="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg transition"
+                                    className="flex-1 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition"
                                 >
                                     Cancel
                                 </button>
                             </div>
+
+                            {/* Test result panel */}
+                            {testResult && (
+                                <div className="mt-4 border rounded-lg overflow-hidden text-sm">
+                                    <div className={`flex items-start gap-3 px-4 py-3 ${testResult.credential_ok ? 'bg-green-50 border-b border-green-100' : 'bg-red-50'}`}>
+                                        <span className={`font-bold mt-0.5 ${testResult.credential_ok ? 'text-green-600' : 'text-red-600'}`}>
+                                            {testResult.credential_ok ? '✓' : '✗'}
+                                        </span>
+                                        <div>
+                                            <span className={`font-semibold ${testResult.credential_ok ? 'text-green-800' : 'text-red-800'}`}>Credentials</span>
+                                            <p className={`mt-0.5 ${testResult.credential_ok ? 'text-green-700' : 'text-red-700'}`}>{testResult.credential_detail}</p>
+                                        </div>
+                                    </div>
+                                    {testResult.credential_ok && (
+                                        <div className={`flex items-start gap-3 px-4 py-3 ${
+                                            testResult.webhook_status === 'registered' ? 'bg-green-50' :
+                                            testResult.webhook_status === 'not_registered' ? 'bg-red-50' :
+                                            'bg-gray-50'
+                                        }`}>
+                                            <span className={`font-bold mt-0.5 ${
+                                                testResult.webhook_status === 'registered' ? 'text-green-600' :
+                                                testResult.webhook_status === 'not_registered' ? 'text-red-600' :
+                                                'text-gray-400'
+                                            }`}>
+                                                {testResult.webhook_status === 'registered' ? '✓' :
+                                                 testResult.webhook_status === 'not_registered' ? '✗' : '—'}
+                                            </span>
+                                            <div>
+                                                <span className={`font-semibold ${
+                                                    testResult.webhook_status === 'registered' ? 'text-green-800' :
+                                                    testResult.webhook_status === 'not_registered' ? 'text-red-800' :
+                                                    'text-gray-600'
+                                                }`}>Webhook</span>
+                                                <p className={`mt-0.5 ${
+                                                    testResult.webhook_status === 'registered' ? 'text-green-700' :
+                                                    testResult.webhook_status === 'not_registered' ? 'text-red-700' :
+                                                    'text-gray-500'
+                                                }`}>{testResult.webhook_detail}</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </form>
                     </div>
                 )}
