@@ -9,6 +9,7 @@ from app.models.message import Message as MessageModel
 from app.models.user import User
 from app.models.team import Team
 from app.schemas.conversation import ConversationResponse
+from app.models.agent_account import AgentAccount
 from app.dependencies import get_current_user
 from app.services.events_service import events_service
 from app.log_database import LogSessionLocal as _LogSessionLocal
@@ -55,6 +56,7 @@ def get_conversations(
     platform: str = None,
     status: str = None,
     assigned_to: Optional[str] = None,
+    platform_account_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     """Get all conversations for a user, optionally filtered by platform, status, and/or assigned agent.
@@ -80,6 +82,27 @@ def get_conversations(
             query = query.filter(Conversation.assigned_to == int(assigned_to))
         except ValueError:
             pass
+
+    # Scope to agent's permitted platform accounts
+    agent_account_rows = db.query(AgentAccount.platform_account_id).filter(
+        AgentAccount.user_id == user_id
+    ).all()
+
+    if agent_account_rows:
+        # Agent has specific account assignments — scope to those
+        permitted_ids = [r[0] for r in agent_account_rows]
+        query = query.filter(
+            or_(
+                Conversation.platform_account_id.in_(permitted_ids),
+                Conversation.platform_account_id.is_(None),
+                Conversation.platform == "webchat",
+                Conversation.platform == "email",
+            )
+        )
+    # else: no rows = agent sees everything (backward compatible)
+
+    if platform_account_id:
+        query = query.filter(Conversation.platform_account_id == platform_account_id)
 
     conversations = query.order_by(Conversation.updated_at.desc()).all()
     return _enrich(conversations, db)
