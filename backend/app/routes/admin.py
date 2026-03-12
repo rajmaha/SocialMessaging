@@ -442,8 +442,12 @@ async def get_platform_setting(
         "id": setting.id,
         "platform": setting.platform,
         "app_id": setting.app_id,
+        "app_secret": setting.app_secret,
+        "access_token": setting.access_token,
+        "verify_token": setting.verify_token,
         "business_account_id": setting.business_account_id,
         "phone_number": setting.phone_number,
+        "phone_number_id": setting.phone_number_id,
         "organization_id": setting.organization_id,
         "page_id": setting.page_id,
         "is_configured": setting.is_configured,
@@ -479,10 +483,10 @@ async def update_platform_setting(
         setting = PlatformSettings(platform=platform)
         db.add(setting)
     
-    # Update fields
+    # Update fields — skip None and empty strings to avoid clearing saved credentials
     update_data = settings.dict(exclude_unset=True)
     for field, value in update_data.items():
-        if value is not None:
+        if value is not None and value != "":
             setattr(setting, field, value)
     
     setting.is_configured = 1  # Mark as configured
