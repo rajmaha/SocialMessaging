@@ -108,6 +108,12 @@ export default function AdminSettings() {
                 }
             );
 
+            // 404 means not yet configured — show empty form
+            if (response.status === 404) {
+                setShowForm(true);
+                return;
+            }
+
             if (!response.ok) {
                 throw new Error(`Failed to fetch ${platform} settings`);
             }
