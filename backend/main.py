@@ -37,6 +37,7 @@ from app.models.campaign_variant import CampaignVariant  # noqa: F401
 from app.models.logs import AuditLog, ErrorLog  # noqa: F401 — ensures log table creation
 from app.models.ci_cd import CICDRepo, CICDDeployment, CICDScriptLog, CICDMigrationLog  # noqa: F401
 from app.models.visitors import VisitorLocation, VisitorProfile, Visit  # noqa: F401
+from app.models.agent_account import AgentAccount  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -1600,6 +1601,15 @@ def _run_inline_migrations():
                 ON visits (pass_card_id)
                 WHERE check_out_at IS NULL AND pass_card_id IS NOT NULL
         """))
+        conn.commit()
+
+    # Multi-account platform support
+    with engine.connect() as conn:
+        conn.execute(text("CREATE TABLE IF NOT EXISTS agent_accounts (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, platform_account_id INTEGER NOT NULL REFERENCES platform_accounts(id) ON DELETE CASCADE, created_at TIMESTAMP DEFAULT NOW())"))
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_account ON agent_accounts(user_id, platform_account_id)"))
+        conn.execute(text("ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS app_secret VARCHAR"))
+        conn.execute(text("ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS verify_token VARCHAR"))
+        conn.execute(text("ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS metadata JSON"))
         conn.commit()
 
 # ── Log DB Init ────────────────────────────────────────────────────────────
