@@ -25,6 +25,13 @@ export default function AdminSettings() {
     const [error, setError] = useState<string | null>(null);
     const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
+    const [testResult, setTestResult] = useState<{
+        credential_ok: boolean;
+        credential_detail: string;
+        webhook_status: string;
+        webhook_detail: string;
+    } | null>(null);
+    const [testing, setTesting] = useState(false);
 
     // Form state for each platform
     const [formData, setFormData] = useState({
@@ -144,6 +151,7 @@ export default function AdminSettings() {
     };
 
     const handleFormChange = (platform: string, field: string, value: string) => {
+        setTestResult(null);
         const platformKey = platform as keyof typeof formData;
         setFormData((prev) => ({
             ...prev,
@@ -152,6 +160,36 @@ export default function AdminSettings() {
                 [field]: value
             }
         }));
+    };
+
+    const handleTestConnection = async (platform: string) => {
+        const token = getAuthToken();
+        if (!token) { setError('Not authenticated'); return; }
+
+        setTesting(true);
+        setTestResult(null);
+        try {
+            const platformKey = platform as keyof typeof formData;
+            const response = await fetch(`${API_URL}/admin/platforms/${platform}/test`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData[platformKey])
+            });
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.detail || 'Test failed');
+            }
+            const result = await response.json();
+            setTestResult(result);
+            if (result.credential_ok) await fetchPlatforms();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
+        } finally {
+            setTesting(false);
+        }
     };
 
     const handleSavePlatformSettings = async (platform: string) => {
@@ -189,6 +227,18 @@ export default function AdminSettings() {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An error occurred');
         }
+    };
+
+    const isTestable = (platform: string): boolean => {
+        if (platform === 'whatsapp') {
+            return !!(formData.whatsapp.access_token && formData.whatsapp.phone_number_id);
+        }
+        if (platform === 'facebook') {
+            return !!(formData.facebook.access_token && formData.facebook.page_id);
+        }
+        if (platform === 'viber') return !!formData.viber.access_token;
+        if (platform === 'linkedin') return !!formData.linkedin.access_token;
+        return false;
     };
 
     if (loading) {
