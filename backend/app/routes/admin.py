@@ -393,6 +393,17 @@ class PlatformSettingUpdate(BaseModel):
     page_id: str = None
     config: dict = None
 
+class PlatformTestRequest(BaseModel):
+    app_id: str = None
+    app_secret: str = None
+    access_token: str = None
+    verify_token: str = None
+    business_account_id: str = None
+    phone_number: str = None
+    phone_number_id: str = None
+    organization_id: str = None
+    page_id: str = None
+
 @router.get("/platforms")
 async def get_platform_settings(current_user: dict = Depends(check_permission("feature_manage_messenger_config")), db: Session = Depends(get_db)):
     """Get all platform settings (admin only)"""
@@ -515,6 +526,60 @@ async def verify_platform_setting(
         "message": f"{platform.title()} verified",
         "is_configured": setting.is_configured
     }
+
+@router.post("/platforms/{platform}/test")
+async def test_platform_connection(
+    platform: str,
+    request: PlatformTestRequest,
+    current_user: dict = Depends(check_permission("feature_manage_messenger_config")),
+    db: Session = Depends(get_db)
+):
+    """Test platform credentials and webhook connectivity"""
+    from app.services.platform_service import (
+        WhatsAppTestService, FacebookTestService,
+        ViberTestService, LinkedInTestService
+    )
+
+    platform = platform.lower()
+    valid_platforms = ["facebook", "whatsapp", "viber", "linkedin"]
+
+    if platform not in valid_platforms:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Platform must be one of: {', '.join(valid_platforms)}"
+        )
+
+    if platform == "whatsapp":
+        if not request.access_token or not request.phone_number_id:
+            raise HTTPException(status_code=400, detail="access_token and phone_number_id are required")
+        result = await WhatsAppTestService.test_connection(request.access_token, request.phone_number_id)
+
+    elif platform == "facebook":
+        if not request.access_token or not request.page_id:
+            raise HTTPException(status_code=400, detail="access_token and page_id are required")
+        result = await FacebookTestService.test_connection(request.access_token, request.page_id)
+
+    elif platform == "viber":
+        if not request.access_token:
+            raise HTTPException(status_code=400, detail="access_token is required")
+        result = await ViberTestService.test_connection(request.access_token)
+
+    elif platform == "linkedin":
+        if not request.access_token:
+            raise HTTPException(status_code=400, detail="access_token is required")
+        result = await LinkedInTestService.test_connection(request.access_token)
+
+    # If credentials passed, mark as verified in DB
+    if result.get("credential_ok"):
+        setting = db.query(PlatformSettings).filter(
+            PlatformSettings.platform == platform
+        ).first()
+        if setting:
+            setting.is_configured = 2
+            setting.updated_at = datetime.utcnow()
+            db.commit()
+
+    return result
 
 # ============ ADMIN DASHBOARD ============
 
