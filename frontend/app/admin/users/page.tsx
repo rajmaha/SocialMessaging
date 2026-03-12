@@ -59,6 +59,12 @@ export default function AdminUsers() {
   const [overrideEdits, setOverrideEdits] = useState<Record<string, { granted: string[]; revoked: string[] }>>({});
   const [overridesSaving, setOverridesSaving] = useState(false);
 
+  // Account access state
+  const [accountAccessExpanded, setAccountAccessExpanded] = useState(false);
+  const [allPlatformAccounts, setAllPlatformAccounts] = useState<any[]>([]);
+  const [userAccountIds, setUserAccountIds] = useState<number[]>([]);
+  const [accountAccessLoading, setAccountAccessLoading] = useState(false);
+
   // Form state
   const [formData, setFormData] = useState({
     username: '',
@@ -115,13 +121,23 @@ export default function AdminUsers() {
     });
     setOverridesExpanded(false);
     setOverrideEdits({});
+    setAccountAccessExpanded(false);
+    setUserAccountIds([]);
+    setAllPlatformAccounts([]);
     setEditModalOpen(true);
 
-    // Fetch registry and overrides in parallel
+    // Fetch registry, overrides, and platform accounts in parallel
+    const token = getAuthToken();
     try {
-      const [registryRes, overridesRes] = await Promise.all([
+      const [registryRes, overridesRes, allAccountsRes, userAccountsRes] = await Promise.all([
         rolesApi.registry(),
-        permissionOverrideApi.list(u.id)
+        permissionOverrideApi.list(u.id),
+        fetch(`${API_URL}/admin/platform-accounts`, {
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+        }),
+        fetch(`${API_URL}/admin/platform-accounts/user/${u.id}/accounts`, {
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+        })
       ]);
       setRegistry(registryRes.data);
       const overrides: PermissionOverride[] = overridesRes.data;
@@ -136,6 +152,16 @@ export default function AdminUsers() {
         };
       });
       setOverrideEdits(edits);
+
+      // Platform account access
+      if (allAccountsRes.ok) {
+        const allAccounts = await allAccountsRes.json();
+        setAllPlatformAccounts(allAccounts);
+      }
+      if (userAccountsRes.ok) {
+        const userAccounts = await userAccountsRes.json();
+        setUserAccountIds(userAccounts.map((a: any) => a.id));
+      }
     } catch (err) {
       console.error('Failed to fetch permission data:', err);
     }
@@ -178,6 +204,11 @@ export default function AdminUsers() {
       // Save permission overrides if the section was opened
       if (overridesExpanded) {
         await saveOverrides();
+      }
+
+      // Save account access if the section was opened
+      if (accountAccessExpanded) {
+        await saveAccountAccess();
       }
 
       setEditModalOpen(false);
@@ -223,6 +254,50 @@ export default function AdminUsers() {
     setEditingUserId(null);
     setOverridesExpanded(false);
     setOverrideEdits({});
+    setAccountAccessExpanded(false);
+    setUserAccountIds([]);
+  };
+
+  // Toggle a platform account checkbox
+  const toggleAccountAccess = (accountId: number) => {
+    setUserAccountIds(prev =>
+      prev.includes(accountId)
+        ? prev.filter(id => id !== accountId)
+        : [...prev, accountId]
+    );
+  };
+
+  // Save account access assignments
+  const saveAccountAccess = async () => {
+    if (!editingUserId) return;
+    const token = getAuthToken();
+    try {
+      await fetch(`${API_URL}/admin/platform-accounts/user/${editingUserId}/accounts`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform_account_ids: userAccountIds })
+      });
+    } catch (err) {
+      console.error('Failed to save account access:', err);
+      setError('Failed to save account access');
+    }
+  };
+
+  // Group platform accounts by platform
+  const groupAccountsByPlatform = (accounts: any[]): Record<string, any[]> => {
+    return accounts.reduce((groups: Record<string, any[]>, account: any) => {
+      const platform = account.platform || 'unknown';
+      if (!groups[platform]) groups[platform] = [];
+      groups[platform].push(account);
+      return groups;
+    }, {});
+  };
+
+  const platformColors: Record<string, string> = {
+    facebook: 'bg-blue-100 text-blue-800',
+    whatsapp: 'bg-green-100 text-green-800',
+    viber: 'bg-purple-100 text-purple-800',
+    linkedin: 'bg-sky-100 text-sky-800',
   };
 
   // Get role actions for a module
@@ -631,6 +706,77 @@ export default function AdminUsers() {
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Account Access Section */}
+                <div className="mt-6 border-t pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setAccountAccessExpanded(!accountAccessExpanded)}
+                    className="flex items-center gap-2 text-sm font-bold text-gray-700 hover:text-gray-900 w-full text-left"
+                  >
+                    <svg
+                      className={`w-4 h-4 transition-transform ${accountAccessExpanded ? 'rotate-90' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    Account Access
+                    {userAccountIds.length > 0 && (
+                      <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                        {userAccountIds.length} account(s)
+                      </span>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-1 ml-6">Assign platform accounts this agent can access.</p>
+
+                  {accountAccessExpanded && (
+                    <div className="mt-4">
+                      {allPlatformAccounts.length === 0 ? (
+                        <p className="text-sm text-gray-400 italic">No platform accounts configured.</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {Object.entries(groupAccountsByPlatform(allPlatformAccounts)).map(([platform, accounts]) => (
+                            <div key={platform}>
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${platformColors[platform] || 'bg-gray-100 text-gray-800'}`}>
+                                  {platform}
+                                </span>
+                              </div>
+                              <div className="ml-4 space-y-1.5">
+                                {accounts.map((account: any) => (
+                                  <label
+                                    key={account.id}
+                                    className="flex items-center gap-2 cursor-pointer group"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={userAccountIds.includes(account.id)}
+                                      onChange={() => toggleAccountAccess(account.id)}
+                                      className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span className="text-sm text-gray-700 group-hover:text-gray-900">
+                                      {account.account_name || account.name || 'Unnamed'}
+                                    </span>
+                                    {(account.account_id || account.identifier) && (
+                                      <span className="text-xs text-gray-400">
+                                        ({account.account_id || account.identifier})
+                                      </span>
+                                    )}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                          <p className="text-xs text-gray-400 italic mt-3 ml-1">
+                            If no accounts are selected, agent will see conversations from all accounts.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
