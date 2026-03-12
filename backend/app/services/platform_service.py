@@ -36,6 +36,55 @@ class WhatsAppService:
             )
             return response.json()
 
+class WhatsAppTestService:
+    BASE_URL = "https://graph.facebook.com/v18.0"
+
+    @staticmethod
+    async def test_connection(access_token: str, phone_number_id: str) -> dict:
+        result = {
+            "credential_ok": False,
+            "credential_detail": "",
+            "webhook_status": "unknown",
+            "webhook_detail": ""
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                # 1. Credential probe
+                cred_resp = await client.get(
+                    f"{WhatsAppTestService.BASE_URL}/{phone_number_id}",
+                    params={"access_token": access_token, "fields": "display_phone_number,verified_name"}
+                )
+                cred_data = cred_resp.json()
+                if "error" in cred_data:
+                    result["credential_detail"] = cred_data["error"].get("message", "Invalid credentials")
+                    return result
+                result["credential_ok"] = True
+                name = cred_data.get("verified_name") or cred_data.get("display_phone_number", "")
+                result["credential_detail"] = f"Connected as: {name}"
+
+                # 2. Webhook check
+                hook_resp = await client.get(
+                    f"{WhatsAppTestService.BASE_URL}/{phone_number_id}/subscribed_apps",
+                    params={"access_token": access_token}
+                )
+                hook_data = hook_resp.json()
+                if "error" in hook_data:
+                    result["webhook_status"] = "not_registered"
+                    result["webhook_detail"] = hook_data["error"].get("message", "Webhook not registered")
+                else:
+                    data = hook_data.get("data", [])
+                    if data:
+                        fields = ", ".join(data[0].get("subscribed_fields", []))
+                        result["webhook_status"] = "registered"
+                        result["webhook_detail"] = f"Subscribed to: {fields}" if fields else "Webhook registered"
+                    else:
+                        result["webhook_status"] = "not_registered"
+                        result["webhook_detail"] = "No webhook subscription found"
+        except Exception as e:
+            result["credential_detail"] = f"Connection error: {str(e)}"
+        return result
+
+
 class FacebookService:
     """Facebook Messenger API Integration"""
     
@@ -61,6 +110,54 @@ class FacebookService:
                 headers=headers
             )
             return response.json()
+
+class FacebookTestService:
+    BASE_URL = "https://graph.facebook.com/v18.0"
+
+    @staticmethod
+    async def test_connection(access_token: str, page_id: str) -> dict:
+        result = {
+            "credential_ok": False,
+            "credential_detail": "",
+            "webhook_status": "unknown",
+            "webhook_detail": ""
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                # 1. Credential probe
+                cred_resp = await client.get(
+                    f"{FacebookTestService.BASE_URL}/{page_id}",
+                    params={"access_token": access_token, "fields": "name,id"}
+                )
+                cred_data = cred_resp.json()
+                if "error" in cred_data:
+                    result["credential_detail"] = cred_data["error"].get("message", "Invalid credentials")
+                    return result
+                result["credential_ok"] = True
+                result["credential_detail"] = f"Connected as: {cred_data.get('name', page_id)}"
+
+                # 2. Webhook check
+                hook_resp = await client.get(
+                    f"{FacebookTestService.BASE_URL}/{page_id}/subscribed_apps",
+                    params={"access_token": access_token}
+                )
+                hook_data = hook_resp.json()
+                if "error" in hook_data:
+                    result["webhook_status"] = "not_registered"
+                    result["webhook_detail"] = hook_data["error"].get("message", "Webhook not registered")
+                else:
+                    data = hook_data.get("data", [])
+                    if data:
+                        fields = ", ".join(data[0].get("subscribed_fields", []))
+                        result["webhook_status"] = "registered"
+                        result["webhook_detail"] = f"Subscribed to: {fields}" if fields else "Webhook registered"
+                    else:
+                        result["webhook_status"] = "not_registered"
+                        result["webhook_detail"] = "No webhook subscription found"
+        except Exception as e:
+            result["credential_detail"] = f"Connection error: {str(e)}"
+        return result
+
 
 class ViberService:
     """Viber API Integration"""
@@ -93,6 +190,43 @@ class ViberService:
             )
             return response.json()
 
+class ViberTestService:
+    BASE_URL = "https://chatapi.viber.com/pa"
+
+    @staticmethod
+    async def test_connection(access_token: str) -> dict:
+        result = {
+            "credential_ok": False,
+            "credential_detail": "",
+            "webhook_status": "unknown",
+            "webhook_detail": ""
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{ViberTestService.BASE_URL}/get_account_info",
+                    headers={"X-Viber-Auth-Token": access_token, "Content-Type": "application/json"},
+                    json={}
+                )
+                data = resp.json()
+                status_code = data.get("status", -1)
+                if status_code != 0:
+                    result["credential_detail"] = data.get("status_message", "Invalid token")
+                    return result
+                result["credential_ok"] = True
+                result["credential_detail"] = f"Connected as: {data.get('name', 'Viber Bot')}"
+                webhook = data.get("webhook", "")
+                if webhook:
+                    result["webhook_status"] = "registered"
+                    result["webhook_detail"] = f"Webhook: {webhook}"
+                else:
+                    result["webhook_status"] = "not_registered"
+                    result["webhook_detail"] = "No webhook URL registered"
+        except Exception as e:
+            result["credential_detail"] = f"Connection error: {str(e)}"
+        return result
+
+
 class LinkedInService:
     """LinkedIn Messaging API Integration"""
     
@@ -119,3 +253,34 @@ class LinkedInService:
                 headers=headers
             )
             return response.json()
+
+
+class LinkedInTestService:
+    BASE_URL = "https://api.linkedin.com/v2"
+
+    @staticmethod
+    async def test_connection(access_token: str) -> dict:
+        result = {
+            "credential_ok": False,
+            "credential_detail": "",
+            "webhook_status": "unknown",
+            "webhook_detail": "LinkedIn does not support programmatic webhook status checks"
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{LinkedInTestService.BASE_URL}/me",
+                    headers={"Authorization": f"Bearer {access_token}"}
+                )
+                data = resp.json()
+                if resp.status_code != 200:
+                    msg = data.get("message") or data.get("serviceErrorCode") or "Invalid access token"
+                    result["credential_detail"] = str(msg)
+                    return result
+                result["credential_ok"] = True
+                first = data.get("localizedFirstName", "")
+                last = data.get("localizedLastName", "")
+                result["credential_detail"] = f"Connected as: {first} {last}".strip() or "LinkedIn account"
+        except Exception as e:
+            result["credential_detail"] = f"Connection error: {str(e)}"
+        return result
