@@ -568,16 +568,21 @@ async def test_platform_connection(
         if not request.access_token:
             raise HTTPException(status_code=400, detail="access_token is required")
         result = await LinkedInTestService.test_connection(request.access_token)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported platform")
 
     # If credentials passed, mark as verified in DB
     if result.get("credential_ok"):
-        setting = db.query(PlatformSettings).filter(
-            PlatformSettings.platform == platform
-        ).first()
-        if setting:
-            setting.is_configured = 2
-            setting.updated_at = datetime.utcnow()
-            db.commit()
+        try:
+            setting = db.query(PlatformSettings).filter(
+                PlatformSettings.platform == platform
+            ).first()
+            if setting:
+                setting.is_configured = 2
+                setting.updated_at = datetime.utcnow()
+                db.commit()
+        except Exception:
+            pass  # DB write failure does not affect the test result
 
     return result
 
