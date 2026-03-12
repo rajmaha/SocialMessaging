@@ -54,6 +54,13 @@ class WhatsAppTestService:
                     f"{WhatsAppTestService.BASE_URL}/{phone_number_id}",
                     params={"access_token": access_token, "fields": "display_phone_number,verified_name"}
                 )
+                if cred_resp.status_code != 200:
+                    try:
+                        err = cred_resp.json()
+                        result["credential_detail"] = err.get("error", {}).get("message", "Invalid credentials")
+                    except Exception:
+                        result["credential_detail"] = f"HTTP {cred_resp.status_code}: Invalid credentials"
+                    return result
                 cred_data = cred_resp.json()
                 if "error" in cred_data:
                     result["credential_detail"] = cred_data["error"].get("message", "Invalid credentials")
@@ -129,6 +136,13 @@ class FacebookTestService:
                     f"{FacebookTestService.BASE_URL}/{page_id}",
                     params={"access_token": access_token, "fields": "name,id"}
                 )
+                if cred_resp.status_code != 200:
+                    try:
+                        err = cred_resp.json()
+                        result["credential_detail"] = err.get("error", {}).get("message", "Invalid credentials")
+                    except Exception:
+                        result["credential_detail"] = f"HTTP {cred_resp.status_code}: Invalid credentials"
+                    return result
                 cred_data = cred_resp.json()
                 if "error" in cred_data:
                     result["credential_detail"] = cred_data["error"].get("message", "Invalid credentials")
@@ -278,8 +292,8 @@ class LinkedInTestService:
                     result["credential_detail"] = str(msg)
                     return result
                 result["credential_ok"] = True
-                first = data.get("localizedFirstName", "")
-                last = data.get("localizedLastName", "")
+                first = data.get("localizedFirstName") or ""
+                last = data.get("localizedLastName") or ""
                 result["credential_detail"] = f"Connected as: {first} {last}".strip() or "LinkedIn account"
         except Exception as e:
             result["credential_detail"] = f"Connection error: {str(e)}"
