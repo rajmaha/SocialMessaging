@@ -224,6 +224,7 @@ export default function AdminSettings() {
 
             setShowForm(false);
             setSelectedPlatform(null);
+            setTestResult(null);
             await fetchPlatforms();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An error occurred');
@@ -328,9 +329,11 @@ export default function AdminSettings() {
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-2xl font-bold text-gray-900 capitalize">{selectedPlatform} Configuration</h3>
                             <button
+                                type="button"
                                 onClick={() => {
                                     setShowForm(false);
                                     setSelectedPlatform(null);
+                                    setTestResult(null);
                                 }}
                                 className="text-gray-500 hover:text-gray-700"
                             >
