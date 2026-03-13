@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { FiSend, FiMessageCircle, FiPaperclip } from 'react-icons/fi'
 import { API_URL } from '@/lib/config';
@@ -74,6 +74,14 @@ interface Branding {
 type Phase = 'email' | 'otp' | 'chat'
 
 export default function WidgetPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-50" />}>
+      <WidgetPageInner />
+    </Suspense>
+  )
+}
+
+function WidgetPageInner() {
   const searchParams = useSearchParams()
   const widgetKey = searchParams.get('widget_key')
   const [phase, setPhase] = useState<Phase>('email')
