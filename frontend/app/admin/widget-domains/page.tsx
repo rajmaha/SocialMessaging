@@ -27,8 +27,7 @@ interface PlatformAccount {
 
 interface User {
     id: number;
-    username: string;
-    email: string;
+    full_name: string;
     role: string;
 }
 
@@ -279,7 +278,7 @@ export default function WidgetDomainsPage() {
 
     const handleCopyEmbed = (domain: WidgetDomain) => {
         const serverUrl = typeof window !== 'undefined' ? window.location.origin : '';
-        const snippet = `<script src="${serverUrl}/chat-widget.js" data-key="${domain.widget_key}"></script>`;
+        const snippet = `<script>\n  window.SocialChatConfig = { serverUrl: '${serverUrl}' };\n</script>\n<script src="${serverUrl}/chat-widget.js" data-key="${domain.widget_key}" async></script>`;
         navigator.clipboard.writeText(snippet).then(() => {
             setCopyFeedback(domain.id);
             setTimeout(() => setCopyFeedback(null), 2000);
@@ -391,9 +390,9 @@ export default function WidgetDomainsPage() {
 
     return (
         <>
-            <MainHeader />
+            <MainHeader user={user} />
             <AdminNav />
-            <div className="ml-[240px] p-6">
+            <div className="ml-[240px] pt-14 p-6">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-6">
                     <h1 className="text-2xl font-bold text-gray-800">Widget Domains</h1>
@@ -583,8 +582,8 @@ export default function WidgetDomainsPage() {
                                                                             onChange={e => toggleAgentCheckbox(domain.id, agent.id, e.target.checked)}
                                                                             className="rounded border-gray-300"
                                                                         />
-                                                                        <span className="text-gray-800">{agent.username}</span>
-                                                                        <span className="text-gray-400 text-xs">({agent.email})</span>
+                                                                        <span className="text-gray-800">{agent.full_name}</span>
+                                                                        <span className="text-gray-400 text-xs">({agent.role})</span>
                                                                     </label>
                                                                 ))}
                                                             </div>

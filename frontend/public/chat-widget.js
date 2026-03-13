@@ -1,7 +1,7 @@
 /**
  * SocialMedia Live Chat Widget
  * Embed on any website with:
- *   <script src="https://your-domain.com/chat-widget.js"></script>
+ *   <script src="https://your-domain.com/chat-widget.js" data-key="your-widget-key-here"></script>
  *
  * Optional config (set before the script tag):
  *   window.SocialChatConfig = { serverUrl: 'https://your-domain.com' }

@@ -13,7 +13,7 @@ const sidebarGroups = [
         label: 'Account',
         items: [
             { href: '/settings?tab=profile', label: 'Profile', icon: '👤' },
-            { href: '/settings?tab=accounts', label: 'Connected Accounts', icon: '🔗' },
+            { href: '/settings?tab=accounts', label: 'Connected Agent Accounts', icon: '🔗' },
             { href: '/settings?tab=account-settings', label: 'Account Settings', icon: '⚙️' },
             { href: '/settings/api-credentials', label: 'My API Credentials', icon: '🔑' },
         ],
@@ -56,7 +56,7 @@ const sidebarGroups = [
         label: 'Security',
         items: [
             { href: '/admin/roles', label: 'Role Permissions', icon: '🔑', permission: () => hasAdminFeature('manage_roles') },
-            { href: '/admin/cors', label: 'CORS / Widget Origins', icon: '🌐', permission: () => hasAdminFeature('manage_cors') },
+            { href: '/admin/cors', label: 'Chat Widget Embed Code', icon: '🌐', permission: () => hasAdminFeature('manage_cors') },
         ],
     },
     {

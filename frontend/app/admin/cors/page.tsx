@@ -82,7 +82,7 @@ export default function CorsSettingsPage() {
 <script>
   window.SocialChatConfig = { serverUrl: '${frontendOrigin}' };
 </script>
-<script src="${frontendOrigin}/chat-widget.js" async></script>`
+<script src="${frontendOrigin}/chat-widget.js" data-key="your-widget-key-here" async></script>`
 
     return (
         <div className="ml-60 pt-14 min-h-screen bg-gray-50">

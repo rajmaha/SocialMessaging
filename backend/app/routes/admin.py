@@ -556,7 +556,7 @@ async def test_platform_connection(
     if platform == "whatsapp":
         if not request.access_token or not request.phone_number_id:
             raise HTTPException(status_code=400, detail="access_token and phone_number_id are required")
-        result = await WhatsAppTestService.test_connection(request.access_token, request.phone_number_id)
+        result = await WhatsAppTestService.test_connection(request.access_token, request.phone_number_id, request.business_account_id)
 
     elif platform == "facebook":
         if not request.access_token or not request.page_id:

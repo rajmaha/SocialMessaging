@@ -568,9 +568,9 @@ export default function ConnectedAccountsPage() {
 
     return (
         <>
-            <MainHeader />
+            <MainHeader user={user} />
             <AdminNav />
-            <div className="ml-[240px] p-6">
+            <div className="ml-[240px] pt-14 p-6">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-6">
                     <h1 className="text-2xl font-bold text-gray-800">Connected Accounts</h1>
