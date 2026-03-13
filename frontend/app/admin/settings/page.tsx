@@ -278,8 +278,10 @@ export default function AdminSettings() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {['facebook', 'whatsapp', 'viber', 'linkedin'].map((platform) => {
                             const setting = platforms.find(p => p.platform === platform);
-                            const statusColor = setting?.is_configured === 0 ? 'red' :
-                                setting?.is_configured === 1 ? 'yellow' : 'green';
+                            const isConfigured = (setting?.is_configured ?? 0) >= 1;
+                            const webhookOk = setting?.webhook_registered === 1;
+                            const statusColor = !isConfigured ? 'red' : webhookOk ? 'green' : 'yellow';
+                            const statusLabel = !isConfigured ? 'Not Setup' : webhookOk ? 'Active' : 'Configured';
 
                             return (
                                 <div key={platform} className="bg-white rounded-lg shadow p-6">
@@ -297,9 +299,7 @@ export default function AdminSettings() {
                                             statusColor === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
                                                 'bg-red-100 text-red-800'
                                             }`}>
-                                            {setting?.is_configured === 0 ? 'Not Setup' :
-                                                setting?.is_configured === 1 ? 'Configured' :
-                                                    'Verified'}
+                                            {statusLabel}
                                         </span>
                                     </div>
 
