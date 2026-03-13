@@ -10,6 +10,8 @@ from app.models.user import User
 from app.models.team import Team
 from app.schemas.conversation import ConversationResponse
 from app.models.agent_account import AgentAccount
+from app.models.domain_agent import DomainAgent
+from app.models.widget_domain import WidgetDomain
 from app.dependencies import get_current_user
 from app.services.events_service import events_service
 from app.log_database import LogSessionLocal as _LogSessionLocal
@@ -57,6 +59,7 @@ def get_conversations(
     status: str = None,
     assigned_to: Optional[str] = None,
     platform_account_id: Optional[int] = None,
+    widget_domain_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     """Get all conversations for a user, optionally filtered by platform, status, and/or assigned agent.
@@ -101,11 +104,41 @@ def get_conversations(
         )
     # else: no rows = agent sees everything (backward compatible)
 
+    # Scope webchat conversations to agent's permitted domains
+    domain_agent_rows = db.query(DomainAgent.widget_domain_id).filter(
+        DomainAgent.user_id == user_id
+    ).all()
+
+    if domain_agent_rows:
+        permitted_domain_ids = [r[0] for r in domain_agent_rows]
+        query = query.filter(
+            or_(
+                Conversation.platform != "webchat",
+                Conversation.widget_domain_id.in_(permitted_domain_ids),
+                Conversation.widget_domain_id.is_(None),
+            )
+        )
+
     if platform_account_id:
         query = query.filter(Conversation.platform_account_id == platform_account_id)
 
+    if widget_domain_id:
+        query = query.filter(Conversation.widget_domain_id == widget_domain_id)
+
     conversations = query.order_by(Conversation.updated_at.desc()).all()
-    return _enrich(conversations, db)
+
+    # Build domain name lookup for webchat conversations
+    domain_ids = {c.widget_domain_id for c in conversations if c.widget_domain_id}
+    domain_map = {}
+    if domain_ids:
+        domains = db.query(WidgetDomain).filter(WidgetDomain.id.in_(domain_ids)).all()
+        domain_map = {d.id: d.display_name for d in domains}
+
+    enriched = _enrich(conversations, db)
+    for item in enriched:
+        did = item.get("widget_domain_id")
+        item["widget_domain_name"] = domain_map.get(did) if did else None
+    return enriched
 
 
 @router.get("/agents")

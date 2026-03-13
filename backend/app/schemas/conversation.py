@@ -16,6 +16,8 @@ class ConversationResponse(BaseModel):
     assigned_to: Optional[int] = None
     assigned_to_name: Optional[str] = None
     platform_account_id: Optional[int] = None
+    widget_domain_id: Optional[int] = None
+    widget_domain_name: Optional[str] = None
 
     class Config:
         from_attributes = True
