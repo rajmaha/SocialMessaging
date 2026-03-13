@@ -147,13 +147,13 @@ def list_agents(
     current_user: User = Depends(get_current_user),
 ):
     """Return list of active users for the assignment dropdown."""
-    agents = db.query(User).filter(User.is_active == True).order_by(User.full_name).all()
-    return [{
+    agents = db.query(User).filter(User.is_active == True).all()
+    return sorted([{
         "id": a.id,
-        "full_name": a.display_name or a.full_name or a.username,
-        "real_name": a.full_name or a.username,
+        "full_name": a.display_name or a.full_name or a.username or f"User {a.id}",
+        "real_name": a.full_name or a.username or f"User {a.id}",
         "role": a.role
-    } for a in agents]
+    } for a in agents], key=lambda x: x["full_name"].lower())
 
 
 @router.get("/search", response_model=List[ConversationResponse])

@@ -657,8 +657,8 @@ async def visitor_websocket(session_id: str, websocket: WebSocket):
                 # Echo back to visitor
                 await websocket.send_json({"type": "message", **msg_payload})
 
-                # Push to all connected agents
-                await events_service.broadcast_to_all({
+                # Push to assigned agents only (or all agents if none assigned)
+                event_payload = {
                     "type": EventTypes.MESSAGE_RECEIVED,
                     "data": {
                         **msg_payload,
@@ -667,7 +667,20 @@ async def visitor_websocket(session_id: str, websocket: WebSocket):
                         "session_id": session_id,
                         "visitor_name": conv.contact_name,
                     }
-                })
+                }
+                assigned_agent_ids = []
+                if conv.widget_domain_id:
+                    from app.models.domain_agent import DomainAgent
+                    assigned_agent_ids = [
+                        row.user_id for row in db.query(DomainAgent).filter(
+                            DomainAgent.widget_domain_id == conv.widget_domain_id
+                        ).all()
+                    ]
+                if assigned_agent_ids:
+                    for uid in assigned_agent_ids:
+                        await events_service.broadcast_to_user(uid, event_payload)
+                else:
+                    await events_service.broadcast_to_all(event_payload)
 
                 # Bot reply via shared bot_service (keyword → AI → handoff)
                 async def _wc_send(reply: str, _ws=websocket):
