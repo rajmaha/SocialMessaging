@@ -48,6 +48,33 @@ class CloudPanelService:
             raise Exception(f"Command failed with status {exit_status}: {err} \n Output: {out}")
         return out
 
+    def _get_parent_domain_user(self, root_domain: str):
+        """
+        If the parent domain already exists on this CloudPanel server, return
+        (sys_user, htdocs_root) so the subdomain can be deployed under the same
+        user.  Returns (None, None) when the parent domain is not yet set up.
+        """
+        try:
+            # CloudPanel nginx vhosts live at /etc/nginx/sites-enabled/<domain>.conf
+            # The 'root' directive tells us exactly where the site lives and who owns it.
+            # e.g.  root /home/saraloms/htdocs/saraloms.com;
+            vhost_root = self._execute(
+                f"grep -m1 -oP 'root\\s+\\K[^;]+' /etc/nginx/sites-enabled/{root_domain}.conf"
+            ).strip()
+            if not vhost_root:
+                return None, None
+
+            # Extract system user from path  /home/<user>/htdocs/...
+            parts = vhost_root.split("/")
+            # parts: ['', 'home', '<user>', 'htdocs', ...]
+            if len(parts) >= 3 and parts[1] == "home":
+                sys_user = parts[2]
+                htdocs_root = vhost_root  # document root of the parent domain
+                return sys_user, htdocs_root
+        except Exception:
+            pass
+        return None, None
+
     def generate_db_credentials(self, domain: str):
         import re
         # CloudPanel requires purely lowercase alphanumeric DB names
@@ -86,9 +113,6 @@ class CloudPanelService:
             db_user = db_user or gen_user
             db_pass = db_pass or gen_pass
 
-        sys_user = data.sysUser or data.domainName.replace(".", "")[:16]
-        sys_pass = data.sysUserPassword or ''.join(secrets.choice(string.ascii_letters + string.digits) for i in range(16))
-
         # Determine remote directory and document root based on whether it's a subdomain
         parts = data.domainName.split('.')
         is_subdomain = len(parts) > 2
@@ -96,12 +120,52 @@ class CloudPanelService:
         if is_subdomain:
             root_domain = ".".join(parts[-2:])
             subdomain_part = ".".join(parts[:-2])
-            remote_dir = f"/home/{sys_user}/htdocs/{root_domain}/public/{subdomain_part}"
+
+            # Check if the parent domain already exists on this server.
+            # If so, reuse its system user and root path so the subdomain
+            # lands under the same user account (e.g. /home/saraloms/htdocs/saraloms.com/public/demo).
+            parent_user, parent_root = self._get_parent_domain_user(root_domain)
+            if parent_user:
+                sys_user = parent_user
+                sys_pass = None   # existing user — no password needed
+                # Place subdomain files inside the parent's document root
+                remote_dir = f"{parent_root}/public/{subdomain_part}"
+                logger.info(
+                    f"Parent domain '{root_domain}' found — reusing user '{sys_user}', "
+                    f"deploying subdomain to '{remote_dir}'"
+                )
+            else:
+                # Parent domain not on this server yet — create a fresh user
+                sys_user = data.sysUser or data.domainName.replace(".", "")[:16]
+                sys_pass = data.sysUserPassword or ''.join(
+                    secrets.choice(string.ascii_letters + string.digits) for _ in range(16)
+                )
+                remote_dir = f"/home/{sys_user}/htdocs/{root_domain}/public/{subdomain_part}"
+                logger.info(
+                    f"Parent domain '{root_domain}' not found — creating new user '{sys_user}'"
+                )
         else:
+            sys_user = data.sysUser or data.domainName.replace(".", "")[:16]
+            sys_pass = data.sysUserPassword or ''.join(
+                secrets.choice(string.ascii_letters + string.digits) for _ in range(16)
+            )
             remote_dir = f"/home/{sys_user}/htdocs/{data.domainName}"
 
         # --- Step 1: Create site ---
-        cmd_site = f"clpctl site:add:php --domainName={data.domainName} --phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} --siteUser={sys_user} --siteUserPassword='{sys_pass}'"
+        if sys_pass:
+            # New user — pass credentials to CloudPanel
+            cmd_site = (
+                f"clpctl site:add:php --domainName={data.domainName} "
+                f"--phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} "
+                f"--siteUser={sys_user} --siteUserPassword='{sys_pass}'"
+            )
+        else:
+            # Existing user — CloudPanel will attach the subdomain to the same user
+            cmd_site = (
+                f"clpctl site:add:php --domainName={data.domainName} "
+                f"--phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} "
+                f"--siteUser={sys_user}"
+            )
         self._execute(cmd_site)
 
         # Get the actual document root from the nginx vhost CloudPanel created
@@ -288,7 +352,7 @@ class CloudPanelService:
             "db_user": db_user,
             "db_password": db_pass,
             "sys_user": sys_user,
-            "sys_password": sys_pass
+            "sys_password": sys_pass or "(existing user — no change)"
         }
 
     def get_ssl_report(self):
