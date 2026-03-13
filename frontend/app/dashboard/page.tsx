@@ -42,6 +42,7 @@ interface Conversation {
   assigned_to?: number | null
   assigned_to_name?: string | null
   platform_account_id?: number | null
+  widget_domain_id?: number | null
 }
 
 export default function DashboardPageWrapper() {
@@ -71,6 +72,8 @@ function DashboardPage() {
   const [unassignedOnly, setUnassignedOnly] = useState(false)
   const [accountMap, setAccountMap] = useState<Record<number, string>>({})
   const [accountFilter, setAccountFilter] = useState<string>('')
+  const [widgetDomains, setWidgetDomains] = useState<any[]>([])
+  const [domainFilter, setDomainFilter] = useState<string>('')
   const userRef = useRef<User | null>(null)
   const platformRef = useRef<string>('all')
   const statusFilterRef = useRef<string>('all')
@@ -102,6 +105,12 @@ function DashboardPage() {
           setAccountMap(map)
         })
         .catch(() => { /* non-admin agents may not have access */ })
+      // Fetch widget domains for domain badges/filter
+      axios.get(`${API_URL}/admin/widget-domains`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then((r) => setWidgetDomains(r.data || []))
+        .catch(() => {})
     }
     // Fetch currently online webchat visitors
     axios.get(`${API_URL}/webchat/online-conversation-ids`)
@@ -217,6 +226,12 @@ function DashboardPage() {
     if (user) fetchConversations(user.user_id, undefined, undefined, undefined, undefined, value)
   }
 
+  const domainMap = Object.fromEntries(widgetDomains.map((d: any) => [d.id, d.display_name]))
+
+  const handleDomainFilter = (value: string) => {
+    setDomainFilter(value)
+  }
+
   if (!user) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50">
@@ -328,6 +343,20 @@ function DashboardPage() {
                     </select>
                   </div>
                 )}
+                {widgetDomains.length > 0 && (
+                  <div className="px-3 pb-2">
+                    <select
+                      value={domainFilter}
+                      onChange={(e) => handleDomainFilter(e.target.value)}
+                      className="w-full px-2 py-1.5 border rounded text-xs text-gray-700 bg-white"
+                    >
+                      <option value="">All Domains</option>
+                      {widgetDomains.map((d: any) => (
+                        <option key={d.id} value={d.id}>{d.display_name || d.domain}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
               <ConversationList
                 conversations={conversations}
@@ -336,6 +365,8 @@ function DashboardPage() {
                 loading={loading}
                 activeConvIds={activeConvIds}
                 accountMap={accountMap}
+                domainMap={domainMap}
+                domainFilter={domainFilter}
               />
             </div>
             {/* Chat */}
