@@ -73,9 +73,10 @@ export default function CloudPanelDeployPage() {
     const DEPLOY_STEPS = [
         { id: 'creating_site', label: 'Creating Site' },
         { id: 'creating_ssl', label: 'Creating SSL' },
-        { id: 'deploying_files', label: 'Deploying Files' },
-        { id: 'running_script', label: 'Running Script' },
         { id: 'creating_database', label: 'Creating Database' },
+        { id: 'deploying_files', label: 'Deploying Files' },
+        { id: 'copying_logo', label: 'Copying Logo' },
+        { id: 'running_script', label: 'Running Script' },
         { id: 'importing_database', label: 'Importing Database' },
     ]
 
@@ -93,7 +94,11 @@ export default function CloudPanelDeployPage() {
         setDeploySteps(DEPLOY_STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'in_progress' : 'pending' })))
 
         try {
-            const res = await fetch(`${API_URL}/cloudpanel/servers/${siteForm.serverId}/sites/deploy-stream`, {
+            // Use the Next.js API route proxy (/api/cloudpanel-deploy-stream) instead of
+            // the normal rewrite path.  Next.js rewrites buffer the full response before
+            // forwarding it, which breaks SSE streaming.  The API route pipes the
+            // ReadableStream directly to the browser with no intermediate buffering.
+            const res = await fetch(`/api/cloudpanel-deploy-stream/${siteForm.serverId}`, {
                 method: 'POST',
                 headers: authHeaders(),
                 body: JSON.stringify({

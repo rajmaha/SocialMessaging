@@ -241,7 +241,17 @@ class CloudPanelService:
 
         yield {"step": "creating_ssl", "status": ssl_status}
 
-        # --- Step 3: Deploy template files ---
+        # --- Step 3: Create database (before file deployment) ---
+        # clpctl db:add can reinitialize the site's htdocs directory on some
+        # CloudPanel versions, wiping any files already deployed there.
+        # Running it here — after site + SSL but before uploading files —
+        # ensures CloudPanel finishes all its own initialization steps first.
+        cmd_db = f"clpctl db:add --domainName={data.domainName} --databaseName={db_name} --databaseUserName={db_user} --databaseUserPassword='{db_pass}'"
+        self._execute(cmd_db)
+
+        yield {"step": "creating_database", "status": "done"}
+
+        # --- Step 4: Deploy template files ---
         sftp = self.client.open_sftp()
         template_name = data.templateName or "default_site"
         template_dir = os.path.join(os.path.dirname(__file__), "..", "..", "templates", template_name)
@@ -328,12 +338,6 @@ class CloudPanelService:
         except Exception:
             # Script does not exist — skip
             yield {"step": "running_script", "status": "skipped"}
-
-        # --- Step 4: Create database ---
-        cmd_db = f"clpctl db:add --domainName={data.domainName} --databaseName={db_name} --databaseUserName={db_user} --databaseUserPassword='{db_pass}'"
-        self._execute(cmd_db)
-
-        yield {"step": "creating_database", "status": "done"}
 
         # --- Step 5: Import database ---
         if has_sql:
