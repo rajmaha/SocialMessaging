@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import MainHeader from "@/components/MainHeader"
 import AdminNav from '@/components/AdminNav'
 import { authAPI, getAuthToken } from "@/lib/auth"
+import { API_URL } from "@/lib/config"
 import { hasAdminFeature } from '@/lib/permissions'
 import { useRouter } from 'next/navigation'
 
@@ -51,8 +52,8 @@ export default function CloudPanelDeployPage() {
         try {
             const headers = { 'Authorization': `Bearer ${getAuthToken()}` }
             const [serversRes, templatesRes] = await Promise.all([
-                fetch('http://localhost:8000/cloudpanel/servers', { headers }),
-                fetch('http://localhost:8000/cloudpanel/templates', { headers })
+                fetch(`${API_URL}/cloudpanel/servers`, { headers }),
+                fetch(`${API_URL}/cloudpanel/templates`, { headers })
             ])
 
             if (serversRes.ok) {
@@ -92,7 +93,7 @@ export default function CloudPanelDeployPage() {
         setDeploySteps(DEPLOY_STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'in_progress' : 'pending' })))
 
         try {
-            const res = await fetch(`http://localhost:8000/cloudpanel/servers/${siteForm.serverId}/sites/deploy-stream`, {
+            const res = await fetch(`${API_URL}/cloudpanel/servers/${siteForm.serverId}/sites/deploy-stream`, {
                 method: 'POST',
                 headers: authHeaders(),
                 body: JSON.stringify({

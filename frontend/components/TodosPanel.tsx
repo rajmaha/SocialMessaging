@@ -7,7 +7,7 @@ import SocialShareButtons from '@/components/SocialShareButtons'
 import { useEvents } from '@/lib/events-context'
 import { FiPlus, FiEdit2, FiTrash2, FiShare2, FiMessageSquare, FiCalendar, FiClock, FiCheck, FiX } from 'react-icons/fi'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config'
 
 interface Reminder {
     id: number

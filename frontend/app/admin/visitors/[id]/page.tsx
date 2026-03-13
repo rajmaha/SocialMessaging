@@ -6,6 +6,7 @@ import AdminNav from '@/components/AdminNav'
 import MainHeader from '@/components/MainHeader'
 import { api } from '@/lib/api'
 import { authAPI } from '@/lib/auth'
+import { API_URL } from '@/lib/config'
 import { useBranding } from '@/lib/branding-context'
 import { formatDateWithTimezone } from '@/lib/date-utils'
 
@@ -48,7 +49,6 @@ export default function VisitDetailPage() {
   }
 
   const fmt = (dt?: string) => dt ? formatDateWithTimezone(dt, tz) : '—'
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   if (loading) return (
     <><MainHeader user={user!} /><AdminNav /><main className="ml-60 pt-14 p-6 text-gray-400">Loading…</main></>

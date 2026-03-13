@@ -12,7 +12,7 @@ interface Location {
   ip_camera_url?: string
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL } from '@/lib/config'
 
 function CameraPlayer({ locationId, locationName }: { locationId: number; locationName: string }) {
   const videoRef = useRef<HTMLVideoElement>(null)

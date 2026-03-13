@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { authAPI } from '@/lib/auth'
+import { API_URL } from '@/lib/config'
 import MainHeader from '@/components/MainHeader'
 import AdminNav from '@/components/AdminNav'
 
@@ -23,8 +24,7 @@ export default function ReportsPage() {
   }, [])
 
   const downloadCSV = (type: string) => {
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    const url = `${baseUrl}/crm/reports/export?type=${type}`
+    const url = `${API_URL}/crm/reports/export?type=${type}`
     const token = typeof window !== 'undefined'
       ? (localStorage.getItem('auth_token') || localStorage.getItem('token') || '')
       : ''

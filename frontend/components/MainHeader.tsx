@@ -12,8 +12,8 @@ import { getAuthToken } from '@/lib/auth'
 import { hasModuleAccess, hasAnyAdminPermission } from '@/lib/permissions'
 import { useEvents } from '@/lib/events-context'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 import { useState, useEffect } from 'react'
+import { API_URL } from '@/lib/config'
 
 interface MainHeaderProps {
     user: User

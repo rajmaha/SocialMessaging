@@ -5,6 +5,7 @@ import AdminNav from '@/components/AdminNav'
 import MainHeader from '@/components/MainHeader'
 import { api } from '@/lib/api'
 import { authAPI } from '@/lib/auth'
+import { API_URL } from '@/lib/config'
 
 interface Agent { id: number; name: string; email: string }
 interface Location { id: number; name: string; ip_camera_url?: string }
@@ -362,7 +363,6 @@ export default function NewVisitPage() {
     }
   }
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   const dc = getDisplayCrop()
   const hasCctv = !!(form.location_id && locations.find(l => l.id === parseInt(form.location_id))?.ip_camera_url)
 

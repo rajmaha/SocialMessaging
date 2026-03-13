@@ -2681,7 +2681,7 @@ export default function EmailPage() {
                   setShowMobileSidebar(false)
                   // Fetch current config on open
                   const token = localStorage.getItem('access_token')
-                  fetch(`${API_URL || 'http://localhost:8000'}/email/auto-reply`, {
+                  fetch(`${API_URL}/email/auto-reply`, {
                     headers: { Authorization: `Bearer ${token}` }
                   }).then(r => r.json()).then(d => setAutoReplyConfig({
                     is_enabled: d.is_enabled ?? false,
@@ -4108,7 +4108,7 @@ export default function EmailPage() {
                   setAutoReplyTestStatus('sending')
                   try {
                     const token = localStorage.getItem('access_token')
-                    const r = await fetch(`${API_URL || 'http://localhost:8000'}/email/auto-reply/test`, {
+                    const r = await fetch(`${API_URL}/email/auto-reply/test`, {
                       method: 'POST',
                       headers: { Authorization: `Bearer ${token}` }
                     })
@@ -4131,7 +4131,7 @@ export default function EmailPage() {
                     setAutoReplySaving(true)
                     try {
                       const token = localStorage.getItem('access_token')
-                      await fetch(`${API_URL || 'http://localhost:8000'}/email/auto-reply`, {
+                      await fetch(`${API_URL}/email/auto-reply`, {
                         method: 'POST',
                         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify(autoReplyConfig)

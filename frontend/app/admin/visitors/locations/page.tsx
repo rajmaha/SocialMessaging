@@ -5,6 +5,7 @@ import MainHeader from '@/components/MainHeader'
 import { api } from '@/lib/api'
 import { authAPI } from '@/lib/auth'
 import Link from 'next/link'
+import { API_URL } from '@/lib/config'
 
 interface Location { id: number; name: string; ip_camera_url?: string }
 
@@ -26,7 +27,6 @@ export default function VisitorLocationsPage() {
   const [cameraUrl, setCameraUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null)
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   const [expandedLocId, setExpandedLocId] = useState<number | null>(null)
   const [passCards, setPassCards] = useState<PassCard[]>([])

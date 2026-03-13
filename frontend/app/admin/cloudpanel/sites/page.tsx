@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import MainHeader from "@/components/MainHeader"
 import AdminNav from '@/components/AdminNav'
 import { authAPI, getAuthToken } from "@/lib/auth"
+import { API_URL } from "@/lib/config"
 
 interface CloudPanelSite {
     id: number
@@ -54,7 +55,7 @@ export default function CloudPanelSitesPage() {
 
     const fetchServers = async () => {
         try {
-            const res = await fetch('http://localhost:8000/cloudpanel/servers', {
+            const res = await fetch(`${API_URL}/cloudpanel/servers`, {
                 headers: { 'Authorization': `Bearer ${getAuthToken()}` }
             })
             if (res.ok) setServers(await res.json())
@@ -67,8 +68,8 @@ export default function CloudPanelSitesPage() {
         setLoading(true)
         try {
             const url = serverId
-                ? `http://localhost:8000/cloudpanel/sites?server_id=${serverId}`
-                : 'http://localhost:8000/cloudpanel/sites'
+                ? `${API_URL}/cloudpanel/sites?server_id=${serverId}`
+                : `${API_URL}/cloudpanel/sites`
             const res = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${getAuthToken()}` }
             })
@@ -108,7 +109,7 @@ export default function CloudPanelSitesPage() {
         setMessage({ type: '', text: '' })
 
         try {
-            const res = await fetch(`http://localhost:8000/cloudpanel/sites/${passwordModalSiteId}`, {
+            const res = await fetch(`${API_URL}/cloudpanel/sites/${passwordModalSiteId}`, {
                 method: 'DELETE',
                 headers: authHeaders(),
                 body: JSON.stringify({ password: deletePassword })
