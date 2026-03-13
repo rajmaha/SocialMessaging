@@ -14,6 +14,7 @@ from app.routes.backups import router as backups_router
 from app.routes import pms as pms_routes
 from app.routes import roles as roles_routes
 from app.routes import platform_accounts
+from app.routes import widget_domains
 from app.routes.api_servers import router as api_servers_router, user_router as user_api_creds_router
 from app.routes.forms import admin_router as forms_admin_router, public_router as forms_public_router
 from app.routes.menus import router as menus_router
@@ -1976,6 +1977,7 @@ app.include_router(email_validator_router)
 app.include_router(ci_cd_router)
 app.include_router(visitors_router)
 app.include_router(platform_accounts.router)
+app.include_router(widget_domains.router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
