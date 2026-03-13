@@ -84,15 +84,27 @@ def _decode_otp_token(token: str, email: str, otp: str):
 # Helpers
 # ─────────────────────────────────────────
 
-def _get_branding(db: Session) -> dict:
+def _get_branding(db: Session, widget_key: str | None = None) -> dict:
     b = db.query(BrandingSettings).first()
-    return {
+    base = {
         "company_name": b.company_name if b else "Support Chat",
         "primary_color": b.primary_color if b else "#2563eb",
         "logo_url": b.logo_url if b else None,
         "welcome_message": "Hi! How can we help you today?",
         "timezone": b.timezone if b else "UTC",
     }
+
+    if widget_key:
+        from app.models.widget_domain import WidgetDomain
+        wd = db.query(WidgetDomain).filter(
+            WidgetDomain.widget_key == widget_key,
+            WidgetDomain.is_active == 1,
+        ).first()
+        if wd and wd.branding_overrides:
+            for k, v in wd.branding_overrides.items():
+                if v is not None and k in base:
+                    base[k] = v
+    return base
 
 def _first_admin(db: Session) -> Optional[User]:
     return db.query(User).filter(User.role == "admin", User.is_active == True).first()
@@ -395,28 +407,74 @@ def online_conversation_ids(db: Session = Depends(get_db)):
 
 
 @router.get("/branding")
-def get_webchat_branding(db: Session = Depends(get_db)):
-    """Return branding info so the widget launcher can style itself."""
-    return _get_branding(db)
+def get_webchat_branding(key: str = Query(None), db: Session = Depends(get_db)):
+    """Return branding info so the widget launcher can style itself.
+    If ?key=<widget_key> is provided, apply per-domain branding overrides."""
+    return _get_branding(db, widget_key=key)
+
+
+def _account_to_channel(acct) -> dict | None:
+    """Convert a PlatformAccount row into a channel link dict for the widget."""
+    if acct.platform == "whatsapp" and acct.phone_number:
+        phone = acct.phone_number.replace("+", "").replace(" ", "").replace("-", "")
+        return {"platform": "whatsapp", "label": acct.account_name or "WhatsApp", "url": f"https://wa.me/{phone}"}
+    elif acct.platform == "facebook" and acct.account_id:
+        return {"platform": "facebook", "label": acct.account_name or "Messenger", "url": f"https://m.me/{acct.account_id}"}
+    elif acct.platform == "viber":
+        return {"platform": "viber", "label": acct.account_name or "Viber", "url": f"viber://pa?chatURI={acct.account_id}"}
+    elif acct.platform == "linkedin" and acct.account_id:
+        return {"platform": "linkedin", "label": acct.account_name or "LinkedIn", "url": f"https://www.linkedin.com/company/{acct.account_id}"}
+    return None
 
 
 @router.get("/channels")
-def get_public_channels(db: Session = Depends(get_db)):
-    """Return configured social channel links for the widget channels tab (public)."""
+def get_public_channels(key: str = Query(None), db: Session = Depends(get_db)):
+    """Return configured social channel links for the widget channels tab.
+    If ?key=<widget_key> is provided, return only accounts assigned to that domain."""
     from app.models.platform_settings import PlatformSettings
-    platforms = db.query(PlatformSettings).filter(PlatformSettings.is_configured >= 1).all()
+    from app.models.widget_domain import WidgetDomain
+    from app.models.domain_account import DomainAccount
+    from app.models.platform_account import PlatformAccount
+
+    domain_account_ids = None
+    if key:
+        wd = db.query(WidgetDomain).filter(
+            WidgetDomain.widget_key == key,
+            WidgetDomain.is_active == 1,
+        ).first()
+        if wd:
+            rows = db.query(DomainAccount.platform_account_id).filter(
+                DomainAccount.widget_domain_id == wd.id
+            ).all()
+            if rows:
+                domain_account_ids = [r[0] for r in rows]
+
     channels = []
-    for p in platforms:
-        if p.platform == "whatsapp" and p.phone_number:
-            phone = p.phone_number.replace("+", "").replace(" ", "").replace("-", "")
-            channels.append({"platform": "whatsapp", "label": "WhatsApp", "url": f"https://wa.me/{phone}"})
-        elif p.platform == "facebook" and p.page_id:
-            channels.append({"platform": "facebook", "label": "Messenger", "url": f"https://m.me/{p.page_id}"})
-        elif p.platform == "viber" and p.phone_number:
-            phone = p.phone_number.lstrip("+").replace(" ", "").replace("-", "")
-            channels.append({"platform": "viber", "label": "Viber", "url": f"viber://chat?number=%2B{phone}"})
-        elif p.platform == "linkedin" and p.organization_id:
-            channels.append({"platform": "linkedin", "label": "LinkedIn", "url": f"https://www.linkedin.com/company/{p.organization_id}"})
+
+    if domain_account_ids is not None:
+        accounts = db.query(PlatformAccount).filter(
+            PlatformAccount.id.in_(domain_account_ids),
+            PlatformAccount.is_active == 1,
+        ).all()
+        for a in accounts:
+            ch = _account_to_channel(a)
+            if ch:
+                channels.append(ch)
+    else:
+        # Fallback: global platform_settings (backward compatible)
+        platforms = db.query(PlatformSettings).filter(PlatformSettings.is_configured >= 1).all()
+        for p in platforms:
+            if p.platform == "whatsapp" and p.phone_number:
+                phone = p.phone_number.replace("+", "").replace(" ", "").replace("-", "")
+                channels.append({"platform": "whatsapp", "label": "WhatsApp", "url": f"https://wa.me/{phone}"})
+            elif p.platform == "facebook" and p.page_id:
+                channels.append({"platform": "facebook", "label": "Messenger", "url": f"https://m.me/{p.page_id}"})
+            elif p.platform == "viber" and p.phone_number:
+                phone = p.phone_number.lstrip("+").replace(" ", "").replace("-", "")
+                channels.append({"platform": "viber", "label": "Viber", "url": f"viber://chat?number=%2B{phone}"})
+            elif p.platform == "linkedin" and p.organization_id:
+                channels.append({"platform": "linkedin", "label": "LinkedIn", "url": f"https://www.linkedin.com/company/{p.organization_id}"})
+
     return channels
 
 
@@ -551,6 +609,19 @@ async def visitor_websocket(session_id: str, websocket: WebSocket):
 
             if msg_type == "message":
                 text = (data.get("text") or "").strip()
+
+                # Tag conversation with widget domain on first message if widget_key provided
+                widget_key = data.get("widget_key")
+                if widget_key and not conv.widget_domain_id:
+                    from app.models.widget_domain import WidgetDomain
+                    wd = db.query(WidgetDomain).filter(
+                        WidgetDomain.widget_key == widget_key,
+                        WidgetDomain.is_active == 1,
+                    ).first()
+                    if wd:
+                        conv.widget_domain_id = wd.id
+                        db.commit()
+
                 if not text:
                     continue
 
