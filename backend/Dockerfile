@@ -21,7 +21,8 @@ COPY . .
 # Create dirs for file uploads (persisted via volumes)
 RUN mkdir -p /app/app/avatar_storage \
              /app/app/attachment_storage/messages \
-             /app/app/attachment_storage/campaigns
+             /app/app/attachment_storage/campaigns \
+             /app/templates/default_site
 
 # Non-root user
 RUN adduser --disabled-password --gecos "" appuser && chown -R appuser:appuser /app

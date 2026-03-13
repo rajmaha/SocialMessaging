@@ -40,6 +40,7 @@ services:
       - backend_logos:/app/app/logo_storage
       - backend_audio:/app/app/audio_storage
       - backend_sub_logos:/app/app/subscription_logo_storage
+      - backend_templates:/app/templates
 
   # ── Next.js Frontend ──
   frontend:
@@ -67,4 +68,6 @@ volumes:
   backend_audio:
     driver: local
   backend_sub_logos:
+    driver: local
+  backend_templates:
     driver: local

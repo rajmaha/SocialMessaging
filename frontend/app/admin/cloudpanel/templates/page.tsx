@@ -20,7 +20,7 @@ export default function CloudPanelTemplatesPage() {
     const fetchTemplates = async () => {
         setLoading(true)
         try {
-            const res = await fetch('${API_URL}/cloudpanel/templates', {
+            const res = await fetch(`${API_URL}/cloudpanel/templates`, {
                 headers: { 'Authorization': `Bearer ${getAuthToken()}` }
             })
             if (res.ok) {
@@ -59,7 +59,7 @@ export default function CloudPanelTemplatesPage() {
         formData.append('file', templateFile)
 
         try {
-            const res = await fetch('${API_URL}/cloudpanel/templates', {
+            const res = await fetch(`${API_URL}/cloudpanel/templates`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${getAuthToken()}` },
                 body: formData

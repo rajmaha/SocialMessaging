@@ -29,7 +29,7 @@ export default function CloudPanelSSLPage() {
 
     const fetchServers = async () => {
         try {
-            const res = await fetch('${API_URL}/cloudpanel/servers', { headers: authHeaders() })
+            const res = await fetch(`${API_URL}/cloudpanel/servers`, { headers: authHeaders() })
             if (res.ok) {
                 const data = await res.json()
                 setServers(data)
