@@ -13,7 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import check_permission
+from app.routes.admin import check_permission
 from app.models.domain_account import DomainAccount
 from app.models.domain_agent import DomainAgent
 from app.models.platform_account import PlatformAccount

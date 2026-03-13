@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import check_permission
+from app.routes.admin import check_permission
 from app.models.agent_account import AgentAccount
 from app.models.platform_account import PlatformAccount
 from app.models.user import User
@@ -71,7 +71,7 @@ async def list_platform_accounts(
             "phone_number": a.phone_number,
             "app_secret": a.app_secret,
             "verify_token": a.verify_token,
-            "metadata": a.metadata,
+            "metadata": a.extra_metadata,
             "is_active": a.is_active,
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "updated_at": a.updated_at.isoformat() if a.updated_at else None,
@@ -105,7 +105,7 @@ async def create_platform_account(
         phone_number=body.phone_number,
         app_secret=body.app_secret,
         verify_token=body.verify_token,
-        metadata=body.metadata,
+        extra_metadata=body.metadata,
         is_active=1,
     )
     db.add(account)
@@ -129,7 +129,8 @@ async def update_platform_account(
     update_data = body.dict(exclude_unset=True)
     for key, value in update_data.items():
         if value is not None and value != "":
-            setattr(account, key, value)
+            attr_name = "extra_metadata" if key == "metadata" else key
+            setattr(account, attr_name, value)
 
     account.updated_at = datetime.utcnow()
     db.commit()

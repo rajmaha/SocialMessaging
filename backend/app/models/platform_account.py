@@ -15,6 +15,6 @@ class PlatformAccount(Base):
     is_active = Column(Integer, default=1)
     app_secret = Column(String, nullable=True)
     verify_token = Column(String, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    extra_metadata = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
