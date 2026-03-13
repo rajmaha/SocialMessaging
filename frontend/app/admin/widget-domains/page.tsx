@@ -390,7 +390,7 @@ export default function WidgetDomainsPage() {
 
     return (
         <>
-            <MainHeader user={user} />
+            <MainHeader user={user!} />
             <AdminNav />
             <div className="ml-[240px] pt-14 p-6">
                 {/* Header */}
