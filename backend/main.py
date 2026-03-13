@@ -39,6 +39,9 @@ from app.models.logs import AuditLog, ErrorLog  # noqa: F401 — ensures log tab
 from app.models.ci_cd import CICDRepo, CICDDeployment, CICDScriptLog, CICDMigrationLog  # noqa: F401
 from app.models.visitors import VisitorLocation, VisitorProfile, Visit  # noqa: F401
 from app.models.agent_account import AgentAccount  # noqa: F401
+from app.models.widget_domain import WidgetDomain  # noqa: F401
+from app.models.domain_account import DomainAccount  # noqa: F401
+from app.models.domain_agent import DomainAgent  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -1611,6 +1614,43 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS app_secret VARCHAR"))
         conn.execute(text("ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS verify_token VARCHAR"))
         conn.execute(text("ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS metadata JSON"))
+        conn.commit()
+
+    # ── Multi-domain widget tables ──
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS widget_domains (
+                id SERIAL PRIMARY KEY,
+                domain VARCHAR UNIQUE NOT NULL,
+                widget_key VARCHAR UNIQUE NOT NULL,
+                display_name VARCHAR NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                branding_overrides JSON,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS domain_accounts (
+                id SERIAL PRIMARY KEY,
+                widget_domain_id INTEGER NOT NULL REFERENCES widget_domains(id) ON DELETE CASCADE,
+                platform_account_id INTEGER NOT NULL REFERENCES platform_accounts(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE (widget_domain_id, platform_account_id)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS domain_agents (
+                id SERIAL PRIMARY KEY,
+                widget_domain_id INTEGER NOT NULL REFERENCES widget_domains(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE (widget_domain_id, user_id)
+            )
+        """))
+        conn.execute(text("""
+            ALTER TABLE conversations ADD COLUMN IF NOT EXISTS widget_domain_id INTEGER REFERENCES widget_domains(id)
+        """))
         conn.commit()
 
 # ── Log DB Init ────────────────────────────────────────────────────────────

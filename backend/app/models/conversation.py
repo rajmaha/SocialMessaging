@@ -8,6 +8,7 @@ class Conversation(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     platform_account_id = Column(Integer, ForeignKey("platform_accounts.id"))
+    widget_domain_id = Column(Integer, ForeignKey("widget_domains.id"), nullable=True)
     conversation_id = Column(String, unique=True, index=True)
     platform = Column(String)  # whatsapp, facebook, viber, linkedin
     contact_name = Column(String)
