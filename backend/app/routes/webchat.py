@@ -668,6 +668,12 @@ async def visitor_websocket(session_id: str, websocket: WebSocket):
                         "visitor_name": conv.contact_name,
                     }
                 }
+                # Admins always receive all chats
+                admin_ids = {
+                    u.id for u in db.query(User).filter(
+                        User.is_active == True, User.role == "admin"
+                    ).all()
+                }
                 assigned_agent_ids = []
                 if conv.widget_domain_id:
                     from app.models.domain_agent import DomainAgent
@@ -677,7 +683,9 @@ async def visitor_websocket(session_id: str, websocket: WebSocket):
                         ).all()
                     ]
                 if assigned_agent_ids:
-                    for uid in assigned_agent_ids:
+                    # Broadcast to assigned agents + all admins
+                    recipient_ids = set(assigned_agent_ids) | admin_ids
+                    for uid in recipient_ids:
                         await events_service.broadcast_to_user(uid, event_payload)
                 else:
                     await events_service.broadcast_to_all(event_payload)

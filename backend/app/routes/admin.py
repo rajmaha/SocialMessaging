@@ -583,6 +583,11 @@ async def test_platform_connection(
             ).first()
             if setting:
                 setting.is_configured = 2
+                # Sync webhook_registered from live test result
+                if result.get("webhook_status") == "registered":
+                    setting.webhook_registered = 1
+                elif result.get("webhook_status") == "not_registered":
+                    setting.webhook_registered = 0
                 setting.updated_at = datetime.utcnow()
                 db.commit()
         except Exception:
