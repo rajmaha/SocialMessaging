@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { FiSend, FiMessageCircle, FiPaperclip } from 'react-icons/fi'
 import { API_URL } from '@/lib/config';
 
@@ -73,6 +74,8 @@ interface Branding {
 type Phase = 'email' | 'otp' | 'chat'
 
 export default function WidgetPage() {
+  const searchParams = useSearchParams()
+  const widgetKey = searchParams.get('widget_key')
   const [phase, setPhase] = useState<Phase>('email')
   const [visitorName, setVisitorName] = useState('')
   // email phase
@@ -433,7 +436,7 @@ export default function WidgetPage() {
     }])
     setInputText('')
 
-    wsRef.current.send(JSON.stringify({ type: 'message', text }))
+    wsRef.current.send(JSON.stringify({ type: 'message', text, ...(widgetKey ? { widget_key: widgetKey } : {}) }))
   }
 
   const sendFile = async (file: File) => {

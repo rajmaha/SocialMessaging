@@ -12,9 +12,15 @@
   var WIDGET_URL = SERVER + '/widget'
   var BRANDING_URL = SERVER + '/api/webchat/branding'  // proxied via Next.js if needed
 
+  // Read widget key from script tag's data-key attribute
+  var scriptTag = document.currentScript || document.querySelector('script[data-key]')
+  var WIDGET_KEY = scriptTag ? scriptTag.getAttribute('data-key') : null
+
   // Fetch branding to style the launcher button
   var primaryColor = '#2563eb'
-  fetch(SERVER.replace(':3000', ':8000') + '/webchat/branding')
+  var brandingUrl = SERVER.replace(':3000', ':8000') + '/webchat/branding'
+  if (WIDGET_KEY) brandingUrl += '?key=' + encodeURIComponent(WIDGET_KEY)
+  fetch(brandingUrl)
     .then(function (r) { return r.json() })
     .then(function (b) {
       if (b.primary_color) {
@@ -143,7 +149,7 @@
 
   // ── Chat iframe ──────────────────────────────────────────────────────
   var iframe = document.createElement('iframe')
-  iframe.src = WIDGET_URL
+  iframe.src = WIDGET_KEY ? WIDGET_URL + '?widget_key=' + encodeURIComponent(WIDGET_KEY) : WIDGET_URL
   iframe.title = 'Live Chat'
   Object.assign(iframe.style, {
     width: '100%',
@@ -373,7 +379,9 @@
     })
     .catch(function () {})
 
-  fetch(SERVER.replace(':3000', ':8000') + '/webchat/channels')
+  var channelsUrl = SERVER.replace(':3000', ':8000') + '/webchat/channels'
+  if (WIDGET_KEY) channelsUrl += '?key=' + encodeURIComponent(WIDGET_KEY)
+  fetch(channelsUrl)
     .then(function (r) { return r.json() })
     .then(function (data) {
       if (data && data.length > 0) {
