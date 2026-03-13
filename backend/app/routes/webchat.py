@@ -92,6 +92,7 @@ def _get_branding(db: Session, widget_key: str | None = None) -> dict:
         "logo_url": b.logo_url if b else None,
         "welcome_message": "Hi! How can we help you today?",
         "timezone": b.timezone if b else "UTC",
+        "key_valid": widget_key is None,  # no key = no validation needed
     }
 
     if widget_key:
@@ -100,10 +101,14 @@ def _get_branding(db: Session, widget_key: str | None = None) -> dict:
             WidgetDomain.widget_key == widget_key,
             WidgetDomain.is_active == 1,
         ).first()
-        if wd and wd.branding_overrides:
-            for k, v in wd.branding_overrides.items():
-                if v is not None and k in base:
-                    base[k] = v
+        if wd:
+            base["key_valid"] = True
+            if wd.branding_overrides:
+                for k, v in wd.branding_overrides.items():
+                    if v is not None and k in base:
+                        base[k] = v
+        else:
+            base["key_valid"] = False
     return base
 
 def _first_admin(db: Session) -> Optional[User]:

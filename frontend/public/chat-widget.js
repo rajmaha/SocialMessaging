@@ -16,13 +16,23 @@
   var scriptTag = document.currentScript || document.querySelector('script[data-key]')
   var WIDGET_KEY = scriptTag ? scriptTag.getAttribute('data-key') : null
 
-  // Fetch branding to style the launcher button
+  // Abort if no key provided
+  if (!WIDGET_KEY) return
+
+  // Fetch branding to style the launcher button — abort if key is invalid
   var primaryColor = '#2563eb'
-  var brandingUrl = SERVER.replace(':3000', ':8000') + '/webchat/branding'
-  if (WIDGET_KEY) brandingUrl += '?key=' + encodeURIComponent(WIDGET_KEY)
+  var brandingUrl = SERVER.replace(':3000', ':8000') + '/webchat/branding?key=' + encodeURIComponent(WIDGET_KEY)
+  var brandingReady = false
   fetch(brandingUrl)
     .then(function (r) { return r.json() })
     .then(function (b) {
+      if (b.key_valid === false) {
+        // Invalid or inactive key — remove widget elements and stop
+        if (launcher.parentNode) launcher.parentNode.removeChild(launcher)
+        if (container.parentNode) container.parentNode.removeChild(container)
+        return
+      }
+      brandingReady = true
       if (b.primary_color) {
         primaryColor = b.primary_color
         launcher.style.background = primaryColor

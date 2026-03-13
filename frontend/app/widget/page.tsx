@@ -154,11 +154,14 @@ function WidgetPageInner() {
   }, [messages])
 
   useEffect(() => {
-    fetch(`${API_URL}/webchat/branding`)
+    const url = widgetKey
+      ? `${API_URL}/webchat/branding?key=${encodeURIComponent(widgetKey)}`
+      : `${API_URL}/webchat/branding`
+    fetch(url)
       .then((r) => r.json())
       .then((d) => setBranding(d))
       .catch(() => {})
-  }, [])
+  }, [widgetKey])
 
   // Check for existing verified session in localStorage
   useEffect(() => {
