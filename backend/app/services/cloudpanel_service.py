@@ -152,20 +152,17 @@ class CloudPanelService:
             remote_dir = f"/home/{sys_user}/htdocs/{data.domainName}"
 
         # --- Step 1: Create site ---
-        if sys_pass:
-            # New user — pass credentials to CloudPanel
-            cmd_site = (
-                f"clpctl site:add:php --domainName={data.domainName} "
-                f"--phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} "
-                f"--siteUser={sys_user} --siteUserPassword='{sys_pass}'"
-            )
-        else:
-            # Existing user — CloudPanel will attach the subdomain to the same user
-            cmd_site = (
-                f"clpctl site:add:php --domainName={data.domainName} "
-                f"--phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} "
-                f"--siteUser={sys_user}"
-            )
+        # clpctl always requires --siteUserPassword even for existing users.
+        # For existing users (sys_pass is None) we generate a throw-away value;
+        # CloudPanel ignores it when the system user already exists.
+        clpctl_pass = sys_pass or ''.join(
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(16)
+        )
+        cmd_site = (
+            f"clpctl site:add:php --domainName={data.domainName} "
+            f"--phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} "
+            f"--siteUser={sys_user} --siteUserPassword='{clpctl_pass}'"
+        )
         self._execute(cmd_site)
 
         # Get the actual document root from the nginx vhost CloudPanel created
