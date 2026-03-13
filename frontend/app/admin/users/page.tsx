@@ -139,7 +139,12 @@ export default function AdminUsers() {
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
         })
       ]);
-      setRegistry(registryRes.data);
+      const rawRegistry = registryRes.data;
+      setRegistry(
+        Array.isArray(rawRegistry)
+          ? rawRegistry
+          : Object.entries(rawRegistry).map(([key, val]: [string, any]) => ({ key, label: val.label, actions: val.actions }))
+      );
       const overrides: PermissionOverride[] = overridesRes.data;
       setExistingOverrides(overrides);
 
