@@ -91,18 +91,20 @@ def fetch_cloudpanel_sites(server: CloudPanelServer) -> list:
     Tries multiple known DB paths automatically.
     Returns list of dicts: {domain, path, user}.
     """
-    candidates_repr = repr(_CLOUDPANEL_DB_CANDIDATES)
-    query_cmd = (
-        f"python3 -c '"
-        f"import sqlite3,json,os,sys;"
-        f"c={candidates_repr};"
-        f"db=next((p for p in c if os.path.exists(p)),None);"
-        f"sys.stderr.write(\"CloudPanel DB not found in \"+str(c)+\"\\n\") or sys.exit(1) if not db else None;"
-        f"cur=sqlite3.connect(db).cursor();"
-        f"cur.execute(\"SELECT domain_name,root_directory,user FROM site WHERE deleted=0 ORDER BY domain_name\");"
-        f"print(json.dumps([{{\"domain\":r[0],\"path\":r[1],\"user\":r[2]}} for r in cur.fetchall()]))"
-        f"'"
+    import base64
+    script = (
+        "import sqlite3, json, os, sys\n"
+        f"candidates = {_CLOUDPANEL_DB_CANDIDATES!r}\n"
+        "db = next((p for p in candidates if os.path.exists(p)), None)\n"
+        "if not db:\n"
+        "    sys.stderr.write('CloudPanel DB not found in: ' + str(candidates) + chr(10))\n"
+        "    sys.exit(1)\n"
+        "c = sqlite3.connect(db).cursor()\n"
+        "c.execute('SELECT domain_name, root_directory, user FROM site WHERE deleted=0 ORDER BY domain_name')\n"
+        "print(json.dumps([{'domain': r[0], 'path': r[1], 'user': r[2]} for r in c.fetchall()]))\n"
     )
+    encoded = base64.b64encode(script.encode()).decode()
+    query_cmd = f"echo {encoded} | base64 -d | python3"
     with _server_key_file(server) as kf:
         rc, out, err = _ssh_run(server, query_cmd, kf, timeout=15)
 
