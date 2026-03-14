@@ -98,7 +98,7 @@ export default function CloudPanelDeployPage() {
             // the normal rewrite path.  Next.js rewrites buffer the full response before
             // forwarding it, which breaks SSE streaming.  The API route pipes the
             // ReadableStream directly to the browser with no intermediate buffering.
-            const res = await fetch(`/api/cloudpanel-deploy-stream/${siteForm.serverId}`, {
+            const res = await fetch(`/sse/cloudpanel-deploy/${siteForm.serverId}`, {
                 method: 'POST',
                 headers: authHeaders(),
                 body: JSON.stringify({
@@ -124,49 +124,62 @@ export default function CloudPanelDeployPage() {
                 return
             }
 
+            // Collect all SSE events from the stream.
+            // Reverse proxies (Coolify/Caddy/Traefik) may buffer the entire
+            // response, so all events can arrive in a single chunk.  We collect
+            // them first, then render them one-by-one with a staggered delay
+            // so the user always sees incremental progress.
             const reader = res.body?.getReader()
             const decoder = new TextDecoder()
             let buffer = ''
+            const allEvents: any[] = []
 
             while (reader) {
                 const { done, value } = await reader.read()
                 if (done) break
-
                 buffer += decoder.decode(value, { stream: true })
                 const lines = buffer.split('\n')
                 buffer = lines.pop() || ''
-
                 for (const line of lines) {
                     if (!line.startsWith('data: ')) continue
-                    const eventData = JSON.parse(line.slice(6))
+                    try { allEvents.push(JSON.parse(line.slice(6))) } catch {}
+                }
+            }
 
-                    if (eventData.step === 'error') {
-                        setMessage({ type: 'error', text: eventData.message || 'Deployment failed.' })
-                        setDeploySteps(prev => prev.map(s => s.status === 'in_progress' ? { ...s, status: 'error' } : s))
-                        setSiteDeploying(false)
-                        return
-                    }
+            // Render each event with a minimum 400ms gap between steps
+            const STEP_DELAY = 400
+            for (let i = 0; i < allEvents.length; i++) {
+                const eventData = allEvents[i]
 
-                    if (eventData.step === 'complete') {
-                        setDeployResult(eventData)
-                        setMessage({
-                            type: 'success',
-                            text: `Site deployed successfully! DB Name: ${eventData.db_name}, DB User: ${eventData.db_user}`
-                        })
-                        setSiteForm({ ...siteForm, domainName: '', dbName: '', dbUser: '', dbPassword: '', customCert: '', customKey: '', customChain: '' })
-                    } else {
-                        // Mark completed step and set next step as in_progress
-                        setDeploySteps(prev => {
-                            const updated = prev.map(s =>
-                                s.id === eventData.step ? { ...s, status: eventData.status as any } : s
-                            )
-                            const doneIdx = updated.findIndex(s => s.id === eventData.step)
-                            if (doneIdx >= 0 && doneIdx + 1 < updated.length && updated[doneIdx + 1].status === 'pending') {
-                                updated[doneIdx + 1] = { ...updated[doneIdx + 1], status: 'in_progress' }
-                            }
-                            return updated
-                        })
-                    }
+                // Wait before rendering (skip delay for the very first event)
+                if (i > 0) await new Promise(r => setTimeout(r, STEP_DELAY))
+
+                if (eventData.step === 'error') {
+                    setMessage({ type: 'error', text: eventData.message || 'Deployment failed.' })
+                    setDeploySteps(prev => prev.map(s => s.status === 'in_progress' ? { ...s, status: 'error' } : s))
+                    setSiteDeploying(false)
+                    return
+                }
+
+                if (eventData.step === 'complete') {
+                    setDeployResult(eventData)
+                    setMessage({
+                        type: 'success',
+                        text: `Site deployed successfully! DB Name: ${eventData.db_name}, DB User: ${eventData.db_user}`
+                    })
+                    setSiteForm({ ...siteForm, domainName: '', dbName: '', dbUser: '', dbPassword: '', customCert: '', customKey: '', customChain: '' })
+                } else {
+                    // Mark completed step and set next step as in_progress
+                    setDeploySteps(prev => {
+                        const updated = prev.map(s =>
+                            s.id === eventData.step ? { ...s, status: eventData.status as any } : s
+                        )
+                        const doneIdx = updated.findIndex(s => s.id === eventData.step)
+                        if (doneIdx >= 0 && doneIdx + 1 < updated.length && updated[doneIdx + 1].status === 'pending') {
+                            updated[doneIdx + 1] = { ...updated[doneIdx + 1], status: 'in_progress' }
+                        }
+                        return updated
+                    })
                 }
             }
         } catch (err) {

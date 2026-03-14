@@ -113,51 +113,14 @@ class CloudPanelService:
             db_user = db_user or gen_user
             db_pass = db_pass or gen_pass
 
-        # Determine remote directory and document root based on whether it's a subdomain
-        parts = data.domainName.split('.')
-        is_subdomain = len(parts) > 2
-
-        # parent_user/parent_root: set when the parent domain already exists on this server.
-        # In that case we want files under the parent's htdocs tree, so after CloudPanel
-        # creates the site we patch the nginx doc root to point there.
-        parent_user = None
-        parent_root = None
-
-        if is_subdomain:
-            root_domain = ".".join(parts[-2:])
-            subdomain_part = ".".join(parts[:-2])
-
-            parent_user, parent_root = self._get_parent_domain_user(root_domain)
-            if parent_user:
-                # clpctl cannot attach to an existing system user — it always creates a new one.
-                # We generate a fresh user for clpctl, then after site creation we patch the
-                # nginx root directive to point to {parent_root}/public/{subdomain_part} and
-                # use the parent user for file ownership.
-                sys_user = data.sysUser or data.domainName.replace(".", "")[:16]
-                sys_pass = data.sysUserPassword or ''.join(
-                    secrets.choice(string.ascii_letters + string.digits) for _ in range(16)
-                )
-                remote_dir = f"{parent_root}/public/{subdomain_part}"
-                logger.info(
-                    f"Parent domain '{root_domain}' found (user '{parent_user}') — "
-                    f"will patch nginx root to '{remote_dir}' after site creation"
-                )
-            else:
-                # Parent domain not on this server yet — create a fresh user
-                sys_user = data.sysUser or data.domainName.replace(".", "")[:16]
-                sys_pass = data.sysUserPassword or ''.join(
-                    secrets.choice(string.ascii_letters + string.digits) for _ in range(16)
-                )
-                remote_dir = f"/home/{sys_user}/htdocs/{root_domain}/public/{subdomain_part}"
-                logger.info(
-                    f"Parent domain '{root_domain}' not found — creating new user '{sys_user}'"
-                )
-        else:
-            sys_user = data.sysUser or data.domainName.replace(".", "")[:16]
-            sys_pass = data.sysUserPassword or ''.join(
-                secrets.choice(string.ascii_letters + string.digits) for _ in range(16)
-            )
-            remote_dir = f"/home/{sys_user}/htdocs/{data.domainName}"
+        # Generate system user and password for the new CloudPanel site.
+        # CloudPanel always creates a new system user per site — we let it
+        # manage user/path normally and deploy files to the htdocs it assigns.
+        sys_user = data.sysUser or data.domainName.replace(".", "")[:16]
+        sys_pass = data.sysUserPassword or ''.join(
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(16)
+        )
+        remote_dir = f"/home/{sys_user}/htdocs/{data.domainName}"
 
         # --- Step 1: Create site ---
         cmd_site = (
@@ -167,35 +130,17 @@ class CloudPanelService:
         )
         self._execute(cmd_site)
 
-        # Get the actual document root from the nginx vhost CloudPanel created
-        vhost_root = None
+        # Use the actual document root from the nginx vhost CloudPanel created,
+        # so files always go where CloudPanel (and its file manager) expects them.
         try:
             vhost_root = self._execute(
                 f"grep -m1 -oP 'root\\s+\\K[^;]+' /etc/nginx/sites-enabled/{data.domainName}.conf"
             ).strip()
             if vhost_root:
-                logger.info(f"Detected document root from nginx: {vhost_root}")
+                remote_dir = vhost_root
+                logger.info(f"Using document root from nginx: {remote_dir}")
         except Exception:
             logger.warning(f"Could not detect document root from nginx, using computed path: {remote_dir}")
-
-        if parent_user and parent_root:
-            # Patch nginx to use the parent's subdirectory as the document root,
-            # then reload nginx so the change takes effect immediately.
-            desired_root = f"{parent_root}/public/{subdomain_part}"
-            if vhost_root and vhost_root != desired_root:
-                try:
-                    self._execute(
-                        f"sed -i 's|root {vhost_root};|root {desired_root};|' "
-                        f"/etc/nginx/sites-enabled/{data.domainName}.conf"
-                    )
-                    self._execute("nginx -t && nginx -s reload")
-                    logger.info(f"Nginx root patched: {vhost_root} → {desired_root}")
-                except Exception as e:
-                    logger.error(f"Failed to patch nginx root: {e}")
-            remote_dir = desired_root
-            sys_user = parent_user   # use parent user for chown / result
-        elif vhost_root:
-            remote_dir = vhost_root
 
         yield {"step": "creating_site", "status": "done"}
 
@@ -374,7 +319,7 @@ class CloudPanelService:
             "db_user": db_user,
             "db_password": db_pass,
             "sys_user": sys_user,
-            "sys_password": sys_pass if not parent_user else "(parent user — nginx root patched)"
+            "sys_password": sys_pass
         }
 
     def get_ssl_report(self):
