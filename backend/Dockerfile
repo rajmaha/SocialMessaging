@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     curl \
     ffmpeg \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps (prod file excludes macOS-only pyobjc packages)
