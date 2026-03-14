@@ -49,8 +49,14 @@ def _server_key_file(server: Optional[CloudPanelServer]):
 
 def _ssh_run(server: CloudPanelServer, command: str, key_file: Optional[str],
              timeout: int = 300) -> tuple[int, str, str]:
+    # Use absolute path so subprocess can find ssh regardless of the
+    # backend process's PATH (common issue in venv / systemd environments)
+    ssh_bin = "/usr/bin/ssh"
+    if not os.path.exists(ssh_bin):
+        import shutil
+        ssh_bin = shutil.which("ssh") or "ssh"
     args = [
-        "ssh",
+        ssh_bin,
         "-o", "StrictHostKeyChecking=no",
         "-o", "BatchMode=yes",
         "-p", str(server.ssh_port or 22),

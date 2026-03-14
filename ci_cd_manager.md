@@ -602,3 +602,95 @@ The CI/CD system is designed to be **safe to run multiple times** without accide
 - **No Alembic** — migrations here are application-level SQL files you write yourself, not Python migration files
 - **DB credentials not stored** — migrations rely on the server's local `psql`/`mysql` peer auth; no DB username/password is stored in the CI/CD config
 - **Deployment thread is daemon** — if the server restarts mid-deployment, the deployment record will remain in `"running"` status indefinitely. You must manually update it to `"failed"` if needed.
+
+
+
+
+
+Git Authentication: HTTPS Token & SSH Key Guide
+🔒 HTTPS — Personal Access Token (PAT)
+GitHub
+Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+https://github.com/settings/tokens
+
+Click "Generate new token (classic)"
+
+Set:
+
+Note: e.g., CI/CD Deploy
+Expiration: choose or set "No expiration"
+Scopes: check repo (full control of private repos)
+Click Generate token — copy it immediately (shown only once)
+
+Token format: ghp_xxxxxxxxxxxxxxxxxxxx
+
+GitLab
+Go to GitLab → User Settings → Access Tokens
+https://gitlab.com/-/profile/personal_access_tokens
+
+Set name, expiry, and scopes: read_repository + write_repository
+
+Click Create personal access token — copy it
+
+Bitbucket
+Go to Bitbucket → Personal Settings → App passwords
+https://bitbucket.org/account/settings/app-passwords/
+
+Click Create app password, check Repositories: Read + Write
+
+Use your Bitbucket username as the username and the app password as the token
+
+🔑 SSH — Private Key
+Step 1: Generate the key pair
+# Ed25519 (recommended, modern)
+ssh-keygen -t ed25519 -C "cicd-deploy" -f ~/.ssh/cicd_deploy
+
+# RSA (fallback for older servers)
+ssh-keygen -t rsa -b 4096 -C "cicd-deploy" -f ~/.ssh/cicd_deploy
+
+When asked for a passphrase — press Enter (leave empty, CI/CD needs no passphrase)
+This creates two files:
+~/.ssh/cicd_deploy → private key (paste this into the CI/CD form)
+~/.ssh/cicd_deploy.pub → public key (add this to GitHub/GitLab)
+Step 2: Add the public key to your Git provider
+GitHub:
+
+Go to your repo → Settings → Deploy keys → Add deploy key
+Paste the contents of ~/.ssh/cicd_deploy.pub
+Check Allow write access if you need push
+Click Add key
+Or use a user-level key: GitHub → Settings → SSH and GPG keys → New SSH key
+
+GitLab:
+
+Go to your repo → Settings → Repository → Deploy keys
+Paste the public key contents
+Bitbucket:
+
+Go to repo → Repository settings → Access keys → Add key
+Paste the public key contents
+Step 3: Copy the private key for the CI/CD form
+cat ~/.ssh/cicd_deploy
+
+Copy the entire output including headers:
+
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAA...
+...
+-----END OPENSSH PRIVATE KEY-----
+
+Paste this into the SSH Private Key field in the CI/CD repo form.
+
+Quick Comparison
+HTTPS Token	SSH Key
+Ease of setup	✅ Easier	Slightly more steps
+Security	✅ Good (expiry support)	✅ Good (key-based)
+Token/key rotation	Manual (update token in form)	Manual (rotate key pair)
+Best for	GitHub/GitLab public repos	Private servers, self-hosted Git
+URL format	https://github.com/org/repo.git	git@github.com:org/repo.git
+✅ Tips
+Use SSH for private/self-hosted repos — no token expiry to manage
+Use HTTPS for simplicity — easy to rotate via GitHub UI
+Never commit private keys — only paste them into the CI/CD form, they're stored encrypted in the DB
+Deploy keys are repo-scoped (recommended) vs. user-level keys which have broader access
+When editing a repo in CI/CD, leave the token/key field blank to keep the existing stored value
