@@ -87,26 +87,30 @@ def _server_key_file(server: Optional[CloudPanelServer]):
 
 def fetch_cloudpanel_sites(server: CloudPanelServer) -> list:
     """
-    SSH into a CloudPanel server and query its SQLite DB to list all sites.
-    Tries multiple known DB paths automatically.
+    SSH into a CloudPanel server and list all sites by parsing nginx vhost configs.
     Returns list of dicts: {domain, path, user}.
     """
     import base64
     script = (
-        "import sqlite3, json, os, sys, subprocess\n"
-        f"candidates = {_CLOUDPANEL_DB_CANDIDATES!r}\n"
-        "db = next((p for p in candidates if os.path.exists(p)), None)\n"
-        "if not db:\n"
-        "    r = subprocess.run(['find', '/', '-name', 'cloud-panel.db', '-maxdepth', '8'], capture_output=True, text=True, timeout=10)\n"
-        "    found = [l.strip() for l in r.stdout.splitlines() if l.strip()]\n"
-        "    db = found[0] if found else None\n"
-        "if not db:\n"
-        "    sys.stderr.write('CloudPanel DB not found anywhere on this server' + chr(10))\n"
-        "    sys.exit(1)\n"
-        "sys.stderr.write('Using CloudPanel DB: ' + db + chr(10))\n"
-        "c = sqlite3.connect(db).cursor()\n"
-        "c.execute('SELECT domain_name, root_directory, user FROM site WHERE deleted=0 ORDER BY domain_name')\n"
-        "print(json.dumps([{'domain': r[0], 'path': r[1], 'user': r[2]} for r in c.fetchall()]))\n"
+        "import os, json, re\n"
+        "sites = []\n"
+        "conf_dir = '/etc/nginx/sites-enabled'\n"
+        "if not os.path.isdir(conf_dir):\n"
+        "    conf_dir = '/etc/nginx/conf.d'\n"
+        "for fname in sorted(os.listdir(conf_dir)):\n"
+        "    if not fname.endswith('.conf'):\n"
+        "        continue\n"
+        "    domain = fname[:-5]\n"
+        "    try:\n"
+        "        content = open(os.path.join(conf_dir, fname)).read()\n"
+        "        m = re.search(r'root\\s+([^;]+);', content)\n"
+        "        root = m.group(1).strip() if m else ''\n"
+        "        parts = root.split('/')\n"
+        "        user = parts[2] if len(parts) >= 3 and parts[1] == 'home' else ''\n"
+        "        sites.append({'domain': domain, 'path': root, 'user': user})\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "print(json.dumps(sites))\n"
     )
     encoded = base64.b64encode(script.encode()).decode()
     query_cmd = f"echo {encoded} | base64 -d | python3"
