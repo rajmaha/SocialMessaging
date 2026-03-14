@@ -15,9 +15,11 @@ import os
 import subprocess
 import tempfile
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 from typing import Optional
 
+import paramiko
 from sqlalchemy.orm import Session
 
 from app.models.ci_cd import CICDDeployment, CICDMigrationLog, CICDRepo, CICDScriptLog
@@ -35,57 +37,50 @@ _CLOUDPANEL_DB_CANDIDATES = [
 
 # ── SSH helpers ───────────────────────────────────────────────────────────────
 
-@contextlib.contextmanager
-def _server_key_file(server: Optional[CloudPanelServer]):
-    if server and server.ssh_key:
-        fd, path = tempfile.mkstemp(prefix="cicd_key_", suffix=".pem")
-        try:
-            os.write(fd, server.ssh_key.encode())
-            os.close(fd)
-            os.chmod(path, 0o600)
-            yield path
-        finally:
-            if os.path.exists(path):
-                os.unlink(path)
-    else:
-        yield None
-
-
-def _ssh_run(server: CloudPanelServer, command: str, key_file: Optional[str],
-             timeout: int = 300) -> tuple[int, str, str]:
-    import shutil
-    ssh_bin = "/usr/bin/ssh"
-    if not os.path.exists(ssh_bin):
-        ssh_bin = shutil.which("ssh") or "ssh"
-
-    if key_file:
-        args = [
-            ssh_bin,
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "BatchMode=yes",
-            "-p", str(server.ssh_port or 22),
-            "-i", key_file,
-            f"{server.ssh_user}@{server.host}",
-            command,
-        ]
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+def _make_paramiko_client(server: CloudPanelServer) -> paramiko.SSHClient:
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    kwargs: dict = {
+        "hostname": server.host,
+        "port": server.ssh_port or 22,
+        "username": server.ssh_user,
+        "timeout": 15,
+    }
+    if server.ssh_key:
+        pkey = None
+        for key_class in [paramiko.RSAKey, paramiko.Ed25519Key, paramiko.ECDSAKey, paramiko.DSSKey]:
+            try:
+                pkey = key_class.from_private_key(StringIO(server.ssh_key))
+                break
+            except Exception:
+                continue
+        if pkey is None:
+            raise ValueError("Could not parse SSH private key (unsupported key type)")
+        kwargs["pkey"] = pkey
     elif server.ssh_password:
-        sshpass_bin = shutil.which("sshpass") or "/usr/bin/sshpass"
-        args = [
-            sshpass_bin, "-p", server.ssh_password,
-            ssh_bin,
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "PasswordAuthentication=yes",
-            "-o", "BatchMode=no",
-            "-p", str(server.ssh_port or 22),
-            f"{server.ssh_user}@{server.host}",
-            command,
-        ]
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        kwargs["password"] = server.ssh_password
     else:
         raise RuntimeError("No SSH credentials configured for this server (no key, no password).")
+    client.connect(**kwargs)
+    return client
 
-    return result.returncode, result.stdout, result.stderr
+
+def _ssh_run(server: CloudPanelServer, command: str, _key_file: Optional[str] = None,
+             timeout: int = 300) -> tuple[int, str, str]:
+    """Run a command on the remote server via paramiko. Returns (exit_code, stdout, stderr)."""
+    client = _make_paramiko_client(server)
+    try:
+        _, stdout_f, stderr_f = client.exec_command(command, timeout=timeout)
+        exit_code = stdout_f.channel.recv_exit_status()
+        return exit_code, stdout_f.read().decode(errors="replace"), stderr_f.read().decode(errors="replace")
+    finally:
+        client.close()
+
+
+@contextlib.contextmanager
+def _server_key_file(server: Optional[CloudPanelServer]):
+    """Legacy context manager kept for call-site compatibility — yields None (paramiko handles keys)."""
+    yield None
 
 
 # ── CloudPanel site listing ───────────────────────────────────────────────────

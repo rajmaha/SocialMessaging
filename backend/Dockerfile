@@ -10,7 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     openssh-client \
-    sshpass \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps (prod file excludes macOS-only pyobjc packages)
