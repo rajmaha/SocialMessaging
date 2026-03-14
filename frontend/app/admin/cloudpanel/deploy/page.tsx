@@ -285,7 +285,7 @@ export default function CloudPanelDeployPage() {
                             <select required className="w-full p-2 border rounded" value={siteForm.serverId} onChange={e => setSiteForm({ ...siteForm, serverId: e.target.value })}>
                                 <option value="">-- Select a Server --</option>
                                 {servers.map(s => (
-                                    <option key={s.id} value={s.id}>{s.name} ({s.host})</option>
+                                    <option key={s.id} value={s.id}>{s.name}</option>
                                 ))}
                             </select>
                         </div>

@@ -18,8 +18,9 @@ class CICDRepo(Base):
     auth_type = Column(String, nullable=False, default="https")  # "ssh" | "https"
     ssh_private_key = Column(Text, nullable=True)        # PEM key (SSH auth for git)
     access_token = Column(String, nullable=True)         # PAT (HTTPS auth for git)
-    db_host = Column(String, nullable=True)              # PostgreSQL host (on target server)
-    db_port = Column(Integer, nullable=True, default=5432)
+    db_type = Column(String, nullable=True, default="postgres")  # "postgres" | "mysql"
+    db_host = Column(String, nullable=True)              # DB host (on target server), defaults to localhost
+    db_port = Column(Integer, nullable=True)             # defaults: postgres=5432, mysql=3306
     schedule_enabled = Column(Boolean, nullable=False, default=False)
     schedule_cron = Column(String, nullable=True)        # e.g. "0 2 * * *"
     last_deployed_at = Column(DateTime, nullable=True)

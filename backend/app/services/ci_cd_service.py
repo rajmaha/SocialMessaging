@@ -5,7 +5,7 @@ CI/CD deployment service.
 Deployment order: git clone/pull → shell scripts (once) → SQL migrations (once per DB).
 
 If a CloudPanelServer is attached to the repo, all commands run on that server via SSH.
-Migrations run via `psql` on the target server — no DB credentials required.
+Migrations run via `psql` (PostgreSQL) or `mysql` (MySQL) on the target server — no DB credentials required.
 If no server is attached, everything runs locally.
 """
 import contextlib
@@ -245,8 +245,10 @@ def run_scripts(repo: CICDRepo, deployment: CICDDeployment, db: Session,
 def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                    server: Optional[CloudPanelServer] = None) -> list:
     database_dir = f"{repo.local_path}/database"
+    db_type = repo.db_type or "postgres"
     db_host = repo.db_host or "localhost"
-    db_port = repo.db_port or 5432
+    default_port = 3306 if db_type == "mysql" else 5432
+    db_port = repo.db_port or default_port
 
     if server:
         with _server_key_file(server) as kf:
@@ -291,19 +293,35 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
             mig_status = "success"
             mig_error: Optional[str] = None
             try:
+                # Build the CLI command based on db_type
+                if db_type == "mysql":
+                    cli_cmd = f"mysql -h {db_host} -P {db_port} '{db_name}' < '{sql_path}' 2>&1"
+                    local_args = ["mysql", "-h", db_host, "-P", str(db_port), db_name]
+                else:
+                    cli_cmd = f"psql -h {db_host} -p {db_port} -d '{db_name}' -f '{sql_path}' 2>&1"
+                    local_args = ["psql", "-h", db_host, "-p", str(db_port), "-d", db_name,
+                                  "-f", str(Path(repo.local_path) / "database" / fname)]
+
                 if server:
-                    psql_cmd = f"psql -h {db_host} -p {db_port} -d '{db_name}' -f '{sql_path}' 2>&1"
                     with _server_key_file(server) as kf:
-                        rc, out, err = _ssh_run(server, psql_cmd, kf, timeout=120)
+                        rc, out, err = _ssh_run(server, cli_cmd, kf, timeout=120)
                     if rc != 0:
                         mig_status = "failed"
                         mig_error = (out + err)[:4000]
                 else:
-                    result = subprocess.run(
-                        ["psql", "-h", db_host, "-p", str(db_port), "-d", db_name,
-                         "-f", str(Path(repo.local_path) / "database" / fname)],
-                        capture_output=True, text=True, timeout=120,
-                    )
+                    if db_type == "mysql":
+                        # mysql reads SQL from stdin via '<'
+                        sql_file_path = str(Path(repo.local_path) / "database" / fname)
+                        with open(sql_file_path) as sql_f:
+                            result = subprocess.run(
+                                local_args, stdin=sql_f,
+                                capture_output=True, text=True, timeout=120,
+                            )
+                    else:
+                        result = subprocess.run(
+                            local_args,
+                            capture_output=True, text=True, timeout=120,
+                        )
                     if result.returncode != 0:
                         mig_status = "failed"
                         mig_error = (result.stdout + result.stderr)[:4000]

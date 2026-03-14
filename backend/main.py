@@ -1274,6 +1274,11 @@ def _run_inline_migrations():
             ALTER TABLE cicd_repos
                 ADD COLUMN IF NOT EXISTS server_id INTEGER REFERENCES cloudpanel_servers(id) ON DELETE SET NULL
         """))
+        # Add db_type column (postgres or mysql) — defaults to postgres for existing rows
+        conn.execute(text("""
+            ALTER TABLE cicd_repos
+                ADD COLUMN IF NOT EXISTS db_type VARCHAR DEFAULT 'postgres'
+        """))
         conn.commit()
 
         # Add permissions column to roles table

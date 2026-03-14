@@ -39,8 +39,9 @@ class CICDRepoCreate(BaseModel):
     auth_type: str = "https"
     ssh_private_key: Optional[str] = None
     access_token: Optional[str] = None
+    db_type: Optional[str] = "postgres"  # "postgres" | "mysql"
     db_host: Optional[str] = None
-    db_port: Optional[int] = 5432
+    db_port: Optional[int] = None
     schedule_enabled: bool = False
     schedule_cron: Optional[str] = None
 
@@ -54,6 +55,7 @@ class CICDRepoUpdate(BaseModel):
     auth_type: Optional[str] = None
     ssh_private_key: Optional[str] = None
     access_token: Optional[str] = None
+    db_type: Optional[str] = None
     db_host: Optional[str] = None
     db_port: Optional[int] = None
     schedule_enabled: Optional[bool] = None
@@ -71,6 +73,7 @@ class CICDRepoOut(BaseModel):
     auth_type: str
     has_ssh_key: bool = False
     has_access_token: bool = False
+    db_type: Optional[str] = None
     db_host: Optional[str] = None
     db_port: Optional[int] = None
     schedule_enabled: bool
@@ -94,6 +97,7 @@ class CICDRepoOut(BaseModel):
             auth_type=obj.auth_type,
             has_ssh_key=bool(obj.ssh_private_key),
             has_access_token=bool(obj.access_token),
+            db_type=obj.db_type,
             db_host=obj.db_host,
             db_port=obj.db_port,
             schedule_enabled=obj.schedule_enabled,

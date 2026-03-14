@@ -29,6 +29,7 @@ interface CICDRepo {
   auth_type: string
   has_ssh_key: boolean
   has_access_token: boolean
+  db_type: string | null
   db_host: string | null
   db_port: number | null
   schedule_enabled: boolean
@@ -52,8 +53,9 @@ const emptyRepoForm = {
   auth_type: 'https',
   ssh_private_key: '',
   access_token: '',
+  db_type: 'postgres',
   db_host: '',
-  db_port: '5432',
+  db_port: '',
   schedule_enabled: false,
   schedule_cron: '',
 }
@@ -182,8 +184,9 @@ export default function CICDPage() {
       auth_type: repo.auth_type,
       ssh_private_key: '',
       access_token: '',
+      db_type: repo.db_type || 'postgres',
       db_host: repo.db_host || '',
-      db_port: String(repo.db_port || 5432),
+      db_port: repo.db_port ? String(repo.db_port) : '',
       schedule_enabled: repo.schedule_enabled,
       schedule_cron: repo.schedule_cron || '',
     })
@@ -205,8 +208,9 @@ export default function CICDPage() {
         local_path: repoForm.local_path,
         server_id: repoForm.server_id ? parseInt(repoForm.server_id) : null,
         auth_type: repoForm.auth_type,
+        db_type: repoForm.db_type || 'postgres',
         db_host: repoForm.db_host || null,
-        db_port: parseInt(repoForm.db_port) || 5432,
+        db_port: repoForm.db_port ? parseInt(repoForm.db_port) : null,
         schedule_enabled: repoForm.schedule_enabled,
         schedule_cron: repoForm.schedule_cron || null,
       }
@@ -409,7 +413,7 @@ export default function CICDPage() {
                     <option value="">— Local (same machine as this app) —</option>
                     {servers.map(s => (
                       <option key={s.id} value={s.id}>
-                        {s.name} ({s.ssh_user}@{s.host}:{s.ssh_port})
+                        {s.name}
                       </option>
                     ))}
                   </select>
@@ -490,22 +494,25 @@ export default function CICDPage() {
                 )}
               </div>
 
-              {/* DB host (for migrations) */}
+              {/* DB type (for migrations) */}
               <div className="border border-gray-100 rounded-xl p-4">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Database Host <span className="font-normal text-gray-400">(optional)</span></label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Database Migrations <span className="font-normal text-gray-400">(optional)</span></label>
                 <p className="text-xs text-gray-400 mb-3">
-                  For <code className="bg-gray-100 px-1 rounded">database/db.csv</code> migrations. Runs via <code className="bg-gray-100 px-1 rounded">psql</code> on server — no credentials needed.
+                  For <code className="bg-gray-100 px-1 rounded">database/db.csv</code> migrations. Runs on the same server — no credentials needed.
                 </p>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="col-span-2">
-                    <label className="block text-xs text-gray-500 mb-1">Host</label>
-                    <input value={repoForm.db_host} onChange={rField('db_host')} placeholder="localhost"
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Port</label>
-                    <input value={repoForm.db_port} onChange={rField('db_port')} placeholder="5432" type="number"
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <div>
+                  <label className="block text-xs text-gray-500 mb-2">Database Type</label>
+                  <div className="flex gap-3">
+                    {[
+                      { value: 'postgres', label: '🐘 PostgreSQL' },
+                      { value: 'mysql', label: '🐬 MySQL' },
+                    ].map(opt => (
+                      <button key={opt.value} type="button"
+                        onClick={() => setRepoForm(f => ({ ...f, db_type: opt.value }))}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-semibold border transition ${repoForm.db_type === opt.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>

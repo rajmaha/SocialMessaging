@@ -223,7 +223,7 @@ export default function CloudPanelSitesPage() {
                             >
                                 <option value="">All Servers</option>
                                 {servers.map(s => (
-                                    <option key={s.id} value={s.id}>{s.name} ({s.host})</option>
+                                    <option key={s.id} value={s.id}>{s.name}</option>
                                 ))}
                             </select>
                             <button
