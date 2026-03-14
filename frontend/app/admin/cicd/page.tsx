@@ -297,50 +297,51 @@ export default function CICDPage() {
                 <p className="text-gray-500 text-sm">No repositories yet. Add one to get started.</p>
               </div>
             ) : (
+              <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
                   <tr>
-                    <th className="px-5 py-3 text-left">Repository</th>
-                    <th className="px-5 py-3 text-left">Branch</th>
-                    <th className="px-5 py-3 text-left">Server</th>
-                    <th className="px-5 py-3 text-left">Auth</th>
-                    <th className="px-5 py-3 text-left">Schedule</th>
-                    <th className="px-5 py-3 text-left">Last Deployed</th>
-                    <th className="px-5 py-3 text-left">Status</th>
-                    <th className="px-5 py-3 text-left"></th>
+                    <th className="px-4 py-3 text-left">Repository</th>
+                    <th className="px-4 py-3 text-left">Branch</th>
+                    <th className="px-4 py-3 text-left">Server</th>
+                    <th className="px-4 py-3 text-left">Auth</th>
+                    <th className="px-4 py-3 text-left">Schedule</th>
+                    <th className="px-4 py-3 text-left">Last Deployed</th>
+                    <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {repos.map(repo => (
                     <tr key={repo.id} className="hover:bg-gray-50">
-                      <td className="px-5 py-3">
+                      <td className="px-4 py-3">
                         <div className="font-semibold text-gray-800">{repo.name}</div>
-                        <div className="text-xs text-gray-400 font-mono truncate max-w-xs">{repo.repo_url}</div>
+                        <div className="text-xs text-gray-400 font-mono truncate max-w-[200px]">{repo.repo_url}</div>
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-4 py-3">
                         <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{repo.branch}</span>
                       </td>
-                      <td className="px-5 py-3 text-xs">
+                      <td className="px-4 py-3 text-xs">
                         {repo.server_name
                           ? <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-medium">🖥 {repo.server_name}</span>
                           : <span className="text-gray-300">Local</span>}
                       </td>
-                      <td className="px-5 py-3 text-gray-500 text-xs">
+                      <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
                         {repo.auth_type === 'ssh' ? '🔑 SSH' : '🔒 HTTPS'}
                       </td>
-                      <td className="px-5 py-3 text-xs text-gray-500">
+                      <td className="px-4 py-3 text-xs text-gray-500">
                         {repo.schedule_enabled && repo.schedule_cron
                           ? <span className="font-mono bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{repo.schedule_cron}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-5 py-3 text-xs text-gray-500">
+                      <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                         {repo.last_deployed_at ? new Date(repo.last_deployed_at).toLocaleString() : '—'}
                       </td>
-                      <td className="px-5 py-3">{statusBadge(repo)}</td>
-                      <td className="px-5 py-3">
+                      <td className="px-4 py-3">{statusBadge(repo)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <button onClick={() => deployNow(repo.id)} disabled={deploying[repo.id]}
-                            className="px-3 py-1 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 disabled:opacity-50">
+                            className="px-3 py-1 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 disabled:opacity-50 whitespace-nowrap">
                             {deploying[repo.id] ? '⏳ Deploying…' : '▶ Deploy'}
                           </button>
                           <button onClick={() => router.push(`/admin/cicd/${repo.id}`)}
@@ -355,6 +356,7 @@ export default function CICDPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </div>

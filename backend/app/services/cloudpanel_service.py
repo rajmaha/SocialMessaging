@@ -29,7 +29,15 @@ class CloudPanelService:
         }
         if self.server.ssh_key:
             from io import StringIO
-            pkey = paramiko.RSAKey.from_private_key(StringIO(self.server.ssh_key))
+            pkey = None
+            for key_class in [paramiko.RSAKey, paramiko.Ed25519Key, paramiko.ECDSAKey, paramiko.DSSKey]:
+                try:
+                    pkey = key_class.from_private_key(StringIO(self.server.ssh_key))
+                    break
+                except Exception:
+                    continue
+            if pkey is None:
+                raise ValueError("Could not parse SSH private key (unsupported key type)")
             kwargs["pkey"] = pkey
         elif self.server.ssh_password:
             kwargs["password"] = self.server.ssh_password
