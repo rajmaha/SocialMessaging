@@ -264,6 +264,35 @@ class FreePBXService:
             timeout=10, verify=False,
         )
 
+    def _bpx_log_input_type(self, base: str, token: str, type_name: str):
+        """Introspect a GraphQL input type and log its fields — call once to discover schema."""
+        q = """
+        query InspectType($name: String!) {
+          __type(name: $name) {
+            name
+            inputFields {
+              name
+              type { name kind ofType { name kind } }
+            }
+          }
+        }
+        """
+        try:
+            r = self._gql(base, token, q, {"name": type_name})
+            if r.status_code == 200:
+                data = r.json()
+                t = (data.get("data") or {}).get("__type")
+                if t:
+                    fields = [f["name"] for f in (t.get("inputFields") or [])]
+                    logger.info("FreePBX schema — %s fields: %s", type_name, fields)
+                    return fields
+                logger.warning("FreePBX schema introspection: type %s not found", type_name)
+            else:
+                logger.warning("FreePBX schema introspection HTTP %s", r.status_code)
+        except Exception as e:
+            logger.error("FreePBX schema introspection error: %s", e)
+        return []
+
     def _bpx_extension_exists(self, base: str, token: str, extension: str) -> Optional[bool]:
         """
         Returns True if extension exists, False if it doesn't, None if the query failed.
@@ -344,10 +373,13 @@ class FreePBXService:
                         return True, "OK"
                     errs = result["errors"]
                     logger.warning("BPX updateExtension errors: %s", errs)
-                    # If extension genuinely doesn't exist, fall through to create
                     err_msgs = " ".join(
                         (e.get("message") or "") for e in errs
                     ).lower()
+                    # On schema validation errors, dump the actual type so we can fix it
+                    if "is not defined by type" in err_msgs or "unknown argument" in err_msgs:
+                        self._bpx_log_input_type(base, token, "updateExtensionInput")
+                    # If extension genuinely doesn't exist, fall through to create
                     if exists:
                         # We were confident it existed — return the real error
                         return False, f"updateExtension failed: {result['errors']}"
@@ -392,6 +424,11 @@ class FreePBXService:
                         logger.info("✅ BPX API: extension %s created", extension)
                         return True, "OK"
                     logger.warning("BPX addExtension errors: %s", result["errors"])
+                    add_err_msgs = " ".join(
+                        (e.get("message") or "") for e in result["errors"]
+                    ).lower()
+                    if "is not defined by type" in add_err_msgs or "unknown argument" in add_err_msgs:
+                        self._bpx_log_input_type(base, token, "addExtensionInput")
                     return False, f"addExtension failed: {result['errors']}"
                 logger.warning("BPX addExtension HTTP %s: %s", r.status_code, r.text[:200])
                 return False, f"addExtension HTTP {r.status_code}: {r.text[:300]}"
