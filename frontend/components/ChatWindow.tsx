@@ -10,6 +10,7 @@ import { API_URL } from '@/lib/config';
 import CrmSidebar from './CrmSidebar';
 import ClickablePhone from '@/components/ClickablePhone';
 import ClickableEmail from '@/components/ClickableEmail';
+import QuickTicketModal from './QuickTicketModal'
 
 interface Message {
   id: number
@@ -93,6 +94,7 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
   const [crmLead, setCrmLead] = useState<any>(null)
   const [crmCardOpen, setCrmCardOpen] = useState(false)
   const [crmSidebarOpen, setCrmSidebarOpen] = useState(true)
+  const [quickTicketOpen, setQuickTicketOpen] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [allowedTypes, setAllowedTypes] = useState<string[]>([])
   const [maxFileMb, setMaxFileMb] = useState(10)
@@ -623,6 +625,14 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
           ) : (
             <span className="text-xs text-green-600 font-medium">✓ Lead created</span>
           )}
+          {/* Create Ticket */}
+          <button
+            onClick={() => setQuickTicketOpen(true)}
+            className="p-1.5 rounded-lg text-sm font-medium text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition"
+            title="Create Ticket"
+          >
+            🎫 Ticket
+          </button>
           {/* CRM Sidebar toggle */}
           <button
             onClick={() => setCrmSidebarOpen((prev) => !prev)}
@@ -1161,6 +1171,16 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
           }}
         />
       )}
+      <QuickTicketModal
+        open={quickTicketOpen}
+        onClose={() => setQuickTicketOpen(false)}
+        onCreated={() => { setQuickTicketOpen(false); onRefresh() }}
+        prefill={{
+          phone: conversation?.contact_id,
+          contactName: conversation?.contact_name,
+          conversationId: conversation?.id,
+        }}
+      />
     </div>
   )
 }
