@@ -46,7 +46,10 @@ def create_ticket(
         assigned_to=ticket_in.assigned_to or current_user.id,
         app_type_data=ticket_in.app_type_data,
         parent_ticket_id=ticket_in.parent_ticket_id,
-        organization_id=ticket_in.organization_id
+        organization_id=ticket_in.organization_id,
+        conversation_id=ticket_in.conversation_id,   # NEW
+        email_id=ticket_in.email_id,                 # NEW
+        source=ticket_in.source,                     # NEW
     )
     db.add(new_ticket)
     db.commit()
@@ -115,7 +118,7 @@ def create_ticket(
     # appears in Call Records even when FreePBX CDR sync is not in use.
     # Dedup: skip if an existing record for this agent + phone exists within 30 min
     # (prevents duplicates when a real FreePBX CDR is later synced for the same call).
-    if not ticket_in.parent_ticket_id:
+    if not ticket_in.parent_ticket_id and ticket_in.source == "call":
         recent_cutoff = datetime.utcnow() - timedelta(minutes=30)
         existing_call = db.query(CallRecording).filter(
             CallRecording.phone_number == ticket_in.phone_number,
