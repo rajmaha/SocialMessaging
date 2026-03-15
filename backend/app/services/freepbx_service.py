@@ -264,7 +264,11 @@ class FreePBXService:
             timeout=10, verify=False,
         )
 
-    def _bpx_extension_exists(self, base: str, token: str, extension: str) -> bool:
+    def _bpx_extension_exists(self, base: str, token: str, extension: str) -> Optional[bool]:
+        """
+        Returns True if extension exists, False if it doesn't, None if the query failed.
+        Callers must treat None as "unknown" and not blindly fall through to addExtension.
+        """
         q = """
         query getExtension($extensionId: String!) {
           fetchExtension(extensionId: $extensionId) {
@@ -276,54 +280,97 @@ class FreePBXService:
             r = self._gql(base, token, q, {"extensionId": extension})
             if r.status_code == 200:
                 data = r.json()
+                if data.get("errors"):
+                    logger.warning("BPX fetchExtension errors: %s", data["errors"])
+                    return None
                 return bool((data.get("data") or {}).get("fetchExtension"))
-        except Exception:
-            pass
-        return False
+            logger.warning("BPX fetchExtension HTTP %s: %s", r.status_code, r.text[:200])
+        except Exception as e:
+            logger.error("BPX fetchExtension exception: %s", e)
+        return None
 
     def _bpx_create_or_update(
         self, base: str, token: str, extension: str,
         sip_password: str, display_name: str, email: str,
-    ) -> bool:
+    ) -> Tuple[bool, str]:
+        """Returns (success, detail_message)."""
         exists = self._bpx_extension_exists(base, token, extension)
-        if exists:
-            mutation = """
+
+        if exists is None:
+            # Exists-check failed — try update first (idempotent), then create on
+            # "not found"-style error so we don't blindly add a duplicate.
+            logger.warning(
+                "BPX fetchExtension failed for %s; will attempt updateExtension first", extension
+            )
+
+        _endpoint_fields = {
+            "secret": sip_password,
+            # WebRTC — enables softphone in browser
+            "media_encryption": "dtls",
+            "webrtc": "yes",
+            "dtls_verify": "fingerprint",
+            "dtls_setup": "actpass",
+            "ice_support": "yes",
+            "rtcp_mux": "yes",
+            "use_avpf": "yes",
+            "force_rport": "yes",
+            "rewrite_contact": "yes",
+        }
+
+        # --- UPDATE path ---
+        if exists or exists is None:
+            update_mutation = """
             mutation updateExtension($extensionId: String!, $input: updateExtensionInput!) {
               updateExtension(extensionId: $extensionId, input: $input) {
                 extensionId
-                status
               }
             }
             """
-            variables = {
+            update_vars = {
                 "extensionId": extension,
                 "input": {
                     "user": {"name": display_name or f"Agent {extension}"},
-                    "endpoint": {
-                        "secret": sip_password,
-                        # WebRTC settings — enables softphone in browser
-                        "media_encryption": "dtls",
-                        "webrtc": "yes",
-                        "dtls_verify": "fingerprint",
-                        "dtls_setup": "actpass",
-                        "ice_support": "yes",
-                        "rtcp_mux": "yes",
-                        "use_avpf": "yes",
-                        "force_rport": "yes",
-                        "rewrite_contact": "yes",
-                    },
+                    "endpoint": _endpoint_fields,
                 },
             }
-        else:
-            mutation = """
+            try:
+                r = self._gql(base, token, update_mutation, update_vars)
+                if r.status_code == 200:
+                    result = r.json()
+                    if not result.get("errors"):
+                        logger.info("✅ BPX API: extension %s updated", extension)
+                        return True, "OK"
+                    errs = result["errors"]
+                    logger.warning("BPX updateExtension errors: %s", errs)
+                    # If extension genuinely doesn't exist, fall through to create
+                    err_msgs = " ".join(
+                        (e.get("message") or "") for e in errs
+                    ).lower()
+                    if exists:
+                        # We were confident it existed — return the real error
+                        return False, f"updateExtension failed: {result['errors']}"
+                    # exists is None and it might just not exist yet — fall through
+                    if not any(kw in err_msgs for kw in ("not found", "does not exist", "no extension")):
+                        return False, f"updateExtension failed: {result['errors']}"
+                else:
+                    if exists:
+                        return False, f"updateExtension HTTP {r.status_code}: {r.text[:300]}"
+                    logger.warning("BPX updateExtension HTTP %s (will try add): %s", r.status_code, r.text[:200])
+            except Exception as e:
+                logger.error("BPX updateExtension exception: %s", e)
+                if exists:
+                    return False, f"updateExtension exception: {e}"
+
+        # --- CREATE path ---
+        if not exists:
+            add_mutation = """
             mutation addExtension($input: addExtensionInput!) {
               addExtension(input: $input) {
                 extensionId
-                status
               }
             }
             """
-            variables = {
+            add_vars = {
                 "input": {
                     "extensionId": extension,
                     "tech": "pjsip",
@@ -331,34 +378,25 @@ class FreePBXService:
                         "name": display_name or f"Agent {extension}",
                         "email": email,
                     },
-                    "endpoint": {
-                        "secret": sip_password,
-                        # WebRTC settings — enables softphone in browser
-                        "media_encryption": "dtls",
-                        "webrtc": "yes",
-                        "dtls_verify": "fingerprint",
-                        "dtls_setup": "actpass",
-                        "ice_support": "yes",
-                        "rtcp_mux": "yes",
-                        "use_avpf": "yes",
-                        "force_rport": "yes",
-                        "rewrite_contact": "yes",
-                    },
+                    "endpoint": _endpoint_fields,
                 },
             }
-        try:
-            r = self._gql(base, token, mutation, variables)
-            if r.status_code == 200:
-                result = r.json()
-                if not result.get("errors"):
-                    logger.info("✅ BPX API: extension %s %s", extension, "updated" if exists else "created")
-                    return True
-                logger.warning("BPX API extension errors: %s", result["errors"])
-            else:
-                logger.warning("BPX API extension HTTP %s: %s", r.status_code, r.text[:200])
-        except Exception as e:
-            logger.error("BPX API extension error: %s", e)
-        return False
+            try:
+                r = self._gql(base, token, add_mutation, add_vars)
+                if r.status_code == 200:
+                    result = r.json()
+                    if not result.get("errors"):
+                        logger.info("✅ BPX API: extension %s created", extension)
+                        return True, "OK"
+                    logger.warning("BPX addExtension errors: %s", result["errors"])
+                    return False, f"addExtension failed: {result['errors']}"
+                logger.warning("BPX addExtension HTTP %s: %s", r.status_code, r.text[:200])
+                return False, f"addExtension HTTP {r.status_code}: {r.text[:300]}"
+            except Exception as e:
+                logger.error("BPX addExtension exception: %s", e)
+                return False, f"addExtension exception: {e}"
+
+        return False, "BPX extension operation did not complete"
 
     def _bpx_delete(self, base: str, token: str, extension: str) -> bool:
         mutation = """
@@ -406,7 +444,7 @@ class FreePBXService:
         cache_key = (cfg["host"], cfg["api_key"], cfg["api_secret"])
 
         if auth["mode"] == "bpx":
-            ok = self._bpx_create_or_update(base, auth["token"], extension, sip_password, display_name, email)
+            ok, crud_detail = self._bpx_create_or_update(base, auth["token"], extension, sip_password, display_name, email)
         else:
             payload = {
                 "extension": extension,
@@ -418,13 +456,14 @@ class FreePBXService:
                 "outboundcid": f'"{display_name}" <{extension}>',
             }
             ok = self._rest_create_or_update(base, auth["token"], extension, payload)
+            crud_detail = "" if ok else "REST extension save failed — see backend logs for HTTP status/body"
 
         if not ok:
             # Evict cache in case the token expired mid-session
             self._auth_cache.pop(cache_key, None)
             return False, (
                 f"Extension {extension} CRUD failed on FreePBX "
-                f"({auth['mode']} mode, host={cfg['host']}) — check FreePBX server logs"
+                f"({auth['mode']} mode, host={cfg['host']}): {crud_detail}"
             )
 
         return True, "OK"
