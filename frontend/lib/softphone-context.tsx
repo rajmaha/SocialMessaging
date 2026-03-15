@@ -160,14 +160,12 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
         setStatus('registering')
 
         const registerer = new Registerer(ua)
+        ;(ua as any)._registerer = registerer  // store before awaits so cleanup can unregister
         await ua.start()
         if (destroyed) { await ua.stop(); return }
         await registerer.register()
         if (destroyed) { await registerer.unregister(); await ua.stop(); return }
         setStatus('registered')
-
-        // Attach registerer for cleanup
-        ;(ua as any)._registerer = registerer
 
       } catch (err) {
         console.error('[Softphone] bootstrap error', err)
@@ -216,34 +214,39 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
 
   // ── Public actions ────────────────────────────────────────────────────────
   const dial = useCallback(async (number: string) => {
-    // Empty string: just open the popup (used by the workspace "Open Dial Pad" button)
     if (!number) { setIsOpen(true); return }
-    const ua = uaRef.current
-    if (!ua || status !== 'registered') return
-    const { Inviter, SessionState } = await import('sip.js')
-    const UA = UserAgentClassRef.current
-    if (!UA) return
-    const target = UA.makeURI(`sip:${number}@${ua.configuration.uri.host}`)
-    if (!target) return
+    if (callState !== 'idle') return
+    try {
+      const ua = uaRef.current
+      if (!ua || status !== 'registered') return
+      const { Inviter, SessionState } = await import('sip.js')
+      const UA = UserAgentClassRef.current
+      if (!UA) return
+      const target = UA.makeURI(`sip:${number}@${ua.configuration.uri.host}`)
+      if (!target) return
 
-    const session = new Inviter(ua, target)
-    sessionRef.current = session
-    setCallerNumber(number)
-    setRemoteDisplayName(null)
-    setCallState('ringing_out')
-    setIsOpen(true)
+      const session = new Inviter(ua, target)
+      sessionRef.current = session
+      setCallerNumber(number)
+      setRemoteDisplayName(null)
+      setCallState('ringing_out')
+      setIsOpen(true)
 
-    session.stateChange.addListener((state: any) => {
-      if (state === SessionState.Established) {
-        attachAudio(session)
-        setCallState('active')
-      } else if (state === SessionState.Terminated) {
-        resetCall()
-      }
-    })
+      session.stateChange.addListener((state: any) => {
+        if (state === SessionState.Established) {
+          attachAudio(session)
+          setCallState('active')
+        } else if (state === SessionState.Terminated) {
+          resetCall()
+        }
+      })
 
-    await session.invite()
-  }, [status])
+      await session.invite()
+    } catch (err) {
+      console.error('[Softphone] dial error', err)
+      resetCall()
+    }
+  }, [status, callState])
 
   const answer = useCallback(async () => {
     const session = sessionRef.current
@@ -281,10 +284,15 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     const session = sessionRef.current
     if (!session) return
     const newHold = !isOnHold
-    if (newHold) await session.invite({ sessionDescriptionHandlerOptions: { hold: true } })
-    else await session.invite({ sessionDescriptionHandlerOptions: { hold: false } })
-    setIsOnHold(newHold)
-    setCallState(newHold ? 'on_hold' : 'active')
+    try {
+      if (newHold) await session.invite({ sessionDescriptionHandlerOptions: { hold: true } })
+      else await session.invite({ sessionDescriptionHandlerOptions: { hold: false } })
+      setIsOnHold(newHold)
+      setCallState(newHold ? 'on_hold' : 'active')
+    } catch (err) {
+      console.error('[Softphone] hold toggle error', err)
+      // Do not update state — SIP hold failed, keep current state
+    }
   }, [isOnHold])
 
   const close = useCallback(() => {
