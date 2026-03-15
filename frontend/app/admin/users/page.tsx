@@ -65,6 +65,12 @@ export default function AdminUsers() {
   const [userAccountIds, setUserAccountIds] = useState<number[]>([]);
   const [accountAccessLoading, setAccountAccessLoading] = useState(false);
 
+  // Sorting & pagination
+  const [sortField, setSortField] = useState<'name' | 'email' | 'role' | 'status'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
+
   // Form state
   const [formData, setFormData] = useState({
     username: '',
@@ -102,6 +108,7 @@ export default function AdminUsers() {
       }
       const data = await response.json();
       setUsers(data);
+      setCurrentPage(1);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -415,6 +422,29 @@ export default function AdminUsers() {
     }
   };
 
+  const handleSort = (field: 'name' | 'email' | 'role' | 'status') => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  const sortedUsers = [...users].sort((a, b) => {
+    let aVal = '';
+    let bVal = '';
+    if (sortField === 'name') { aVal = a.full_name; bVal = b.full_name; }
+    else if (sortField === 'email') { aVal = a.email; bVal = b.email; }
+    else if (sortField === 'role') { aVal = a.role; bVal = b.role; }
+    else if (sortField === 'status') { aVal = a.is_active ? 'active' : 'inactive'; bVal = b.is_active ? 'active' : 'inactive'; }
+    return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+  });
+
+  const totalPages = Math.max(1, Math.ceil(sortedUsers.length / PAGE_SIZE));
+  const pagedUsers = sortedUsers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -487,16 +517,26 @@ export default function AdminUsers() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  {(['name', 'email', 'role', 'status'] as const).map(field => (
+                    <th
+                      key={field}
+                      onClick={() => handleSort(field)}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                    >
+                      <span className="flex items-center gap-1">
+                        {field.charAt(0).toUpperCase() + field.slice(1)}
+                        <span className="text-gray-400">
+                          {sortField === field ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+                        </span>
+                      </span>
+                    </th>
+                  ))}
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {users.map((user) => (
+                {pagedUsers.map((user) => (
                   <tr key={user.id}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
@@ -538,6 +578,38 @@ export default function AdminUsers() {
         {users.length === 0 && (
           <div className="bg-white rounded-lg shadow p-12 text-center">
             <p className="text-gray-600">No users found. Create your first user to get started.</p>
+          </div>
+        )}
+        {users.length > 0 && (
+          <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+            <span>
+              Showing {Math.min((currentPage - 1) * PAGE_SIZE + 1, users.length)}–{Math.min(currentPage * PAGE_SIZE, users.length)} of {users.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Prev
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`px-3 py-1 rounded border ${currentPage === page ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300 bg-white hover:bg-gray-50'}`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
         {editModalOpen && (
