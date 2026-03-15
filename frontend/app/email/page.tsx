@@ -28,6 +28,7 @@ import { getAuthToken } from '@/lib/auth'
 import { useEvents } from '@/lib/events-context'
 import { API_URL } from '@/lib/config';
 import EmailAddressInput from '@/components/EmailAddressInput'
+import QuickTicketModal from '@/components/QuickTicketModal'
 
 interface Email {
   id: number
@@ -270,6 +271,10 @@ export default function EmailPage() {
   const [selectedLabelColor, setSelectedLabelColor] = useState('bg-blue-100')
   const [signatures, setSignatures] = useState<EmailSignature[]>([])
   const [showSignatureSettings, setShowSignatureSettings] = useState(false)
+  const [quickTicketOpen, setQuickTicketOpen] = useState(false)
+  const [quickTicketPrefill, setQuickTicketPrefill] = useState<{
+    email?: string; contactName?: string; emailId?: number
+  }>({})
   const [showCcBcc, setShowCcBcc] = useState(false)
   const [textColor, setTextColor] = useState('#000000')
 
@@ -3459,6 +3464,19 @@ export default function EmailPage() {
                         <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.293 3.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L14.586 10H9a5 5 0 00-5 5v2a1 1 0 11-2 0v-2a7 7 0 017-7h5.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                         Forward
                       </button>
+                      <button
+                        onClick={() => {
+                          setQuickTicketPrefill({
+                            email: latestEmail.from_address,
+                            contactName: latestEmail.from_address,
+                            emailId: latestEmail.id,
+                          })
+                          setQuickTicketOpen(true)
+                        }}
+                        className="bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-1.5 rounded-full transition flex items-center gap-1.5"
+                      >
+                        🎫 Create Ticket
+                      </button>
                       <div className="w-px bg-gray-200 h-5 mx-1" />
                       <button onClick={() => handleMarkUnread(latestEmail.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-yellow-50 hover:text-yellow-600 transition" title="Mark Unread">
                         <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
@@ -4324,6 +4342,12 @@ export default function EmailPage() {
         </div>
       )}
 
+      <QuickTicketModal
+        open={quickTicketOpen}
+        onClose={() => setQuickTicketOpen(false)}
+        onCreated={() => setQuickTicketOpen(false)}
+        prefill={quickTicketPrefill}
+      />
     </div>
   )
 }
