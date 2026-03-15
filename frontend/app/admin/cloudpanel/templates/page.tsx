@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import MainHeader from "@/components/MainHeader"
 import AdminNav from '@/components/AdminNav'
 import { authAPI, getAuthToken } from "@/lib/auth"
+import { API_URL } from "@/lib/config"
 
 export default function CloudPanelTemplatesPage() {
     const [isMounted, setIsMounted] = useState(false)
@@ -19,7 +20,7 @@ export default function CloudPanelTemplatesPage() {
     const fetchTemplates = async () => {
         setLoading(true)
         try {
-            const res = await fetch('http://localhost:8000/cloudpanel/templates', {
+            const res = await fetch(`${API_URL}/cloudpanel/templates`, {
                 headers: { 'Authorization': `Bearer ${getAuthToken()}` }
             })
             if (res.ok) {
@@ -58,7 +59,7 @@ export default function CloudPanelTemplatesPage() {
         formData.append('file', templateFile)
 
         try {
-            const res = await fetch('http://localhost:8000/cloudpanel/templates', {
+            const res = await fetch(`${API_URL}/cloudpanel/templates`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${getAuthToken()}` },
                 body: formData
@@ -89,7 +90,7 @@ export default function CloudPanelTemplatesPage() {
         if (!confirm(`Are you sure you want to delete template '${name}'?`)) return
 
         try {
-            const res = await fetch(`http://localhost:8000/cloudpanel/templates/${name}`, {
+            const res = await fetch(`${API_URL}/cloudpanel/templates/${name}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${getAuthToken()}` }
             })

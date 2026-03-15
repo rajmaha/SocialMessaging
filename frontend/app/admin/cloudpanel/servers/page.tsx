@@ -264,7 +264,7 @@ export default function CloudPanelServersPage() {
                                 <li key={s.id} className="p-3 bg-gray-50 rounded border flex justify-between items-center">
                                     <div>
                                         <strong className="text-gray-900">{s.name}</strong>
-                                        <span className="text-gray-600 ml-2">({s.host}:{s.ssh_port}) - {s.ssh_user}</span>
+                                        <span className="text-gray-600 ml-2">{s.ssh_user}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className={`px-2 py-1 text-xs rounded-full ${s.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>

@@ -13,6 +13,9 @@ interface Conversation {
   status?: string
   assigned_to?: number | null
   assigned_to_name?: string | null
+  platform_account_id?: number | null
+  widget_domain_id?: number | null
+  ticket_count?: number
 }
 
 interface ConversationListProps {
@@ -21,6 +24,9 @@ interface ConversationListProps {
   onSelectConversation: (conversation: Conversation) => void
   loading: boolean
   activeConvIds?: Set<number>
+  accountMap?: Record<number, string>
+  domainMap?: Record<number, string>
+  domainFilter?: string
 }
 
 export default function ConversationList({
@@ -29,6 +35,9 @@ export default function ConversationList({
   onSelectConversation,
   loading,
   activeConvIds = new Set(),
+  accountMap = {},
+  domainMap = {},
+  domainFilter = '',
 }: ConversationListProps) {
   const { timezone } = useEvents()
   const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -62,8 +71,13 @@ export default function ConversationList({
     )
   }
 
+  // Filter by domain if a domain filter is active
+  const domainFiltered = domainFilter
+    ? conversations.filter(c => c.widget_domain_id != null && String(c.widget_domain_id) === domainFilter)
+    : conversations
+
   // Sort: unassigned+unread first → active webchat → other platforms → offline webchat
-  const sorted = [...conversations].sort((a, b) => {
+  const sorted = [...domainFiltered].sort((a, b) => {
     const rank = (c: Conversation) => {
       if (!c.assigned_to && c.unread_count > 0) return 4           // unassigned & unread — top priority
       if (c.platform === 'webchat' && activeConvIds.has(c.id)) return 3  // active webchat online
@@ -109,6 +123,24 @@ export default function ConversationList({
               <span className="font-semibold text-gray-800">
                 {conversation.contact_name}
               </span>
+              {(conversation.ticket_count ?? 0) > 0 && (
+                <span
+                  className="ml-1 inline-flex items-center gap-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full"
+                  title={`${conversation.ticket_count} ticket${conversation.ticket_count === 1 ? '' : 's'}`}
+                >
+                  🎫 {conversation.ticket_count}
+                </span>
+              )}
+              {conversation.platform_account_id && accountMap[conversation.platform_account_id] && (
+                <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded ml-1 font-normal">
+                  {accountMap[conversation.platform_account_id]}
+                </span>
+              )}
+              {conversation.widget_domain_id && domainMap[conversation.widget_domain_id] && (
+                <span className="ml-1 text-xs text-purple-400 bg-purple-900/30 px-1.5 py-0.5 rounded">
+                  {domainMap[conversation.widget_domain_id]}
+                </span>
+              )}
             </div>
             {!conversation.assigned_to && conversation.unread_count > 0 ? (
               <span className="flex items-center gap-1">

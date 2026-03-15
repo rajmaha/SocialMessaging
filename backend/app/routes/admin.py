@@ -11,6 +11,8 @@ from app.schemas.email import EmailAccountCreate, EmailAccountUpdate, EmailAccou
 from app.schemas.role import UserRoleUpdate
 from app.models.role import Role
 from pydantic import BaseModel
+from app.log_database import LogSessionLocal as _LogSessionLocal
+from app.services.log_service import log_audit as _log_audit
 import json
 import os
 
@@ -220,7 +222,13 @@ async def create_user(
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(_ldb, action="user.created", entity_type="user", entity_id=db_user.id, detail={"email": db_user.email, "role": db_user.role})
+        _ldb.close()
+    except Exception:
+        pass
+
     return db_user
 
 @router.get("/users/{user_id}", response_model=UserResponse)
@@ -272,6 +280,12 @@ async def update_user(
     user.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(user)
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(_ldb, action="user.updated", entity_type="user", entity_id=user.id)
+        _ldb.close()
+    except Exception:
+        pass
     return user
 
 @router.put("/users/{user_id}/role")
@@ -352,7 +366,13 @@ async def deactivate_user(
     user.is_active = False
     user.updated_at = datetime.utcnow()
     db.commit()
-    
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(_ldb, action="user.deleted", entity_type="user", entity_id=user_id, detail={"email": user.email})
+        _ldb.close()
+    except Exception:
+        pass
+
     return {
         "status": "success",
         "message": "User deactivated",
@@ -372,6 +392,17 @@ class PlatformSettingUpdate(BaseModel):
     organization_id: str = None
     page_id: str = None
     config: dict = None
+
+class PlatformTestRequest(BaseModel):
+    app_id: str = None
+    app_secret: str = None
+    access_token: str = None
+    verify_token: str = None
+    business_account_id: str = None
+    phone_number: str = None
+    phone_number_id: str = None
+    organization_id: str = None
+    page_id: str = None
 
 @router.get("/platforms")
 async def get_platform_settings(current_user: dict = Depends(check_permission("feature_manage_messenger_config")), db: Session = Depends(get_db)):
@@ -411,8 +442,12 @@ async def get_platform_setting(
         "id": setting.id,
         "platform": setting.platform,
         "app_id": setting.app_id,
+        "app_secret": setting.app_secret,
+        "access_token": setting.access_token,
+        "verify_token": setting.verify_token,
         "business_account_id": setting.business_account_id,
         "phone_number": setting.phone_number,
+        "phone_number_id": setting.phone_number_id,
         "organization_id": setting.organization_id,
         "page_id": setting.page_id,
         "is_configured": setting.is_configured,
@@ -448,10 +483,10 @@ async def update_platform_setting(
         setting = PlatformSettings(platform=platform)
         db.add(setting)
     
-    # Update fields
+    # Update fields — skip None and empty strings to avoid clearing saved credentials
     update_data = settings.dict(exclude_unset=True)
     for field, value in update_data.items():
-        if value is not None:
+        if value is not None and value != "":
             setattr(setting, field, value)
     
     setting.is_configured = 1  # Mark as configured
@@ -495,6 +530,70 @@ async def verify_platform_setting(
         "message": f"{platform.title()} verified",
         "is_configured": setting.is_configured
     }
+
+@router.post("/platforms/{platform}/test")
+async def test_platform_connection(
+    platform: str,
+    request: PlatformTestRequest,
+    current_user: dict = Depends(check_permission("feature_manage_messenger_config")),
+    db: Session = Depends(get_db)
+):
+    """Test platform credentials and webhook connectivity"""
+    from app.services.platform_service import (
+        WhatsAppTestService, FacebookTestService,
+        ViberTestService, LinkedInTestService
+    )
+
+    platform = platform.lower()
+    valid_platforms = ["facebook", "whatsapp", "viber", "linkedin"]
+
+    if platform not in valid_platforms:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Platform must be one of: {', '.join(valid_platforms)}"
+        )
+
+    if platform == "whatsapp":
+        if not request.access_token or not request.phone_number_id:
+            raise HTTPException(status_code=400, detail="access_token and phone_number_id are required")
+        result = await WhatsAppTestService.test_connection(request.access_token, request.phone_number_id, request.business_account_id)
+
+    elif platform == "facebook":
+        if not request.access_token or not request.page_id:
+            raise HTTPException(status_code=400, detail="access_token and page_id are required")
+        result = await FacebookTestService.test_connection(request.access_token, request.page_id)
+
+    elif platform == "viber":
+        if not request.access_token:
+            raise HTTPException(status_code=400, detail="access_token is required")
+        result = await ViberTestService.test_connection(request.access_token)
+
+    elif platform == "linkedin":
+        if not request.access_token:
+            raise HTTPException(status_code=400, detail="access_token is required")
+        result = await LinkedInTestService.test_connection(request.access_token)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported platform")
+
+    # If credentials passed, mark as verified in DB
+    if result.get("credential_ok"):
+        try:
+            setting = db.query(PlatformSettings).filter(
+                PlatformSettings.platform == platform
+            ).first()
+            if setting:
+                setting.is_configured = 2
+                # Sync webhook_registered from live test result
+                if result.get("webhook_status") == "registered":
+                    setting.webhook_registered = 1
+                elif result.get("webhook_status") == "not_registered":
+                    setting.webhook_registered = 0
+                setting.updated_at = datetime.utcnow()
+                db.commit()
+        except Exception:
+            pass  # DB write failure does not affect the test result
+
+    return result
 
 # ============ ADMIN DASHBOARD ============
 

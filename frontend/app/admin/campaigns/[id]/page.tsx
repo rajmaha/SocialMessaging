@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import axios from "axios";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 
@@ -50,6 +51,24 @@ export default function CampaignStatsPage() {
   const [campaign, setCampaign] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [recheckingLeadId, setRecheckingLeadId] = useState<number | null>(null);
+  const [recheckResults, setRecheckResults] = useState<Record<number, boolean | null>>({});
+
+  const recheckLead = async (leadId: number) => {
+    setRecheckingLeadId(leadId);
+    try {
+      const res = await axios.post(
+        `${API_URL}/email-validator/recheck-lead/${leadId}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setRecheckResults(prev => ({ ...prev, [leadId]: res.data.email_valid }));
+    } catch {
+      // silently fail
+    } finally {
+      setRecheckingLeadId(null);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -89,7 +108,7 @@ export default function CampaignStatsPage() {
         </div>
 
         {/* Overview cards */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow p-5 text-center">
             <p className="text-xs text-gray-400 uppercase tracking-wide">Sent</p>
             <p className="text-4xl font-bold text-gray-900 mt-1">{stats?.sent_count ?? 0}</p>
@@ -103,7 +122,66 @@ export default function CampaignStatsPage() {
             <p className="text-4xl font-bold text-indigo-600 mt-1">{stats?.open_rate ?? 0}%</p>
             <p className="text-xs text-gray-400 mt-1">Pixel blocking may undercount</p>
           </div>
+          <div className="bg-white rounded-lg shadow p-5 text-center">
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Click Rate</p>
+            <p className="text-4xl font-bold text-amber-600 mt-1">{stats?.click_rate ?? 0}%</p>
+            <p className="text-xs text-gray-400 mt-1">{stats?.clicked_count ?? 0} clicked</p>
+          </div>
         </div>
+
+        {/* A/B Test Results */}
+        {stats?.is_ab_test && stats?.variants && stats.variants.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-gray-800 mb-3">A/B Test Results</h2>
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              {stats.variants.map((v: any) => (
+                <div
+                  key={v.variant_label}
+                  className={`bg-white rounded-lg shadow p-5 relative ${
+                    v.is_winner ? "ring-2 ring-green-500" : ""
+                  }`}
+                >
+                  {v.is_winner && (
+                    <span className="absolute top-3 right-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      Winner
+                    </span>
+                  )}
+                  <h3 className="text-sm font-semibold text-gray-700 mb-1">
+                    Variant {v.variant_label}
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-4 truncate" title={v.subject}>
+                    Subject: {v.subject}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase">Sent</p>
+                      <p className="text-2xl font-bold text-gray-900">{v.sent_count ?? 0}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase">Opened</p>
+                      <p className="text-2xl font-bold text-green-600">{v.opened_count ?? 0}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase">Open Rate</p>
+                      <p className="text-2xl font-bold text-indigo-600">{v.open_rate ?? 0}%</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-400 uppercase">Clicked</p>
+                      <p className="text-2xl font-bold text-amber-600">{v.clicked_count ?? 0}</p>
+                    </div>
+                    <div className="text-center col-span-2">
+                      <p className="text-xs text-gray-400 uppercase">Click Rate</p>
+                      <p className="text-2xl font-bold text-amber-600">{v.click_rate ?? 0}%</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500">
+              Winner criteria: <span className="font-medium">{stats.ab_winner_criteria === "click_rate" ? "Click Rate" : "Open Rate"}</span>
+            </p>
+          </div>
+        )}
 
         {/* Engagement breakdowns */}
         {hasBreakdowns && (
@@ -127,6 +205,44 @@ export default function CampaignStatsPage() {
           </div>
         )}
 
+        {/* Top Links */}
+        {stats?.top_links && stats.top_links.length > 0 && (
+          <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
+            <div className="px-6 py-4 border-b">
+              <h2 className="font-semibold text-gray-700">Top Links</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    {["URL", "Clicks", "First Click", "Last Click"].map(h => (
+                      <th key={h} className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {stats.top_links.map((link: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-700" title={link.url}>
+                        <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+                          {link.url.length > 60 ? link.url.slice(0, 60) + "..." : link.url}
+                        </a>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700 font-medium">{link.clicks}</td>
+                      <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
+                        {link.first_click ? new Date(link.first_click).toLocaleString() : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
+                        {link.last_click ? new Date(link.last_click).toLocaleString() : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Per-recipient table */}
         {stats?.recipients && stats.recipients.length > 0 ? (
           <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -137,7 +253,7 @@ export default function CampaignStatsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    {["Name", "Email", "Sent At", "Opened", "Opens", "Location", "Device", "Client"].map(h => (
+                    {["Name", "Email", "Valid", "Sent At", "Opened", "Opens", "Clicked", "Location", "Device", "Client"].map(h => (
                       <th key={h} className="px-4 py-3 text-left font-medium text-gray-600 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -147,6 +263,39 @@ export default function CampaignStatsPage() {
                     <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{r.name || "—"}</td>
                       <td className="px-4 py-3 text-gray-500">{r.email}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        {(() => {
+                          const validity = recheckResults[r.lead_id] ?? r.email_valid
+                          return (
+                            <span className="inline-flex items-center gap-2">
+                              {validity === true && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 border border-green-300">
+                                  ✅ Valid
+                                </span>
+                              )}
+                              {validity === false && (
+                                <>
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border border-red-300">
+                                    ❌ Invalid
+                                  </span>
+                                  {r.lead_id && (
+                                    <button
+                                      onClick={() => recheckLead(r.lead_id)}
+                                      disabled={recheckingLeadId === r.lead_id}
+                                      className="px-2 py-0.5 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                      {recheckingLeadId === r.lead_id ? '⏳' : 'Re-check'}
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                              {(validity === null || validity === undefined) && (
+                                <span className="text-gray-400 text-xs">—</span>
+                              )}
+                            </span>
+                          )
+                        })()}
+                      </td>
                       <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
                         {r.sent_at ? new Date(r.sent_at).toLocaleString() : "—"}
                       </td>
@@ -160,6 +309,15 @@ export default function CampaignStatsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-700 text-center">{r.open_count || 0}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {r.clicked_at ? (
+                          <span className="text-amber-600 font-medium">
+                            {new Date(r.clicked_at).toLocaleString()}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                         {r.city && r.country ? `${r.city}, ${r.country}` : r.country || "—"}
                       </td>

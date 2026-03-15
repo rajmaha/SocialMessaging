@@ -15,6 +15,10 @@ class ConversationResponse(BaseModel):
     category: Optional[str] = None
     assigned_to: Optional[int] = None
     assigned_to_name: Optional[str] = None
+    platform_account_id: Optional[int] = None
+    widget_domain_id: Optional[int] = None
+    widget_domain_name: Optional[str] = None
+    ticket_count: int = 0
 
     class Config:
         from_attributes = True

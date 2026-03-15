@@ -386,7 +386,15 @@ async def deploy_and_create_subscription(
             if logo_temp_path and os.path.exists(logo_temp_path):
                 os.unlink(logo_temp_path)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 @router.get("/{org_id}/subscriptions", response_model=List[SubscriptionResponse])
 def list_organization_subscriptions(

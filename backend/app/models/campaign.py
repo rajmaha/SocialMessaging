@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -18,6 +18,12 @@ class Campaign(Base):
     sent_at = Column(DateTime(timezone=True), nullable=True)
     sent_count = Column(Integer, default=0)
     opened_count = Column(Integer, default=0)
+    clicked_count = Column(Integer, default=0)
+    is_ab_test = Column(Boolean, default=False)
+    ab_test_size_pct = Column(Integer, default=20)
+    ab_winner_variant_id = Column(Integer, ForeignKey("campaign_variants.id", ondelete="SET NULL"), nullable=True)
+    ab_winner_criteria = Column(String(50), default="open_rate")  # open_rate | click_rate
+    ab_test_duration_hours = Column(Integer, default=4)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -34,3 +40,6 @@ class CampaignRecipient(Base):
     sent_at = Column(DateTime(timezone=True), nullable=True)
     opened_at = Column(DateTime(timezone=True), nullable=True)
     open_count = Column(Integer, default=0)
+    status = Column(String(50), default="sent")  # sent | bounced | failed
+    clicked_at = Column(DateTime(timezone=True), nullable=True)
+    variant_id = Column(Integer, ForeignKey("campaign_variants.id", ondelete="SET NULL"), nullable=True)

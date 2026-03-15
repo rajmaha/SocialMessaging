@@ -29,7 +29,15 @@ class CloudPanelService:
         }
         if self.server.ssh_key:
             from io import StringIO
-            pkey = paramiko.RSAKey.from_private_key(StringIO(self.server.ssh_key))
+            pkey = None
+            for key_class in [paramiko.RSAKey, paramiko.Ed25519Key, paramiko.ECDSAKey, paramiko.DSSKey]:
+                try:
+                    pkey = key_class.from_private_key(StringIO(self.server.ssh_key))
+                    break
+                except Exception:
+                    continue
+            if pkey is None:
+                raise ValueError("Could not parse SSH private key (unsupported key type)")
             kwargs["pkey"] = pkey
         elif self.server.ssh_password:
             kwargs["password"] = self.server.ssh_password
@@ -47,6 +55,33 @@ class CloudPanelService:
         if exit_status != 0:
             raise Exception(f"Command failed with status {exit_status}: {err} \n Output: {out}")
         return out
+
+    def _get_parent_domain_user(self, root_domain: str):
+        """
+        If the parent domain already exists on this CloudPanel server, return
+        (sys_user, htdocs_root) so the subdomain can be deployed under the same
+        user.  Returns (None, None) when the parent domain is not yet set up.
+        """
+        try:
+            # CloudPanel nginx vhosts live at /etc/nginx/sites-enabled/<domain>.conf
+            # The 'root' directive tells us exactly where the site lives and who owns it.
+            # e.g.  root /home/saraloms/htdocs/saraloms.com;
+            vhost_root = self._execute(
+                f"grep -m1 -oP 'root\\s+\\K[^;]+' /etc/nginx/sites-enabled/{root_domain}.conf"
+            ).strip()
+            if not vhost_root:
+                return None, None
+
+            # Extract system user from path  /home/<user>/htdocs/...
+            parts = vhost_root.split("/")
+            # parts: ['', 'home', '<user>', 'htdocs', ...]
+            if len(parts) >= 3 and parts[1] == "home":
+                sys_user = parts[2]
+                htdocs_root = vhost_root  # document root of the parent domain
+                return sys_user, htdocs_root
+        except Exception:
+            pass
+        return None, None
 
     def generate_db_credentials(self, domain: str):
         import re
@@ -86,32 +121,32 @@ class CloudPanelService:
             db_user = db_user or gen_user
             db_pass = db_pass or gen_pass
 
+        # Generate system user and password for the new CloudPanel site.
+        # CloudPanel always creates a new system user per site — we let it
+        # manage user/path normally and deploy files to the htdocs it assigns.
         sys_user = data.sysUser or data.domainName.replace(".", "")[:16]
-        sys_pass = data.sysUserPassword or ''.join(secrets.choice(string.ascii_letters + string.digits) for i in range(16))
-
-        # Determine remote directory and document root based on whether it's a subdomain
-        parts = data.domainName.split('.')
-        is_subdomain = len(parts) > 2
-
-        if is_subdomain:
-            root_domain = ".".join(parts[-2:])
-            subdomain_part = ".".join(parts[:-2])
-            remote_dir = f"/home/{sys_user}/htdocs/{root_domain}/public/{subdomain_part}"
-        else:
-            remote_dir = f"/home/{sys_user}/htdocs/{data.domainName}"
+        sys_pass = data.sysUserPassword or ''.join(
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(16)
+        )
+        remote_dir = f"/home/{sys_user}/htdocs/{data.domainName}"
 
         # --- Step 1: Create site ---
-        cmd_site = f"clpctl site:add:php --domainName={data.domainName} --phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} --siteUser={sys_user} --siteUserPassword='{sys_pass}'"
+        cmd_site = (
+            f"clpctl site:add:php --domainName={data.domainName} "
+            f"--phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} "
+            f"--siteUser={sys_user} --siteUserPassword='{sys_pass}'"
+        )
         self._execute(cmd_site)
 
-        # Get the actual document root from the nginx vhost CloudPanel created
+        # Use the actual document root from the nginx vhost CloudPanel created,
+        # so files always go where CloudPanel (and its file manager) expects them.
         try:
             vhost_root = self._execute(
                 f"grep -m1 -oP 'root\\s+\\K[^;]+' /etc/nginx/sites-enabled/{data.domainName}.conf"
             ).strip()
             if vhost_root:
                 remote_dir = vhost_root
-                logger.info(f"Detected document root from nginx: {remote_dir}")
+                logger.info(f"Using document root from nginx: {remote_dir}")
         except Exception:
             logger.warning(f"Could not detect document root from nginx, using computed path: {remote_dir}")
 
@@ -159,7 +194,17 @@ class CloudPanelService:
 
         yield {"step": "creating_ssl", "status": ssl_status}
 
-        # --- Step 3: Deploy template files ---
+        # --- Step 3: Create database (before file deployment) ---
+        # clpctl db:add can reinitialize the site's htdocs directory on some
+        # CloudPanel versions, wiping any files already deployed there.
+        # Running it here — after site + SSL but before uploading files —
+        # ensures CloudPanel finishes all its own initialization steps first.
+        cmd_db = f"clpctl db:add --domainName={data.domainName} --databaseName={db_name} --databaseUserName={db_user} --databaseUserPassword='{db_pass}'"
+        self._execute(cmd_db)
+
+        yield {"step": "creating_database", "status": "done"}
+
+        # --- Step 4: Deploy template files ---
         sftp = self.client.open_sftp()
         template_name = data.templateName or "default_site"
         template_dir = os.path.join(os.path.dirname(__file__), "..", "..", "templates", template_name)
@@ -246,12 +291,6 @@ class CloudPanelService:
         except Exception:
             # Script does not exist — skip
             yield {"step": "running_script", "status": "skipped"}
-
-        # --- Step 4: Create database ---
-        cmd_db = f"clpctl db:add --domainName={data.domainName} --databaseName={db_name} --databaseUserName={db_user} --databaseUserPassword='{db_pass}'"
-        self._execute(cmd_db)
-
-        yield {"step": "creating_database", "status": "done"}
 
         # --- Step 5: Import database ---
         if has_sql:

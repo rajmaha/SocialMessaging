@@ -15,13 +15,16 @@ export default function TelephonySettings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
+    const [testingAmi, setTestingAmi] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
-    const [testResult, setTestResult] = useState<{ status: string; message: string } | null>(null);
+    const [testResult, setTestResult] = useState<{ status: string; message: string; diagnostics?: string[]; help?: string; method?: string; instructions?: string[] } | null>(null);
+    const [amiTestResult, setAmiTestResult] = useState<{ status: string; message: string } | null>(null);
 
     const [settings, setSettings] = useState({
         pbx_type: 'freepbx',
         host: '',
-        port: 443,
+        freepbx_port: 443,
+        ami_port: 5038,
         ami_username: '',
         ami_secret: '',
         webrtc_wss_url: '',
@@ -48,7 +51,8 @@ export default function TelephonySettings() {
                 setSettings({
                     pbx_type: data.pbx_type || 'freepbx',
                     host: data.host || '',
-                    port: data.port || 443,
+                    freepbx_port: data.freepbx_port || 443,
+                    ami_port: data.ami_port || 5038,
                     ami_username: data.ami_username || '',
                     ami_secret: data.ami_secret || '',
                     webrtc_wss_url: data.webrtc_wss_url || '',
@@ -95,6 +99,12 @@ export default function TelephonySettings() {
         setTestResult(null);
         try {
             const token = getAuthToken();
+            // Save current form values first so the test uses the latest credentials
+            await fetch(`${API_URL}/admin/telephony/settings`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings),
+            });
             const response = await fetch(`${API_URL}/admin/telephony/test-freepbx`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -105,6 +115,33 @@ export default function TelephonySettings() {
             setTestResult({ status: 'error', message: '❌ Connection test failed. Check network/host settings.' });
         } finally {
             setTesting(false);
+        }
+    };
+
+    const testAMI = async () => {
+        setTestingAmi(true);
+        setAmiTestResult(null);
+        try {
+            const token = getAuthToken();
+            await fetch(`${API_URL}/admin/telephony/settings`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings),
+            });
+            const response = await fetch(`${API_URL}/admin/telephony/test-ami`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                setAmiTestResult({ status: 'error', message: result.detail || 'Request failed.' });
+            } else {
+                setAmiTestResult(result);
+            }
+        } catch (error) {
+            setAmiTestResult({ status: 'error', message: `❌ AMI test failed: ${error instanceof Error ? error.message : 'Check network/host settings.'}` });
+        } finally {
+            setTestingAmi(false);
         }
     };
 
@@ -153,9 +190,11 @@ export default function TelephonySettings() {
                         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                             <div className="flex items-center justify-between mb-4 border-b pb-3">
                                 <div>
-                                    <h3 className="text-lg font-semibold text-gray-900">FreePBX REST API Credentials</h3>
+                                    <h3 className="text-lg font-semibold text-gray-900">FreePBX API Credentials</h3>
                                     <p className="text-sm text-gray-500 mt-0.5">
-                                        Used to auto-create/update/delete extensions. Get API keys from FreePBX: <em>Admin → User Management → API Keys</em>.
+                                        Used to auto-create/update/delete extensions.{' '}
+                                        <strong>FreePBX 17:</strong> enter your FreePBX <em>admin username &amp; password</em> — no extra module needed.{' '}
+                                        <strong>FreePBX 15/16:</strong> install the free <em>REST API</em> module → <em>Admin → User Management → API Keys</em>.
                                     </p>
                                 </div>
                                 <button
@@ -170,12 +209,30 @@ export default function TelephonySettings() {
                             </div>
 
                             {testResult && (
-                                <div className={`flex items-start gap-2 p-3 rounded-lg mb-5 text-sm ${testResult.status === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                                    {testResult.status === 'success'
-                                        ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                                        : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                                    }
-                                    {testResult.message}
+                                <div className={`p-3 rounded-lg mb-5 text-sm ${
+                                    testResult.status === 'success' ? 'bg-green-50 text-green-800 border border-green-200'
+                                    : testResult.status === 'warning' ? 'bg-amber-50 text-amber-900 border border-amber-200'
+                                    : 'bg-red-50 text-red-800 border border-red-200'
+                                }`}>
+                                    <div className="flex items-start gap-2">
+                                        {testResult.status === 'success'
+                                            ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 text-green-600" />
+                                            : testResult.status === 'warning'
+                                            ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                                            : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                                        }
+                                        <span>{testResult.message}</span>
+                                    </div>
+                                    {testResult.instructions && (
+                                        <div className="mt-3 ml-6 p-3 bg-white/60 rounded border border-amber-200">
+                                            <p className="font-semibold mb-1 text-amber-800">Next steps to enable API access:</p>
+                                            <ol className="space-y-1 text-xs text-amber-900 font-mono">
+                                                {testResult.instructions.map((step, i) => (
+                                                    <li key={i}>{step}</li>
+                                                ))}
+                                            </ol>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -193,18 +250,19 @@ export default function TelephonySettings() {
                                 </div>
 
                                 <div>
-                                    <label className={labelClass}>FreePBX API Key (Client ID)</label>
+                                    <label className={labelClass}>FreePBX Username / API Client ID</label>
                                     <input
                                         type="text"
                                         value={settings.freepbx_api_key}
                                         onChange={(e) => setSettings({ ...settings, freepbx_api_key: e.target.value })}
                                         className={inputClass}
-                                        placeholder="API key from FreePBX User Management"
+                                        placeholder="admin"
                                     />
+                                    <p className="mt-1 text-xs text-gray-500">FreePBX 17: use your admin username. FreePBX 15/16: use the API Client ID.</p>
                                 </div>
 
                                 <div>
-                                    <label className={labelClass}>FreePBX API Secret</label>
+                                    <label className={labelClass}>FreePBX Password / API Secret</label>
                                     <input
                                         type="password"
                                         value={settings.freepbx_api_secret}
@@ -212,14 +270,15 @@ export default function TelephonySettings() {
                                         className={inputClass}
                                         placeholder="••••••••••••"
                                     />
+                                    <p className="mt-1 text-xs text-gray-500">FreePBX 17: use your admin password. FreePBX 15/16: use the API Secret.</p>
                                 </div>
 
                                 <div>
                                     <label className={labelClass}>HTTPS Port</label>
                                     <input
                                         type="number"
-                                        value={settings.port}
-                                        onChange={(e) => setSettings({ ...settings, port: parseInt(e.target.value) || 443 })}
+                                        value={settings.freepbx_port}
+                                        onChange={(e) => setSettings({ ...settings, freepbx_port: parseInt(e.target.value) || 443 })}
                                         className={inputClass}
                                         placeholder="443"
                                     />
@@ -265,8 +324,8 @@ export default function TelephonySettings() {
                                     <label className={labelClass}>AMI Port</label>
                                     <input
                                         type="number"
-                                        value={settings.port}
-                                        onChange={(e) => setSettings({ ...settings, port: parseInt(e.target.value) || 5038 })}
+                                        value={settings.ami_port}
+                                        onChange={(e) => setSettings({ ...settings, ami_port: parseInt(e.target.value) || 5038 })}
                                         className={inputClass}
                                         placeholder="5038"
                                     />
@@ -291,6 +350,32 @@ export default function TelephonySettings() {
                                         placeholder="••••••••"
                                     />
                                 </div>
+                            </div>
+
+                            {/* AMI Test Button + Result */}
+                            <div className="mt-6 pt-4 border-t border-gray-100">
+                                <button
+                                    type="button"
+                                    onClick={testAMI}
+                                    disabled={testingAmi}
+                                    className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                                >
+                                    <Wifi className="w-4 h-4" />
+                                    {testingAmi ? 'Testing AMI…' : 'Test AMI Connection'}
+                                </button>
+
+                                {amiTestResult && (
+                                    <div className={`mt-3 p-3 rounded-lg border flex items-start gap-2 text-sm ${
+                                        amiTestResult.status === 'success'
+                                            ? 'bg-green-50 border-green-200 text-green-800'
+                                            : 'bg-red-50 border-red-200 text-red-800'
+                                    }`}>
+                                        {amiTestResult.status === 'success'
+                                            ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                                            : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />}
+                                        <span>{amiTestResult.message}</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

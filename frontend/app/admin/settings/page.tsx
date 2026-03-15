@@ -25,6 +25,15 @@ export default function AdminSettings() {
     const [error, setError] = useState<string | null>(null);
     const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
+    const [testResult, setTestResult] = useState<{
+        credential_ok: boolean;
+        credential_detail: string;
+        webhook_status: string;
+        webhook_detail: string;
+    } | null>(null);
+    const [testing, setTesting] = useState(false);
+    const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+    const togglePassword = (key: string) => setShowPasswords(prev => ({ ...prev, [key]: !prev[key] }));
 
     // Form state for each platform
     const [formData, setFormData] = useState({
@@ -92,6 +101,7 @@ export default function AdminSettings() {
 
     const handlePlatformSelect = async (platform: string) => {
         setSelectedPlatform(platform);
+        setTestResult(null);
         try {
             const token = getAuthToken();
             if (!token) {
@@ -107,6 +117,12 @@ export default function AdminSettings() {
                     }
                 }
             );
+
+            // 404 means not yet configured — show empty form
+            if (response.status === 404) {
+                setShowForm(true);
+                return;
+            }
 
             if (!response.ok) {
                 throw new Error(`Failed to fetch ${platform} settings`);
@@ -138,6 +154,7 @@ export default function AdminSettings() {
     };
 
     const handleFormChange = (platform: string, field: string, value: string) => {
+        setTestResult(null);
         const platformKey = platform as keyof typeof formData;
         setFormData((prev) => ({
             ...prev,
@@ -146,6 +163,36 @@ export default function AdminSettings() {
                 [field]: value
             }
         }));
+    };
+
+    const handleTestConnection = async (platform: string) => {
+        const token = getAuthToken();
+        if (!token) { setError('Not authenticated'); return; }
+
+        setTesting(true);
+        setTestResult(null);
+        try {
+            const platformKey = platform as keyof typeof formData;
+            const response = await fetch(`${API_URL}/admin/platforms/${platform}/test`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData[platformKey])
+            });
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.detail || 'Test failed');
+            }
+            const result = await response.json();
+            setTestResult(result);
+            if (result.credential_ok) await fetchPlatforms();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
+        } finally {
+            setTesting(false);
+        }
     };
 
     const handleSavePlatformSettings = async (platform: string) => {
@@ -179,10 +226,23 @@ export default function AdminSettings() {
 
             setShowForm(false);
             setSelectedPlatform(null);
+            setTestResult(null);
             await fetchPlatforms();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An error occurred');
         }
+    };
+
+    const isTestable = (platform: string): boolean => {
+        if (platform === 'whatsapp') {
+            return !!(formData.whatsapp.access_token && formData.whatsapp.phone_number_id);
+        }
+        if (platform === 'facebook') {
+            return !!(formData.facebook.access_token && formData.facebook.page_id);
+        }
+        if (platform === 'viber') return !!formData.viber.access_token;
+        if (platform === 'linkedin') return !!formData.linkedin.access_token;
+        return false;
     };
 
     if (loading) {
@@ -218,8 +278,10 @@ export default function AdminSettings() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {['facebook', 'whatsapp', 'viber', 'linkedin'].map((platform) => {
                             const setting = platforms.find(p => p.platform === platform);
-                            const statusColor = setting?.is_configured === 0 ? 'red' :
-                                setting?.is_configured === 1 ? 'yellow' : 'green';
+                            const isConfigured = (setting?.is_configured ?? 0) >= 1;
+                            const webhookOk = setting?.webhook_registered === 1;
+                            const statusColor = !isConfigured ? 'red' : webhookOk ? 'green' : 'yellow';
+                            const statusLabel = !isConfigured ? 'Not Setup' : webhookOk ? 'Active' : 'Configured';
 
                             return (
                                 <div key={platform} className="bg-white rounded-lg shadow p-6">
@@ -237,9 +299,7 @@ export default function AdminSettings() {
                                             statusColor === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
                                                 'bg-red-100 text-red-800'
                                             }`}>
-                                            {setting?.is_configured === 0 ? 'Not Setup' :
-                                                setting?.is_configured === 1 ? 'Configured' :
-                                                    'Verified'}
+                                            {statusLabel}
                                         </span>
                                     </div>
 
@@ -271,9 +331,11 @@ export default function AdminSettings() {
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-2xl font-bold text-gray-900 capitalize">{selectedPlatform} Configuration</h3>
                             <button
+                                type="button"
                                 onClick={() => {
                                     setShowForm(false);
                                     setSelectedPlatform(null);
+                                    setTestResult(null);
                                 }}
                                 className="text-gray-500 hover:text-gray-700"
                             >
@@ -299,23 +361,33 @@ export default function AdminSettings() {
                                     </div>
                                     <div>
                                         <label className="block text-gray-700 text-sm font-bold mb-2">App Secret</label>
-                                        <input
-                                            type="password"
-                                            value={formData.facebook.app_secret}
-                                            onChange={(e) => handleFormChange('facebook', 'app_secret', e.target.value)}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-                                            placeholder="Your Facebook App Secret"
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type={showPasswords['facebook_app_secret'] ? 'text' : 'password'}
+                                                value={formData.facebook.app_secret}
+                                                onChange={(e) => handleFormChange('facebook', 'app_secret', e.target.value)}
+                                                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                                                placeholder="Your Facebook App Secret"
+                                            />
+                                            <button type="button" onClick={() => togglePassword('facebook_app_secret')} className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600">
+                                                {showPasswords['facebook_app_secret'] ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                                            </button>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-gray-700 text-sm font-bold mb-2">Access Token</label>
-                                        <input
-                                            type="password"
-                                            value={formData.facebook.access_token}
-                                            onChange={(e) => handleFormChange('facebook', 'access_token', e.target.value)}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-                                            placeholder="Your Facebook Access Token"
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type={showPasswords['facebook_access_token'] ? 'text' : 'password'}
+                                                value={formData.facebook.access_token}
+                                                onChange={(e) => handleFormChange('facebook', 'access_token', e.target.value)}
+                                                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                                                placeholder="Your Facebook Access Token"
+                                            />
+                                            <button type="button" onClick={() => togglePassword('facebook_access_token')} className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600">
+                                                {showPasswords['facebook_access_token'] ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                                            </button>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-gray-700 text-sm font-bold mb-2">Verify Token</label>
@@ -354,23 +426,33 @@ export default function AdminSettings() {
                                     </div>
                                     <div>
                                         <label className="block text-gray-700 text-sm font-bold mb-2">App Secret</label>
-                                        <input
-                                            type="password"
-                                            value={formData.whatsapp.app_secret}
-                                            onChange={(e) => handleFormChange('whatsapp', 'app_secret', e.target.value)}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-                                            placeholder="Your WhatsApp App Secret"
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type={showPasswords['whatsapp_app_secret'] ? 'text' : 'password'}
+                                                value={formData.whatsapp.app_secret}
+                                                onChange={(e) => handleFormChange('whatsapp', 'app_secret', e.target.value)}
+                                                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                                                placeholder="Your WhatsApp App Secret"
+                                            />
+                                            <button type="button" onClick={() => togglePassword('whatsapp_app_secret')} className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600">
+                                                {showPasswords['whatsapp_app_secret'] ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                                            </button>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-gray-700 text-sm font-bold mb-2">Access Token</label>
-                                        <input
-                                            type="password"
-                                            value={formData.whatsapp.access_token}
-                                            onChange={(e) => handleFormChange('whatsapp', 'access_token', e.target.value)}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-                                            placeholder="Your WhatsApp Access Token"
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type={showPasswords['whatsapp_access_token'] ? 'text' : 'password'}
+                                                value={formData.whatsapp.access_token}
+                                                onChange={(e) => handleFormChange('whatsapp', 'access_token', e.target.value)}
+                                                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                                                placeholder="Your WhatsApp Access Token"
+                                            />
+                                            <button type="button" onClick={() => togglePassword('whatsapp_access_token')} className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600">
+                                                {showPasswords['whatsapp_access_token'] ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                                            </button>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-gray-700 text-sm font-bold mb-2">Verify Token</label>
@@ -419,13 +501,18 @@ export default function AdminSettings() {
                                     </div>
                                     <div>
                                         <label className="block text-gray-700 text-sm font-bold mb-2">Access Token</label>
-                                        <input
-                                            type="password"
-                                            value={formData.viber.access_token}
-                                            onChange={(e) => handleFormChange('viber', 'access_token', e.target.value)}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-                                            placeholder="Your Viber Bot Token"
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type={showPasswords['viber_access_token'] ? 'text' : 'password'}
+                                                value={formData.viber.access_token}
+                                                onChange={(e) => handleFormChange('viber', 'access_token', e.target.value)}
+                                                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                                                placeholder="Your Viber Bot Token"
+                                            />
+                                            <button type="button" onClick={() => togglePassword('viber_access_token')} className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600">
+                                                {showPasswords['viber_access_token'] ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -444,45 +531,117 @@ export default function AdminSettings() {
                                     </div>
                                     <div>
                                         <label className="block text-gray-700 text-sm font-bold mb-2">App Secret</label>
-                                        <input
-                                            type="password"
-                                            value={formData.linkedin.app_secret}
-                                            onChange={(e) => handleFormChange('linkedin', 'app_secret', e.target.value)}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-                                            placeholder="Your LinkedIn App Secret"
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type={showPasswords['linkedin_app_secret'] ? 'text' : 'password'}
+                                                value={formData.linkedin.app_secret}
+                                                onChange={(e) => handleFormChange('linkedin', 'app_secret', e.target.value)}
+                                                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                                                placeholder="Your LinkedIn App Secret"
+                                            />
+                                            <button type="button" onClick={() => togglePassword('linkedin_app_secret')} className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600">
+                                                {showPasswords['linkedin_app_secret'] ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="md:col-span-2">
                                         <label className="block text-gray-700 text-sm font-bold mb-2">Access Token</label>
-                                        <input
-                                            type="password"
-                                            value={formData.linkedin.access_token}
-                                            onChange={(e) => handleFormChange('linkedin', 'access_token', e.target.value)}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-                                            placeholder="Your LinkedIn Access Token"
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type={showPasswords['linkedin_access_token'] ? 'text' : 'password'}
+                                                value={formData.linkedin.access_token}
+                                                onChange={(e) => handleFormChange('linkedin', 'access_token', e.target.value)}
+                                                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                                                placeholder="Your LinkedIn Access Token"
+                                            />
+                                            <button type="button" onClick={() => togglePassword('linkedin_access_token')} className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600">
+                                                {showPasswords['linkedin_access_token'] ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             )}
 
                             <div className="flex gap-4 mt-8">
                                 <button
+                                    type="button"
+                                    onClick={() => handleTestConnection(selectedPlatform)}
+                                    disabled={!isTestable(selectedPlatform) || testing}
+                                    className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition flex items-center justify-center gap-2"
+                                >
+                                    {testing ? (
+                                        <>
+                                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                                            </svg>
+                                            Testing…
+                                        </>
+                                    ) : 'Test Connection'}
+                                </button>
+                                <button
                                     type="submit"
-                                    className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition"
+                                    disabled={testing}
+                                    className="flex-1 bg-green-500 hover:bg-green-600 disabled:bg-green-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition"
                                 >
                                     Save Configuration
                                 </button>
                                 <button
                                     type="button"
+                                    disabled={testing}
                                     onClick={() => {
                                         setShowForm(false);
                                         setSelectedPlatform(null);
+                                        setTestResult(null);
                                     }}
-                                    className="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg transition"
+                                    className="flex-1 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition"
                                 >
                                     Cancel
                                 </button>
                             </div>
+
+                            {/* Test result panel */}
+                            {testResult && (
+                                <div className="mt-4 border rounded-lg overflow-hidden text-sm">
+                                    <div className={`flex items-start gap-3 px-4 py-3 ${testResult.credential_ok ? 'bg-green-50 border-b border-green-100' : 'bg-red-50'}`}>
+                                        <span className={`font-bold mt-0.5 ${testResult.credential_ok ? 'text-green-600' : 'text-red-600'}`}>
+                                            {testResult.credential_ok ? '✓' : '✗'}
+                                        </span>
+                                        <div>
+                                            <span className={`font-semibold ${testResult.credential_ok ? 'text-green-800' : 'text-red-800'}`}>Credentials</span>
+                                            <p className={`mt-0.5 ${testResult.credential_ok ? 'text-green-700' : 'text-red-700'}`}>{testResult.credential_detail}</p>
+                                        </div>
+                                    </div>
+                                    {testResult.credential_ok && (
+                                        <div className={`flex items-start gap-3 px-4 py-3 ${
+                                            testResult.webhook_status === 'registered' ? 'bg-green-50' :
+                                            testResult.webhook_status === 'not_registered' ? 'bg-red-50' :
+                                            'bg-gray-50'
+                                        }`}>
+                                            <span className={`font-bold mt-0.5 ${
+                                                testResult.webhook_status === 'registered' ? 'text-green-600' :
+                                                testResult.webhook_status === 'not_registered' ? 'text-red-600' :
+                                                'text-gray-400'
+                                            }`}>
+                                                {testResult.webhook_status === 'registered' ? '✓' :
+                                                 testResult.webhook_status === 'not_registered' ? '✗' : '—'}
+                                            </span>
+                                            <div>
+                                                <span className={`font-semibold ${
+                                                    testResult.webhook_status === 'registered' ? 'text-green-800' :
+                                                    testResult.webhook_status === 'not_registered' ? 'text-red-800' :
+                                                    'text-gray-600'
+                                                }`}>Webhook</span>
+                                                <p className={`mt-0.5 ${
+                                                    testResult.webhook_status === 'registered' ? 'text-green-700' :
+                                                    testResult.webhook_status === 'not_registered' ? 'text-red-700' :
+                                                    'text-gray-500'
+                                                }`}>{testResult.webhook_detail}</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </form>
                     </div>
                 )}

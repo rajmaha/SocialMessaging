@@ -8,7 +8,8 @@ import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
 import AdminNav from '@/components/AdminNav'
-import { API_URL } from '@/lib/config';
+import { API_URL } from '@/lib/config'
+import { useBranding } from '@/lib/branding-context';
 
 interface BrandingData {
   company_name: string
@@ -28,6 +29,7 @@ interface BrandingData {
   terms_url: string
   timezone: string
   admin_email: string
+  contact_phone: string
   allowed_file_types: string[]
   max_file_size_mb: number
 }
@@ -40,17 +42,27 @@ interface SmtpData {
   smtp_from_email: string
   smtp_from_name: string
   smtp_use_tls: boolean
+  smtp_use_ssl: boolean
   email_footer_text: string
+  postal_server_url: string
+  postal_api_key: string
+}
+
+interface EmailValidatorData {
+  email_validator_url: string
+  email_validator_secret: string
+  email_validator_risk_threshold: number
 }
 
 export default function BrandingAdmin() {
   const user = authAPI.getUser();
   const router = useRouter()
+  const { refetch: refetchBranding } = useBranding()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [activeTab, setActiveTab] = useState<'company' | 'colors' | 'smtp' | 'links' | 'attachments'>('company')
+  const [activeTab, setActiveTab] = useState<'company' | 'colors' | 'smtp' | 'links' | 'attachments' | 'email-validator'>('company')
 
   const [branding, setBranding] = useState<BrandingData>({
     company_name: 'Social Media Messenger',
@@ -70,6 +82,7 @@ export default function BrandingAdmin() {
     terms_url: '',
     timezone: 'UTC',
     admin_email: '',
+    contact_phone: '',
     allowed_file_types: [
       'image/jpeg', 'image/png', 'image/gif', 'image/webp',
       'application/pdf',
@@ -85,10 +98,21 @@ export default function BrandingAdmin() {
     smtp_from_email: '',
     smtp_from_name: 'Social Media Messenger',
     smtp_use_tls: true,
+    smtp_use_ssl: false,
     email_footer_text: '© 2026 Social Media Messenger. All rights reserved.',
+    postal_server_url: '',
+    postal_api_key: '',
   })
 
   const [testingSmtp, setTestingSmtp] = useState(false)
+
+  const [validator, setValidator] = useState<EmailValidatorData>({
+    email_validator_url: '',
+    email_validator_secret: '',
+    email_validator_risk_threshold: 60,
+  })
+  const [showSmtpPassword, setShowSmtpPassword] = useState(false)
+  const [showValidatorSecret, setShowValidatorSecret] = useState(false)
 
   useEffect(() => {
     loadBrandingData()
@@ -121,6 +145,7 @@ export default function BrandingAdmin() {
           terms_url: data.terms_url || '',
           timezone: data.timezone || 'UTC',
           admin_email: data.admin_email || '',
+          contact_phone: data.contact_phone || '',
           allowed_file_types: data.allowed_file_types || ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'],
           max_file_size_mb: data.max_file_size_mb || 10,
           button_primary_color: data.button_primary_color || '#2563eb',
@@ -134,11 +159,20 @@ export default function BrandingAdmin() {
           smtp_server: data.smtp_server || 'smtp.gmail.com',
           smtp_port: data.smtp_port || 587,
           smtp_username: data.smtp_username || '',
-          smtp_password: data.smtp_password ? '***' : '',
+          smtp_password: data.smtp_password || '',
           smtp_from_email: data.smtp_from_email || '',
           smtp_from_name: data.smtp_from_name || '',
           smtp_use_tls: data.smtp_use_tls !== false,
+          smtp_use_ssl: data.smtp_use_ssl === true,
           email_footer_text: data.email_footer_text || '',
+          postal_server_url: data.postal_server_url || '',
+          postal_api_key: data.postal_api_key || '',
+        })
+
+        setValidator({
+          email_validator_url: data.email_validator_url || '',
+          email_validator_secret: data.email_validator_secret || '',
+          email_validator_risk_threshold: data.email_validator_risk_threshold ?? 60,
         })
       }
     } catch (err: any) {
@@ -174,6 +208,7 @@ export default function BrandingAdmin() {
 
       setSuccess('Company branding updated successfully!')
       setTimeout(() => setSuccess(''), 3000)
+      await refetchBranding()
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to save branding')
     } finally {
@@ -194,10 +229,6 @@ export default function BrandingAdmin() {
       }
 
       const smtpPayload = { ...smtp }
-      // Only include password if it's not the masked version
-      if (smtpPayload.smtp_password === '***') {
-        delete (smtpPayload as any).smtp_password
-      }
 
       await axios.post(`${API_URL}/branding/smtp`, smtpPayload, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -207,6 +238,46 @@ export default function BrandingAdmin() {
       setTimeout(() => setSuccess(''), 3000)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to save SMTP settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveValidator = async () => {
+    setSaving(true)
+    setError('')
+    setSuccess('')
+    try {
+      const token = getAuthToken()
+      if (!token) { router.push('/login'); return }
+
+      const payload: Record<string, unknown> = {
+        email_validator_url: validator.email_validator_url,
+        email_validator_risk_threshold: validator.email_validator_risk_threshold,
+      }
+
+      // Only include secret if it was explicitly changed by the user:
+      // - If it looks masked (all chars before last 4 are '*', or all stars), skip it
+      // - If it's empty, include it so the backend can detect the user wants to clear it
+      //   (backend skips empty string via `if secret:`, so actually we skip it too —
+      //    but we keep this here for explicit intent)
+      const secret = validator.email_validator_secret
+      if (secret) {
+        const isMasked = (secret.length >= 4 && secret.slice(0, -4).split('').every(c => c === '*'))
+          || secret.split('').every(c => c === '*')
+        if (!isMasked) {
+          payload.email_validator_secret = secret
+        }
+      }
+
+      await axios.post(
+        `${API_URL}/branding/email-validator`,
+        payload,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      setSuccess('Email validator settings saved')
+    } catch {
+      setError('Failed to save validator settings')
     } finally {
       setSaving(false)
     }
@@ -283,6 +354,15 @@ export default function BrandingAdmin() {
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
+          <button
+            onClick={() => setActiveTab('email-validator')}
+            className={`px-4 py-3 font-medium border-b-2 ${activeTab === 'email-validator'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+          >
+            Email Validator
+          </button>
         </div>
 
         {/* Company Information */}
@@ -382,20 +462,37 @@ export default function BrandingAdmin() {
               </p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Admin Contact Email
-              </label>
-              <input
-                type="email"
-                value={branding.admin_email}
-                onChange={(e) => handleBrandingChange('admin_email', e.target.value)}
-                placeholder="admin@example.com"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="mt-2 text-sm text-gray-500">
-                Users without an email account will send their setup requests to this address.
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Contact Email
+                </label>
+                <input
+                  type="email"
+                  value={branding.admin_email}
+                  onChange={(e) => handleBrandingChange('admin_email', e.target.value)}
+                  placeholder="admin@example.com"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Shown in email footers and sent account setup requests.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Contact Phone
+                </label>
+                <input
+                  type="tel"
+                  value={branding.contact_phone}
+                  onChange={(e) => handleBrandingChange('contact_phone', e.target.value)}
+                  placeholder="+1 234 567 8900"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Shown in the footer of all outgoing emails.
+                </p>
+              </div>
             </div>
 
             <button
@@ -665,13 +762,22 @@ export default function BrandingAdmin() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   SMTP Password
                 </label>
-                <input
-                  type="password"
-                  value={smtp.smtp_password}
-                  onChange={(e) => handleSmtpChange('smtp_password', e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showSmtpPassword ? 'text' : 'password'}
+                    value={smtp.smtp_password}
+                    onChange={(e) => handleSmtpChange('smtp_password', e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pr-16"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSmtpPassword(!showSmtpPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    {showSmtpPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -700,15 +806,39 @@ export default function BrandingAdmin() {
             </div>
 
             <div>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={smtp.smtp_use_tls}
-                  onChange={(e) => handleSmtpChange('smtp_use_tls', e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300"
-                />
-                <span className="text-sm font-medium text-gray-700">Use TLS</span>
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Security</label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="smtp_security"
+                    checked={!smtp.smtp_use_tls && !smtp.smtp_use_ssl}
+                    onChange={() => { handleSmtpChange('smtp_use_tls', false); handleSmtpChange('smtp_use_ssl', false); }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700">None (port 25)</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="smtp_security"
+                    checked={smtp.smtp_use_tls && !smtp.smtp_use_ssl}
+                    onChange={() => { handleSmtpChange('smtp_use_tls', true); handleSmtpChange('smtp_use_ssl', false); }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700">STARTTLS (port 587)</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="smtp_security"
+                    checked={smtp.smtp_use_ssl}
+                    onChange={() => { handleSmtpChange('smtp_use_ssl', true); handleSmtpChange('smtp_use_tls', false); }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700">SSL/TLS (port 465)</span>
+                </label>
+              </div>
             </div>
 
             <div>
@@ -721,6 +851,40 @@ export default function BrandingAdmin() {
                 rows={2}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+
+            <div className="pt-4 border-t border-gray-200">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Postal Server Integration</h3>
+              <p className="text-sm text-gray-500 mb-6">
+                Connect your Postal mail server to automatically remove emails from its suppression list when deleted locally.
+              </p>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Postal Server URL
+                  </label>
+                  <input
+                    type="url"
+                    value={smtp.postal_server_url}
+                    onChange={(e) => handleSmtpChange('postal_server_url', e.target.value)}
+                    placeholder="https://postal.example.com"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Postal API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={smtp.postal_api_key}
+                    onChange={(e) => handleSmtpChange('postal_api_key', e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-4">
@@ -903,6 +1067,77 @@ export default function BrandingAdmin() {
             </div>
           )
         })()}
+        {/* Email Validator */}
+        {activeTab === 'email-validator' && (
+          <div className="bg-white rounded-lg shadow p-6 space-y-6">
+            <p className="text-sm text-gray-600">
+              Configure the external email validation API. When set, emails are validated in real-time
+              during compose and in bulk before campaign sends.
+            </p>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Validator URL</label>
+              <input
+                type="url"
+                value={validator.email_validator_url}
+                onChange={(e) => setValidator(prev => ({ ...prev, email_validator_url: e.target.value }))}
+                placeholder="https://hooks.yourdomain.com"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Base URL of the validation API (e.g. https://hooks.yourdomain.com)
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Secret Key</label>
+              <div className="relative">
+                <input
+                  type={showValidatorSecret ? 'text' : 'password'}
+                  value={validator.email_validator_secret}
+                  onChange={(e) => setValidator(prev => ({ ...prev, email_validator_secret: e.target.value }))}
+                  placeholder="Bearer token"
+                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowValidatorSecret(!showValidatorSecret)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm"
+                >
+                  {showValidatorSecret ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Sent as <code>Authorization: Bearer &lt;secret&gt;</code>
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Risk Threshold</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={validator.email_validator_risk_threshold}
+                onChange={(e) =>
+                  setValidator(prev => ({ ...prev, email_validator_risk_threshold: parseInt(e.target.value) || 60 }))
+                }
+                className="w-32 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Emails with risk score ≥ this value will be rejected (default: 60, range: 1–100)
+              </p>
+            </div>
+
+            <button
+              onClick={saveValidator}
+              disabled={saving}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+            >
+              {saving ? 'Saving...' : 'Save Validator Settings'}
+            </button>
+          </div>
+        )}
       </main>
     </div>
   )

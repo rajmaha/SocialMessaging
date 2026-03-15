@@ -27,6 +27,8 @@ import { useBranding } from '@/lib/branding-context'
 import { getAuthToken } from '@/lib/auth'
 import { useEvents } from '@/lib/events-context'
 import { API_URL } from '@/lib/config';
+import EmailAddressInput from '@/components/EmailAddressInput'
+import QuickTicketModal from '@/components/QuickTicketModal'
 
 interface Email {
   id: number
@@ -116,114 +118,6 @@ const SMART_FOLDERS = [
   { id: 'starred', label: 'Starred', icon: '⭐', type: 'smart' },
   { id: 'attachments', label: 'With Attachments', icon: '📎', type: 'smart' },
 ]
-
-function EmailAutocompleteInput({
-  value,
-  onChange,
-  placeholder,
-  suggestions,
-}: {
-  value: string
-  onChange: (v: string) => void
-  placeholder: string
-  suggestions: string[]
-}) {
-  const [open, setOpen] = React.useState(false)
-  const [filtered, setFiltered] = React.useState<string[]>([])
-  const [highlightedIndex, setHighlightedIndex] = React.useState(-1)
-  const ref = React.useRef<HTMLDivElement>(null)
-
-  // Reset highlight when filtered list changes
-  React.useEffect(() => { setHighlightedIndex(-1) }, [filtered])
-
-  // Current segment being typed (after the last semicolon)
-  const getCurrentSegment = (v: string) => {
-    const parts = v.split(';')
-    return parts[parts.length - 1].trim()
-  }
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value
-    onChange(v)
-    const segment = getCurrentSegment(v)
-    if (segment.length >= 1) {
-      const matches = suggestions.filter(
-        s => s.toLowerCase().includes(segment.toLowerCase()) && !v.split(';').map(p => p.trim()).includes(s)
-      ).slice(0, 8)
-      setFiltered(matches)
-      setOpen(matches.length > 0)
-    } else {
-      setOpen(false)
-    }
-  }
-
-  const selectSuggestion = (email: string) => {
-    const parts = value.split(';')
-    parts[parts.length - 1] = ' ' + email
-    onChange(parts.join(';') + '; ')
-    setOpen(false)
-  }
-
-  // Close on outside click
-  React.useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  return (
-    <div ref={ref} className="relative">
-      <input
-        type="text"
-        placeholder={placeholder}
-        value={value}
-        onChange={handleChange}
-        onFocus={() => {
-          const segment = getCurrentSegment(value)
-          if (segment.length >= 1) {
-            const matches = suggestions.filter(
-              s => s.toLowerCase().includes(segment.toLowerCase()) && !value.split(';').map(p => p.trim()).includes(s)
-            ).slice(0, 8)
-            setFiltered(matches)
-            setOpen(matches.length > 0)
-          }
-        }}
-        onKeyDown={(e) => {
-          if (!open) return
-          if (e.key === 'Escape') { setOpen(false); return }
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            setHighlightedIndex(i => Math.min(i + 1, filtered.length - 1))
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            setHighlightedIndex(i => Math.max(i - 1, 0))
-          } else if (e.key === 'Enter' && filtered.length > 0) {
-            e.preventDefault()
-            selectSuggestion(filtered[highlightedIndex >= 0 ? highlightedIndex : 0])
-          }
-        }}
-        className="w-full bg-transparent border-0 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-0 py-1"
-      />
-      {open && (
-        <ul className="absolute z-50 top-full left-0 right-0 bg-white border border-gray-200 rounded-b shadow-lg max-h-48 overflow-y-auto">
-          {filtered.map((email, index) => (
-            <li
-              key={email}
-              onMouseDown={(e) => { e.preventDefault(); selectSuggestion(email) }}
-              onMouseEnter={() => setHighlightedIndex(index)}
-              className={`px-3 py-2 text-sm cursor-pointer flex items-center gap-2 ${highlightedIndex === index ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
-            >
-              <span className="text-gray-400">✉</span>
-              <span>{email}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
 
 // TipTap Image extension extended with a resizable `width` attribute
 const ResizableImage = Image.extend({
@@ -377,6 +271,10 @@ export default function EmailPage() {
   const [selectedLabelColor, setSelectedLabelColor] = useState('bg-blue-100')
   const [signatures, setSignatures] = useState<EmailSignature[]>([])
   const [showSignatureSettings, setShowSignatureSettings] = useState(false)
+  const [quickTicketOpen, setQuickTicketOpen] = useState(false)
+  const [quickTicketPrefill, setQuickTicketPrefill] = useState<{
+    email?: string; contactName?: string; emailId?: number
+  }>({})
   const [showCcBcc, setShowCcBcc] = useState(false)
   const [textColor, setTextColor] = useState('#000000')
 
@@ -1447,13 +1345,6 @@ export default function EmailPage() {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
     showToast(`✓ Downloaded ${knownEmails.length} unique email addresses`)
-  }
-
-  const parseEmails = (emailString: string): string[] => {
-    return emailString
-      .split(';')
-      .map((email) => email.trim())
-      .filter((email) => email.length > 0)
   }
 
   const resetCompose = () => {
@@ -2795,7 +2686,7 @@ export default function EmailPage() {
                   setShowMobileSidebar(false)
                   // Fetch current config on open
                   const token = localStorage.getItem('access_token')
-                  fetch(`${API_URL || 'http://localhost:8000'}/email/auto-reply`, {
+                  fetch(`${API_URL}/email/auto-reply`, {
                     headers: { Authorization: `Bearer ${token}` }
                   }).then(r => r.json()).then(d => setAutoReplyConfig({
                     is_enabled: d.is_enabled ?? false,
@@ -3179,30 +3070,39 @@ export default function EmailPage() {
               </div>
               {/* To */}
               <div className="flex items-start gap-3 px-4 py-2.5 border-b border-gray-100">
-                <span className="text-xs font-medium text-gray-400 w-14 flex-shrink-0 pt-1.5">To</span>
                 <div className="flex-1 min-w-0">
-                  <EmailAutocompleteInput value={composeData.to} onChange={(v) => setComposeData({ ...composeData, to: v })} placeholder="Recipients" suggestions={knownEmails} />
-                  {composeData.to && <div className="flex flex-wrap gap-1 mt-1">{parseEmails(composeData.to).map((e, i) => <span key={i} className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full text-xs">{e}</span>)}</div>}
+                  <EmailAddressInput
+                    label="To"
+                    value={composeData.to}
+                    onChange={(val) => setComposeData(prev => ({ ...prev, to: val }))}
+                    placeholder="recipient@example.com"
+                  />
                 </div>
                 {!showCcBcc && <button onClick={() => setShowCcBcc(true)} className="text-xs text-blue-500 hover:underline flex-shrink-0 pt-1.5">Cc Bcc</button>}
               </div>
               {/* CC */}
               {showCcBcc && (
                 <div className="flex items-start gap-3 px-4 py-2.5 border-b border-gray-100">
-                  <span className="text-xs font-medium text-gray-400 w-14 flex-shrink-0 pt-1.5">Cc</span>
                   <div className="flex-1 min-w-0">
-                    <EmailAutocompleteInput value={composeData.cc} onChange={(v) => setComposeData({ ...composeData, cc: v })} placeholder="Cc" suggestions={knownEmails} />
-                    {composeData.cc && <div className="flex flex-wrap gap-1 mt-1">{parseEmails(composeData.cc).map((e, i) => <span key={i} className="bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full text-xs">{e}</span>)}</div>}
+                    <EmailAddressInput
+                      label="CC"
+                      value={composeData.cc}
+                      onChange={(val) => setComposeData(prev => ({ ...prev, cc: val }))}
+                      placeholder="cc@example.com"
+                    />
                   </div>
                 </div>
               )}
               {/* BCC */}
               {showCcBcc && (
                 <div className="flex items-start gap-3 px-4 py-2.5 border-b border-gray-100">
-                  <span className="text-xs font-medium text-gray-400 w-14 flex-shrink-0 pt-1.5">Bcc</span>
                   <div className="flex-1 min-w-0">
-                    <EmailAutocompleteInput value={composeData.bcc} onChange={(v) => setComposeData({ ...composeData, bcc: v })} placeholder="Bcc" suggestions={knownEmails} />
-                    {composeData.bcc && <div className="flex flex-wrap gap-1 mt-1">{parseEmails(composeData.bcc).map((e, i) => <span key={i} className="bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 rounded-full text-xs">{e}</span>)}</div>}
+                    <EmailAddressInput
+                      label="BCC"
+                      value={composeData.bcc}
+                      onChange={(val) => setComposeData(prev => ({ ...prev, bcc: val }))}
+                      placeholder="bcc@example.com"
+                    />
                   </div>
                 </div>
               )}
@@ -3563,6 +3463,19 @@ export default function EmailPage() {
                       <button onClick={() => handleForward(latestEmail, selectedThread)} className="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-1.5 rounded-full transition flex items-center gap-1.5">
                         <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.293 3.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L14.586 10H9a5 5 0 00-5 5v2a1 1 0 11-2 0v-2a7 7 0 017-7h5.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                         Forward
+                      </button>
+                      <button
+                        onClick={() => {
+                          setQuickTicketPrefill({
+                            email: latestEmail.from_address,
+                            contactName: latestEmail.from_address,
+                            emailId: latestEmail.id,
+                          })
+                          setQuickTicketOpen(true)
+                        }}
+                        className="bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-1.5 rounded-full transition flex items-center gap-1.5"
+                      >
+                        🎫 Create Ticket
                       </button>
                       <div className="w-px bg-gray-200 h-5 mx-1" />
                       <button onClick={() => handleMarkUnread(latestEmail.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-yellow-50 hover:text-yellow-600 transition" title="Mark Unread">
@@ -4213,7 +4126,7 @@ export default function EmailPage() {
                   setAutoReplyTestStatus('sending')
                   try {
                     const token = localStorage.getItem('access_token')
-                    const r = await fetch(`${API_URL || 'http://localhost:8000'}/email/auto-reply/test`, {
+                    const r = await fetch(`${API_URL}/email/auto-reply/test`, {
                       method: 'POST',
                       headers: { Authorization: `Bearer ${token}` }
                     })
@@ -4236,7 +4149,7 @@ export default function EmailPage() {
                     setAutoReplySaving(true)
                     try {
                       const token = localStorage.getItem('access_token')
-                      await fetch(`${API_URL || 'http://localhost:8000'}/email/auto-reply`, {
+                      await fetch(`${API_URL}/email/auto-reply`, {
                         method: 'POST',
                         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify(autoReplyConfig)
@@ -4429,6 +4342,12 @@ export default function EmailPage() {
         </div>
       )}
 
+      <QuickTicketModal
+        open={quickTicketOpen}
+        onClose={() => setQuickTicketOpen(false)}
+        onCreated={() => setQuickTicketOpen(false)}
+        prefill={quickTicketPrefill}
+      />
     </div>
   )
 }

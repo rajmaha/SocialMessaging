@@ -20,3 +20,4 @@
 
 **/*.log
 .worktrees/
+docker-compose.override.yml

@@ -10,6 +10,7 @@ import EmailEditor from "@/components/EmailEditor";
 import EmailTemplateGallery from "@/components/EmailTemplateGallery";
 import SendTestEmailPopover from "@/components/SendTestEmailPopover";
 import { useRouter, useParams } from "next/navigation";
+import { useRef, useCallback } from "react";
 
 const LEAD_STATUSES = ["new", "contacted", "qualified", "lost", "converted"];
 const LEAD_SOURCES = ["conversation", "email", "website", "referral", "phone_call", "existing_client", "other"];
@@ -24,35 +25,149 @@ export default function EditCampaignPage() {
     name: "",
     subject: "",
     body_html: "",
-    target_filter: { statuses: [] as string[], sources: [] as string[] },
+    target_filter: {
+      statuses: [] as string[],
+      sources: [] as string[],
+      tags: { include: [] as string[], exclude: [] as string[] },
+      engagement: {} as Record<string, number>,
+    },
     scheduled_at: "",
+    is_ab_test: false,
+    ab_test_size_pct: 20,
+    ab_winner_criteria: "open_rate",
+    ab_test_duration_hours: 4,
+    variant_a_subject: "",
+    variant_a_body: "",
+    variant_b_subject: "",
+    variant_b_body: "",
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [includeTagInput, setIncludeTagInput] = useState("");
+  const [excludeTagInput, setExcludeTagInput] = useState("");
+  const [campaignsList, setCampaignsList] = useState<{ id: number; name: string }[]>([]);
+  const [engagementCampaignId, setEngagementCampaignId] = useState<number | "">("");
+  const [engagementAction, setEngagementAction] = useState<string>("");
+  const [attachments, setAttachments] = useState<{ id: number; filename: string; size: number }[]>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    axios
+      .get(`${API_URL}/campaigns`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => setCampaignsList(res.data))
+      .catch(() => {});
+  }, [token]);
 
   useEffect(() => {
     if (!id) return;
-    axios
-      .get(`${API_URL}/campaigns/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      .then(res => {
+    const headers = { Authorization: `Bearer ${token}` };
+    Promise.all([
+      axios.get(`${API_URL}/campaigns/${id}`, { headers }),
+      axios.get(`${API_URL}/campaigns/${id}/variants`, { headers }).catch(() => ({ data: [] })),
+    ])
+      .then(([res, varRes]) => {
         const c = res.data;
+        const tf = c.target_filter || {};
+        const tags = tf.tags || { include: [], exclude: [] };
+        const engagement = tf.engagement || {};
+        const variants = varRes.data || [];
+        const varA = variants.find((v: any) => v.variant_label === "A");
+        const varB = variants.find((v: any) => v.variant_label === "B");
         setForm({
           name: c.name || "",
           subject: c.subject || "",
           body_html: c.body_html || "",
-          target_filter: c.target_filter || { statuses: [], sources: [] },
+          target_filter: {
+            statuses: tf.statuses || [],
+            sources: tf.sources || [],
+            tags: { include: tags.include || [], exclude: tags.exclude || [] },
+            engagement,
+          },
           scheduled_at: c.scheduled_at
             ? new Date(c.scheduled_at).toISOString().slice(0, 16)
             : "",
+          is_ab_test: !!c.is_ab_test,
+          ab_test_size_pct: c.ab_test_size_pct ?? 20,
+          ab_winner_criteria: c.ab_winner_criteria || "open_rate",
+          ab_test_duration_hours: c.ab_test_duration_hours ?? 4,
+          variant_a_subject: varA?.subject || "",
+          variant_a_body: varA?.body_html || "",
+          variant_b_subject: varB?.subject || "",
+          variant_b_body: varB?.body_html || "",
         });
+        // Restore engagement UI state from saved data
+        const engKeys = ["opened_campaign", "not_opened_campaign", "clicked_campaign"];
+        for (const key of engKeys) {
+          if (engagement[key]) {
+            setEngagementCampaignId(engagement[key]);
+            setEngagementAction(key);
+            break;
+          }
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id, token]);
+
+  // Load attachments
+  useEffect(() => {
+    if (!id) return;
+    axios
+      .get(`${API_URL}/campaigns/${id}/attachments`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then(res => setAttachments(res.data || []))
+      .catch(() => {});
+  }, [id, token]);
+
+  const formatFileSize = useCallback((bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }, []);
+
+  const uploadAttachment = async (file: File) => {
+    if (attachments.length >= 3) {
+      setError("Maximum 3 attachments allowed.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("File size must be under 10 MB.");
+      return;
+    }
+    setUploadingAttachment(true);
+    setError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await axios.post(`${API_URL}/campaigns/${id}/attachments`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      setAttachments(prev => [...prev, res.data]);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Failed to upload attachment");
+    } finally {
+      setUploadingAttachment(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removeAttachment = async (attachmentId: number) => {
+    try {
+      await axios.delete(`${API_URL}/campaigns/${id}/attachments/${attachmentId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAttachments(prev => prev.filter(a => a.id !== attachmentId));
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Failed to remove attachment");
+    }
+  };
 
   const previewAudience = async () => {
     try {
@@ -72,24 +187,105 @@ export default function EditCampaignPage() {
     setAudienceCount(null);
   };
 
+  const addTag = (type: "include" | "exclude", tag: string) => {
+    const trimmed = tag.trim().toLowerCase();
+    if (!trimmed) return;
+    setForm(prev => {
+      const current = prev.target_filter.tags[type];
+      if (current.includes(trimmed)) return prev;
+      return {
+        ...prev,
+        target_filter: {
+          ...prev.target_filter,
+          tags: { ...prev.target_filter.tags, [type]: [...current, trimmed] },
+        },
+      };
+    });
+    setAudienceCount(null);
+  };
+
+  const removeTag = (type: "include" | "exclude", tag: string) => {
+    setForm(prev => ({
+      ...prev,
+      target_filter: {
+        ...prev.target_filter,
+        tags: {
+          ...prev.target_filter.tags,
+          [type]: prev.target_filter.tags[type].filter(t => t !== tag),
+        },
+      },
+    }));
+    setAudienceCount(null);
+  };
+
+  const setEngagement = (campaignId: number | "", action: string) => {
+    setEngagementCampaignId(campaignId);
+    setEngagementAction(action);
+    const engagement: Record<string, number> = {};
+    if (campaignId && action) {
+      engagement[action] = campaignId as number;
+    }
+    setForm(prev => ({
+      ...prev,
+      target_filter: { ...prev.target_filter, engagement },
+    }));
+    setAudienceCount(null);
+  };
+
   const save = async (publish: boolean) => {
-    if (!form.name || !form.subject || !form.body_html) {
-      setError("Name, subject, and body are required.");
-      return;
+    if (form.is_ab_test) {
+      if (!form.name || !form.variant_a_subject || !form.variant_a_body || !form.variant_b_subject || !form.variant_b_body) {
+        setError("Name, and both variant subjects and bodies are required for A/B tests.");
+        return;
+      }
+    } else {
+      if (!form.name || !form.subject || !form.body_html) {
+        setError("Name, subject, and body are required.");
+        return;
+      }
     }
     setSaving(true);
     setError("");
     try {
-      const payload = {
+      const payload: any = {
         ...form,
         scheduled_at: form.scheduled_at ? new Date(form.scheduled_at).toISOString() : null,
         status: publish
           ? (form.scheduled_at ? "scheduled" : "draft")
           : "draft",
       };
+      // If A/B test, use variant A as the main subject/body for the campaign record
+      if (form.is_ab_test) {
+        payload.subject = form.variant_a_subject || form.subject;
+        payload.body_html = form.variant_a_body || form.body_html;
+      }
+      // Remove variant fields from campaign payload
+      delete payload.variant_a_subject;
+      delete payload.variant_a_body;
+      delete payload.variant_b_subject;
+      delete payload.variant_b_body;
+
       await axios.patch(`${API_URL}/campaigns/${id}`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      // Upsert variants if A/B test
+      if (form.is_ab_test) {
+        const headers = { Authorization: `Bearer ${token}` };
+        await Promise.all([
+          axios.post(`${API_URL}/campaigns/${id}/variants`, {
+            variant_label: "A",
+            subject: form.variant_a_subject,
+            body_html: form.variant_a_body,
+          }, { headers }),
+          axios.post(`${API_URL}/campaigns/${id}/variants`, {
+            variant_label: "B",
+            subject: form.variant_b_subject,
+            body_html: form.variant_b_body,
+          }, { headers }),
+        ]);
+      }
+
       if (publish) {
         router.push(`/admin/campaigns/${id}`);
       }
@@ -137,30 +333,143 @@ export default function EditCampaignPage() {
                 placeholder="e.g. March Newsletter"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">Email Subject *</label>
-              <input
-                type="text"
-                value={form.subject}
-                onChange={e => setForm({ ...form, subject: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g. Special offer just for you"
-              />
+            {!form.is_ab_test && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Email Subject *</label>
+                  <input
+                    type="text"
+                    value={form.subject}
+                    onChange={e => setForm({ ...form, subject: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. Special offer just for you"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-gray-600">Email Body *</label>
+                    <div className="flex items-center gap-2">
+                      <SendTestEmailPopover subject={form.subject} bodyHtml={form.body_html} />
+                      <EmailTemplateGallery onSelect={html => setForm(prev => ({ ...prev, body_html: html }))} />
+                    </div>
+                  </div>
+                  <EmailEditor
+                    content={form.body_html}
+                    onChange={html => setForm(prev => ({ ...prev, body_html: html }))}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Use the template gallery to pick a pre-built design, or write your own. A tracking pixel is appended automatically on send.</p>
+                </div>
+              </>
+            )}
+
+            {/* A/B Test Toggle */}
+            <div className="flex items-center gap-3 pt-2">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.is_ab_test}
+                  onChange={e => setForm(prev => ({ ...prev, is_ab_test: e.target.checked }))}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
+              </label>
+              <span className="text-sm font-medium text-gray-700">Enable A/B Test</span>
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-gray-600">Email Body *</label>
-                <div className="flex items-center gap-2">
-                  <SendTestEmailPopover subject={form.subject} bodyHtml={form.body_html} />
-                  <EmailTemplateGallery onSelect={html => setForm(prev => ({ ...prev, body_html: html }))} />
+
+            {/* A/B Variant Editors */}
+            {form.is_ab_test && (
+              <div className="space-y-4 pt-2">
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Variant A */}
+                  <div className="border border-blue-200 rounded-lg p-4 bg-blue-50/30">
+                    <h3 className="text-sm font-semibold text-blue-700 mb-3">Variant A</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Subject *</label>
+                        <input
+                          type="text"
+                          value={form.variant_a_subject}
+                          onChange={e => setForm(prev => ({ ...prev, variant_a_subject: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Subject line for variant A"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Body *</label>
+                        <EmailEditor
+                          content={form.variant_a_body}
+                          onChange={html => setForm(prev => ({ ...prev, variant_a_body: html }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  {/* Variant B */}
+                  <div className="border border-purple-200 rounded-lg p-4 bg-purple-50/30">
+                    <h3 className="text-sm font-semibold text-purple-700 mb-3">Variant B</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Subject *</label>
+                        <input
+                          type="text"
+                          value={form.variant_b_subject}
+                          onChange={e => setForm(prev => ({ ...prev, variant_b_subject: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Subject line for variant B"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Body *</label>
+                        <EmailEditor
+                          content={form.variant_b_body}
+                          onChange={html => setForm(prev => ({ ...prev, variant_b_body: html }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* A/B Test Settings */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50/50">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">A/B Test Settings</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Test Size %</label>
+                      <input
+                        type="number"
+                        min={10}
+                        max={50}
+                        value={form.ab_test_size_pct}
+                        onChange={e => setForm(prev => ({ ...prev, ab_test_size_pct: Number(e.target.value) }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">% of audience for testing</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Winner Criteria</label>
+                      <select
+                        value={form.ab_winner_criteria}
+                        onChange={e => setForm(prev => ({ ...prev, ab_winner_criteria: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="open_rate">Open Rate</option>
+                        <option value="click_rate">Click Rate</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Test Duration (hours)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={form.ab_test_duration_hours}
+                        onChange={e => setForm(prev => ({ ...prev, ab_test_duration_hours: Number(e.target.value) }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">Hours before picking winner</p>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <EmailEditor
-                content={form.body_html}
-                onChange={html => setForm(prev => ({ ...prev, body_html: html }))}
-              />
-              <p className="text-xs text-gray-400 mt-1">Use the template gallery to pick a pre-built design, or write your own. A tracking pixel is appended automatically on send.</p>
-            </div>
+            )}
           </div>
 
           {/* Audience */}
@@ -208,6 +517,94 @@ export default function EditCampaignPage() {
               </div>
             </div>
 
+            {/* Tag Filters */}
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2">Filter by Tags</label>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Include tags (leads must have ALL these tags)</label>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {form.target_filter.tags.include.map(tag => (
+                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        {tag}
+                        <button type="button" onClick={() => removeTag("include", tag)} className="hover:text-green-600">x</button>
+                      </span>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={includeTagInput}
+                    onChange={e => setIncludeTagInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addTag("include", includeTagInput);
+                        setIncludeTagInput("");
+                      }
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="Type a tag and press Enter"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Exclude tags (leads must NOT have these tags)</label>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {form.target_filter.tags.exclude.map(tag => (
+                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        {tag}
+                        <button type="button" onClick={() => removeTag("exclude", tag)} className="hover:text-red-600">x</button>
+                      </span>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={excludeTagInput}
+                    onChange={e => setExcludeTagInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addTag("exclude", excludeTagInput);
+                        setExcludeTagInput("");
+                      }
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="Type a tag and press Enter"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Engagement Filters */}
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2">Engagement Filters</label>
+              <p className="text-xs text-gray-500 mb-2">Target leads based on their interaction with a past campaign.</p>
+              <div className="flex flex-wrap gap-3">
+                <select
+                  value={engagementCampaignId}
+                  onChange={e => {
+                    const val = e.target.value ? Number(e.target.value) : "";
+                    setEngagement(val, engagementAction);
+                  }}
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a past campaign</option>
+                  {campaignsList.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={engagementAction}
+                  onChange={e => setEngagement(engagementCampaignId, e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select action</option>
+                  <option value="opened_campaign">Opened</option>
+                  <option value="not_opened_campaign">Did not open</option>
+                  <option value="clicked_campaign">Clicked</option>
+                </select>
+              </div>
+            </div>
+
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -222,6 +619,80 @@ export default function EditCampaignPage() {
                 </span>
               )}
             </div>
+          </div>
+
+          {/* Attachments */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-700">Attachments</h2>
+              <span className="text-xs text-gray-400">{attachments.length}/3 attachments</span>
+            </div>
+
+            {attachments.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {attachments.map(att => (
+                  <div
+                    key={att.id}
+                    className="flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg className="h-4 w-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+                      </svg>
+                      <span className="text-sm text-gray-700 truncate">{att.filename}</span>
+                      <span className="text-xs text-gray-400 flex-shrink-0">{formatFileSize(att.size)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(att.id)}
+                      className="ml-2 text-gray-400 hover:text-red-500 transition flex-shrink-0"
+                      title="Remove attachment"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {attachments.length < 3 ? (
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) uploadAttachment(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingAttachment}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {uploadingAttachment ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                      Add Attachment
+                    </>
+                  )}
+                </button>
+                <p className="text-xs text-gray-400 mt-2">Max 10 MB per file. Up to 3 attachments.</p>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">Maximum attachments reached. Remove one to add another.</p>
+            )}
           </div>
 
           {/* Schedule */}

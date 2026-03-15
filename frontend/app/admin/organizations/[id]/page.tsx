@@ -11,6 +11,7 @@ import {
     User, CreditCard, ChevronLeft, LayoutDashboard, Settings,
     Mail, MessageSquare, Phone, ChevronDown, ChevronUp, Eye, X as XIcon
 } from 'lucide-react'
+import ClickablePhone from '@/components/ClickablePhone'
 import TicketHistory from '@/components/TicketHistory'
 import axios from 'axios'
 import { useAuth, getAuthToken } from '@/lib/auth'
@@ -521,7 +522,7 @@ export default function OrganizationDetailPage() {
                                                                     {call.direction === 'inbound' ? '↙ In' : '↗ Out'}
                                                                 </span>
                                                             </div>
-                                                            <div className="col-span-2 text-xs font-medium text-gray-800">{call.phone_number || '—'}</div>
+                                                            <div className="col-span-2 text-xs font-medium text-gray-800">{call.phone_number ? <ClickablePhone number={call.phone_number} showIcon={false} className="text-xs" /> : '—'}</div>
                                                             <div className="col-span-2 text-xs text-gray-600 truncate">{call.agent_name || '—'}</div>
                                                             <div className="col-span-2">
                                                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${DISPOSITION_COLORS[call.disposition] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
@@ -543,7 +544,7 @@ export default function OrganizationDetailPage() {
                                                             <div className="px-4 pb-5 pt-2 bg-emerald-50/30 border-b border-gray-100">
                                                                 {/* Call details */}
                                                                 <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-xs mb-4">
-                                                                    <MetaRow label="Phone" value={call.phone_number} />
+                                                                    <MetaRow label="Phone" value={call.phone_number ? <ClickablePhone number={call.phone_number} showIcon={false} className="text-xs" /> : '—'} />
                                                                     <MetaRow label="Direction" value={<span className="capitalize">{call.direction}</span>} />
                                                                     <MetaRow label="Agent" value={call.agent_name || '—'} />
                                                                     <MetaRow label="Disposition" value={call.disposition || '—'} />
@@ -584,7 +585,7 @@ export default function OrganizationDetailPage() {
                         <div className="shrink-0 bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center">
                             <div>
                                 <h2 className="text-lg font-bold text-gray-900 leading-none">Ticket Thread</h2>
-                                <p className="text-sm text-gray-500 mt-1">{selectedCall.phone_number}</p>
+                                <div className="text-sm text-gray-500 mt-1"><ClickablePhone number={selectedCall.phone_number} className="text-sm" /></div>
                             </div>
                             <button
                                 onClick={() => setSelectedCall(null)}

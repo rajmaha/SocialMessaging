@@ -1,61 +1,73 @@
-version: '3.8'
-
 services:
-  # PostgreSQL Database
+  # ── PostgreSQL ──
   db:
     image: postgres:15-alpine
-    container_name: socialmedia_db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: socialmedia
       POSTGRES_USER: socialmedia_user
       POSTGRES_PASSWORD: socialmedia_password
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U socialmedia_user"]
+      test: ["CMD-SHELL", "pg_isready -U socialmedia_user -d socialmedia"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # FastAPI Backend
+  # ── FastAPI Backend ──
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: socialmedia_backend
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://socialmedia_user:socialmedia_password@db:5432/socialmedia
       DEBUG: "False"
-      SECRET_KEY: your-secret-key-change-in-production
-      FRONTEND_URL: http://localhost:3000
-    ports:
-      - "8000:8000"
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      ALGORITHM: HS256
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    expose:
+      - "8000"
     depends_on:
       db:
         condition: service_healthy
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
     volumes:
-      - ./backend:/app
+      - backend_avatars:/app/app/avatar_storage
+      - backend_attachments:/app/app/attachment_storage
+      - backend_logos:/app/app/logo_storage
+      - backend_audio:/app/app/audio_storage
+      - backend_sub_logos:/app/app/subscription_logo_storage
+      - backend_templates:/app/templates
 
-  # Next.js Frontend
+  # ── Next.js Frontend ──
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: socialmedia_frontend
+    restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-    ports:
-      - "3000:3000"
+      BACKEND_INTERNAL_URL: http://backend:8000
+      PORT: "3000"
+    expose:
+      - "3000"
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
 
 volumes:
   postgres_data:
+    driver: local
+  backend_avatars:
+    driver: local
+  backend_attachments:
+    driver: local
+  backend_logos:
+    driver: local
+  backend_audio:
+    driver: local
+  backend_sub_logos:
+    driver: local
+  backend_templates:
     driver: local

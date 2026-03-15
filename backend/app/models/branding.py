@@ -33,6 +33,7 @@ class BrandingSettings(Base):
     smtp_from_email = Column(String, default="noreply@socialmedia.com")
     smtp_from_name = Column(String, default="Social Media Messenger")
     smtp_use_tls = Column(Boolean, default=True)
+    smtp_use_ssl = Column(Boolean, default=False)
     
     # Email Templates
     email_footer_text = Column(String, default="© 2026 Social Media Messenger. All rights reserved.")
@@ -48,10 +49,20 @@ class BrandingSettings(Base):
 
     # Admin Contact
     admin_email = Column(String, nullable=True)
+    contact_phone = Column(String, nullable=True)
 
     # Attachment / file-upload settings
     allowed_file_types = Column(JSON, nullable=True)   # list of MIME strings; None = use defaults
     max_file_size_mb = Column(Integer, default=10)     # per-upload cap in MB
+
+    # Email Validator
+    email_validator_url = Column(String, nullable=True)
+    email_validator_secret = Column(String, nullable=True)
+    email_validator_risk_threshold = Column(Integer, default=60)
+
+    # Postal Server Integration
+    postal_server_url = Column(String, nullable=True)
+    postal_api_key = Column(String, nullable=True)
 
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)

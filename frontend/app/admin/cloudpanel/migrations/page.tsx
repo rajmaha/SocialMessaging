@@ -56,7 +56,7 @@ interface RunResult {
     details: { site: string; migration: string; status: string; error?: string }[]
 }
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { API_URL as API } from '@/lib/config'
 
 function authHeaders(): Record<string, string> {
     const token = getAuthToken() || ''

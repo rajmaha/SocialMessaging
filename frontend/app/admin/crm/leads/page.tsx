@@ -7,6 +7,7 @@ import { API_URL } from "@/lib/config";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 import LeadDetailPanel from "@/components/LeadDetailPanel";
+import ClickableEmail from '@/components/ClickableEmail';
 
 interface Lead {
   id: number;
@@ -371,7 +372,7 @@ export default function LeadListPage() {
                         <td className="px-4 py-3 font-medium text-gray-900">
                           {lead.first_name} {lead.last_name || ""}
                         </td>
-                        <td className="px-4 py-3 text-gray-500">{lead.email || "\u2014"}</td>
+                        <td className="px-4 py-3 text-gray-500"><ClickableEmail email={lead.email} showIcon={false} /></td>
                         <td className="px-4 py-3 text-gray-500">{lead.company || "\u2014"}</td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[lead.status] || "bg-gray-100 text-gray-800"}`}>

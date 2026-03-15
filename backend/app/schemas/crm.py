@@ -53,6 +53,7 @@ class LeadResponse(BaseModel):
     conversation_id: Optional[int]
     organization_id: Optional[int]
     tags: Optional[list[str]] = []
+    email_valid: Optional[bool] = None
     created_at: datetime
     updated_at: datetime
 

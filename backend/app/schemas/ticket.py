@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Literal
 from datetime import datetime
 from app.models.ticket import TicketStatus, TicketPriority
 
@@ -21,7 +21,9 @@ class TicketBase(BaseModel):
     organization_id: Optional[int] = None
 
 class TicketCreate(TicketBase):
-    pass
+    conversation_id: Optional[int] = None
+    email_id: Optional[int] = None
+    source: Literal["call", "messaging", "email", "manual"] = "call"
 
 class TicketUpdate(BaseModel):
     status: Optional[TicketStatus] = None
@@ -46,5 +48,8 @@ class TicketResponse(TicketBase):
     updated_at: Optional[datetime] = None
     assignee_name: Optional[str] = None
     parent_ticket_number: Optional[str] = None
+    conversation_id: Optional[int] = None
+    email_id: Optional[int] = None
+    source: Optional[Literal["call", "messaging", "email", "manual"]] = None
 
     model_config = ConfigDict(from_attributes=True)

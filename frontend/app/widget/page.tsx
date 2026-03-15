@@ -1,8 +1,16 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { FiSend, FiMessageCircle, FiPaperclip } from 'react-icons/fi'
 import { API_URL } from '@/lib/config';
+
+// Resolve image URLs — if already absolute, use as-is; otherwise prepend API_URL
+function resolveUrl(url: string | null | undefined): string {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//')) return url
+  return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`
+}
 
 // Singleton AudioContext — created on first user gesture; reused for all sounds
 let _audioCtx: AudioContext | null = null
@@ -66,6 +74,16 @@ interface Branding {
 type Phase = 'email' | 'otp' | 'chat'
 
 export default function WidgetPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-50" />}>
+      <WidgetPageInner />
+    </Suspense>
+  )
+}
+
+function WidgetPageInner() {
+  const searchParams = useSearchParams()
+  const widgetKey = searchParams.get('widget_key')
   const [phase, setPhase] = useState<Phase>('email')
   const [visitorName, setVisitorName] = useState('')
   // email phase
@@ -76,6 +94,7 @@ export default function WidgetPage() {
   const [otpError, setOtpError] = useState('')
   const [otpSending, setOtpSending] = useState(false)
   const [otpResendCooldown, setOtpResendCooldown] = useState(0)
+  const [otpToken, setOtpToken] = useState('')
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [linkPreviews, setLinkPreviews] = useState<Record<string, any>>({})
@@ -135,11 +154,14 @@ export default function WidgetPage() {
   }, [messages])
 
   useEffect(() => {
-    fetch(`${API_URL}/webchat/branding`)
+    const url = widgetKey
+      ? `${API_URL}/webchat/branding?key=${encodeURIComponent(widgetKey)}`
+      : `${API_URL}/webchat/branding`
+    fetch(url)
       .then((r) => r.json())
       .then((d) => setBranding(d))
       .catch(() => {})
-  }, [])
+  }, [widgetKey])
 
   // Check for existing verified session in localStorage
   useEffect(() => {
@@ -215,6 +237,7 @@ export default function WidgetPage() {
         setOtpError(data.detail || 'Failed to send code. Try again.')
         return
       }
+      setOtpToken(data.token || '')
       setOtpResendCooldown(60)
       setPhase('otp')
     } catch {
@@ -237,7 +260,7 @@ export default function WidgetPage() {
       const resp = await fetch(`${API_URL}/webchat/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp }),
+        body: JSON.stringify({ email, otp, token: otpToken }),
       })
       const data = await resp.json()
       if (!resp.ok) {
@@ -424,7 +447,7 @@ export default function WidgetPage() {
     }])
     setInputText('')
 
-    wsRef.current.send(JSON.stringify({ type: 'message', text }))
+    wsRef.current.send(JSON.stringify({ type: 'message', text, ...(widgetKey ? { widget_key: widgetKey } : {}) }))
   }
 
   const sendFile = async (file: File) => {
@@ -481,11 +504,7 @@ export default function WidgetPage() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
-    // Typing indicator
+    // Typing indicator (Enter/send is handled by the textarea's onKeyDown directly)
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'typing', is_typing: true }))
       if (typingTimer.current) clearTimeout(typingTimer.current)
@@ -504,7 +523,7 @@ export default function WidgetPage() {
       <div className="flex flex-col h-screen bg-white">
         <div className="flex items-center gap-3 px-4 py-3 text-white flex-shrink-0" style={{ background: headerBg }}>
           {branding.logo_url && (
-            <img src={`${API_URL}${branding.logo_url}`} alt="logo" className="h-7 w-auto object-contain" />
+            <img src={resolveUrl(branding.logo_url)} alt="logo" className="h-7 w-auto object-contain" />
           )}
           <span className="font-bold text-base truncate">{branding.company_name}</span>
         </div>
@@ -521,7 +540,6 @@ export default function WidgetPage() {
           ) : (
             <div className="w-full max-w-xs space-y-3">
               <input
-                autoFocus
                 type="text"
                 placeholder="Your name"
                 value={nameInput}
@@ -559,7 +577,7 @@ export default function WidgetPage() {
       <div className="flex flex-col h-screen bg-white">
         <div className="flex items-center gap-3 px-4 py-3 text-white flex-shrink-0" style={{ background: headerBg }}>
           {branding.logo_url && (
-            <img src={`${API_URL}${branding.logo_url}`} alt="logo" className="h-7 w-auto object-contain" />
+            <img src={resolveUrl(branding.logo_url)} alt="logo" className="h-7 w-auto object-contain" />
           )}
           <span className="font-bold text-base truncate">{branding.company_name}</span>
         </div>
@@ -574,7 +592,6 @@ export default function WidgetPage() {
 
           <div className="w-full max-w-xs space-y-3">
             <input
-              autoFocus
               type="text"
               inputMode="numeric"
               maxLength={6}
@@ -625,7 +642,7 @@ export default function WidgetPage() {
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 text-white flex-shrink-0 shadow-sm" style={{ background: headerBg }}>
         {branding.logo_url && (
-          <img src={`${API_URL}${branding.logo_url}`} alt="logo" className="h-6 w-auto object-contain" />
+          <img src={resolveUrl(branding.logo_url)} alt="logo" className="h-6 w-auto object-contain" />
         )}
         <div className="flex-1 min-w-0">
           <p className="font-bold text-sm leading-tight truncate">{branding.company_name}</p>

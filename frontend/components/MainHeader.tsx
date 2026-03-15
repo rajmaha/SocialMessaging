@@ -12,8 +12,8 @@ import { getAuthToken } from '@/lib/auth'
 import { hasModuleAccess, hasAnyAdminPermission } from '@/lib/permissions'
 import { useEvents } from '@/lib/events-context'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 import { useState, useEffect } from 'react'
+import { API_URL } from '@/lib/config'
 
 interface MainHeaderProps {
     user: User
@@ -144,6 +144,26 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
             )
         })
         return () => { unsub1(); unsub2(); unsub3() }
+    }, [eventsCtx])
+
+    // Visitor check-in notification toasts
+    useEffect(() => {
+        if (!eventsCtx) return
+        const addToast = (message: string, link: string) => {
+            const id = Date.now()
+            setCrmToasts(prev => [...prev, { id, message, link }])
+            setTimeout(() => {
+                setCrmToasts(prev => prev.filter(t => t.id !== id))
+            }, 6000)
+        }
+        const unsub = eventsCtx.subscribe('visitor_checkin', (data: any) => {
+            const org = data?.organization
+            const msg = org
+                ? `🏢 ${data?.visitor_name} from ${org} is here to see you — ${data?.purpose}`
+                : `🏢 ${data?.visitor_name} is here to see you — ${data?.purpose}`
+            addToast(msg, `/admin/visitors`)
+        })
+        return () => { unsub() }
     }, [eventsCtx])
 
     const logoSrc = branding?.logo_url

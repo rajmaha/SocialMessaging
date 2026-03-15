@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import ClickablePhone from '@/components/ClickablePhone';
+import ClickableEmail from '@/components/ClickableEmail';
 
 interface Lead {
   id: number;
@@ -274,8 +276,8 @@ export default function CrmSidebar({
           </span>
         </div>
         {lead.company && <div className="text-xs text-gray-500">{lead.position ? `${lead.position} at ` : ""}{lead.company}</div>}
-        {lead.email && <div className="text-xs text-gray-400 mt-1">{lead.email}</div>}
-        {lead.phone && <div className="text-xs text-gray-400">{lead.phone}</div>}
+        {lead.email && <ClickableEmail email={lead.email} className="text-xs" />}
+        {lead.phone && <ClickablePhone number={lead.phone} className="text-xs" />}
         <div className="flex items-center gap-3 mt-2">
           <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">Score: {lead.score}</span>
           {lead.estimated_value && (

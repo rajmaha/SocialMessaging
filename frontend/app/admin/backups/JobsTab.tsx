@@ -175,7 +175,7 @@ export default function BackupJobsTab() {
                 <F label="Server">
                   <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.server_id} onChange={e => setForm(f => ({ ...f, server_id: e.target.value }))}>
                     <option value="">Select server...</option>
-                    {servers.map((s: any) => <option key={s.id} value={s.id}>{s.name} ({s.host})</option>)}
+                    {servers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </F>
               )}

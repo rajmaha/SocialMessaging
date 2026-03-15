@@ -19,8 +19,8 @@ class RoleOut(BaseModel):
     name: str
     slug: str
     is_system: bool
-    permissions: Dict[str, List[str]]
-    created_at: datetime
+    permissions: Dict[str, List[str]] = {}
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

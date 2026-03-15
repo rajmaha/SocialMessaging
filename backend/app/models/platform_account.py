@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
 from datetime import datetime
 from app.database import Base
 
@@ -13,5 +13,8 @@ class PlatformAccount(Base):
     access_token = Column(String)
     phone_number = Column(String, nullable=True)
     is_active = Column(Integer, default=1)
+    app_secret = Column(String, nullable=True)
+    verify_token = Column(String, nullable=True)
+    extra_metadata = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

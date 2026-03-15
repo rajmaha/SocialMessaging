@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { LayoutClient } from './layout-client'
+import GlobalErrorCapture from '@/components/GlobalErrorCapture'
+import ErrorBoundary from '@/components/ErrorBoundary'
 
 export const metadata: Metadata = {
   title: 'Social Media Messenger',
@@ -15,7 +17,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <LayoutClient>{children}</LayoutClient>
+        <GlobalErrorCapture />
+        <ErrorBoundary>
+          <LayoutClient>{children}</LayoutClient>
+        </ErrorBoundary>
       </body>
     </html>
   )

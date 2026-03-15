@@ -1,6 +1,9 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
+
+logger = logging.getLogger(__name__)
 from app.database import get_db
 from app.dependencies import get_current_user, require_admin_feature
 from app.models.user import User
@@ -96,13 +99,15 @@ def assign_extension(
 
     # Auto-push to FreePBX (non-blocking — failure won't roll back the DB save)
     display_name = _get_user_display(user)
-    synced = freepbx_service.create_or_update_extension(
+    synced, sync_reason = freepbx_service.create_or_update_extension(
         db=db,
         extension=data.extension,
         sip_password=data.sip_password,
         display_name=display_name,
         email=user.email,
     )
+    if not synced:
+        logger.warning("FreePBX sync failed on assign: %s", sync_reason)
     ext_record.freepbx_synced = synced
     db.commit()
     db.refresh(ext_record)
@@ -177,7 +182,7 @@ def sync_extension_to_freepbx(
     user = db.query(User).filter(User.id == user_id).first()
     display_name = _get_user_display(user) if user else ""
 
-    synced = freepbx_service.create_or_update_extension(
+    synced, sync_reason = freepbx_service.create_or_update_extension(
         db=db,
         extension=ext_record.extension,
         sip_password=ext_record.sip_password,
@@ -190,7 +195,8 @@ def sync_extension_to_freepbx(
     db.refresh(ext_record)
 
     return {
-        "message": "Sync successful" if synced else "Sync failed — check FreePBX connection settings",
+        "message": "Sync successful" if synced else "Sync failed",
         "freepbx_synced": synced,
         "extension": ext_record.extension,
+        "detail": sync_reason if not synced else None,
     }

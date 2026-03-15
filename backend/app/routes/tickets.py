@@ -46,7 +46,10 @@ def create_ticket(
         assigned_to=ticket_in.assigned_to or current_user.id,
         app_type_data=ticket_in.app_type_data,
         parent_ticket_id=ticket_in.parent_ticket_id,
-        organization_id=ticket_in.organization_id
+        organization_id=ticket_in.organization_id,
+        conversation_id=ticket_in.conversation_id,   # NEW
+        email_id=ticket_in.email_id,                 # NEW
+        source=ticket_in.source,                     # NEW
     )
     db.add(new_ticket)
     db.commit()
@@ -115,7 +118,7 @@ def create_ticket(
     # appears in Call Records even when FreePBX CDR sync is not in use.
     # Dedup: skip if an existing record for this agent + phone exists within 30 min
     # (prevents duplicates when a real FreePBX CDR is later synced for the same call).
-    if not ticket_in.parent_ticket_id:
+    if not ticket_in.parent_ticket_id and ticket_in.source == "call":
         recent_cutoff = datetime.utcnow() - timedelta(minutes=30)
         existing_call = db.query(CallRecording).filter(
             CallRecording.phone_number == ticket_in.phone_number,
@@ -237,6 +240,72 @@ def get_ticket_context(
 
     return result
 
+@router.get("/context-by-email")
+def get_ticket_context_by_email(
+    email: str = Query(..., description="Full email address to look up org by domain"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve org context by email address — matches on email domain."""
+    from app.models.organization import Organization, OrganizationContact
+
+    result = {
+        "found": False,
+        "customer_type": None,
+        "customer_name": None,
+        "organization_name": None,
+        "organization_id": None,
+        "contact_person": None,
+        "email": email,
+    }
+
+    # 1. Try exact match on org contact email
+    org_contact = db.query(OrganizationContact).filter(
+        OrganizationContact.email.ilike(email)
+    ).first()
+    if org_contact and org_contact.organization:
+        result.update({
+            "found": True,
+            "customer_type": "organization",
+            "contact_person": org_contact.full_name,
+            "customer_name": org_contact.organization.organization_name,
+            "organization_name": org_contact.organization.organization_name,
+            "organization_id": org_contact.organization.id,
+        })
+        return result
+
+    # 2. Try exact match on org primary email
+    org = db.query(Organization).filter(
+        Organization.email.ilike(email)
+    ).first()
+    if org:
+        result.update({
+            "found": True,
+            "customer_type": "organization",
+            "customer_name": org.organization_name,
+            "organization_name": org.organization_name,
+            "organization_id": org.id,
+        })
+        return result
+
+    # 3. Try domain match on org domain_name field
+    if "@" in email:
+        domain = email.split("@", 1)[1].lower()
+        org = db.query(Organization).filter(
+            Organization.domain_name.ilike(f"%{domain}%")
+        ).first()
+        if org:
+            result.update({
+                "found": True,
+                "customer_type": "organization",
+                "customer_name": org.organization_name,
+                "organization_name": org.organization_name,
+                "organization_id": org.id,
+            })
+            return result
+
+    return result
+
 @router.put("/{ticket_id}", response_model=TicketResponse)
 def update_ticket(
     ticket_id: int,
@@ -341,6 +410,37 @@ def add_ticket_note(
 
     return parent_ticket
 
+@router.get("/my-tickets", response_model=List[TicketResponse])
+def get_my_tickets(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve open or forwarded tickets assigned to the current user."""
+    return db.query(Ticket).filter(
+        Ticket.assigned_to == current_user.id,
+        Ticket.status.in_([TicketStatus.PENDING, TicketStatus.FORWARDED])
+    ).order_by(Ticket.created_at.desc()).all()
+
+@router.get("/all", response_model=List[TicketResponse])
+def get_all_tickets_admin(
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin_feature("feature_manage_tickets"))
+):
+    """Retrieve all tickets in the system for admin viewing."""
+    return db.query(Ticket).order_by(Ticket.created_at.desc()).all()
+
+@router.get("/find", response_model=TicketResponse)
+def find_ticket_by_number(
+    number: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Find a ticket by its ticket_number string."""
+    ticket = db.query(Ticket).filter(Ticket.ticket_number == number).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
+
 @router.get("/{ticket_id}/thread", response_model=List[TicketResponse])
 def get_ticket_thread(
     ticket_id: int,
@@ -377,37 +477,6 @@ def get_ticket_thread(
                 queue.append(child.id)
 
     return thread
-
-@router.get("/my-tickets", response_model=List[TicketResponse])
-def get_my_tickets(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Retrieve open or forwarded tickets assigned to the current user."""
-    return db.query(Ticket).filter(
-        Ticket.assigned_to == current_user.id,
-        Ticket.status.in_([TicketStatus.PENDING, TicketStatus.FORWARDED])
-    ).order_by(Ticket.created_at.desc()).all()
-
-@router.get("/all", response_model=List[TicketResponse])
-def get_all_tickets_admin(
-    db: Session = Depends(get_db),
-    admin_user: User = Depends(require_admin_feature("feature_manage_tickets"))
-):
-    """Retrieve all tickets in the system for admin viewing."""
-    return db.query(Ticket).order_by(Ticket.created_at.desc()).all()
-
-@router.get("/find", response_model=TicketResponse)
-def find_ticket_by_number(
-    number: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Find a ticket by its ticket_number string."""
-    ticket = db.query(Ticket).filter(Ticket.ticket_number == number).first()
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    return ticket
 
 @router.get("", response_model=List[TicketResponse])
 def list_tickets(

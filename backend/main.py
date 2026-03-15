@@ -13,11 +13,19 @@ from app.routes.db_migrations import router as db_migrations_router
 from app.routes.backups import router as backups_router
 from app.routes import pms as pms_routes
 from app.routes import roles as roles_routes
+from app.routes import platform_accounts
+from app.routes import widget_domains
 from app.routes.api_servers import router as api_servers_router, user_router as user_api_creds_router
 from app.routes.forms import admin_router as forms_admin_router, public_router as forms_public_router
 from app.routes.menus import router as menus_router
+from app.routes.campaign_attachments import router as campaign_attachments_router
 from app.routes.user_permission_overrides import router as permission_overrides_router
+from app.routes.logs import router as logs_router
+from app.routes.email_validator import router as email_validator_router
+from app.routes.ci_cd import router as ci_cd_router
+from app.routes.visitors import router as visitors_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
+from app.models.email_suppression import EmailSuppression  # noqa: F401
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
 from app.models.backup_destination import BackupDestination  # noqa: F401
 from app.models.backup_job import BackupJob  # noqa: F401
@@ -25,6 +33,16 @@ from app.models.backup_run import BackupRun  # noqa: F401
 from app.models.automation import AutomationRule, EmailSequence, EmailSequenceStep, EmailSequenceEnrollment  # noqa: F401
 from app.models import pms  # noqa: F401
 from app.models.user_permission_override import UserPermissionOverride  # noqa: F401 — ensures table creation
+from app.models.webchat_otp import WebchatOtp  # noqa: F401 — ensures table creation
+from app.models.campaign_link import CampaignLink, CampaignClick  # noqa: F401
+from app.models.campaign_variant import CampaignVariant  # noqa: F401
+from app.models.logs import AuditLog, ErrorLog  # noqa: F401 — ensures log table creation
+from app.models.ci_cd import CICDRepo, CICDDeployment, CICDScriptLog, CICDMigrationLog  # noqa: F401
+from app.models.visitors import VisitorLocation, VisitorProfile, Visit  # noqa: F401
+from app.models.agent_account import AgentAccount  # noqa: F401
+from app.models.widget_domain import WidgetDomain  # noqa: F401
+from app.models.domain_account import DomainAccount  # noqa: F401
+from app.models.domain_agent import DomainAgent  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -499,6 +517,9 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_type VARCHAR"))
         conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS contact_person VARCHAR"))
         conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_email VARCHAR"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS email_id INTEGER REFERENCES emails(id) ON DELETE SET NULL"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS source VARCHAR NOT NULL DEFAULT 'call'"))
         # Subscription company logo
         conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS company_logo_url VARCHAR"))
         # Individuals table (created by SQLAlchemy create_all, but belt-and-suspenders)
@@ -1189,9 +1210,90 @@ def _run_inline_migrations():
             )
         """))
 
+        # ── CI/CD tables ──────────────────────────────────────────────────────
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS cicd_repos (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                repo_url VARCHAR NOT NULL,
+                branch VARCHAR NOT NULL DEFAULT 'main',
+                local_path VARCHAR NOT NULL,
+                auth_type VARCHAR NOT NULL DEFAULT 'https',
+                ssh_private_key TEXT,
+                access_token VARCHAR,
+                db_host VARCHAR,
+                db_port INTEGER DEFAULT 5432,
+                db_username VARCHAR,
+                db_password VARCHAR,
+                schedule_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                schedule_cron VARCHAR,
+                last_deployed_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS cicd_deployments (
+                id SERIAL PRIMARY KEY,
+                repo_id INTEGER NOT NULL REFERENCES cicd_repos(id) ON DELETE CASCADE,
+                status VARCHAR NOT NULL DEFAULT 'running',
+                triggered_by VARCHAR NOT NULL DEFAULT 'manual',
+                git_output TEXT,
+                error TEXT,
+                started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                finished_at TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS cicd_script_logs (
+                id SERIAL PRIMARY KEY,
+                repo_id INTEGER NOT NULL REFERENCES cicd_repos(id) ON DELETE CASCADE,
+                deployment_id INTEGER NOT NULL REFERENCES cicd_deployments(id) ON DELETE CASCADE,
+                script_filename VARCHAR NOT NULL,
+                exit_code INTEGER,
+                stdout TEXT,
+                stderr TEXT,
+                executed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_cicd_script_repo UNIQUE (repo_id, script_filename)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS cicd_migration_logs (
+                id SERIAL PRIMARY KEY,
+                repo_id INTEGER NOT NULL REFERENCES cicd_repos(id) ON DELETE CASCADE,
+                deployment_id INTEGER NOT NULL REFERENCES cicd_deployments(id) ON DELETE CASCADE,
+                database_name VARCHAR NOT NULL,
+                sql_filename VARCHAR NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'success',
+                error TEXT,
+                executed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_cicd_migration_repo_db UNIQUE (repo_id, database_name, sql_filename)
+            )
+        """))
+        # Migrate cicd_repos.server_id FK from cicd_servers → cloudpanel_servers
+        # Drop old column (pointing to cicd_servers) and re-add pointing to cloudpanel_servers.
+        # Safe: no production data existed in server_id when this migration runs.
+        conn.execute(text("ALTER TABLE cicd_repos DROP COLUMN IF EXISTS server_id"))
+        conn.execute(text("""
+            ALTER TABLE cicd_repos
+                ADD COLUMN IF NOT EXISTS server_id INTEGER REFERENCES cloudpanel_servers(id) ON DELETE SET NULL
+        """))
+        # Add db_type column (postgres or mysql) — defaults to postgres for existing rows
+        conn.execute(text("""
+            ALTER TABLE cicd_repos
+                ADD COLUMN IF NOT EXISTS db_type VARCHAR DEFAULT 'postgres'
+        """))
+        conn.commit()
+
         # Add permissions column to roles table
         conn.execute(text("""
             ALTER TABLE roles ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
+        """))
+        # Backfill any existing rows that have NULL permissions or created_at (production upgrade safety)
+        conn.execute(text("""
+            UPDATE roles SET permissions = '{}'::jsonb WHERE permissions IS NULL;
+        """))
+        conn.execute(text("""
+            UPDATE roles SET created_at = NOW() WHERE created_at IS NULL;
         """))
 
         # Seed fixed system roles (upsert by slug)
@@ -1212,6 +1314,19 @@ def _run_inline_migrations():
                 VALUES (:name, :slug, :is_system, CAST(:pages AS jsonb))
                 ON CONFLICT (slug) DO NOTHING
             """), {"name": name, "slug": slug, "is_system": is_system, "pages": pages})
+
+        # Seed default teams (upsert by name)
+        default_teams = [
+            ('Support',     'Handles customer support and live chat conversations'),
+            ('Sales',       'Manages sales conversations and CRM follow-ups'),
+            ('Development', 'Internal development and QA team'),
+        ]
+        for team_name, team_desc in default_teams:
+            conn.execute(text("""
+                INSERT INTO teams (name, description)
+                VALUES (:name, :description)
+                ON CONFLICT (name) DO NOTHING
+            """), {"name": team_name, "description": team_desc})
 
         # Migrate old role values: 'user' -> 'support', keep 'admin'
         conn.execute(text("""
@@ -1330,7 +1445,226 @@ def _run_inline_migrations():
             ALTER TABLE leads ADD COLUMN IF NOT EXISTS tags JSON DEFAULT '[]'
         """))
 
+        # Email suppression list (unsubscribe + bounce management)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS email_suppressions (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) NOT NULL UNIQUE,
+                reason VARCHAR(50) NOT NULL,
+                campaign_id INTEGER REFERENCES campaigns(id) ON DELETE SET NULL,
+                unsubscribed_at TIMESTAMPTZ DEFAULT NOW(),
+                resubscribed_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_email_suppressions_email
+            ON email_suppressions(email)
+        """))
+        # CampaignRecipient status column for bounce tracking
+        conn.execute(text(
+            "ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'sent'"
+        ))
+
+        # Click tracking tables
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS campaign_links (
+                id SERIAL PRIMARY KEY,
+                campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+                original_url TEXT NOT NULL,
+                click_count INTEGER DEFAULT 0,
+                first_clicked_at TIMESTAMPTZ,
+                last_clicked_at TIMESTAMPTZ
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS campaign_clicks (
+                id SERIAL PRIMARY KEY,
+                link_id INTEGER REFERENCES campaign_links(id) ON DELETE CASCADE,
+                recipient_id INTEGER REFERENCES campaign_recipients(id) ON DELETE CASCADE,
+                clicked_at TIMESTAMPTZ DEFAULT NOW(),
+                ip_address VARCHAR(45),
+                user_agent TEXT
+            )
+        """))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS clicked_count INTEGER DEFAULT 0"))
+        conn.execute(text("ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMPTZ"))
+
+        # A/B testing: campaign_variants table and related columns
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS campaign_variants (
+                id SERIAL PRIMARY KEY,
+                campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+                variant_label VARCHAR(10) NOT NULL,
+                subject VARCHAR(500) NOT NULL,
+                body_html TEXT NOT NULL,
+                split_percentage INTEGER DEFAULT 50,
+                sent_count INTEGER DEFAULT 0,
+                opened_count INTEGER DEFAULT 0,
+                clicked_count INTEGER DEFAULT 0
+            )
+        """))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS is_ab_test BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ab_test_size_pct INTEGER DEFAULT 20"))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ab_winner_variant_id INTEGER REFERENCES campaign_variants(id) ON DELETE SET NULL"))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ab_winner_criteria VARCHAR(50) DEFAULT 'open_rate'"))
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ab_test_duration_hours INTEGER DEFAULT 4"))
+        conn.execute(text("ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS variant_id INTEGER REFERENCES campaign_variants(id) ON DELETE SET NULL"))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS campaign_attachments (
+                id SERIAL PRIMARY KEY,
+                campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+                filename VARCHAR(255) NOT NULL,
+                file_path VARCHAR(500) NOT NULL,
+                content_type VARCHAR(100) NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS email_validator_url VARCHAR
+        """))
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS email_validator_secret VARCHAR
+        """))
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS email_validator_risk_threshold INTEGER DEFAULT 60
+        """))
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS postal_server_url VARCHAR
+        """))
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS postal_api_key VARCHAR
+        """))
+        conn.execute(text("""
+            ALTER TABLE branding_settings
+            ADD COLUMN IF NOT EXISTS smtp_use_ssl BOOLEAN DEFAULT FALSE
+        """))
+
+        conn.execute(text("""
+            ALTER TABLE leads
+            ADD COLUMN IF NOT EXISTS email_valid BOOLEAN
+        """))
+
+        # visitor_pass_cards table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS visitor_pass_cards (
+                id          SERIAL PRIMARY KEY,
+                location_id INTEGER NOT NULL REFERENCES visitor_locations(id) ON DELETE CASCADE,
+                card_no     VARCHAR NOT NULL,
+                is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (location_id, card_no)
+            )
+        """))
+
+        # Add pass_card_id to visits
+        conn.execute(text("""
+            ALTER TABLE visits
+                ADD COLUMN IF NOT EXISTS pass_card_id INTEGER
+                REFERENCES visitor_pass_cards(id) ON DELETE SET NULL
+        """))
+
+        # Rename port → ami_port on telephony_settings (separate AMI port from API port)
+        conn.execute(text("""
+            ALTER TABLE telephony_settings
+                ADD COLUMN IF NOT EXISTS ami_port INTEGER DEFAULT 5038
+        """))
+        # Migrate existing port values to ami_port if ami_port is still default
+        conn.execute(text("""
+            UPDATE telephony_settings
+               SET ami_port = port
+             WHERE port IS NOT NULL AND port != 443 AND ami_port = 5038
+        """))
+        # Add dedicated FreePBX API HTTPS port column
+        conn.execute(text("""
+            ALTER TABLE telephony_settings
+                ADD COLUMN IF NOT EXISTS freepbx_port INTEGER DEFAULT 443
+        """))
+
+        # Contact phone for email footer
+        conn.execute(text("ALTER TABLE branding_settings ADD COLUMN IF NOT EXISTS contact_phone VARCHAR"))
+
+        # Webchat OTP table (replaces in-memory store — safe across multiple workers)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS webchat_otp (
+                id         SERIAL PRIMARY KEY,
+                email      VARCHAR NOT NULL,
+                otp        VARCHAR NOT NULL,
+                name       VARCHAR NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_webchat_otp_email ON webchat_otp (email)"))
+
         conn.commit()
+
+    # Unique index: only one active visit may hold a given pass card at a time
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_visits_pass_card_active
+                ON visits (pass_card_id)
+                WHERE check_out_at IS NULL AND pass_card_id IS NOT NULL
+        """))
+        conn.commit()
+
+    # Multi-account platform support
+    with engine.connect() as conn:
+        conn.execute(text("CREATE TABLE IF NOT EXISTS agent_accounts (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, platform_account_id INTEGER NOT NULL REFERENCES platform_accounts(id) ON DELETE CASCADE, created_at TIMESTAMP DEFAULT NOW())"))
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_account ON agent_accounts(user_id, platform_account_id)"))
+        conn.execute(text("ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS app_secret VARCHAR"))
+        conn.execute(text("ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS verify_token VARCHAR"))
+        conn.execute(text("ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS metadata JSON"))
+        conn.commit()
+
+    # ── Multi-domain widget tables ──
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS widget_domains (
+                id SERIAL PRIMARY KEY,
+                domain VARCHAR UNIQUE NOT NULL,
+                widget_key VARCHAR UNIQUE NOT NULL,
+                display_name VARCHAR NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                branding_overrides JSON,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS domain_accounts (
+                id SERIAL PRIMARY KEY,
+                widget_domain_id INTEGER NOT NULL REFERENCES widget_domains(id) ON DELETE CASCADE,
+                platform_account_id INTEGER NOT NULL REFERENCES platform_accounts(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE (widget_domain_id, platform_account_id)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS domain_agents (
+                id SERIAL PRIMARY KEY,
+                widget_domain_id INTEGER NOT NULL REFERENCES widget_domains(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE (widget_domain_id, user_id)
+            )
+        """))
+        conn.execute(text("""
+            ALTER TABLE conversations ADD COLUMN IF NOT EXISTS widget_domain_id INTEGER REFERENCES widget_domains(id)
+        """))
+        conn.commit()
+
+# ── Log DB Init ────────────────────────────────────────────────────────────
+from app.log_database import init_log_db
+init_log_db()
 
 try:
     _run_inline_migrations()
@@ -1419,6 +1753,73 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# ── Global error handler → writes to error_logs ────────────────────────────
+from fastapi import Request as _Request
+from fastapi.responses import JSONResponse as _JSONResponse
+from app.log_database import LogSessionLocal as _LogSessionLocal
+from app.services.log_service import log_error as _log_error
+
+@app.exception_handler(Exception)
+async def global_exception_handler(_request: _Request, exc: Exception):
+    try:
+        _db = _LogSessionLocal()
+        _log_error(
+            _db,
+            message=str(exc),
+            source="api",
+            severity="error",
+            exc=exc,
+            request_path=str(_request.url.path),
+            request_method=_request.method,
+        )
+        _db.close()
+    except Exception:
+        pass
+    return _JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+from fastapi import HTTPException as _HTTPException
+from fastapi.exception_handlers import http_exception_handler as _default_http_handler
+from fastapi.exceptions import RequestValidationError as _RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler as _default_validation_handler
+
+@app.exception_handler(_HTTPException)
+async def logging_http_exception_handler(_request: _Request, exc: _HTTPException):
+    """Log HTTP 5xx errors and CORS-relevant 4xx errors, then return normal response."""
+    if exc.status_code >= 500:
+        try:
+            _db = _LogSessionLocal()
+            _log_error(
+                _db,
+                message=f"HTTP {exc.status_code}: {exc.detail}",
+                source="api",
+                severity="error",
+                request_path=str(_request.url.path),
+                request_method=_request.method,
+            )
+            _db.close()
+        except Exception:
+            pass
+    return await _default_http_handler(_request, exc)
+
+@app.exception_handler(_RequestValidationError)
+async def logging_validation_exception_handler(_request: _Request, exc: _RequestValidationError):
+    """Log all 422 request validation errors so bad API calls are visible in error logs."""
+    try:
+        _db = _LogSessionLocal()
+        _log_error(
+            _db,
+            message=f"Request validation failed on {_request.method} {_request.url.path}: {exc.errors()}",
+            source="api",
+            severity="warning",
+            error_type="RequestValidationError",
+            request_path=str(_request.url.path),
+            request_method=_request.method,
+        )
+        _db.close()
+    except Exception:
+        pass
+    return await _default_validation_handler(_request, exc)
+
 # Dynamic CORS middleware — reads allowed origins from DB at request time
 # so admins can add remote site origins without redeploying.
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -1472,11 +1873,40 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
                 resp.headers["Access-Control-Max-Age"] = "3600"
             return resp
 
+        # Log blocked CORS origins so they appear in the error log
+        if origin and not origin_allowed:
+            try:
+                _db = _LogSessionLocal()
+                _log_error(
+                    _db,
+                    message=f"CORS blocked: origin '{origin}' is not in the allowed list",
+                    source="api",
+                    severity="warning",
+                    request_path=str(request.url.path),
+                    request_method=request.method,
+                )
+                _db.close()
+            except Exception:
+                pass
+
         try:
             response = await call_next(request)
         except Exception as exc:
-            # Ensure CORS headers are present even for unhandled exceptions
-            # so the browser shows the real error instead of a misleading CORS error
+            # Log the exception and ensure CORS headers are present
+            try:
+                _db = _LogSessionLocal()
+                _log_error(
+                    _db,
+                    message=str(exc),
+                    source="api",
+                    severity="error",
+                    exc=exc,
+                    request_path=str(request.url.path),
+                    request_method=request.method,
+                )
+                _db.close()
+            except Exception:
+                pass
             from starlette.responses import JSONResponse
             response = JSONResponse(
                 status_code=500,
@@ -1549,6 +1979,13 @@ app.include_router(forms_admin_router)
 app.include_router(forms_public_router)
 app.include_router(menus_router)
 app.include_router(permission_overrides_router)
+app.include_router(campaign_attachments_router)
+app.include_router(logs_router)
+app.include_router(email_validator_router)
+app.include_router(ci_cd_router)
+app.include_router(visitors_router)
+app.include_router(platform_accounts.router)
+app.include_router(widget_domains.router)
 
 # Serve uploaded avatars
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), "avatar_storage")
@@ -1575,12 +2012,43 @@ SUB_LOGO_DIR = os.path.join(os.path.dirname(__file__), "subscription_logo_storag
 os.makedirs(SUB_LOGO_DIR, exist_ok=True)
 app.mount("/subscription-logos", StaticFiles(directory=SUB_LOGO_DIR), name="subscription_logos")
 
+# Serve visitor profile photos and CCTV captures
+VISITOR_PHOTO_DIR = os.path.join(os.path.dirname(__file__), "app", "attachment_storage", "visitors", "profiles")
+VISITOR_CCTV_DIR = os.path.join(os.path.dirname(__file__), "app", "attachment_storage", "visitors", "cctv")
+os.makedirs(VISITOR_PHOTO_DIR, exist_ok=True)
+os.makedirs(VISITOR_CCTV_DIR, exist_ok=True)
+app.mount("/visitor-photos", StaticFiles(directory=VISITOR_PHOTO_DIR), name="visitor-photos")
+app.mount("/visitor-cctv", StaticFiles(directory=VISITOR_CCTV_DIR), name="visitor-cctv")
+
+# Serve live HLS camera stream segments (generated by ffmpeg from RTSP)
+HLS_STREAM_DIR = "/tmp/hls"
+os.makedirs(HLS_STREAM_DIR, exist_ok=True)
+app.mount("/hls", StaticFiles(directory=HLS_STREAM_DIR), name="hls")
+
 # Serve nothing from migration_storage — files are private SQL, not served publicly
 MIGRATION_DIR = os.path.join(os.path.dirname(__file__), "migration_storage")
 os.makedirs(MIGRATION_DIR, exist_ok=True)
 
 # Auto-sync scheduler
 scheduler = None
+
+
+def _log_job_error(message: str, exc: Exception = None, job_name: str = None):
+    """Write a scheduler job error to the error_logs table. Never raises."""
+    try:
+        _db = _LogSessionLocal()
+        _log_error(
+            _db,
+            message=message,
+            source="scheduler",
+            severity="error",
+            error_type=f"JobError:{job_name}" if job_name else "JobError",
+            exc=exc,
+        )
+        _db.close()
+    except Exception:
+        pass
+
 
 def auto_sync_emails():
     """Scheduled task to sync all emails and broadcast new-email events."""
@@ -1604,9 +2072,11 @@ def auto_sync_emails():
                     )
             except Exception as e:
                 logger.error(f"Auto-sync error for {account.email_address}: {str(e)}")
+                _log_job_error(f"Auto-sync error for {account.email_address}: {e}", exc=e, job_name="auto_sync_emails")
         db.close()
     except Exception as e:
         logger.error(f"Error in scheduled email sync: {str(e)}")
+        _log_job_error(f"Error in scheduled email sync: {e}", exc=e, job_name="auto_sync_emails")
 
 
 def send_scheduled_emails():
@@ -1678,9 +2148,11 @@ def send_scheduled_emails():
                 except Exception:
                     pass
                 logger.error(f"Failed to send scheduled email {email.id}: {str(e)}")
+                _log_job_error(f"Failed to send scheduled email {email.id}: {e}", exc=e, job_name="send_scheduled_emails")
         db.close()
     except Exception as e:
         logger.error(f"Error in send_scheduled_emails: {str(e)}")
+        _log_job_error(f"Error in send_scheduled_emails: {e}", exc=e, job_name="send_scheduled_emails")
 
 
 def unsnooze_emails():
@@ -1701,6 +2173,7 @@ def unsnooze_emails():
         db.close()
     except Exception as e:
         logger.error(f"Error in unsnooze_emails: {str(e)}")
+        _log_job_error(f"Error in unsnooze_emails: {e}", exc=e, job_name="unsnooze_emails")
 
 
 def retry_outbox_emails():
@@ -1747,9 +2220,30 @@ def retry_outbox_emails():
                     logger.info(f"✅ Outbox retry: email {email.id} sent to {email.to_address}")
                 except Exception as e:
                     logger.warning(f"Outbox retry failed for email {email.id}: {str(e)}")
+                    _log_job_error(f"Outbox retry failed for email {email.id}: {e}", exc=e, job_name="retry_outbox_emails")
         db.close()
     except Exception as e:
         logger.error(f"Error in retry_outbox_emails: {str(e)}")
+        _log_job_error(f"Error in retry_outbox_emails: {e}", exc=e, job_name="retry_outbox_emails")
+
+
+def purge_old_logs():
+    """Delete audit and error log entries older than 90 days."""
+    try:
+        from app.log_database import LogSessionLocal as _LogSess
+        from app.models.logs import AuditLog, ErrorLog
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(days=90)
+        _ldb = _LogSess()
+        audit_deleted = _ldb.query(AuditLog).filter(AuditLog.timestamp < cutoff).delete()
+        error_deleted = _ldb.query(ErrorLog).filter(ErrorLog.timestamp < cutoff).delete()
+        _ldb.commit()
+        _ldb.close()
+        logger.info("Log purge: deleted %d audit entries, %d error entries older than 90 days",
+                    audit_deleted, error_deleted)
+    except Exception as e:
+        logger.error("Log purge error: %s", e)
+        _log_job_error(f"Log purge error: {e}", exc=e, job_name="purge_old_logs")
 
 
 def apply_email_rules(email_obj, db):
@@ -1840,6 +2334,7 @@ async def startup_event():
                 db.close()
             except Exception as e:
                 logger.error("CDR sync error: %s", e)
+                _log_job_error(f"CDR sync error: {e}", exc=e, job_name="freepbx_cdr_sync")
         scheduler.add_job(sync_freepbx_cdr, 'interval', minutes=5, id='freepbx_cdr_sync')
         # Process due reminder calls every minute
         def run_reminder_calls():
@@ -1852,6 +2347,7 @@ async def startup_event():
                 db.close()
             except Exception as e:
                 logger.error("Reminder call scheduler error: %s", e)
+                _log_job_error(f"Reminder call scheduler error: {e}", exc=e, job_name="reminder_calls")
         scheduler.add_job(run_reminder_calls, 'interval', minutes=1, id='reminder_calls')
         # Process due notification calls every minute
         def run_notification_calls():
@@ -1864,6 +2360,7 @@ async def startup_event():
                 db.close()
             except Exception as e:
                 logger.error("Notification call scheduler error: %s", e)
+                _log_job_error(f"Notification call scheduler error: {e}", exc=e, job_name="notification_calls")
         scheduler.add_job(run_notification_calls, 'interval', minutes=1, id='notification_calls')
         # Check for overdue reminders every minute
         def check_overdue_reminders():
@@ -1895,6 +2392,7 @@ async def startup_event():
                 db.close()
             except Exception as e:
                 logger.error("Overdue reminders check error: %s", e)
+                _log_job_error(f"Overdue reminders check error: {e}", exc=e, job_name="check_overdue_reminders")
         scheduler.add_job(check_overdue_reminders, 'interval', minutes=1, id='check_overdue_reminders')
 
         def check_overdue_crm_tasks():
@@ -1934,6 +2432,7 @@ async def startup_event():
                             logger.warning(f"CRM task overdue broadcast error: {e}")
             except Exception as e:
                 logger.error(f"check_overdue_crm_tasks error: {e}")
+                _log_job_error(f"check_overdue_crm_tasks error: {e}", exc=e, job_name="check_overdue_crm_tasks")
             finally:
                 db.close()
 
@@ -1972,6 +2471,7 @@ async def startup_event():
                     db.commit()
             except Exception as e:
                 logger.error("PMS overdue check error: %s", e)
+                _log_job_error(f"PMS overdue check error: {e}", exc=e, job_name="pms_overdue_check")
             finally:
                 db.close()
 
@@ -2049,9 +2549,11 @@ async def startup_event():
                         email_service.send_system_email(user_obj.email, subject, html_body)
                     except Exception as e:
                         logger.error("PMS digest email to %s failed: %s", user_obj.email, e)
+                        _log_job_error(f"PMS digest email to {user_obj.email} failed: {e}", exc=e, job_name="pms_overdue_digest")
 
             except Exception as e:
                 logger.error("PMS overdue digest error: %s", e)
+                _log_job_error(f"PMS overdue digest error: {e}", exc=e, job_name="pms_overdue_digest")
             finally:
                 db.close()
 
@@ -2115,6 +2617,7 @@ async def startup_event():
                         db.rollback()
             except Exception as e:
                 logger.error(f"evaluate_automation_rules error: {e}")
+                _log_job_error(f"evaluate_automation_rules error: {e}", exc=e, job_name="evaluate_automation_rules")
             finally:
                 db.close()
 
@@ -2178,6 +2681,7 @@ async def startup_event():
                         db.rollback()
             except Exception as e:
                 logger.error(f"process_email_sequences error: {e}")
+                _log_job_error(f"process_email_sequences error: {e}", exc=e, job_name="process_email_sequences")
             finally:
                 db.close()
 
@@ -2195,6 +2699,7 @@ async def startup_event():
                 db.close()
             except Exception as e:
                 logger.error("Calendar token refresh error: %s", e)
+                _log_job_error(f"Calendar token refresh error: {e}", exc=e, job_name="refresh_calendar_tokens")
         scheduler.add_job(refresh_calendar_tokens, 'interval', minutes=30, id='refresh_calendar_tokens')
 
         def send_scheduled_campaigns():
@@ -2213,12 +2718,67 @@ async def startup_event():
                         _do_send(campaign.id, db)
                     except Exception as e:
                         logger.error(f"Campaign send error (id={campaign.id}): {e}")
+                        _log_job_error(f"Campaign send error (id={campaign.id}): {e}", exc=e, job_name="send_scheduled_campaigns")
             except Exception as e:
                 logger.error(f"send_scheduled_campaigns error: {e}")
+                _log_job_error(f"send_scheduled_campaigns error: {e}", exc=e, job_name="send_scheduled_campaigns")
             finally:
                 db.close()
 
         scheduler.add_job(send_scheduled_campaigns, 'interval', minutes=1, id='send_scheduled_campaigns_job')
+
+        def pick_ab_winners():
+            """Check A/B test campaigns and pick winners after the test duration has elapsed."""
+            from app.models.campaign import Campaign
+            from app.models.campaign_variant import CampaignVariant
+            from app.routes.campaigns import _do_send
+            from datetime import timedelta
+
+            db = SessionLocal()
+            try:
+                now = datetime.utcnow()
+                ab_campaigns = db.query(Campaign).filter(
+                    Campaign.status == "ab_testing",
+                    Campaign.sent_at.isnot(None),
+                ).all()
+
+                for campaign in ab_campaigns:
+                    try:
+                        duration_hours = campaign.ab_test_duration_hours or 4
+                        if now < campaign.sent_at + timedelta(hours=duration_hours):
+                            continue  # Test period not yet elapsed
+
+                        variants = db.query(CampaignVariant).filter(
+                            CampaignVariant.campaign_id == campaign.id
+                        ).all()
+                        if len(variants) != 2:
+                            continue
+
+                        # Pick winner based on criteria
+                        criteria = campaign.ab_winner_criteria or "open_rate"
+                        if criteria == "click_rate":
+                            winner = max(variants, key=lambda v: (v.clicked_count or 0) / max(v.sent_count or 1, 1))
+                        else:
+                            winner = max(variants, key=lambda v: (v.opened_count or 0) / max(v.sent_count or 1, 1))
+
+                        campaign.ab_winner_variant_id = winner.id
+                        campaign.subject = winner.subject
+                        campaign.body_html = winner.body_html
+                        campaign.status = "draft"
+                        db.commit()
+
+                        # Send to remaining audience (non-test recipients)
+                        _do_send(campaign.id, db)
+                    except Exception as e:
+                        logger.error(f"A/B winner pick error (campaign {campaign.id}): {e}")
+                        _log_job_error(f"A/B winner pick error (campaign {campaign.id}): {e}", exc=e, job_name="pick_ab_winners")
+            except Exception as e:
+                logger.error(f"pick_ab_winners error: {e}")
+                _log_job_error(f"pick_ab_winners error: {e}", exc=e, job_name="pick_ab_winners")
+            finally:
+                db.close()
+
+        scheduler.add_job(pick_ab_winners, 'interval', minutes=5, id='pick_ab_winners_job')
 
         def run_due_backup_jobs():
             """Poll BackupJob table every minute and run jobs whose next_run_at is due."""
@@ -2249,11 +2809,39 @@ async def startup_event():
                         db.commit()
                     except Exception as e:
                         logger.error(f"Scheduled backup job {job.id} error: {e}")
+                        _log_job_error(f"Scheduled backup job {job.id} error: {e}", exc=e, job_name="run_due_backup_jobs")
             finally:
                 db.close()
 
         scheduler.add_job(run_due_backup_jobs, 'interval', minutes=1, id='run_due_backup_jobs')
+        scheduler.add_job(purge_old_logs, 'interval', hours=24, id='purge_old_logs')
         scheduler.start()
+
+        # ── Seed CI/CD scheduled deployments from DB ──────────────────────────
+        try:
+            from app.models.ci_cd import CICDRepo as _CICDRepo
+            from app.routes.ci_cd import _deploy_in_thread as _cicd_deploy
+            from apscheduler.triggers.cron import CronTrigger as _CronTrigger
+            _cicd_db = SessionLocal()
+            _active_repos = _cicd_db.query(_CICDRepo).filter(
+                _CICDRepo.schedule_enabled == True,
+                _CICDRepo.schedule_cron != None,
+            ).all()
+            for _repo in _active_repos:
+                try:
+                    scheduler.add_job(
+                        _cicd_deploy,
+                        _CronTrigger.from_crontab(_repo.schedule_cron),
+                        id=f"cicd_deploy_{_repo.id}",
+                        args=[_repo.id, "scheduled"],
+                        replace_existing=True,
+                    )
+                    logger.info("CI/CD: scheduled deploy for repo '%s' (%s)", _repo.name, _repo.schedule_cron)
+                except Exception as _e:
+                    logger.warning("CI/CD: could not schedule repo %d: %s", _repo.id, _e)
+            _cicd_db.close()
+        except Exception as _e:
+            logger.warning("CI/CD scheduler seeding error: %s", _e)
 
         # Wire scheduler reference for routes
         import app.scheduler_ref as _sched_ref

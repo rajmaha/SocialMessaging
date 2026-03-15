@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
 from app.services.branding_service import branding_service
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from typing import Optional, List
 
 router = APIRouter(prefix="/branding", tags=["branding"])
@@ -32,6 +32,7 @@ class BrandingUpdate(BaseModel):
     terms_url: Optional[str] = None
     timezone: Optional[str] = None
     admin_email: Optional[str] = None
+    contact_phone: Optional[str] = None
     allowed_file_types: Optional[List[str]] = None
     max_file_size_mb: Optional[int] = None
     button_primary_color: Optional[str] = None
@@ -48,8 +49,22 @@ class SmtpUpdate(BaseModel):
     smtp_from_email: Optional[str] = None
     smtp_from_name: Optional[str] = None
     smtp_use_tls: Optional[bool] = None
+    smtp_use_ssl: Optional[bool] = None
     email_footer_text: Optional[str] = None
     email_support_url: Optional[str] = None
+    postal_server_url: Optional[str] = None
+    postal_api_key: Optional[str] = None
+
+class EmailValidatorUpdate(BaseModel):
+    email_validator_url: Optional[str] = None
+    email_validator_secret: Optional[str] = None
+    email_validator_risk_threshold: Optional[int] = None
+
+    @validator("email_validator_risk_threshold")
+    def threshold_in_range(cls, v):
+        if v is not None and not (1 <= v <= 100):
+            raise ValueError("email_validator_risk_threshold must be between 1 and 100")
+        return v
 
 @router.get("/")
 def get_branding_public(db: Session = Depends(get_db)):
@@ -101,10 +116,11 @@ def get_branding_admin(
             "smtp_server": branding.smtp_server,
             "smtp_port": branding.smtp_port,
             "smtp_username": branding.smtp_username,
-            "smtp_password": "***" if branding.smtp_password else None,
+            "smtp_password": branding.smtp_password or None,
             "smtp_from_email": branding.smtp_from_email,
             "smtp_from_name": branding.smtp_from_name,
             "smtp_use_tls": branding.smtp_use_tls,
+            "smtp_use_ssl": branding.smtp_use_ssl,
             "email_footer_text": branding.email_footer_text,
             "email_support_url": branding.email_support_url,
             "support_url": branding.support_url,
@@ -119,6 +135,19 @@ def get_branding_admin(
             "sidebar_text_color": branding.sidebar_text_color,
             "header_bg_color": branding.header_bg_color,
             "layout_bg_color": branding.layout_bg_color,
+            "email_validator_url": branding.email_validator_url,
+            "email_validator_secret": (
+                ("*" * (len(branding.email_validator_secret) - 4) + branding.email_validator_secret[-4:])
+                if branding.email_validator_secret and len(branding.email_validator_secret) > 4
+                else ("****" if branding.email_validator_secret else None)
+            ),
+            "email_validator_risk_threshold": branding.email_validator_risk_threshold or 60,
+            "postal_server_url": branding.postal_server_url,
+            "postal_api_key": (
+                ("*" * (len(branding.postal_api_key) - 4) + branding.postal_api_key[-4:])
+                if branding.postal_api_key and len(branding.postal_api_key) > 4
+                else ("****" if branding.postal_api_key else None)
+            ),
             "created_at": branding.created_at,
             "updated_at": branding.updated_at,
         }
@@ -155,6 +184,13 @@ def update_smtp(
     """Update SMTP settings (admin only)"""
     
     update_dict = smtp_data.dict(exclude_unset=True)
+    if "postal_api_key" in update_dict:
+        secret = update_dict["postal_api_key"]
+        if secret:
+            is_masked = (len(secret) >= 4 and all(c == "*" for c in secret[:-4])) or all(c == "*" for c in secret)
+            if is_masked:
+                del update_dict["postal_api_key"]
+
     branding = branding_service.update_branding(db, **update_dict)
     
     return {
@@ -206,8 +242,9 @@ def test_smtp(
         
         message.attach(MIMEText(html_body, "html"))
         
-        with smtplib.SMTP(branding.smtp_server, branding.smtp_port) as server:
-            if branding.smtp_use_tls:
+        server_class = smtplib.SMTP_SSL if branding.smtp_use_ssl else smtplib.SMTP
+        with server_class(branding.smtp_server, branding.smtp_port) as server:
+            if not branding.smtp_use_ssl and branding.smtp_use_tls:
                 server.starttls()
             server.login(branding.smtp_username, branding.smtp_password)
             server.sendmail(branding.smtp_from_email, user.email, message.as_string())
@@ -222,3 +259,30 @@ def test_smtp(
             "status": "error",
             "message": f"Failed to send test email: {str(e)}"
         }
+
+@router.post("/email-validator")
+def update_email_validator(
+    data: EmailValidatorUpdate,
+    user: User = Depends(require_branding),
+    db: Session = Depends(get_db)
+):
+    """Update email validator settings (admin only)."""
+    update_dict = data.dict(exclude_unset=True)
+    # Don't overwrite the secret if the frontend sent back the masked value
+    if "email_validator_secret" in update_dict:
+        secret = update_dict["email_validator_secret"]
+        if secret:
+            # Skip if secret looks masked: all characters before last 4 are stars,
+            # OR the entire secret is stars (e.g. "****" placeholder for short secrets)
+            is_masked = (len(secret) >= 4 and all(c == "*" for c in secret[:-4])) or all(c == "*" for c in secret)
+            if is_masked:
+                del update_dict["email_validator_secret"]
+    branding = branding_service.update_branding(db, **update_dict)
+    return {
+        "status": "success",
+        "message": "Email validator settings updated",
+        "data": {
+            "email_validator_url": branding.email_validator_url,
+            "email_validator_risk_threshold": branding.email_validator_risk_threshold or 60,
+        }
+    }

@@ -15,7 +15,7 @@ import logging
 from datetime import datetime
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -23,6 +23,7 @@ from app.database import SessionLocal, get_db
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.platform_account import PlatformAccount
+from app.models.platform_settings import PlatformSettings
 from app.services.bot_service import handle_incoming
 from app.services.events_service import EventTypes, events_service
 from app.services.platform_service import FacebookService, ViberService, WhatsAppService
@@ -111,7 +112,21 @@ async def _notify_agents(msg: Message, conv: Conversation):
         logger.warning("Agent notification failed: %s", e)
 
 
-def _first_account(db: Session, platform: str) -> PlatformAccount | None:
+def _find_account(db: Session, platform: str, account_identifier: str | None = None) -> PlatformAccount | None:
+    """Find platform account by account_id (from webhook payload), or fall back to first active."""
+    if account_identifier:
+        acct = (
+            db.query(PlatformAccount)
+            .filter(
+                PlatformAccount.platform == platform,
+                PlatformAccount.account_id == account_identifier,
+                PlatformAccount.is_active == 1,
+            )
+            .first()
+        )
+        if acct:
+            return acct
+    # Fallback: first active account for this platform
     return (
         db.query(PlatformAccount)
         .filter(PlatformAccount.platform == platform, PlatformAccount.is_active == 1)
@@ -125,11 +140,15 @@ def _first_account(db: Session, platform: str) -> PlatformAccount | None:
 async def whatsapp_verify(
     hub_mode: str = Query(None, alias="hub.mode"),
     hub_challenge: str = Query(None, alias="hub.challenge"),
-    hub_verify_token: str = Query(None, alias="hub.verify.token"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token"),
+    db: Session = Depends(get_db),
 ):
     """Meta webhook verification handshake."""
-    if hub_mode == "subscribe" and hub_verify_token == (settings.WHATSAPP_VERIFY_TOKEN or ""):
-        return int(hub_challenge)
+    # Read verify_token from DB (saved via admin settings UI)
+    ps = db.query(PlatformSettings).filter(PlatformSettings.platform == "whatsapp").first()
+    stored_token = (ps.verify_token if ps and ps.verify_token else None) or settings.WHATSAPP_VERIFY_TOKEN or ""
+    if hub_mode == "subscribe" and hub_verify_token and hub_verify_token == stored_token:
+        return Response(content=hub_challenge, media_type="text/plain")
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
@@ -174,6 +193,8 @@ async def _process_whatsapp(data: dict):
                 contacts = {c["wa_id"]: c.get("profile", {}).get("name", "Unknown")
                             for c in value.get("contacts", [])}
 
+                wa_phone_number_id = value.get("metadata", {}).get("phone_number_id")
+
                 for msg in messages:
                     contact_id = msg.get("from", "")
                     contact_name = contacts.get(contact_id, contact_id)
@@ -188,7 +209,7 @@ async def _process_whatsapp(data: dict):
                     else:
                         continue
 
-                    acct = _first_account(db, "whatsapp")
+                    acct = _find_account(db, "whatsapp", wa_phone_number_id)
                     conv = _get_or_create_conversation(
                         db, "whatsapp", contact_id, contact_name,
                         acct.id if acct else None,
@@ -197,9 +218,12 @@ async def _process_whatsapp(data: dict):
                     saved = _save_inbound_message(db, conv, text, "whatsapp", contact_name)
                     await _notify_agents(saved, conv)
 
-                    async def _send(reply: str, cid=contact_id):
+                    reply_token = acct.access_token if acct else None
+                    reply_phone_id = wa_phone_number_id
+
+                    async def _send(reply: str, cid=contact_id, token=reply_token, pid=reply_phone_id):
                         try:
-                            await WhatsAppService.send_message(cid, reply)
+                            await WhatsAppService.send_message(cid, reply, access_token=token, phone_number_id=pid)
                         except Exception as e:
                             logger.warning("WhatsApp send failed: %s", e)
 
@@ -216,11 +240,15 @@ async def _process_whatsapp(data: dict):
 async def facebook_verify(
     hub_mode: str = Query(None, alias="hub.mode"),
     hub_challenge: str = Query(None, alias="hub.challenge"),
-    hub_verify_token: str = Query(None, alias="hub.verify.token"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token"),
+    db: Session = Depends(get_db),
 ):
     """Meta webhook verification handshake."""
-    if hub_mode == "subscribe" and hub_verify_token == (settings.FACEBOOK_VERIFY_TOKEN or ""):
-        return int(hub_challenge)
+    # Read verify_token from DB (saved via admin settings UI)
+    ps = db.query(PlatformSettings).filter(PlatformSettings.platform == "facebook").first()
+    stored_token = (ps.verify_token if ps and ps.verify_token else None) or settings.FACEBOOK_VERIFY_TOKEN or ""
+    if hub_mode == "subscribe" and hub_verify_token and hub_verify_token == stored_token:
+        return Response(content=hub_challenge, media_type="text/plain")
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
@@ -250,6 +278,8 @@ async def _process_facebook(data: dict):
     db: Session = SessionLocal()
     try:
         for entry in data.get("entry", []):
+            fb_page_id = str(entry.get("id", ""))
+
             for messaging in entry.get("messaging", []):
                 sender_id = messaging.get("sender", {}).get("id", "")
 
@@ -296,7 +326,7 @@ async def _process_facebook(data: dict):
                 # Resolve contact name via Graph API
                 contact_name = await _fb_get_name(sender_id)
 
-                acct = _first_account(db, "facebook")
+                acct = _find_account(db, "facebook", fb_page_id)
                 conv = _get_or_create_conversation(
                     db, "facebook", sender_id, contact_name,
                     acct.id if acct else None,
@@ -305,9 +335,11 @@ async def _process_facebook(data: dict):
                 saved = _save_inbound_message(db, conv, text, "facebook", contact_name)
                 await _notify_agents(saved, conv)
 
-                async def _send(reply: str, sid=sender_id):
+                reply_token = acct.access_token if acct else None
+
+                async def _send(reply: str, sid=sender_id, token=reply_token):
                     try:
-                        await FacebookService.send_message(sid, reply)
+                        await FacebookService.send_message(sid, reply, access_token=token)
                     except Exception as e:
                         logger.warning("Facebook send failed: %s", e)
 
@@ -388,7 +420,7 @@ async def _process_viber(data: dict):
         if not text or not contact_id:
             return
 
-        acct = _first_account(db, "viber")
+        acct = _find_account(db, "viber")
         conv = _get_or_create_conversation(
             db, "viber", contact_id, contact_name,
             acct.id if acct else None,
@@ -397,9 +429,11 @@ async def _process_viber(data: dict):
         saved = _save_inbound_message(db, conv, text, "viber", contact_name)
         await _notify_agents(saved, conv)
 
-        async def _send(reply: str, cid=contact_id):
+        reply_token = acct.access_token if acct else None
+
+        async def _send(reply: str, cid=contact_id, token=reply_token):
             try:
-                await ViberService.send_message(cid, reply)
+                await ViberService.send_message(cid, reply, bot_token=token)
             except Exception as e:
                 logger.warning("Viber send failed: %s", e)
 

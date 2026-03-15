@@ -9,26 +9,45 @@ from app.models.message import Message as MessageModel
 from app.models.user import User
 from app.models.team import Team
 from app.schemas.conversation import ConversationResponse
+from app.models.agent_account import AgentAccount
+from app.models.domain_agent import DomainAgent
+from app.models.widget_domain import WidgetDomain
 from app.dependencies import get_current_user
 from app.services.events_service import events_service
+from app.log_database import LogSessionLocal as _LogSessionLocal
+from app.services.log_service import log_audit as _log_audit
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 def _enrich(convs, db: Session):
-    """Attach assigned_to_name and assigned_team_name by doing batched lookups."""
+    """Attach assigned_to_name, assigned_team_name, and ticket_count by doing batched lookups."""
+    from app.models.ticket import Ticket
+    from sqlalchemy import func
+
     user_ids = {c.assigned_to for c in convs if c.assigned_to}
     team_ids = {getattr(c, 'assigned_team_id', None) for c in convs if getattr(c, 'assigned_team_id', None)}
     users = {u.id: (u.full_name or u.username) for u in
              db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
     teams = {t.id: t.name for t in
              db.query(Team).filter(Team.id.in_(team_ids)).all()} if team_ids else {}
+
+    # Batch ticket counts — one query for all conversations
+    conv_ids = [c.id for c in convs]
+    ticket_counts = {}
+    if conv_ids:
+        rows = db.query(Ticket.conversation_id, func.count(Ticket.id)).filter(
+            Ticket.conversation_id.in_(conv_ids)
+        ).group_by(Ticket.conversation_id).all()
+        ticket_counts = {row[0]: row[1] for row in rows}
+
     result = []
     for c in convs:
         d = {col.name: getattr(c, col.name) for col in c.__table__.columns}
         d['assigned_to_name'] = users.get(c.assigned_to) if c.assigned_to else None
         d['assigned_team_id'] = getattr(c, 'assigned_team_id', None)
         d['assigned_team_name'] = teams.get(d['assigned_team_id']) if d['assigned_team_id'] else None
+        d['ticket_count'] = ticket_counts.get(c.id, 0)
         result.append(d)
     return result
 
@@ -53,6 +72,8 @@ def get_conversations(
     platform: str = None,
     status: str = None,
     assigned_to: Optional[str] = None,
+    platform_account_id: Optional[int] = None,
+    widget_domain_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     """Get all conversations for a user, optionally filtered by platform, status, and/or assigned agent.
@@ -79,8 +100,59 @@ def get_conversations(
         except ValueError:
             pass
 
+    # Scope to agent's permitted platform accounts
+    agent_account_rows = db.query(AgentAccount.platform_account_id).filter(
+        AgentAccount.user_id == user_id
+    ).all()
+
+    if agent_account_rows:
+        # Agent has specific account assignments — scope to those
+        permitted_ids = [r[0] for r in agent_account_rows]
+        query = query.filter(
+            or_(
+                Conversation.platform_account_id.in_(permitted_ids),
+                Conversation.platform_account_id.is_(None),
+                Conversation.platform == "webchat",
+                Conversation.platform == "email",
+            )
+        )
+    # else: no rows = agent sees everything (backward compatible)
+
+    # Scope webchat conversations to agent's permitted domains
+    domain_agent_rows = db.query(DomainAgent.widget_domain_id).filter(
+        DomainAgent.user_id == user_id
+    ).all()
+
+    if domain_agent_rows:
+        permitted_domain_ids = [r[0] for r in domain_agent_rows]
+        query = query.filter(
+            or_(
+                Conversation.platform != "webchat",
+                Conversation.widget_domain_id.in_(permitted_domain_ids),
+                Conversation.widget_domain_id.is_(None),
+            )
+        )
+
+    if platform_account_id:
+        query = query.filter(Conversation.platform_account_id == platform_account_id)
+
+    if widget_domain_id:
+        query = query.filter(Conversation.widget_domain_id == widget_domain_id)
+
     conversations = query.order_by(Conversation.updated_at.desc()).all()
-    return _enrich(conversations, db)
+
+    # Build domain name lookup for webchat conversations
+    domain_ids = {c.widget_domain_id for c in conversations if c.widget_domain_id}
+    domain_map = {}
+    if domain_ids:
+        domains = db.query(WidgetDomain).filter(WidgetDomain.id.in_(domain_ids)).all()
+        domain_map = {d.id: d.display_name for d in domains}
+
+    enriched = _enrich(conversations, db)
+    for item in enriched:
+        did = item.get("widget_domain_id")
+        item["widget_domain_name"] = domain_map.get(did) if did else None
+    return enriched
 
 
 @router.get("/agents")
@@ -89,13 +161,13 @@ def list_agents(
     current_user: User = Depends(get_current_user),
 ):
     """Return list of active users for the assignment dropdown."""
-    agents = db.query(User).filter(User.is_active == True).order_by(User.full_name).all()
-    return [{
+    agents = db.query(User).filter(User.is_active == True).all()
+    return sorted([{
         "id": a.id,
-        "full_name": a.display_name or a.full_name or a.username,
-        "real_name": a.full_name or a.username,
+        "full_name": a.display_name or a.full_name or a.username or f"User {a.id}",
+        "real_name": a.full_name or a.username or f"User {a.id}",
         "role": a.role
-    } for a in agents]
+    } for a in agents], key=lambda x: x["full_name"].lower())
 
 
 @router.get("/search", response_model=List[ConversationResponse])
@@ -157,6 +229,12 @@ def update_conversation_status(
     elif body.status != "resolved":
         conv.resolved_at = None
     db.commit()
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(_ldb, action="conversation.status_changed", entity_type="conversation", entity_id=conv.id, detail={"status": conv.status})
+        _ldb.close()
+    except Exception:
+        pass
     return {"success": True, "status": conv.status}
 
 
@@ -203,6 +281,12 @@ async def assign_conversation(
         # Individual assignment clears team
         conv.assigned_team_id = None
     db.commit()
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(_ldb, action="conversation.assigned", entity_type="conversation", entity_id=conv.id, detail={"assigned_to": body.user_id})
+        _ldb.close()
+    except Exception:
+        pass
 
     # Insert a system/handover message so the reason is visible in conversation history
     assigner_name = current_user.display_name or current_user.full_name or current_user.username

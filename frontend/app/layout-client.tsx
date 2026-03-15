@@ -3,7 +3,10 @@
 import { BrandingProvider } from '@/lib/branding-context'
 import { EventsProvider } from '@/lib/events-context'
 import { EventNotifications } from '@/components/EventNotifications'
+import { SoftphoneProvider } from '@/lib/softphone-context'
+import { EmailComposeProvider } from '@/lib/email-compose-context'
 import Softphone from '@/components/Softphone'
+import EmailComposePopover from '@/components/EmailComposePopover'
 import { useEffect } from 'react'
 import { getAuthToken } from '@/lib/auth'
 import { fetchMyPermissions } from '@/lib/permissions'
@@ -19,9 +22,14 @@ export function LayoutClient({ children }: { children: React.ReactNode }) {
   return (
     <BrandingProvider>
       <EventsProvider>
-        <EventNotifications />
-        {children}
-        <Softphone user={null} telephonySettings={{ is_active: true }} />
+        <SoftphoneProvider>
+          <EmailComposeProvider>
+            <EventNotifications />
+            {children}
+            <Softphone />
+            <EmailComposePopover />
+          </EmailComposeProvider>
+        </SoftphoneProvider>
       </EventsProvider>
     </BrandingProvider>
   )

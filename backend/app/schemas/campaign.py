@@ -38,6 +38,12 @@ class CampaignResponse(BaseModel):
         from_attributes = True
 
 
+class VariantCreate(BaseModel):
+    variant_label: str
+    subject: str
+    body_html: str
+
+
 class RecipientResponse(BaseModel):
     id: int
     campaign_id: int

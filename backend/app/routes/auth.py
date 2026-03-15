@@ -10,6 +10,8 @@ import secrets
 import random
 import os
 from app.services.email_service import email_service
+from app.log_database import LogSessionLocal as _LogSessionLocal
+from app.services.log_service import log_audit as _log_audit
 
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'avatar_storage')
 os.makedirs(AVATAR_DIR, exist_ok=True)
@@ -108,6 +110,16 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == credentials.email).first()
 
     if not user or user.password_hash != hash_password(credentials.password):
+        try:
+            _ldb = _LogSessionLocal()
+            _log_audit(
+                _ldb,
+                action="auth.login_failed",
+                detail={"email": credentials.email},
+            )
+            _ldb.close()
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
@@ -133,6 +145,21 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
         context="login",
         db=db,
     )
+
+    try:
+        _ldb = _LogSessionLocal()
+        _log_audit(
+            _ldb,
+            action="auth.login",
+            user_id=user.id,
+            user_email=user.email,
+            user_role=user.role,
+            entity_type="user",
+            entity_id=user.id,
+        )
+        _ldb.close()
+    except Exception:
+        pass
 
     return {
         "status": "otp_sent",

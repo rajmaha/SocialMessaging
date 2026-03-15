@@ -26,6 +26,11 @@ import re
 import random
 import ipaddress
 import socket
+import hmac
+import hashlib
+import base64
+import json
+import time
 
 import httpx
 
@@ -36,6 +41,7 @@ from app.models.message import Message
 from app.models.user import User
 from app.models.branding import BrandingSettings
 from app.models.bot import BotSettings, BotQA
+from app.models.webchat_otp import WebchatOtp
 from app.services.bot_service import handle_incoming, handle_bot_selection, bot_suggest
 from app.services.ai_service import ai_reply as _ai_reply
 from app.services.webchat_service import webchat_service
@@ -44,26 +50,66 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# In-memory OTP store: normalised_email → {otp, expires, name}
-# (cleared automatically on verification or expiry)
-_otp_store: dict = {}
-
 router = APIRouter(prefix="/webchat", tags=["webchat"])
 
+# ─────────────────────────────────────────
+# HMAC-signed OTP token helpers
+# (stateless — works with any number of workers)
+# ─────────────────────────────────────────
+
+def _sign_otp_token(email: str, otp: str, name: str) -> str:
+    """Return a tamper-proof token containing email + OTP + name + expiry (10 min)."""
+    from app.config import settings
+    payload = json.dumps({"e": email, "o": otp, "n": name, "x": time.time() + 600}, separators=(',', ':'))
+    b64 = base64.urlsafe_b64encode(payload.encode()).decode()
+    sig = hmac.new(settings.SECRET_KEY.encode(), b64.encode(), hashlib.sha256).hexdigest()
+    return f"{b64}.{sig}"
+
+def _decode_otp_token(token: str, email: str, otp: str):
+    """Return payload dict if valid, else None."""
+    from app.config import settings
+    try:
+        b64, sig = token.rsplit('.', 1)
+        expected = hmac.new(settings.SECRET_KEY.encode(), b64.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        payload = json.loads(base64.urlsafe_b64decode(b64).decode())
+        if payload.get('e') != email or payload.get('o') != otp or time.time() >= payload.get('x', 0):
+            return None
+        return payload
+    except Exception:
+        return None
 
 # ─────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────
 
-def _get_branding(db: Session) -> dict:
+def _get_branding(db: Session, widget_key: str | None = None) -> dict:
     b = db.query(BrandingSettings).first()
-    return {
+    base = {
         "company_name": b.company_name if b else "Support Chat",
         "primary_color": b.primary_color if b else "#2563eb",
         "logo_url": b.logo_url if b else None,
         "welcome_message": "Hi! How can we help you today?",
         "timezone": b.timezone if b else "UTC",
+        "key_valid": widget_key is None,  # no key = no validation needed
     }
+
+    if widget_key:
+        from app.models.widget_domain import WidgetDomain
+        wd = db.query(WidgetDomain).filter(
+            WidgetDomain.widget_key == widget_key,
+            WidgetDomain.is_active == 1,
+        ).first()
+        if wd:
+            base["key_valid"] = True
+            if wd.branding_overrides:
+                for k, v in wd.branding_overrides.items():
+                    if v is not None and k in base:
+                        base[k] = v
+        else:
+            base["key_valid"] = False
+    return base
 
 def _first_admin(db: Session) -> Optional[User]:
     return db.query(User).filter(User.role == "admin", User.is_active == True).first()
@@ -149,6 +195,7 @@ class OtpRequest(BaseModel):
 class OtpVerify(BaseModel):
     email: str
     otp: str
+    token: Optional[str] = None
 
 
 @router.post("/request-otp")
@@ -163,11 +210,7 @@ def request_otp(req: OtpRequest, db: Session = Depends(get_db)):
     name = req.name.strip() or email.split("@")[0]
     otp = str(random.randint(100000, 999999))
 
-    _otp_store[email] = {
-        "otp": otp,
-        "expires": datetime.utcnow() + timedelta(minutes=10),
-        "name": name,
-    }
+    token = _sign_otp_token(email, otp, name)
 
     email_service.send_otp_email(
         to_email=email,
@@ -177,7 +220,7 @@ def request_otp(req: OtpRequest, db: Session = Depends(get_db)):
         db=db,
     )
 
-    return {"status": "otp_sent", "message": "A 6-digit code has been sent to your email."}
+    return {"status": "otp_sent", "message": "A 6-digit code has been sent to your email.", "token": token}
 
 
 @router.post("/verify-otp")
@@ -185,21 +228,30 @@ def verify_otp(req: OtpVerify, db: Session = Depends(get_db)):
     """Verify OTP and return (or create) a permanent chat session for this email."""
     email = req.email.strip().lower()
 
-    record = _otp_store.get(email)
-    if not record:
-        raise HTTPException(
-            status_code=400,
-            detail="No verification code found for this email. Please request a new code.",
-        )
-    if datetime.utcnow() > record["expires"]:
-        _otp_store.pop(email, None)
-        raise HTTPException(status_code=400, detail="Code has expired. Please request a new one.")
-    if record["otp"] != req.otp.strip():
-        raise HTTPException(status_code=400, detail="Incorrect code. Please try again.")
+    otp = req.otp.strip()
+    visitor_name = email.split('@')[0]  # default fallback
 
-    # OTP valid — remove it
-    visitor_name = record["name"]
-    _otp_store.pop(email, None)
+    # Primary: verify via HMAC-signed token (stateless, works with multiple workers)
+    token_payload = _decode_otp_token(req.token, email, otp) if req.token else None
+    if token_payload:
+        visitor_name = token_payload.get('n') or visitor_name
+    else:
+        # Fallback: DB lookup (covers clients without token)
+        record = db.query(WebchatOtp).filter(WebchatOtp.email == email).order_by(WebchatOtp.id.desc()).first()
+        if not record:
+            raise HTTPException(
+                status_code=400,
+                detail="Verification code not found or expired. Please request a new code.",
+            )
+        if datetime.utcnow() > record.expires_at:
+            db.delete(record)
+            db.commit()
+            raise HTTPException(status_code=400, detail="Code has expired. Please request a new one.")
+        if record.otp != otp:
+            raise HTTPException(status_code=400, detail="Incorrect code. Please try again.")
+        visitor_name = record.name
+        db.delete(record)
+        db.commit()
 
     # Look up existing conversation by email (permanent contact_id)
     conv = db.query(Conversation).filter(
@@ -360,9 +412,75 @@ def online_conversation_ids(db: Session = Depends(get_db)):
 
 
 @router.get("/branding")
-def get_webchat_branding(db: Session = Depends(get_db)):
-    """Return branding info so the widget launcher can style itself."""
-    return _get_branding(db)
+def get_webchat_branding(key: str = Query(None), db: Session = Depends(get_db)):
+    """Return branding info so the widget launcher can style itself.
+    If ?key=<widget_key> is provided, apply per-domain branding overrides."""
+    return _get_branding(db, widget_key=key)
+
+
+def _account_to_channel(acct) -> dict | None:
+    """Convert a PlatformAccount row into a channel link dict for the widget."""
+    if acct.platform == "whatsapp" and acct.phone_number:
+        phone = acct.phone_number.replace("+", "").replace(" ", "").replace("-", "")
+        return {"platform": "whatsapp", "label": acct.account_name or "WhatsApp", "url": f"https://wa.me/{phone}"}
+    elif acct.platform == "facebook" and acct.account_id:
+        return {"platform": "facebook", "label": acct.account_name or "Messenger", "url": f"https://m.me/{acct.account_id}"}
+    elif acct.platform == "viber":
+        return {"platform": "viber", "label": acct.account_name or "Viber", "url": f"viber://pa?chatURI={acct.account_id}"}
+    elif acct.platform == "linkedin" and acct.account_id:
+        return {"platform": "linkedin", "label": acct.account_name or "LinkedIn", "url": f"https://www.linkedin.com/company/{acct.account_id}"}
+    return None
+
+
+@router.get("/channels")
+def get_public_channels(key: str = Query(None), db: Session = Depends(get_db)):
+    """Return configured social channel links for the widget channels tab.
+    If ?key=<widget_key> is provided, return only accounts assigned to that domain."""
+    from app.models.platform_settings import PlatformSettings
+    from app.models.widget_domain import WidgetDomain
+    from app.models.domain_account import DomainAccount
+    from app.models.platform_account import PlatformAccount
+
+    domain_account_ids = None
+    if key:
+        wd = db.query(WidgetDomain).filter(
+            WidgetDomain.widget_key == key,
+            WidgetDomain.is_active == 1,
+        ).first()
+        if wd:
+            rows = db.query(DomainAccount.platform_account_id).filter(
+                DomainAccount.widget_domain_id == wd.id
+            ).all()
+            if rows:
+                domain_account_ids = [r[0] for r in rows]
+
+    channels = []
+
+    if domain_account_ids is not None:
+        accounts = db.query(PlatformAccount).filter(
+            PlatformAccount.id.in_(domain_account_ids),
+            PlatformAccount.is_active == 1,
+        ).all()
+        for a in accounts:
+            ch = _account_to_channel(a)
+            if ch:
+                channels.append(ch)
+    else:
+        # Fallback: global platform_settings (backward compatible)
+        platforms = db.query(PlatformSettings).filter(PlatformSettings.is_configured >= 1).all()
+        for p in platforms:
+            if p.platform == "whatsapp" and p.phone_number:
+                phone = p.phone_number.replace("+", "").replace(" ", "").replace("-", "")
+                channels.append({"platform": "whatsapp", "label": "WhatsApp", "url": f"https://wa.me/{phone}"})
+            elif p.platform == "facebook" and p.page_id:
+                channels.append({"platform": "facebook", "label": "Messenger", "url": f"https://m.me/{p.page_id}"})
+            elif p.platform == "viber" and p.phone_number:
+                phone = p.phone_number.lstrip("+").replace(" ", "").replace("-", "")
+                channels.append({"platform": "viber", "label": "Viber", "url": f"viber://chat?number=%2B{phone}"})
+            elif p.platform == "linkedin" and p.organization_id:
+                channels.append({"platform": "linkedin", "label": "LinkedIn", "url": f"https://www.linkedin.com/company/{p.organization_id}"})
+
+    return channels
 
 
 @router.post("/typing/{conversation_id}")
@@ -496,6 +614,19 @@ async def visitor_websocket(session_id: str, websocket: WebSocket):
 
             if msg_type == "message":
                 text = (data.get("text") or "").strip()
+
+                # Tag conversation with widget domain on first message if widget_key provided
+                widget_key = data.get("widget_key")
+                if widget_key and not conv.widget_domain_id:
+                    from app.models.widget_domain import WidgetDomain
+                    wd = db.query(WidgetDomain).filter(
+                        WidgetDomain.widget_key == widget_key,
+                        WidgetDomain.is_active == 1,
+                    ).first()
+                    if wd:
+                        conv.widget_domain_id = wd.id
+                        db.commit()
+
                 if not text:
                     continue
 
@@ -526,8 +657,8 @@ async def visitor_websocket(session_id: str, websocket: WebSocket):
                 # Echo back to visitor
                 await websocket.send_json({"type": "message", **msg_payload})
 
-                # Push to all connected agents
-                await events_service.broadcast_to_all({
+                # Push to assigned agents only (or all agents if none assigned)
+                event_payload = {
                     "type": EventTypes.MESSAGE_RECEIVED,
                     "data": {
                         **msg_payload,
@@ -536,7 +667,28 @@ async def visitor_websocket(session_id: str, websocket: WebSocket):
                         "session_id": session_id,
                         "visitor_name": conv.contact_name,
                     }
-                })
+                }
+                # Admins always receive all chats
+                admin_ids = {
+                    u.id for u in db.query(User).filter(
+                        User.is_active == True, User.role == "admin"
+                    ).all()
+                }
+                assigned_agent_ids = []
+                if conv.widget_domain_id:
+                    from app.models.domain_agent import DomainAgent
+                    assigned_agent_ids = [
+                        row.user_id for row in db.query(DomainAgent).filter(
+                            DomainAgent.widget_domain_id == conv.widget_domain_id
+                        ).all()
+                    ]
+                if assigned_agent_ids:
+                    # Broadcast to assigned agents + all admins
+                    recipient_ids = set(assigned_agent_ids) | admin_ids
+                    for uid in recipient_ids:
+                        await events_service.broadcast_to_user(uid, event_payload)
+                else:
+                    await events_service.broadcast_to_all(event_payload)
 
                 # Bot reply via shared bot_service (keyword → AI → handoff)
                 async def _wc_send(reply: str, _ws=websocket):

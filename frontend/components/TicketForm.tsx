@@ -145,7 +145,9 @@ export default function TicketForm({
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
                     if (res.ok) {
-                        const data = await res.json();
+                        const raw = await res.json();
+                        // Guard: context endpoint always returns a dict — never an array
+                        const data = Array.isArray(raw) ? { found: false } : raw;
                         if (onContextChange) {
                             onContextChange(data);
                         }

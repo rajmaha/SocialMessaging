@@ -178,7 +178,15 @@ def deploy_site_stream(
         except Exception as e:
             yield f"data: {json.dumps({'step': 'error', 'status': 'error', 'message': str(e)})}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",   # disables nginx/proxy buffering
+        }
+    )
 
 @router.get("/sites", response_model=List[CloudPanelSiteResponse])
 def list_all_sites(

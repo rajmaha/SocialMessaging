@@ -20,7 +20,7 @@ function playNotificationSound() {
   } catch { }
 }
 import axios from 'axios'
-import { authAPI, type User } from '@/lib/auth'
+import { authAPI, getAuthToken, type User } from '@/lib/auth'
 import MainHeader from '@/components/MainHeader'
 import ConversationList from '@/components/ConversationList'
 import ChatWindow from '@/components/ChatWindow'
@@ -41,6 +41,8 @@ interface Conversation {
   status?: string
   assigned_to?: number | null
   assigned_to_name?: string | null
+  platform_account_id?: number | null
+  widget_domain_id?: number | null
 }
 
 export default function DashboardPageWrapper() {
@@ -68,11 +70,16 @@ function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [mineOnly, setMineOnly] = useState(false)
   const [unassignedOnly, setUnassignedOnly] = useState(false)
+  const [accountMap, setAccountMap] = useState<Record<number, string>>({})
+  const [accountFilter, setAccountFilter] = useState<string>('')
+  const [widgetDomains, setWidgetDomains] = useState<any[]>([])
+  const [domainFilter, setDomainFilter] = useState<string>('')
   const userRef = useRef<User | null>(null)
   const platformRef = useRef<string>('all')
   const statusFilterRef = useRef<string>('all')
   const mineOnlyRef = useRef(false)
   const unassignedOnlyRef = useRef(false)
+  const accountFilterRef = useRef<string>('')
   const toastIdRef = useRef(0)
   const selectedConvRef = useRef<Conversation | null>(null)
   const activeTabRef = useRef<'messaging' | 'email'>('email')
@@ -86,6 +93,25 @@ function DashboardPage() {
     setUser(currentUser)
     userRef.current = currentUser
     fetchConversations(currentUser.user_id)
+    // Fetch platform accounts for badge display and filtering
+    const token = getAuthToken()
+    if (token) {
+      axios.get(`${API_URL}/admin/platform-accounts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then((r) => {
+          const map: Record<number, string> = {}
+          r.data.forEach((a: { id: number; account_name: string }) => { map[a.id] = a.account_name })
+          setAccountMap(map)
+        })
+        .catch(() => { /* non-admin agents may not have access */ })
+      // Fetch widget domains for domain badges/filter
+      axios.get(`${API_URL}/admin/widget-domains`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then((r) => setWidgetDomains(r.data || []))
+        .catch(() => {})
+    }
     // Fetch currently online webchat visitors
     axios.get(`${API_URL}/webchat/online-conversation-ids`)
       .then((r) => setActiveConvIds(new Set<number>(r.data.ids)))
@@ -93,11 +119,12 @@ function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
-  const fetchConversations = useCallback(async (userId: number, platform?: string, status?: string, mine?: boolean, unassigned?: boolean) => {
+  const fetchConversations = useCallback(async (userId: number, platform?: string, status?: string, mine?: boolean, unassigned?: boolean, accountId?: string) => {
     const plat = platform ?? platformRef.current
     const stat = status ?? statusFilterRef.current
     const myOnly = mine ?? mineOnlyRef.current
     const unassOnly = unassigned ?? unassignedOnlyRef.current
+    const acctId = accountId ?? accountFilterRef.current
     setLoading(true)
     try {
       const params: any = { user_id: userId }
@@ -105,6 +132,7 @@ function DashboardPage() {
       if (stat !== 'all') params.status = stat
       if (unassOnly) params.assigned_to = 'none'
       else if (myOnly) params.assigned_to = userId
+      if (acctId) params.platform_account_id = acctId
       const response = await axios.get(`${API_URL}/conversations/`, { params })
       setConversations(response.data)
     } catch (error) {
@@ -190,6 +218,18 @@ function DashboardPage() {
     unassignedOnlyRef.current = next
     if (next) { setMineOnly(false); mineOnlyRef.current = false }
     if (user) fetchConversations(user.user_id, undefined, undefined, false, next)
+  }
+
+  const handleAccountFilter = (value: string) => {
+    setAccountFilter(value)
+    accountFilterRef.current = value
+    if (user) fetchConversations(user.user_id, undefined, undefined, undefined, undefined, value)
+  }
+
+  const domainMap = Object.fromEntries(widgetDomains.map((d: any) => [d.id, d.display_name]))
+
+  const handleDomainFilter = (value: string) => {
+    setDomainFilter(value)
   }
 
   if (!user) {
@@ -288,6 +328,35 @@ function DashboardPage() {
                     </button>
                   ))}
                 </div>
+                {/* Account filter */}
+                {Object.keys(accountMap).length > 0 && (
+                  <div className="px-3 pb-2">
+                    <select
+                      value={accountFilter}
+                      onChange={(e) => handleAccountFilter(e.target.value)}
+                      className="w-full px-2 py-1.5 border rounded text-xs text-gray-700 bg-white"
+                    >
+                      <option value="">All Accounts</option>
+                      {Object.entries(accountMap).map(([id, name]) => (
+                        <option key={id} value={id}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {widgetDomains.length > 0 && (
+                  <div className="px-3 pb-2">
+                    <select
+                      value={domainFilter}
+                      onChange={(e) => handleDomainFilter(e.target.value)}
+                      className="w-full px-2 py-1.5 border rounded text-xs text-gray-700 bg-white"
+                    >
+                      <option value="">All Domains</option>
+                      {widgetDomains.map((d: any) => (
+                        <option key={d.id} value={d.id}>{d.display_name || d.domain}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
               <ConversationList
                 conversations={conversations}
@@ -295,6 +364,9 @@ function DashboardPage() {
                 onSelectConversation={setSelectedConversation}
                 loading={loading}
                 activeConvIds={activeConvIds}
+                accountMap={accountMap}
+                domainMap={domainMap}
+                domainFilter={domainFilter}
               />
             </div>
             {/* Chat */}
