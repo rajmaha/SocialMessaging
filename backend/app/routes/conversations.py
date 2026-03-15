@@ -21,19 +21,33 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 def _enrich(convs, db: Session):
-    """Attach assigned_to_name and assigned_team_name by doing batched lookups."""
+    """Attach assigned_to_name, assigned_team_name, and ticket_count by doing batched lookups."""
+    from app.models.ticket import Ticket
+    from sqlalchemy import func
+
     user_ids = {c.assigned_to for c in convs if c.assigned_to}
     team_ids = {getattr(c, 'assigned_team_id', None) for c in convs if getattr(c, 'assigned_team_id', None)}
     users = {u.id: (u.full_name or u.username) for u in
              db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
     teams = {t.id: t.name for t in
              db.query(Team).filter(Team.id.in_(team_ids)).all()} if team_ids else {}
+
+    # Batch ticket counts — one query for all conversations
+    conv_ids = [c.id for c in convs]
+    ticket_counts = {}
+    if conv_ids:
+        rows = db.query(Ticket.conversation_id, func.count(Ticket.id)).filter(
+            Ticket.conversation_id.in_(conv_ids)
+        ).group_by(Ticket.conversation_id).all()
+        ticket_counts = {row[0]: row[1] for row in rows}
+
     result = []
     for c in convs:
         d = {col.name: getattr(c, col.name) for col in c.__table__.columns}
         d['assigned_to_name'] = users.get(c.assigned_to) if c.assigned_to else None
         d['assigned_team_id'] = getattr(c, 'assigned_team_id', None)
         d['assigned_team_name'] = teams.get(d['assigned_team_id']) if d['assigned_team_id'] else None
+        d['ticket_count'] = ticket_counts.get(c.id, 0)
         result.append(d)
     return result
 

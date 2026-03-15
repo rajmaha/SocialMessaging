@@ -18,6 +18,7 @@ class ConversationResponse(BaseModel):
     platform_account_id: Optional[int] = None
     widget_domain_id: Optional[int] = None
     widget_domain_name: Optional[str] = None
+    ticket_count: int = 0
 
     class Config:
         from_attributes = True
