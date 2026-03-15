@@ -46,7 +46,12 @@ class Ticket(Base):
     
     # For threaded issues
     parent_ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=True)
-    
+
+    # Source tracking and cross-system links
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
+    email_id = Column(Integer, ForeignKey("emails.id", ondelete="SET NULL"), nullable=True)
+    source = Column(String, nullable=False, server_default="call")
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 

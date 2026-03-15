@@ -517,6 +517,9 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_type VARCHAR"))
         conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS contact_person VARCHAR"))
         conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_email VARCHAR"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS email_id INTEGER REFERENCES emails(id) ON DELETE SET NULL"))
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS source VARCHAR NOT NULL DEFAULT 'call'"))
         # Subscription company logo
         conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS company_logo_url VARCHAR"))
         # Individuals table (created by SQLAlchemy create_all, but belt-and-suspenders)
