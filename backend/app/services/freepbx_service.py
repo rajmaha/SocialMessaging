@@ -319,16 +319,18 @@ class FreePBXService:
 
         # --- UPDATE path ---
         if exists or exists is None:
+            # extensionId goes INSIDE input (not a top-level mutation argument)
             update_mutation = """
-            mutation updateExtension($extensionId: String!, $input: updateExtensionInput!) {
-              updateExtension(extensionId: $extensionId, input: $input) {
-                extensionId
+            mutation updateExtension($input: updateExtensionInput!) {
+              updateExtension(input: $input) {
+                status
+                message
               }
             }
             """
             update_vars = {
-                "extensionId": extension,
                 "input": {
+                    "extensionId": extension,
                     "user": {"name": display_name or f"Agent {extension}"},
                     "endpoint": _endpoint_fields,
                 },
@@ -366,7 +368,8 @@ class FreePBXService:
             add_mutation = """
             mutation addExtension($input: addExtensionInput!) {
               addExtension(input: $input) {
-                extensionId
+                status
+                message
               }
             }
             """
