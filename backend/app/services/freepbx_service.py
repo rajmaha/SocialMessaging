@@ -264,8 +264,11 @@ class FreePBXService:
             timeout=10, verify=False,
         )
 
-    def _bpx_log_input_type(self, base: str, token: str, type_name: str):
-        """Introspect a GraphQL input type and log its fields — call once to discover schema."""
+    def _bpx_introspect_input_type(self, base: str, token: str, type_name: str) -> str:
+        """
+        Introspect a GraphQL input type and return a human-readable field list string.
+        Used to surface the real schema when mutations fail with type errors.
+        """
         q = """
         query InspectType($name: String!) {
           __type(name: $name) {
@@ -284,14 +287,13 @@ class FreePBXService:
                 t = (data.get("data") or {}).get("__type")
                 if t:
                     fields = [f["name"] for f in (t.get("inputFields") or [])]
-                    logger.info("FreePBX schema — %s fields: %s", type_name, fields)
-                    return fields
-                logger.warning("FreePBX schema introspection: type %s not found", type_name)
-            else:
-                logger.warning("FreePBX schema introspection HTTP %s", r.status_code)
+                    summary = f"{type_name} valid fields: {fields}"
+                    logger.info("FreePBX schema — %s", summary)
+                    return summary
+                return f"{type_name}: type not found in schema (introspection returned null)"
+            return f"{type_name}: introspection HTTP {r.status_code}"
         except Exception as e:
-            logger.error("FreePBX schema introspection error: %s", e)
-        return []
+            return f"{type_name}: introspection error — {e}"
 
     def _bpx_extension_exists(self, base: str, token: str, extension: str) -> Optional[bool]:
         """
@@ -376,16 +378,16 @@ class FreePBXService:
                     err_msgs = " ".join(
                         (e.get("message") or "") for e in errs
                     ).lower()
-                    # On schema validation errors, dump the actual type so we can fix it
+                    # On schema validation errors, surface the actual type definition
+                    schema_hint = ""
                     if "is not defined by type" in err_msgs or "unknown argument" in err_msgs:
-                        self._bpx_log_input_type(base, token, "updateExtensionInput")
+                        schema_hint = " | " + self._bpx_introspect_input_type(base, token, "updateExtensionInput")
                     # If extension genuinely doesn't exist, fall through to create
                     if exists:
-                        # We were confident it existed — return the real error
-                        return False, f"updateExtension failed: {result['errors']}"
+                        return False, f"updateExtension failed: {result['errors']}{schema_hint}"
                     # exists is None and it might just not exist yet — fall through
                     if not any(kw in err_msgs for kw in ("not found", "does not exist", "no extension")):
-                        return False, f"updateExtension failed: {result['errors']}"
+                        return False, f"updateExtension failed: {result['errors']}{schema_hint}"
                 else:
                     if exists:
                         return False, f"updateExtension HTTP {r.status_code}: {r.text[:300]}"
@@ -427,9 +429,10 @@ class FreePBXService:
                     add_err_msgs = " ".join(
                         (e.get("message") or "") for e in result["errors"]
                     ).lower()
+                    add_schema_hint = ""
                     if "is not defined by type" in add_err_msgs or "unknown argument" in add_err_msgs:
-                        self._bpx_log_input_type(base, token, "addExtensionInput")
-                    return False, f"addExtension failed: {result['errors']}"
+                        add_schema_hint = " | " + self._bpx_introspect_input_type(base, token, "addExtensionInput")
+                    return False, f"addExtension failed: {result['errors']}{add_schema_hint}"
                 logger.warning("BPX addExtension HTTP %s: %s", r.status_code, r.text[:200])
                 return False, f"addExtension HTTP {r.status_code}: {r.text[:300]}"
             except Exception as e:
