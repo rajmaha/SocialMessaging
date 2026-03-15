@@ -410,6 +410,37 @@ def add_ticket_note(
 
     return parent_ticket
 
+@router.get("/my-tickets", response_model=List[TicketResponse])
+def get_my_tickets(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve open or forwarded tickets assigned to the current user."""
+    return db.query(Ticket).filter(
+        Ticket.assigned_to == current_user.id,
+        Ticket.status.in_([TicketStatus.PENDING, TicketStatus.FORWARDED])
+    ).order_by(Ticket.created_at.desc()).all()
+
+@router.get("/all", response_model=List[TicketResponse])
+def get_all_tickets_admin(
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin_feature("feature_manage_tickets"))
+):
+    """Retrieve all tickets in the system for admin viewing."""
+    return db.query(Ticket).order_by(Ticket.created_at.desc()).all()
+
+@router.get("/find", response_model=TicketResponse)
+def find_ticket_by_number(
+    number: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Find a ticket by its ticket_number string."""
+    ticket = db.query(Ticket).filter(Ticket.ticket_number == number).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
+
 @router.get("/{ticket_id}/thread", response_model=List[TicketResponse])
 def get_ticket_thread(
     ticket_id: int,
@@ -446,37 +477,6 @@ def get_ticket_thread(
                 queue.append(child.id)
 
     return thread
-
-@router.get("/my-tickets", response_model=List[TicketResponse])
-def get_my_tickets(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Retrieve open or forwarded tickets assigned to the current user."""
-    return db.query(Ticket).filter(
-        Ticket.assigned_to == current_user.id,
-        Ticket.status.in_([TicketStatus.PENDING, TicketStatus.FORWARDED])
-    ).order_by(Ticket.created_at.desc()).all()
-
-@router.get("/all", response_model=List[TicketResponse])
-def get_all_tickets_admin(
-    db: Session = Depends(get_db),
-    admin_user: User = Depends(require_admin_feature("feature_manage_tickets"))
-):
-    """Retrieve all tickets in the system for admin viewing."""
-    return db.query(Ticket).order_by(Ticket.created_at.desc()).all()
-
-@router.get("/find", response_model=TicketResponse)
-def find_ticket_by_number(
-    number: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Find a ticket by its ticket_number string."""
-    ticket = db.query(Ticket).filter(Ticket.ticket_number == number).first()
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    return ticket
 
 @router.get("", response_model=List[TicketResponse])
 def list_tickets(
