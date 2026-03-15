@@ -174,6 +174,7 @@ class UserUpdate(BaseModel):
     display_name: str | None = None   # Public nickname shown to visitors
     email: str | None = None
     is_active: bool | None = None
+    role: str | None = None
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(current_user: dict = Depends(check_permission("feature_manage_users")), db: Session = Depends(get_db)):
@@ -277,6 +278,8 @@ async def update_user(
         user.email = user_update.email
     if user_update.is_active is not None:
         user.is_active = user_update.is_active
+    if user_update.role is not None:
+        user.role = user_update.role
     user.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(user)
