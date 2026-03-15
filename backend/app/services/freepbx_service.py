@@ -17,8 +17,9 @@ Install the right module first:
 """
 
 import logging
+import time
 import requests
-from typing import Optional
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,11 @@ logger = logging.getLogger(__name__)
 class FreePBXService:
     """Client for FreePBX REST API (15/16) and BPX API (17)."""
 
+    # Tokens are valid for roughly 1 hour in FreePBX; re-auth after 45 min
+    _TOKEN_TTL = 45 * 60
+
     def __init__(self):
-        # Cache: (host, key, secret) → {"token": str, "mode": "rest"|"bpx"}
+        # Cache: (host, key, secret) → {"token": str, "mode": "rest"|"bpx", "ts": float}
         self._auth_cache: dict = {}
 
     # ---------------------------------------------------------------
@@ -59,8 +63,9 @@ class FreePBXService:
         3. FreePBX 15/16 REST API module — username/password login
         """
         cache_key = (host, api_key, api_secret)
-        if cache_key in self._auth_cache:
-            return self._auth_cache[cache_key]
+        cached = self._auth_cache.get(cache_key)
+        if cached and (time.time() - cached["ts"]) < self._TOKEN_TTL:
+            return cached
 
         base = self._base_url(host, port)
 
@@ -94,7 +99,7 @@ class FreePBXService:
                         data = resp.json()
                         token = data.get("access_token") or data.get("token")
                         if token:
-                            result = {"token": token, "mode": "bpx"}
+                            result = {"token": token, "mode": "bpx", "ts": time.time()}
                             self._auth_cache[cache_key] = result
                             logger.info("FreePBX auth OK via PBX API OAuth2 (%s, %s)", grant_type, token_url)
                             return result
@@ -120,7 +125,7 @@ class FreePBXService:
                             or (data.get("data") or {}).get("token")
                         )
                         if token:
-                            result = {"token": token, "mode": "bpx"}
+                            result = {"token": token, "mode": "bpx", "ts": time.time()}
                             self._auth_cache[cache_key] = result
                             logger.info("FreePBX auth OK via BPX admin login (%s)", url)
                             return result
@@ -143,7 +148,7 @@ class FreePBXService:
                             or (data.get("data") or {}).get("token")
                         )
                         if token:
-                            result = {"token": token, "mode": "rest"}
+                            result = {"token": token, "mode": "rest", "ts": time.time()}
                             self._auth_cache[cache_key] = result
                             logger.info("FreePBX auth OK via REST module login (%s)", url)
                             return result
@@ -159,24 +164,29 @@ class FreePBXService:
             "Content-Type": "application/json",
         }
 
-    def _get_settings(self, db) -> Optional[dict]:
-        """Load FreePBX connection settings from DB."""
+    def _get_settings(self, db) -> Tuple[Optional[dict], Optional[str]]:
+        """Load FreePBX connection settings from DB. Returns (settings, error_reason)."""
         try:
             from app.models.telephony import TelephonySettings
             settings = db.query(TelephonySettings).first()
             if not settings:
-                return None
-            if not settings.host or not settings.freepbx_api_key or not settings.freepbx_api_secret:
-                return None
+                return None, "No telephony settings found in database"
+            missing = [f for f, v in [
+                ("host", settings.host),
+                ("freepbx_api_key", settings.freepbx_api_key),
+                ("freepbx_api_secret", settings.freepbx_api_secret),
+            ] if not v]
+            if missing:
+                return None, f"Telephony settings incomplete — missing: {', '.join(missing)}"
             return {
                 "host": settings.host,
                 "port": settings.freepbx_port or 443,
                 "api_key": settings.freepbx_api_key,
                 "api_secret": settings.freepbx_api_secret,
-            }
+            }, None
         except Exception as e:
             logger.error("Error reading TelephonySettings: %s", e)
-            return None
+            return None, f"DB error reading telephony settings: {e}"
 
     # ---------------------------------------------------------------
     #  Extension management — REST (FreePBX 15/16)
@@ -379,17 +389,24 @@ class FreePBXService:
     def create_or_update_extension(
         self, db, extension: str, sip_password: str,
         display_name: str = "", email: str = "",
-    ) -> bool:
-        cfg = self._get_settings(db)
+    ) -> Tuple[bool, str]:
+        """Returns (success, reason_message)."""
+        cfg, err = self._get_settings(db)
         if not cfg:
-            return False
+            return False, err
+
         auth = self._get_auth(cfg["host"], cfg["port"], cfg["api_key"], cfg["api_secret"])
         if not auth:
-            return False
+            return False, (
+                f"Authentication failed against {cfg['host']}:{cfg['port']} — "
+                "verify the API key/secret and that the FreePBX REST API or PBX API module is installed and enabled"
+            )
 
         base = self._base_url(cfg["host"], cfg.get("port"))
+        cache_key = (cfg["host"], cfg["api_key"], cfg["api_secret"])
+
         if auth["mode"] == "bpx":
-            return self._bpx_create_or_update(base, auth["token"], extension, sip_password, display_name, email)
+            ok = self._bpx_create_or_update(base, auth["token"], extension, sip_password, display_name, email)
         else:
             payload = {
                 "extension": extension,
@@ -400,7 +417,17 @@ class FreePBXService:
                 "dial": f"PJSIP/{extension}",
                 "outboundcid": f'"{display_name}" <{extension}>',
             }
-            return self._rest_create_or_update(base, auth["token"], extension, payload)
+            ok = self._rest_create_or_update(base, auth["token"], extension, payload)
+
+        if not ok:
+            # Evict cache in case the token expired mid-session
+            self._auth_cache.pop(cache_key, None)
+            return False, (
+                f"Extension {extension} CRUD failed on FreePBX "
+                f"({auth['mode']} mode, host={cfg['host']}) — check FreePBX server logs"
+            )
+
+        return True, "OK"
 
     def enable_extension(self, db, extension: str) -> bool:
         return self._set_extension_state(db, extension, enabled=True)
@@ -409,7 +436,7 @@ class FreePBXService:
         return self._set_extension_state(db, extension, enabled=False)
 
     def _set_extension_state(self, db, extension: str, enabled: bool) -> bool:
-        cfg = self._get_settings(db)
+        cfg, _ = self._get_settings(db)
         if not cfg:
             return False
         auth = self._get_auth(cfg["host"], cfg["port"], cfg["api_key"], cfg["api_secret"])
@@ -456,7 +483,7 @@ class FreePBXService:
             return False
 
     def delete_extension(self, db, extension: str) -> bool:
-        cfg = self._get_settings(db)
+        cfg, _ = self._get_settings(db)
         if not cfg:
             return False
         auth = self._get_auth(cfg["host"], cfg["port"], cfg["api_key"], cfg["api_secret"])
