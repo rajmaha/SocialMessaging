@@ -380,6 +380,7 @@ class FreePBXService:
         if exists or exists is None:
             ok, detail = _do_update()
             if ok:
+                self._bpx_apply_config(base, token)
                 return True, "OK"
             err_msgs = detail.lower()
             if exists:
@@ -424,8 +425,8 @@ class FreePBXService:
                             logger.warning(
                                 "Extension %s created but password set failed: %s", extension, detail
                             )
-                            # Extension exists now — treat as partial success with warning
                             return False, f"Extension created but extPassword update failed: {detail}"
+                        self._bpx_apply_config(base, token)
                         return True, "OK"
                     logger.warning("BPX addExtension errors: %s", result["errors"])
                     add_err_msgs = " ".join(
@@ -443,6 +444,33 @@ class FreePBXService:
 
         return False, "BPX extension operation did not complete"
 
+    def _bpx_apply_config(self, base: str, token: str):
+        """
+        Apply FreePBX config (equivalent of clicking 'Apply Config' in the UI).
+        Non-fatal — a failure here just means Asterisk hasn't picked up the change yet;
+        the operator can apply manually from the FreePBX admin panel.
+        """
+        mutation = """
+        mutation {
+          applyConfig {
+            status
+            message
+          }
+        }
+        """
+        try:
+            r = self._gql(base, token, mutation)
+            if r.status_code == 200:
+                result = r.json()
+                if not result.get("errors"):
+                    logger.info("✅ BPX API: config applied (Asterisk reloaded)")
+                    return
+                logger.warning("BPX applyConfig errors (non-fatal): %s", result.get("errors"))
+            else:
+                logger.warning("BPX applyConfig HTTP %s (non-fatal): %s", r.status_code, r.text[:200])
+        except Exception as e:
+            logger.warning("BPX applyConfig exception (non-fatal): %s", e)
+
     def _bpx_delete(self, base: str, token: str, extension: str) -> bool:
         mutation = """
         mutation deleteExtension($extensionId: String!) {
@@ -457,6 +485,7 @@ class FreePBXService:
                 result = r.json()
                 if not result.get("errors"):
                     logger.info("✅ BPX API: extension %s deleted", extension)
+                    self._bpx_apply_config(base, token)
                     return True
                 logger.warning("BPX API delete errors: %s", result["errors"])
             else:
