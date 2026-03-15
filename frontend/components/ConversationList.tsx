@@ -15,6 +15,7 @@ interface Conversation {
   assigned_to_name?: string | null
   platform_account_id?: number | null
   widget_domain_id?: number | null
+  ticket_count?: number
 }
 
 interface ConversationListProps {
@@ -122,6 +123,14 @@ export default function ConversationList({
               <span className="font-semibold text-gray-800">
                 {conversation.contact_name}
               </span>
+              {(conversation.ticket_count ?? 0) > 0 && (
+                <span
+                  className="ml-1 inline-flex items-center gap-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full"
+                  title={`${conversation.ticket_count} ticket${conversation.ticket_count === 1 ? '' : 's'}`}
+                >
+                  🎫 {conversation.ticket_count}
+                </span>
+              )}
               {conversation.platform_account_id && accountMap[conversation.platform_account_id] && (
                 <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded ml-1 font-normal">
                   {accountMap[conversation.platform_account_id]}
