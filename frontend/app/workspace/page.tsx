@@ -31,7 +31,7 @@ export default function Workspace() {
     // activeNumber drives TicketForm and TicketHistory sidebar
     // It is now a union of the real softphone caller (when inbound call is answered)
     // and the manual simulate-call button (unchanged behavior)
-    const { callerNumber: softphoneCallerNumber, isOpen: softphoneOpen, status: softphoneStatus, dial: softphoneDial } = useSoftphone()
+    const { callerNumber: softphoneCallerNumber, isOpen: softphoneOpen, status: softphoneStatus, dial: softphoneDial, myExtension } = useSoftphone()
     const [manualActiveNumber, setManualActiveNumber] = useState<string | null>(null)
     const activeNumber = softphoneCallerNumber || manualActiveNumber
     const setActiveNumber = (n: string | null) => setManualActiveNumber(n)
@@ -411,6 +411,19 @@ export default function Workspace() {
                                      softphoneStatus === 'no_extension' ? 'No Extension Assigned' :
                                      softphoneStatus === 'error' ? 'Connection Failed' : 'Loading…'}
                                   </p>
+                                  {/* Agent name + extension badge */}
+                                  {softphoneStatus === 'registered' && (
+                                    <div className="mt-2 flex flex-col items-center gap-1">
+                                      {user?.full_name && (
+                                        <p className="text-sm font-medium text-gray-700">{user.full_name}</p>
+                                      )}
+                                      {myExtension && (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
+                                          <Phone className="w-3 h-3" /> Ext {myExtension}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
                                   <p className="text-sm text-gray-400 mt-1">
                                     {softphoneStatus === 'registered' ? 'Ready to make and receive calls' :
                                      softphoneStatus === 'unauthorized' ? 'Contact your admin to enable dialling' :

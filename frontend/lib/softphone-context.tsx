@@ -46,6 +46,9 @@ interface SoftphoneContextType {
   callSeconds: number
   isMuted: boolean
   isOnHold: boolean
+
+  // Registered identity
+  myExtension: string | null
 }
 
 const SoftphoneContext = createContext<SoftphoneContextType>({
@@ -65,6 +68,7 @@ const SoftphoneContext = createContext<SoftphoneContextType>({
   callSeconds: 0,
   isMuted: false,
   isOnHold: false,
+  myExtension: null,
 })
 
 export function SoftphoneProvider({ children }: { children: ReactNode }) {
@@ -77,6 +81,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
   const [isMuted, setIsMuted] = useState(false)
   const [isOnHold, setIsOnHold] = useState(false)
   const [callSeconds, setCallSeconds] = useState(0)
+  const [myExtension, setMyExtension] = useState<string | null>(null)
 
   // SIP.js refs — stored as any to avoid type import issues at module load time
   // SIP.js is dynamically imported so it is not bundled until needed
@@ -121,6 +126,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
         if (!res.ok) { setStatus('error'); return }
 
         const creds = await res.json()
+        setMyExtension(creds.extension || null)
         // Dynamically import SIP.js — only loaded for authorised agents
         const { UserAgent, Registerer, Inviter, SessionState } = await import('sip.js')
         if (destroyed) return
@@ -307,7 +313,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
       status, callState, callerNumber, remoteDisplayName,
       isOpen, dialNumber,
       dial, answer, hangup, toggleMute, toggleHold, close, setDialNumber,
-      callSeconds, isMuted, isOnHold,
+      callSeconds, isMuted, isOnHold, myExtension,
     }}>
       {children}
     </SoftphoneContext.Provider>
