@@ -415,7 +415,7 @@ export default function Workspace() {
                                     {softphoneStatus === 'registered' ? 'Ready to make and receive calls' :
                                      softphoneStatus === 'unauthorized' ? 'Contact your admin to enable dialling' :
                                      softphoneStatus === 'no_extension' ? 'Ask admin to assign a SIP extension' :
-                                     softphoneStatus === 'error' ? 'Check FreePBX WSS configuration' : ''}
+                                     softphoneStatus === 'error' ? 'FreePBX SSL certificate may be invalid or unreachable — check browser console' : ''}
                                   </p>
                                 </div>
                               </div>
