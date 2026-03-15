@@ -105,7 +105,9 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     if (!token) { setStatus('unauthorized'); return }
 
     let destroyed = false
-    const apiUrl = API_URL || 'http://localhost:8000'
+    // API_URL is '' (empty string) in production (same-origin rewrites) — do NOT use || fallback
+    // because '' is falsy and would incorrectly resolve to localhost:8000 in production.
+    const apiUrl = API_URL
 
     async function bootstrap() {
       try {

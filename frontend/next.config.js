@@ -55,6 +55,7 @@ const nextConfig = {
       { source: '/calls/:path*',               destination: `${backendUrl}/calls/:path*` },
       { source: '/extensions/:path*',          destination: `${backendUrl}/extensions/:path*` },
       { source: '/agent-workspace/:path*',     destination: `${backendUrl}/agent-workspace/:path*` },
+      { source: '/workspace/:path*',           destination: `${backendUrl}/workspace/:path*` },
       { source: '/reminders/:path*',           destination: `${backendUrl}/reminders/:path*` },
       { source: '/notifications/:path*',       destination: `${backendUrl}/notifications/:path*` },
       { source: '/tickets/:path*',             destination: `${backendUrl}/tickets/:path*` },
