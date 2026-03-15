@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, time, date
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_permission
 from app.models.user import User
 from app.models.agent_status import AgentStatus
 from app.models.call_records import CallRecording
@@ -87,8 +87,44 @@ def update_agent_status(
         
     db.commit()
     db.refresh(status_record)
-    
-    # In a full FreePBX/Asterisk integration, we would also trigger an AMI command here 
+
+    # In a full FreePBX/Asterisk integration, we would also trigger an AMI command here
     # to Pause/Unpause the queue member so calls don't ring an away agent.
-    
+
     return status_record
+
+
+@router.get("/sip-credentials")
+def get_sip_credentials(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("callcenter", "make_call")),
+):
+    """Return the calling agent's SIP extension + password + FreePBX WSS URL.
+    Returns 403 if agent lacks callcenter/make_call permission (enforced by dependency).
+    Returns 404 if agent has permission but no extension assigned yet.
+    """
+    from app.models.agent_extension import AgentExtension
+    from app.models.telephony import TelephonySettings
+
+    ext = db.query(AgentExtension).filter(
+        AgentExtension.user_id == current_user.id,
+        AgentExtension.is_enabled == True,
+    ).first()
+    if not ext:
+        raise HTTPException(status_code=404, detail="No SIP extension assigned to this agent. Contact admin.")
+
+    settings = db.query(TelephonySettings).first()
+    if not settings or not settings.webrtc_wss_url:
+        raise HTTPException(status_code=503, detail="FreePBX WSS URL not configured. Contact admin.")
+
+    # Derive realm from WSS URL (strip wss:// and path)
+    import re
+    realm_match = re.match(r"wss://([^/:]+)", settings.webrtc_wss_url)
+    realm = realm_match.group(1) if realm_match else settings.host or "pbx"
+
+    return {
+        "extension": ext.extension,
+        "password": ext.sip_password,
+        "wss_url": settings.webrtc_wss_url,
+        "realm": realm,
+    }
