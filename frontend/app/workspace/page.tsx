@@ -9,6 +9,7 @@ import TicketForm from "@/components/TicketForm";
 import TicketHistory from "@/components/TicketHistory";
 import { API_URL } from '@/lib/config';
 import QuickTicketModal from '@/components/QuickTicketModal'
+import { useSoftphone } from '@/lib/softphone-context'
 
 export default function Workspace() {
     const [user, setUser] = useState<any>(null);
@@ -27,7 +28,13 @@ export default function Workspace() {
     const [appType, setAppType] = useState('cloud_hosting');
 
     // Ticketing Simulation State
-    const [activeNumber, setActiveNumber] = useState<string | null>(null);
+    // activeNumber drives TicketForm and TicketHistory sidebar
+    // It is now a union of the real softphone caller (when inbound call is answered)
+    // and the manual simulate-call button (unchanged behavior)
+    const { callerNumber: softphoneCallerNumber, isOpen: softphoneOpen, status: softphoneStatus, dial: softphoneDial } = useSoftphone()
+    const [manualActiveNumber, setManualActiveNumber] = useState<string | null>(null)
+    const activeNumber = softphoneCallerNumber || manualActiveNumber
+    const setActiveNumber = (n: string | null) => setManualActiveNumber(n)
     const [callerContext, setCallerContext] = useState<any>(null);
     const [reloadHistory, setReloadHistory] = useState(0);
     const [parentTicketId, setParentTicketId] = useState<number | null>(null);
@@ -380,14 +387,48 @@ export default function Workspace() {
                                 onFollowUpClick={(id) => setParentTicketId(id)}
                             />
                         ) : (
-                            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden flex-1 relative flex flex-col items-center justify-center p-8 bg-gradient-to-br from-indigo-500 to-purple-600 text-white h-full min-h-[400px]">
-                                <Phone className="w-16 h-16 text-white opacity-90 mb-6 drop-shadow-md" />
-                                <h2 className="text-2xl font-bold mb-2 tracking-wide text-center drop-shadow-sm">Global Softphone</h2>
-                                <p className="text-indigo-100 text-center text-sm px-4 leading-relaxed font-medium mt-4">
-                                    Your PBX WebRTC Softphone is currently docked.
-                                </p>
-                                <div className="absolute top-[-20%] right-[-10%] w-64 h-64 bg-white opacity-10 rounded-full blur-3xl mix-blend-overlay"></div>
-                                <div className="absolute bottom-[-10%] left-[-20%] w-80 h-80 bg-purple-300 opacity-20 rounded-full blur-3xl mix-blend-overlay"></div>
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col items-center justify-center p-8 h-full min-h-[400px] gap-6">
+                              {/* Status indicator */}
+                              <div className="flex flex-col items-center gap-3">
+                                <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
+                                  softphoneStatus === 'registered' ? 'bg-green-100' :
+                                  softphoneStatus === 'registering' ? 'bg-yellow-100' :
+                                  softphoneStatus === 'unauthorized' || softphoneStatus === 'no_extension' ? 'bg-gray-100' :
+                                  'bg-red-100'
+                                }`}>
+                                  <Phone className={`w-8 h-8 ${
+                                    softphoneStatus === 'registered' ? 'text-green-600' :
+                                    softphoneStatus === 'registering' ? 'text-yellow-600 animate-pulse' :
+                                    softphoneStatus === 'unauthorized' || softphoneStatus === 'no_extension' ? 'text-gray-400' :
+                                    'text-red-500'
+                                  }`} />
+                                </div>
+                                <div className="text-center">
+                                  <p className="font-semibold text-gray-800">
+                                    {softphoneStatus === 'registered' ? 'Softphone Ready' :
+                                     softphoneStatus === 'registering' ? 'Connecting…' :
+                                     softphoneStatus === 'unauthorized' ? 'Dial Not Available' :
+                                     softphoneStatus === 'no_extension' ? 'No Extension Assigned' :
+                                     softphoneStatus === 'error' ? 'Connection Failed' : 'Loading…'}
+                                  </p>
+                                  <p className="text-sm text-gray-400 mt-1">
+                                    {softphoneStatus === 'registered' ? 'Ready to make and receive calls' :
+                                     softphoneStatus === 'unauthorized' ? 'Contact your admin to enable dialling' :
+                                     softphoneStatus === 'no_extension' ? 'Ask admin to assign a SIP extension' :
+                                     softphoneStatus === 'error' ? 'Check FreePBX WSS configuration' : ''}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Open softphone button — only when registered and not already open */}
+                              {softphoneStatus === 'registered' && !softphoneOpen && (
+                                <button
+                                  onClick={() => softphoneDial('')}
+                                  className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium text-sm hover:bg-indigo-700 transition flex items-center gap-2"
+                                >
+                                  <Phone className="w-4 h-4" /> Open Dial Pad
+                                </button>
+                              )}
                             </div>
                         )}
                     </div>
