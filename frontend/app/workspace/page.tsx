@@ -8,6 +8,7 @@ import { Phone, Clock, PhoneCall, Headphones } from 'lucide-react';
 import TicketForm from "@/components/TicketForm";
 import TicketHistory from "@/components/TicketHistory";
 import { API_URL } from '@/lib/config';
+import QuickTicketModal from '@/components/QuickTicketModal'
 
 export default function Workspace() {
     const [user, setUser] = useState<any>(null);
@@ -33,6 +34,7 @@ export default function Workspace() {
     const [myTickets, setMyTickets] = useState<any[]>([]);
     const [simulateNumber, setSimulateNumber] = useState('');
     const [filterType, setFilterType] = useState<'all' | 'forwarded'>('all');
+    const [quickTicketOpen, setQuickTicketOpen] = useState(false)
 
     useEffect(() => {
         setIsMounted(true);
@@ -174,6 +176,12 @@ export default function Workspace() {
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
+                            <button
+                              onClick={() => setQuickTicketOpen(true)}
+                              className="px-4 py-2 bg-amber-100 text-amber-700 font-medium rounded-lg hover:bg-amber-200 transition text-sm flex items-center gap-2"
+                            >
+                              🎫 Create Ticket
+                            </button>
                             {process.env.NODE_ENV !== 'production' && (
                                 <div className="flex items-center gap-2">
                                     <input
@@ -386,6 +394,12 @@ export default function Workspace() {
                 </div>
 
             </main>
+            <QuickTicketModal
+                open={quickTicketOpen}
+                onClose={() => setQuickTicketOpen(false)}
+                onCreated={() => { setQuickTicketOpen(false); fetchMyTickets() }}
+                prefill={{}}
+            />
         </div>
     );
 }
