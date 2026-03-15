@@ -334,23 +334,23 @@ class FreePBXService:
                 "BPX fetchExtension failed for %s; will attempt updateExtension first", extension
             )
 
-        # updateExtensionInput is flat — confirmed via introspection:
-        # ['extensionId','tech','channelName','name','outboundCid','emergencyCid',
-        #  'email','umEnable','umGroups','vmEnable','vmPassword','callerID',
-        #  'extPassword','umPassword','maxContacts','ringtimer','clientMutationId']
-        # WebRTC endpoint fields are not in this type; set only what's valid.
+        # Schema confirmed via introspection:
+        #   updateExtensionInput: flat, includes extPassword for SIP credential
+        #   addExtensionInput:    flat, NO password field — FreePBX separates
+        #                         creation from credential setting.
+        # Workflow: addExtension to create, then updateExtension to set extPassword.
 
-        # --- UPDATE path ---
-        if exists or exists is None:
-            update_mutation = """
-            mutation updateExtension($input: updateExtensionInput!) {
-              updateExtension(input: $input) {
-                status
-                message
-              }
-            }
-            """
-            update_vars = {
+        _update_mutation = """
+        mutation updateExtension($input: updateExtensionInput!) {
+          updateExtension(input: $input) {
+            status
+            message
+          }
+        }
+        """
+
+        def _do_update(extra_hint: str = "") -> Tuple[bool, str]:
+            vars_ = {
                 "input": {
                     "extensionId": extension,
                     "name": display_name or f"Agent {extension}",
@@ -358,37 +358,38 @@ class FreePBXService:
                 },
             }
             try:
-                r = self._gql(base, token, update_mutation, update_vars)
+                r = self._gql(base, token, _update_mutation, vars_)
                 if r.status_code == 200:
                     result = r.json()
                     if not result.get("errors"):
-                        logger.info("✅ BPX API: extension %s updated", extension)
+                        logger.info("✅ BPX API: extension %s updated%s", extension, extra_hint)
                         return True, "OK"
                     errs = result["errors"]
                     logger.warning("BPX updateExtension errors: %s", errs)
-                    err_msgs = " ".join(
-                        (e.get("message") or "") for e in errs
-                    ).lower()
-                    # On schema validation errors, surface the actual type definition
+                    err_msgs = " ".join((e.get("message") or "") for e in errs).lower()
                     schema_hint = ""
                     if "is not defined by type" in err_msgs or "unknown argument" in err_msgs:
                         schema_hint = " | " + self._bpx_introspect_input_type(base, token, "updateExtensionInput")
-                    # If extension genuinely doesn't exist, fall through to create
-                    if exists:
-                        return False, f"updateExtension failed: {result['errors']}{schema_hint}"
-                    # exists is None and it might just not exist yet — fall through
-                    if not any(kw in err_msgs for kw in ("not found", "does not exist", "no extension")):
-                        return False, f"updateExtension failed: {result['errors']}{schema_hint}"
-                else:
-                    if exists:
-                        return False, f"updateExtension HTTP {r.status_code}: {r.text[:300]}"
-                    logger.warning("BPX updateExtension HTTP %s (will try add): %s", r.status_code, r.text[:200])
+                    return False, f"updateExtension failed: {errs}{schema_hint}"
+                return False, f"updateExtension HTTP {r.status_code}: {r.text[:300]}"
             except Exception as e:
                 logger.error("BPX updateExtension exception: %s", e)
-                if exists:
-                    return False, f"updateExtension exception: {e}"
+                return False, f"updateExtension exception: {e}"
 
-        # --- CREATE path ---
+        # --- UPDATE path (extension already exists) ---
+        if exists or exists is None:
+            ok, detail = _do_update()
+            if ok:
+                return True, "OK"
+            err_msgs = detail.lower()
+            if exists:
+                # Confident it exists — surface the error
+                return False, detail
+            # exists is None — fall through to create only on "not found"-type errors
+            if not any(kw in err_msgs for kw in ("not found", "does not exist", "no extension")):
+                return False, detail
+
+        # --- CREATE path (extension does not exist) ---
         if not exists:
             add_mutation = """
             mutation addExtension($input: addExtensionInput!) {
@@ -398,16 +399,17 @@ class FreePBXService:
               }
             }
             """
-            # Use same flat structure as updateExtensionInput (confirmed via introspection).
-            # extPassword sets the SIP credential; tech defaults to pjsip if omitted
-            # but we send it explicitly for clarity.
+            # addExtensionInput has NO password field (confirmed via introspection):
+            # ['extensionId','tech','channelName','name','outboundCid','emergencyCid',
+            #  'email','umEnable','umGroups','vmEnable','vmPassword','callerID',
+            #  'umPassword','maxContacts','ringtimer','clientMutationId']
+            # Password is set via a subsequent updateExtension call.
             add_vars = {
                 "input": {
                     "extensionId": extension,
                     "tech": "pjsip",
                     "name": display_name or f"Agent {extension}",
                     "email": email,
-                    "extPassword": sip_password,
                 },
             }
             try:
@@ -415,7 +417,15 @@ class FreePBXService:
                 if r.status_code == 200:
                     result = r.json()
                     if not result.get("errors"):
-                        logger.info("✅ BPX API: extension %s created", extension)
+                        logger.info("✅ BPX API: extension %s created — setting password", extension)
+                        # Set the SIP password via updateExtension immediately after creation
+                        ok, detail = _do_update(" (post-create password set)")
+                        if not ok:
+                            logger.warning(
+                                "Extension %s created but password set failed: %s", extension, detail
+                            )
+                            # Extension exists now — treat as partial success with warning
+                            return False, f"Extension created but extPassword update failed: {detail}"
                         return True, "OK"
                     logger.warning("BPX addExtension errors: %s", result["errors"])
                     add_err_msgs = " ".join(
