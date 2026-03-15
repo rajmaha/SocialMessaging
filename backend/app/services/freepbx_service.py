@@ -334,23 +334,14 @@ class FreePBXService:
                 "BPX fetchExtension failed for %s; will attempt updateExtension first", extension
             )
 
-        _endpoint_fields = {
-            "secret": sip_password,
-            # WebRTC — enables softphone in browser
-            "media_encryption": "dtls",
-            "webrtc": "yes",
-            "dtls_verify": "fingerprint",
-            "dtls_setup": "actpass",
-            "ice_support": "yes",
-            "rtcp_mux": "yes",
-            "use_avpf": "yes",
-            "force_rport": "yes",
-            "rewrite_contact": "yes",
-        }
+        # updateExtensionInput is flat — confirmed via introspection:
+        # ['extensionId','tech','channelName','name','outboundCid','emergencyCid',
+        #  'email','umEnable','umGroups','vmEnable','vmPassword','callerID',
+        #  'extPassword','umPassword','maxContacts','ringtimer','clientMutationId']
+        # WebRTC endpoint fields are not in this type; set only what's valid.
 
         # --- UPDATE path ---
         if exists or exists is None:
-            # extensionId goes INSIDE input (not a top-level mutation argument)
             update_mutation = """
             mutation updateExtension($input: updateExtensionInput!) {
               updateExtension(input: $input) {
@@ -362,8 +353,8 @@ class FreePBXService:
             update_vars = {
                 "input": {
                     "extensionId": extension,
-                    "user": {"name": display_name or f"Agent {extension}"},
-                    "endpoint": _endpoint_fields,
+                    "name": display_name or f"Agent {extension}",
+                    "extPassword": sip_password,
                 },
             }
             try:
@@ -407,15 +398,16 @@ class FreePBXService:
               }
             }
             """
+            # Use same flat structure as updateExtensionInput (confirmed via introspection).
+            # extPassword sets the SIP credential; tech defaults to pjsip if omitted
+            # but we send it explicitly for clarity.
             add_vars = {
                 "input": {
                     "extensionId": extension,
                     "tech": "pjsip",
-                    "user": {
-                        "name": display_name or f"Agent {extension}",
-                        "email": email,
-                    },
-                    "endpoint": _endpoint_fields,
+                    "name": display_name or f"Agent {extension}",
+                    "email": email,
+                    "extPassword": sip_password,
                 },
             }
             try:
