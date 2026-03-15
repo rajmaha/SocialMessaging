@@ -240,6 +240,72 @@ def get_ticket_context(
 
     return result
 
+@router.get("/context-by-email")
+def get_ticket_context_by_email(
+    email: str = Query(..., description="Full email address to look up org by domain"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve org context by email address — matches on email domain."""
+    from app.models.organization import Organization, OrganizationContact
+
+    result = {
+        "found": False,
+        "customer_type": None,
+        "customer_name": None,
+        "organization_name": None,
+        "organization_id": None,
+        "contact_person": None,
+        "email": email,
+    }
+
+    # 1. Try exact match on org contact email
+    org_contact = db.query(OrganizationContact).filter(
+        OrganizationContact.email.ilike(email)
+    ).first()
+    if org_contact and org_contact.organization:
+        result.update({
+            "found": True,
+            "customer_type": "organization",
+            "contact_person": org_contact.full_name,
+            "customer_name": org_contact.organization.organization_name,
+            "organization_name": org_contact.organization.organization_name,
+            "organization_id": org_contact.organization.id,
+        })
+        return result
+
+    # 2. Try exact match on org primary email
+    org = db.query(Organization).filter(
+        Organization.email.ilike(email)
+    ).first()
+    if org:
+        result.update({
+            "found": True,
+            "customer_type": "organization",
+            "customer_name": org.organization_name,
+            "organization_name": org.organization_name,
+            "organization_id": org.id,
+        })
+        return result
+
+    # 3. Try domain match on org domain_name field
+    if "@" in email:
+        domain = email.split("@", 1)[1].lower()
+        org = db.query(Organization).filter(
+            Organization.domain_name.ilike(f"%{domain}%")
+        ).first()
+        if org:
+            result.update({
+                "found": True,
+                "customer_type": "organization",
+                "customer_name": org.organization_name,
+                "organization_name": org.organization_name,
+                "organization_id": org.id,
+            })
+            return result
+
+    return result
+
 @router.put("/{ticket_id}", response_model=TicketResponse)
 def update_ticket(
     ticket_id: int,
