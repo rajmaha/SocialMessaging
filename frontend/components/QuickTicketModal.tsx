@@ -142,7 +142,8 @@ export default function QuickTicketModal({ open, onClose, onCreated, prefill = {
               <select
                 value={lookupType}
                 onChange={e => { setLookupType(e.target.value as 'phone' | 'email'); setContext(null) }}
-                className="text-sm border border-gray-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                disabled={!!(prefill.phone || prefill.email)}
+                className="text-sm border border-gray-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
               >
                 <option value="phone">Phone</option>
                 <option value="email">Email</option>
