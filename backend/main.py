@@ -1839,6 +1839,13 @@ _STATIC_ORIGINS = [
 
 def _get_all_allowed_origins() -> list:
     """Merge static defaults with admin-configured DB origins."""
+    # Re-read FRONTEND_URL from env at call time so changes take effect
+    # without requiring a backend restart.
+    import os as _os
+    dynamic_frontend = _os.environ.get("FRONTEND_URL", "")
+    origins = list(_STATIC_ORIGINS)
+    if dynamic_frontend and dynamic_frontend not in origins:
+        origins.append(dynamic_frontend)
     try:
         db = SessionLocal()
         from sqlalchemy import text as _text
@@ -1848,10 +1855,10 @@ def _get_all_allowed_origins() -> list:
         db.close()
         if row and row[0]:
             db_origins = row[0] if isinstance(row[0], list) else []
-            return list(set(_STATIC_ORIGINS + db_origins))
+            return list(set(origins + db_origins))
     except Exception:
         pass
-    return list(_STATIC_ORIGINS)
+    return origins
 
 
 class DynamicCORSMiddleware(BaseHTTPMiddleware):
