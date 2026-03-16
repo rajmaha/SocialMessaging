@@ -522,68 +522,94 @@ def get_dashboard_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Unified dashboard summary: messaging + CRM + agents."""
+    """Unified dashboard summary: messaging + CRM + agents.
+    Non-admins see only their own stats."""
     from datetime import datetime, timedelta
     from app.models.crm import Lead, Deal, LeadStatus
     from sqlalchemy import func
 
+    is_admin = current_user.role == "admin"
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = datetime.utcnow() - timedelta(days=7)
 
-    # --- Conversations ---
-    total_today = db.query(Conversation).filter(Conversation.created_at >= today_start).count()
-    open_count = db.query(Conversation).filter(Conversation.status == "open").count()
-    pending_count = db.query(Conversation).filter(Conversation.status == "pending").count()
-    resolved_count = db.query(Conversation).filter(Conversation.status == "resolved").count()
-
-    # Avg first response time (minutes) - all time
+    # --- Conversations (scoped for non-admins) ---
     from app.models.conversation import Conversation as Conv
+    conv_base = db.query(Conv)
+    if not is_admin:
+        conv_base = conv_base.filter(Conv.assigned_to == current_user.id)
+
+    total_today = conv_base.filter(Conv.created_at >= today_start).count()
+    open_count = conv_base.filter(Conv.status == "open").count()
+    pending_count = conv_base.filter(Conv.status == "pending").count()
+    resolved_count = conv_base.filter(Conv.status == "resolved").count()
+
+    avg_q = conv_base.filter(Conv.first_response_at.isnot(None))
     avg_response = db.query(func.avg(
         func.extract('epoch', Conv.first_response_at - Conv.created_at) / 60
-    )).filter(Conv.first_response_at.isnot(None)).scalar()
+    )).filter(
+        Conv.first_response_at.isnot(None),
+        *([Conv.assigned_to == current_user.id] if not is_admin else [])
+    ).scalar()
 
-    avg_rating = db.query(func.avg(Conv.rating)).filter(Conv.rating.isnot(None)).scalar()
+    avg_rating = db.query(func.avg(Conv.rating)).filter(
+        Conv.rating.isnot(None),
+        *([Conv.assigned_to == current_user.id] if not is_admin else [])
+    ).scalar()
 
-    # --- CRM ---
-    new_leads_week = db.query(Lead).filter(Lead.created_at >= week_start).count()
-    total_leads = db.query(Lead).count()
-    converted_leads = db.query(Lead).filter(Lead.status == "converted").count()
+    # --- CRM (scoped for non-admins) ---
+    lead_base = db.query(Lead)
+    deal_base = db.query(Deal)
+    if not is_admin:
+        lead_base = lead_base.filter(Lead.assigned_to == current_user.id)
+        deal_base = deal_base.filter(Deal.assigned_to == current_user.id)
+
+    new_leads_week = lead_base.filter(Lead.created_at >= week_start).count()
+    total_leads = lead_base.count()
+    converted_leads = lead_base.filter(Lead.status == "converted").count()
 
     pipeline_value = db.query(func.sum(Deal.amount)).filter(
-        Deal.stage.notin_(["won", "lost"])
+        Deal.stage.notin_(["won", "lost"]),
+        *([Deal.assigned_to == current_user.id] if not is_admin else [])
     ).scalar() or 0
 
-    won_deals = db.query(Deal).filter(Deal.stage == "won").count()
-    total_closed = db.query(Deal).filter(Deal.stage.in_(["won", "lost"])).count()
+    won_deals = deal_base.filter(Deal.stage == "won").count()
+    total_closed = deal_base.filter(Deal.stage.in_(["won", "lost"])).count()
     win_rate = round((won_deals / total_closed * 100) if total_closed else 0, 1)
 
     # Pipeline by stage
-    from app.models.crm import DealStage
     pipeline_by_stage = {}
     for stage in ["prospect", "qualified", "proposal", "negotiation", "close", "won", "lost"]:
-        count = db.query(Deal).filter(Deal.stage == stage).count()
-        value = db.query(func.sum(Deal.amount)).filter(Deal.stage == stage).scalar() or 0
+        q = db.query(Deal).filter(Deal.stage == stage)
+        if not is_admin:
+            q = q.filter(Deal.assigned_to == current_user.id)
+        count = q.count()
+        value = db.query(func.sum(Deal.amount)).filter(
+            Deal.stage == stage,
+            *([Deal.assigned_to == current_user.id] if not is_admin else [])
+        ).scalar() or 0
         pipeline_by_stage[stage] = {"count": count, "value": float(value)}
 
-    # --- Agent leaderboard (resolved today) ---
-    from app.models.user import User as UserModel
-    agents = db.query(UserModel).filter(UserModel.role.in_(["admin", "agent"])).all()
+    # --- Agent leaderboard (admin only) ---
     leaderboard = []
-    for agent in agents:
-        resolved_today = db.query(Conv).filter(
-            Conv.assigned_to == agent.id,
-            Conv.status == "resolved",
-            Conv.resolved_at >= today_start,
-        ).count()
-        if resolved_today > 0:
-            leaderboard.append({
-                "id": agent.id,
-                "name": agent.full_name or agent.email,
-                "resolved_today": resolved_today,
-            })
-    leaderboard.sort(key=lambda x: x["resolved_today"], reverse=True)
+    if is_admin:
+        from app.models.user import User as UserModel
+        agents = db.query(UserModel).filter(UserModel.role.in_(["admin", "agent"])).all()
+        for agent in agents:
+            resolved_today = db.query(Conv).filter(
+                Conv.assigned_to == agent.id,
+                Conv.status == "resolved",
+                Conv.resolved_at >= today_start,
+            ).count()
+            if resolved_today > 0:
+                leaderboard.append({
+                    "id": agent.id,
+                    "name": agent.full_name or agent.email,
+                    "resolved_today": resolved_today,
+                })
+        leaderboard.sort(key=lambda x: x["resolved_today"], reverse=True)
 
     return {
+        "is_admin": is_admin,
         "conversations": {
             "total_today": total_today,
             "open": open_count,

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import { hasModuleAccess } from "@/lib/permissions";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 
@@ -60,9 +61,12 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  const isAdmin = data?.is_admin ?? false;
   const conv = data?.conversations;
   const crm = data?.crm;
   const leaderboard = data?.leaderboard ?? [];
+  const canSeeCrm = isAdmin || hasModuleAccess('crm');
+  const canSeeReports = isAdmin || hasModuleAccess('reports');
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
@@ -94,7 +98,9 @@ export default function AdminDashboard() {
           <>
             {/* Messaging KPIs */}
             <section>
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">Conversations</h2>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">
+                Conversations {!isAdmin && <span className="text-xs font-normal normal-case text-gray-400">(your assignments)</span>}
+              </h2>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <KpiCard label="Today" value={conv?.total_today ?? 0} color="blue" />
                 <KpiCard label="Open" value={conv?.open ?? 0} color="amber" />
@@ -113,9 +119,12 @@ export default function AdminDashboard() {
               </div>
             </section>
 
-            {/* CRM KPIs */}
+            {/* CRM KPIs — only if user has CRM access */}
+            {canSeeCrm && (
             <section>
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">CRM</h2>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">
+                CRM {!isAdmin && <span className="text-xs font-normal normal-case text-gray-400">(your assignments)</span>}
+              </h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <KpiCard label="New Leads (7d)" value={crm?.new_leads_week ?? 0} color="blue" />
                 <KpiCard label="Total Leads" value={crm?.total_leads ?? 0} color="blue" />
@@ -127,11 +136,14 @@ export default function AdminDashboard() {
                 <KpiCard label="Win Rate" value={crm?.win_rate != null ? `${crm.win_rate}%` : "—"} color="purple" />
               </div>
             </section>
+            )}
 
             {/* Pipeline by Stage + Agent Leaderboard */}
-            <div className="grid grid-cols-3 gap-6">
-              {/* Pipeline */}
-              <div className="col-span-2 bg-white rounded-xl shadow p-6">
+            {(canSeeCrm || isAdmin) && (
+            <div className={`grid ${isAdmin ? "grid-cols-3" : "grid-cols-1"} gap-6`}>
+              {/* Pipeline — only if CRM access */}
+              {canSeeCrm && (
+              <div className={`${isAdmin ? "col-span-2" : ""} bg-white rounded-xl shadow p-6`}>
                 <h2 className="text-sm font-semibold text-gray-700 mb-4">Pipeline by Stage</h2>
                 <div className="space-y-2">
                   {crm?.pipeline_by_stage && Object.entries(crm.pipeline_by_stage).map(([stage, info]: [string, any]) => (
@@ -151,8 +163,10 @@ export default function AdminDashboard() {
                   ))}
                 </div>
               </div>
+              )}
 
-              {/* Agent Leaderboard */}
+              {/* Agent Leaderboard — admin only */}
+              {isAdmin && (
               <div className="bg-white rounded-xl shadow p-6">
                 <h2 className="text-sm font-semibold text-gray-700 mb-4">Agent Leaderboard (today)</h2>
                 {leaderboard.length === 0 ? (
@@ -171,18 +185,20 @@ export default function AdminDashboard() {
                   </ol>
                 )}
               </div>
+              )}
             </div>
+            )}
 
-            {/* Quick links */}
+            {/* Quick links — filtered by permissions */}
             <section>
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">Quick Links</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { href: "/admin/reports", label: "Full Reports", icon: "📊" },
-                  { href: "/admin/crm/leads", label: "Leads", icon: "👥" },
-                  { href: "/admin/crm/analytics", label: "CRM Analytics", icon: "📈" },
-                  { href: "/admin/users", label: "Manage Users", icon: "👤" },
-                ].map(link => (
+                  canSeeReports && { href: "/admin/reports", label: "Full Reports", icon: "📊" },
+                  canSeeCrm && { href: "/admin/crm/leads", label: "Leads", icon: "👥" },
+                  canSeeCrm && { href: "/admin/crm/analytics", label: "CRM Analytics", icon: "📈" },
+                  isAdmin && { href: "/admin/users", label: "Manage Users", icon: "👤" },
+                ].filter(Boolean).map((link: any) => (
                   <a
                     key={link.href}
                     href={link.href}
