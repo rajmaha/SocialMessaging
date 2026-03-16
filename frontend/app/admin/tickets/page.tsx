@@ -38,7 +38,7 @@ export default function AdminTicketViewer() {
     const [page, setPage] = useState(0);
 
     useEffect(() => {
-        if (!user || user.role !== 'admin') {
+        if (!user) {
             router.push('/login');
             return;
         }
@@ -71,7 +71,7 @@ export default function AdminTicketViewer() {
         setLoading(true);
         try {
             const token = getAuthToken();
-            const res = await fetch(`${API_URL}/api/tickets/all`, {
+            const res = await fetch(`${API_URL}/api/tickets`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) setTickets(await res.json());

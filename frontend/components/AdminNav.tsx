@@ -78,7 +78,7 @@ const sidebarGroups = [
         items: [
             { href: '/admin/callcenter', label: 'Call Center', icon: '📞', permission: () => hasAdminFeature('manage_telephony') },
             { href: '/admin/ticket-fields', label: 'Ticket Config', icon: '📝', permission: () => hasAdminFeature('manage_dynamic_fields') },
-            { href: '/admin/tickets', label: 'All Tickets', icon: '📋', adminOnly: true },
+            { href: '/admin/tickets', label: 'All Tickets', icon: '📋', pageKey: 'tickets' },
             { href: '/admin/organizations', label: 'Organizations', icon: '🏢', permission: () => hasModuleAccess('organizations') },
             { href: '/admin/individuals', label: 'Individuals', icon: '👤', permission: () => hasModuleAccess('individuals') },
             { href: '/admin/subscription-modules', label: 'Subscription Modules', icon: '📦', permission: () => hasModuleAccess('subscriptions') },

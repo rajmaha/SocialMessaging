@@ -488,15 +488,26 @@ def list_tickets(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List all tickets with optional filtering."""
+    """List tickets with optional filtering. Non-admins see only their own
+    (created by them or assigned to them)."""
     query = db.query(Ticket)
-    
+
+    # Scope for non-admin users: only own tickets
+    if current_user.role != "admin":
+        from sqlalchemy import or_
+        query = query.filter(
+            or_(
+                Ticket.created_by == current_user.id,
+                Ticket.assigned_to == current_user.id,
+            )
+        )
+
     if status:
         query = query.filter(Ticket.status == status)
     if priority:
         query = query.filter(Ticket.priority == priority)
     if organization_id:
         query = query.filter(Ticket.organization_id == organization_id)
-        
+
     return query.order_by(Ticket.created_at.desc()).offset(skip).limit(limit).all()
 
