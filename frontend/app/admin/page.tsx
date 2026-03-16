@@ -67,6 +67,8 @@ export default function AdminDashboard() {
   const leaderboard = data?.leaderboard ?? [];
   const canSeeCrm = isAdmin || hasModuleAccess('crm');
   const canSeeReports = isAdmin || hasModuleAccess('reports');
+  const canSeeTickets = isAdmin || hasModuleAccess('tickets');
+  const canSeePms = isAdmin || hasModuleAccess('pms');
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
@@ -96,13 +98,25 @@ export default function AdminDashboard() {
           </div>
         ) : (
           <>
-            {/* Messaging KPIs */}
+            {/* Conversation Volume by Period */}
             <section>
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">
                 Conversations {!isAdmin && <span className="text-xs font-normal normal-case text-gray-400">(your assignments)</span>}
               </h2>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <KpiCard label="Today" value={conv?.total_today ?? 0} color="blue" />
+                <KpiCard label="This Week" value={conv?.total_week ?? 0} color="blue" />
+                <KpiCard label="This Month" value={conv?.total_month ?? 0} color="blue" />
+                <KpiCard label="Last 3 Months" value={conv?.total_3months ?? 0} color="blue" />
+                <KpiCard label="Last 6 Months" value={conv?.total_6months ?? 0} color="blue" />
+                <KpiCard label="This Year" value={conv?.total_year ?? 0} color="blue" />
+              </div>
+            </section>
+
+            {/* Conversation Status & Performance */}
+            <section>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">Status & Performance</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                 <KpiCard label="Open" value={conv?.open ?? 0} color="amber" />
                 <KpiCard label="Pending" value={conv?.pending ?? 0} color="amber" />
                 <KpiCard label="Resolved" value={conv?.resolved ?? 0} color="green" />
@@ -194,10 +208,14 @@ export default function AdminDashboard() {
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">Quick Links</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  canSeeReports && { href: "/admin/reports", label: "Full Reports", icon: "📊" },
+                  { href: "/dashboard?tab=messaging", label: "Inbox", icon: "💬" },
+                  canSeeTickets && { href: "/admin/tickets", label: "Tickets", icon: "🎫" },
+                  canSeePms && { href: "/admin/pms", label: "Projects", icon: "📋" },
                   canSeeCrm && { href: "/admin/crm/leads", label: "Leads", icon: "👥" },
                   canSeeCrm && { href: "/admin/crm/analytics", label: "CRM Analytics", icon: "📈" },
+                  canSeeReports && { href: "/admin/reports", label: "Full Reports", icon: "📊" },
                   isAdmin && { href: "/admin/users", label: "Manage Users", icon: "👤" },
+                  isAdmin && { href: "/admin/teams", label: "Manage Teams", icon: "👥" },
                 ].filter(Boolean).map((link: any) => (
                   <a
                     key={link.href}

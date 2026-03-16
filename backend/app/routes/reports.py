@@ -529,8 +529,13 @@ def get_dashboard_summary(
     from sqlalchemy import func
 
     is_admin = current_user.role == "admin"
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    week_start = datetime.utcnow() - timedelta(days=7)
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = now - timedelta(days=7)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    three_months_start = now - timedelta(days=90)
+    six_months_start = now - timedelta(days=180)
+    year_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
     # --- Conversations (scoped for non-admins) ---
     from app.models.conversation import Conversation as Conv
@@ -539,6 +544,11 @@ def get_dashboard_summary(
         conv_base = conv_base.filter(Conv.assigned_to == current_user.id)
 
     total_today = conv_base.filter(Conv.created_at >= today_start).count()
+    total_week = conv_base.filter(Conv.created_at >= week_start).count()
+    total_month = conv_base.filter(Conv.created_at >= month_start).count()
+    total_3months = conv_base.filter(Conv.created_at >= three_months_start).count()
+    total_6months = conv_base.filter(Conv.created_at >= six_months_start).count()
+    total_year = conv_base.filter(Conv.created_at >= year_start).count()
     open_count = conv_base.filter(Conv.status == "open").count()
     pending_count = conv_base.filter(Conv.status == "pending").count()
     resolved_count = conv_base.filter(Conv.status == "resolved").count()
@@ -612,6 +622,11 @@ def get_dashboard_summary(
         "is_admin": is_admin,
         "conversations": {
             "total_today": total_today,
+            "total_week": total_week,
+            "total_month": total_month,
+            "total_3months": total_3months,
+            "total_6months": total_6months,
+            "total_year": total_year,
             "open": open_count,
             "pending": pending_count,
             "resolved": resolved_count,
