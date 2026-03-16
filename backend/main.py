@@ -1838,10 +1838,18 @@ _STATIC_ORIGINS = [
 ]
 
 
+import time as _time
+
+_cors_cache: dict = {"origins": None, "expires": 0}
+_CORS_CACHE_TTL = 60  # seconds — re-read DB origins at most once per minute
+
+
 def _get_all_allowed_origins() -> list:
-    """Merge static defaults with admin-configured DB origins."""
-    # Re-read FRONTEND_URL from env at call time so changes take effect
-    # without requiring a backend restart.
+    """Merge static defaults with admin-configured DB origins (cached 60s)."""
+    now = _time.time()
+    if _cors_cache["origins"] is not None and now < _cors_cache["expires"]:
+        return _cors_cache["origins"]
+
     import os as _os
     dynamic_frontend = _os.environ.get("FRONTEND_URL", "")
     origins = list(_STATIC_ORIGINS)
@@ -1849,27 +1857,32 @@ def _get_all_allowed_origins() -> list:
         origins.append(dynamic_frontend)
     try:
         db = SessionLocal()
-        from sqlalchemy import text as _text
-        row = db.execute(_text(
-            "SELECT cors_allowed_origins FROM branding_settings LIMIT 1"
-        )).fetchone()
-        db.close()
-        if row and row[0]:
-            raw = row[0]
-            if isinstance(raw, list):
-                db_origins = raw
-            elif isinstance(raw, str):
-                import json as _json
-                try:
-                    db_origins = _json.loads(raw)
-                except Exception:
+        try:
+            from sqlalchemy import text as _text
+            row = db.execute(_text(
+                "SELECT cors_allowed_origins FROM branding_settings LIMIT 1"
+            )).fetchone()
+            if row and row[0]:
+                raw = row[0]
+                if isinstance(raw, list):
+                    db_origins = raw
+                elif isinstance(raw, str):
+                    import json as _json
+                    try:
+                        db_origins = _json.loads(raw)
+                    except Exception:
+                        db_origins = []
+                else:
                     db_origins = []
-            else:
-                db_origins = []
-            if db_origins:
-                return list(set(origins + db_origins))
+                if db_origins:
+                    origins = list(set(origins + db_origins))
+        finally:
+            db.close()
     except Exception:
         pass
+
+    _cors_cache["origins"] = origins
+    _cors_cache["expires"] = now + _CORS_CACHE_TTL
     return origins
 
 
@@ -1896,40 +1909,9 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
                 resp.headers["Access-Control-Max-Age"] = "3600"
             return resp
 
-        # Log blocked CORS origins so they appear in the error log
-        if origin and not origin_allowed:
-            try:
-                _db = _LogSessionLocal()
-                _log_error(
-                    _db,
-                    message=f"CORS blocked: origin '{origin}' is not in the allowed list",
-                    source="api",
-                    severity="warning",
-                    request_path=str(request.url.path),
-                    request_method=request.method,
-                )
-                _db.close()
-            except Exception:
-                pass
-
         try:
             response = await call_next(request)
         except Exception as exc:
-            # Log the exception and ensure CORS headers are present
-            try:
-                _db = _LogSessionLocal()
-                _log_error(
-                    _db,
-                    message=str(exc),
-                    source="api",
-                    severity="error",
-                    exc=exc,
-                    request_path=str(request.url.path),
-                    request_method=request.method,
-                )
-                _db.close()
-            except Exception:
-                pass
             from starlette.responses import JSONResponse
             response = JSONResponse(
                 status_code=500,
