@@ -9,6 +9,7 @@ MODULE_REGISTRY = {
     "messaging":    {"label": "Messaging Channels",   "actions": ["view", "reply", "assign", "delete"]},
     "callcenter":   {"label": "Call Center",          "actions": ["view", "make_call", "edit", "delete"]},
     "livechat":     {"label": "Live Chat",            "actions": ["view", "reply", "assign", "delete"]},
+    "workspace":    {"label": "Agent Workspace",      "actions": ["view", "edit"]},
 
     # Business modules
     "crm":          {"label": "CRM",                  "actions": ["view", "add", "edit", "delete", "import", "export"]},

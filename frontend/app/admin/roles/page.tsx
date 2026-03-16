@@ -9,7 +9,7 @@ import AdminNav from '@/components/AdminNav';
 const MODULE_CATEGORIES = [
   {
     label: 'Communication',
-    keys: ['email', 'messaging', 'callcenter', 'livechat'],
+    keys: ['email', 'messaging', 'callcenter', 'livechat', 'workspace'],
   },
   {
     label: 'Business',

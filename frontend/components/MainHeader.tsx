@@ -66,9 +66,11 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                 setCanAccessAdmin(hasAnyAdminPermission())
                 setCanAccessReports(hasModuleAccess('reports'))
 
-                // Logic for messaging: if they have any channel or a specific messaging module
+                // Logic for messaging: if they have the "messaging" module OR any individual channel
                 import('@/lib/permissions').then(({ hasChannelAccess }) => {
                     setCanAccessMessaging(
+                        hasModuleAccess('messaging') ||
+                        hasModuleAccess('livechat') ||
                         hasChannelAccess('whatsapp') ||
                         hasChannelAccess('viber') ||
                         hasChannelAccess('linkedin') ||
