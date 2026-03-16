@@ -1854,8 +1854,19 @@ def _get_all_allowed_origins() -> list:
         )).fetchone()
         db.close()
         if row and row[0]:
-            db_origins = row[0] if isinstance(row[0], list) else []
-            return list(set(origins + db_origins))
+            raw = row[0]
+            if isinstance(raw, list):
+                db_origins = raw
+            elif isinstance(raw, str):
+                import json as _json
+                try:
+                    db_origins = _json.loads(raw)
+                except Exception:
+                    db_origins = []
+            else:
+                db_origins = []
+            if db_origins:
+                return list(set(origins + db_origins))
     except Exception:
         pass
     return origins
