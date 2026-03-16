@@ -38,6 +38,10 @@ MODULE_REGISTRY = {
     "manage_forms":          {"label": "Form Builder",          "actions": ["view", "add", "edit", "delete"]},
     "manage_menus":          {"label": "Menu Manager",          "actions": ["view", "add", "edit", "delete"]},
 
+    # Logs
+    "audit_logs":     {"label": "Audit Log",           "actions": ["view"]},
+    "error_logs":     {"label": "Error Log",           "actions": ["view"]},
+
     # Modules (migrated from module_* permission keys)
     "organizations":  {"label": "Organizations",      "actions": ["view", "add", "edit", "delete"]},
     "contacts":       {"label": "Contacts",           "actions": ["view", "add", "edit", "delete"]},

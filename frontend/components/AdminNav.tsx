@@ -33,7 +33,7 @@ const sidebarGroups = [
             { href: '/admin/accounts', label: 'Connected Accounts', icon: '🔗', permission: () => hasAdminFeature('manage_messenger_config') },
             { href: '/admin/widget-domains', label: 'Widget Domains', icon: '🌐', permission: () => hasAdminFeature('manage_messenger_config') },
             { href: '/admin/telephony', label: 'Telephony (VoIP)', icon: '🎧', permission: () => hasAdminFeature('manage_telephony') },
-            { href: '/admin/recordings', label: 'Call Records', icon: '🎙️', pageKey: 'callcenter' },
+            { href: '/admin/recordings', label: 'Call Records', icon: '🎙️', pageKey: 'calls' },
             { href: '/admin/extensions', label: 'SIP Extensions', icon: '📞', permission: () => hasAdminFeature('manage_extensions') },
         ],
     },
@@ -62,8 +62,8 @@ const sidebarGroups = [
     {
         label: 'Logs',
         items: [
-            { href: '/admin/audit-logs', label: 'Audit Log', icon: '📋' },
-            { href: '/admin/error-logs', label: 'Error Log', icon: '🚨' },
+            { href: '/admin/audit-logs', label: 'Audit Log', icon: '📋', pageKey: 'audit_logs' },
+            { href: '/admin/error-logs', label: 'Error Log', icon: '🚨', pageKey: 'error_logs' },
         ],
     },
     {
@@ -76,8 +76,8 @@ const sidebarGroups = [
     {
         label: 'Applications',
         items: [
-            { href: '/admin/callcenter', label: 'Call Center', icon: '📞', pageKey: 'callcenter' },
-            { href: '/admin/ticket-fields', label: 'Ticket Config', icon: '📝', pageKey: 'tickets' },
+            { href: '/admin/callcenter', label: 'Call Center', icon: '📞', permission: () => hasAdminFeature('manage_telephony') },
+            { href: '/admin/ticket-fields', label: 'Ticket Config', icon: '📝', permission: () => hasAdminFeature('manage_dynamic_fields') },
             { href: '/admin/tickets', label: 'All Tickets', icon: '📋', pageKey: 'tickets' },
             { href: '/admin/organizations', label: 'Organizations', icon: '🏢', permission: () => hasModuleAccess('organizations') },
             { href: '/admin/individuals', label: 'Individuals', icon: '👤', permission: () => hasModuleAccess('individuals') },

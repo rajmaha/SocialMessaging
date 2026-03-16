@@ -9,7 +9,7 @@ import AdminNav from '@/components/AdminNav';
 const MODULE_CATEGORIES = [
   {
     label: 'Communication',
-    keys: ['email', 'messaging', 'callcenter', 'livechat', 'workspace'],
+    keys: ['email', 'messaging', 'livechat', 'workspace'],
   },
   {
     label: 'Business',
@@ -22,7 +22,12 @@ const MODULE_CATEGORIES = [
       'manage_telephony', 'manage_extensions', 'manage_branding', 'manage_roles',
       'manage_cors', 'manage_bot', 'manage_cloudpanel', 'manage_dynamic_fields',
       'manage_ssl', 'manage_billing', 'manage_forms', 'manage_menus',
+      'callcenter',
     ],
+  },
+  {
+    label: 'Logs',
+    keys: ['audit_logs', 'error_logs'],
   },
   {
     label: 'Modules',
