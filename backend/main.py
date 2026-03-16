@@ -1750,8 +1750,7 @@ except Exception as _bf_err:
 app = FastAPI(
     title="Social Media Messaging System",
     description="Unified messaging platform for WhatsApp, Facebook, Viber, and LinkedIn",
-    version="1.0.0",
-    redirect_slashes=False,
+    version="1.0.0"
 )
 
 # ── Global error handler → writes to error_logs ────────────────────────────
