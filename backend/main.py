@@ -1926,6 +1926,11 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(DynamicCORSMiddleware)
 
+# Trust X-Forwarded-Proto/Host from reverse proxy (Traefik) so FastAPI
+# builds redirect URLs with https:// instead of http://
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
 # Include routes
 app.include_router(auth.router)
 app.include_router(accounts.router)

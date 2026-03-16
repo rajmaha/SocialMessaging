@@ -96,7 +96,7 @@ function DashboardPage() {
     // Fetch platform accounts for badge display and filtering
     const token = getAuthToken()
     if (token) {
-      axios.get(`${API_URL}/admin/platform-accounts`, {
+      axios.get(`${API_URL}/admin/platform-accounts/`, {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then((r) => {
@@ -106,7 +106,7 @@ function DashboardPage() {
         })
         .catch(() => { /* non-admin agents may not have access */ })
       // Fetch widget domains for domain badges/filter
-      axios.get(`${API_URL}/admin/widget-domains`, {
+      axios.get(`${API_URL}/admin/widget-domains/`, {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then((r) => setWidgetDomains(r.data || []))
