@@ -1750,7 +1750,8 @@ except Exception as _bf_err:
 app = FastAPI(
     title="Social Media Messaging System",
     description="Unified messaging platform for WhatsApp, Facebook, Viber, and LinkedIn",
-    version="1.0.0"
+    version="1.0.0",
+    redirect_slashes=False,
 )
 
 # ── Global error handler → writes to error_logs ────────────────────────────
@@ -1878,7 +1879,11 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: StarletteRequest, call_next):
         origin = request.headers.get("origin", "")
         allowed = _get_all_allowed_origins()
-        origin_allowed = origin in allowed
+        # Exact match OR wildcard: any https://*.saraloms.com subdomain is trusted
+        origin_allowed = (
+            origin in allowed
+            or (origin.startswith("https://") and origin.endswith(".saraloms.com"))
+        )
 
         # Handle pre-flight OPTIONS request
         if request.method == "OPTIONS":
