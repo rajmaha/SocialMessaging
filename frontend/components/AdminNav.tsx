@@ -15,7 +15,7 @@ const sidebarGroups = [
             { href: '/settings?tab=profile', label: 'Profile', icon: '👤' },
             { href: '/settings?tab=accounts', label: 'Connected Agent Accounts', icon: '🔗' },
             { href: '/settings?tab=account-settings', label: 'Account Settings', icon: '⚙️' },
-            { href: '/settings/api-credentials', label: 'My API Credentials', icon: '🔑' },
+            { href: '/settings/api-credentials', label: 'My API Credentials', icon: '🔑', adminOnly: true },
         ],
     },
     {
