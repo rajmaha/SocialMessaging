@@ -47,6 +47,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
     restart: unless-stopped
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000
