@@ -5,19 +5,20 @@ import type { NextRequest } from 'next/server'
 const PAGE_GUARDS: Array<[string, string]> = [
   ['/admin/pms', 'pms'],
   ['/admin/tickets', 'tickets'],
-  ['/admin/ticket-fields', 'tickets'],
+  ['/admin/ticket-fields', 'manage_dynamic_fields'],
   ['/admin/crm', 'crm'],
-  ['/dashboard', 'messaging'],
-  ['/admin/callcenter', 'callcenter'],
-  ['/admin/recordings', 'callcenter'],
-  ['/admin/telephony', 'callcenter'],
-  ['/admin/extensions', 'callcenter'],
+  ['/admin/callcenter', 'manage_telephony'],
+  ['/admin/recordings', 'calls'],
+  ['/admin/telephony', 'manage_telephony'],
+  ['/admin/extensions', 'manage_extensions'],
   ['/admin/campaigns', 'campaigns'],
   ['/admin/email-templates', 'campaigns'],
   ['/admin/reports', 'reports'],
   ['/admin/usage', 'reports'],
   ['/admin/kb', 'kb'],
   ['/admin/teams', 'teams'],
+  ['/admin/audit-logs', 'audit_logs'],
+  ['/admin/error-logs', 'error_logs'],
 ]
 
 export function middleware(request: NextRequest) {
@@ -59,7 +60,6 @@ export const config = {
     '/admin/tickets/:path*',
     '/admin/ticket-fields',
     '/admin/crm/:path*',
-    '/dashboard/:path*',
     '/admin/callcenter/:path*',
     '/admin/recordings',
     '/admin/telephony',
@@ -70,5 +70,7 @@ export const config = {
     '/admin/usage',
     '/admin/kb/:path*',
     '/admin/teams',
+    '/admin/audit-logs',
+    '/admin/error-logs',
   ],
 }

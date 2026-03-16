@@ -17,6 +17,11 @@ export async function fetchMyPermissions(): Promise<Record<string, string[]>> {
         const data = await response.json();
         const permissions: Record<string, string[]> = data.permissions || {};
         localStorage.setItem('user_permissions', JSON.stringify(permissions));
+        // Sync page keys to cookie so Next.js middleware can read them
+        if (typeof document !== 'undefined') {
+            const pages = Object.keys(permissions);
+            document.cookie = `user_pages=${encodeURIComponent(JSON.stringify(pages))}; path=/; SameSite=Lax`;
+        }
         // Notify components that permissions have been loaded
         window.dispatchEvent(new Event('permissions-loaded'));
         return permissions;
