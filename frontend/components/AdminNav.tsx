@@ -173,6 +173,9 @@ function AdminNavInner() {
     const [isPm, setIsPm] = useState(false)
     const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
+    // Re-render trigger — incremented when permissions finish loading
+    const [permVer, setPermVer] = useState(0)
+
     useEffect(() => {
         setIsMounted(true)
         const userStr = localStorage.getItem('user')
@@ -194,6 +197,10 @@ function AdminNavInner() {
                 .then((r: any) => setIsPm(r.data?.is_pm || false))
                 .catch(() => {})
         }
+        // Re-render sidebar when permissions finish loading (async)
+        const onPermsLoaded = () => setPermVer(v => v + 1)
+        window.addEventListener('permissions-loaded', onPermsLoaded)
+        return () => window.removeEventListener('permissions-loaded', onPermsLoaded)
     }, [])
 
     const toggleGroup = (label: string) => {

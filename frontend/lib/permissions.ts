@@ -17,6 +17,8 @@ export async function fetchMyPermissions(): Promise<Record<string, string[]>> {
         const data = await response.json();
         const permissions: Record<string, string[]> = data.permissions || {};
         localStorage.setItem('user_permissions', JSON.stringify(permissions));
+        // Notify components that permissions have been loaded
+        window.dispatchEvent(new Event('permissions-loaded'));
         return permissions;
     } catch (err) {
         console.error('Failed to fetch user permissions:', err);
