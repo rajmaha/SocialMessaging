@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useBranding } from '@/lib/branding-context'
-import { hasModuleAccess, hasAdminFeature, hasPageAccess } from '@/lib/permissions'
+import { hasModuleAccess, hasAdminFeature, hasPageAccess, permissionsReady, fetchMyPermissions } from '@/lib/permissions'
 import { useEvents } from '@/lib/events-context'
 import { menuApi, pmsApi } from '@/lib/api'
 
@@ -198,9 +198,30 @@ function AdminNavInner() {
                 .catch(() => {})
         }
         // Re-render sidebar when permissions finish loading (async)
-        const onPermsLoaded = () => setPermVer(v => v + 1)
+        const onPermsLoaded = () => {
+            console.debug('[AdminNav] permissions-loaded event received, re-rendering sidebar')
+            setPermVer(v => v + 1)
+        }
         window.addEventListener('permissions-loaded', onPermsLoaded)
-        return () => window.removeEventListener('permissions-loaded', onPermsLoaded)
+
+        // If permissions haven't loaded yet, trigger a fetch (safety net)
+        if (!permissionsReady()) {
+            console.debug('[AdminNav] Permissions not ready, triggering fetch')
+            fetchMyPermissions()
+        }
+
+        // Also re-fetch permissions when tab becomes visible (handles role changes)
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible') {
+                fetchMyPermissions()
+            }
+        }
+        document.addEventListener('visibilitychange', onVisibility)
+
+        return () => {
+            window.removeEventListener('permissions-loaded', onPermsLoaded)
+            document.removeEventListener('visibilitychange', onVisibility)
+        }
     }, [])
 
     const toggleGroup = (label: string) => {

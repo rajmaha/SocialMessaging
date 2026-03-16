@@ -35,8 +35,44 @@ async def my_permissions(
     db: Session = Depends(get_db)
 ):
     """Return effective permission matrix for the current user (role + overrides)."""
+    import logging
+    logger = logging.getLogger("roles")
+    logger.info(f"[my-permissions] user_id={current_user.id} role='{current_user.role}'")
+
     perms = await get_effective_permissions(current_user, db)
+    logger.info(f"[my-permissions] user_id={current_user.id} modules={list(perms.keys())}")
     return {"permissions": perms}
+
+
+@router.get("/debug-permissions")
+async def debug_permissions(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """DEBUG: Show the full chain of permission resolution for the current user."""
+    role_obj = db.query(Role).filter(Role.slug == current_user.role).first()
+    from app.models.user_permission_override import UserPermissionOverride
+    overrides = db.query(UserPermissionOverride).filter(
+        UserPermissionOverride.user_id == current_user.id
+    ).all()
+
+    perms = await get_effective_permissions(current_user, db)
+
+    return {
+        "user_id": current_user.id,
+        "user_email": current_user.email,
+        "user_role_field": current_user.role,
+        "role_found": role_obj is not None,
+        "role_slug": role_obj.slug if role_obj else None,
+        "role_name": role_obj.name if role_obj else None,
+        "role_permissions_raw": dict(role_obj.permissions or {}) if role_obj else {},
+        "overrides_count": len(overrides),
+        "overrides": [
+            {"module": o.module_key, "granted": o.granted_actions, "revoked": o.revoked_actions}
+            for o in overrides
+        ],
+        "effective_permissions": perms,
+    }
 
 
 @router.post("", response_model=RoleOut)

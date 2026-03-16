@@ -1,22 +1,41 @@
 import { getAuthToken } from './auth';
 import { API_URL } from '@/lib/config';
 
+/** Track whether permissions have been loaded in this session */
+let _permissionsLoaded = false;
+export function permissionsReady(): boolean {
+    return _permissionsLoaded;
+}
+
 /**
  * Fetches the effective permission matrix and stores in localStorage.
  * Returns: { "module_key": ["action1", "action2"], ... }
  */
 export async function fetchMyPermissions(): Promise<Record<string, string[]>> {
     const token = getAuthToken();
-    if (!token) return {};
+    if (!token) {
+        console.warn('[permissions] No auth token, skipping fetch');
+        return {};
+    }
 
     try {
-        const response = await fetch(`${API_URL}/roles/my-permissions`, {
+        const url = `${API_URL}/roles/my-permissions`;
+        console.debug('[permissions] Fetching from:', url);
+        const response = await fetch(url, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        if (!response.ok) return {};
+        if (!response.ok) {
+            console.error('[permissions] API returned', response.status, response.statusText);
+            return {};
+        }
         const data = await response.json();
         const permissions: Record<string, string[]> = data.permissions || {};
+        console.debug('[permissions] Received modules:', Object.keys(permissions).join(', '));
+        console.debug('[permissions] Full data:', JSON.stringify(permissions));
+
         localStorage.setItem('user_permissions', JSON.stringify(permissions));
+        _permissionsLoaded = true;
+
         // Sync page keys to cookie so Next.js middleware can read them
         if (typeof document !== 'undefined') {
             const pages = Object.keys(permissions);
@@ -26,7 +45,7 @@ export async function fetchMyPermissions(): Promise<Record<string, string[]>> {
         window.dispatchEvent(new Event('permissions-loaded'));
         return permissions;
     } catch (err) {
-        console.error('Failed to fetch user permissions:', err);
+        console.error('[permissions] Failed to fetch:', err);
         return {};
     }
 }
