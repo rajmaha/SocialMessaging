@@ -175,7 +175,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
     }
 
     return (
-        <header className="border-b border-gray-200 flex items-center justify-between px-6 h-14 fixed top-0 left-0 right-0 z-[60]"
+        <header className="border-b border-gray-200 flex items-center justify-between px-3 md:px-6 h-14 fixed top-0 left-0 right-0 z-[60]"
             style={{ backgroundColor: 'var(--header-bg)' }}
         >
             {/* Left: brand + tabs */}
@@ -192,7 +192,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                 </Link>
 
                 {/* Navigation Tabs */}
-                <nav className="flex items-center gap-1">
+                <nav className="hidden md:flex items-center gap-1">
                     {canAccessEmail && (
                         <Link
                             href="/dashboard?tab=email"
@@ -307,7 +307,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
             </div>
 
             {/* Right: todos icon + profile dropdown */}
-            <div className="flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-3">
                 <button
                     onClick={() => setTodosSidebarOpen(prev => !prev)}
                     className="relative p-2 text-gray-600 hover:text-gray-900 transition rounded-lg hover:bg-gray-100"
