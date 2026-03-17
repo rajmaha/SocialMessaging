@@ -7,6 +7,7 @@ import { useBranding } from '@/lib/branding-context'
 import { hasModuleAccess, hasAdminFeature, hasPageAccess, permissionsReady, fetchMyPermissions } from '@/lib/permissions'
 import { useEvents } from '@/lib/events-context'
 import { menuApi, pmsApi } from '@/lib/api'
+import { FiMenu } from 'react-icons/fi'
 
 const sidebarGroups = [
     {
@@ -151,14 +152,31 @@ const sidebarGroups = [
 ]
 
 export default function AdminNav() {
+    const [mobileOpen, setMobileOpen] = useState(false)
     return (
-        <Suspense fallback={<aside className="fixed left-0 bottom-0 flex flex-col border-r border-gray-700 z-40" style={{ top: 56, width: 240, backgroundColor: 'var(--secondary-color)' }} />}>
-            <AdminNavInner />
-        </Suspense>
+        <>
+            <button
+                className="fixed top-[60px] left-2 z-50 p-2 bg-white rounded-lg shadow-md md:hidden"
+                onClick={() => setMobileOpen(!mobileOpen)}
+            >
+                <FiMenu size={20} />
+            </button>
+            {mobileOpen && (
+                <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setMobileOpen(false)} />
+            )}
+            <Suspense fallback={
+                <aside
+                    className={`fixed left-0 bottom-0 flex flex-col border-r border-gray-700 z-40 transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
+                    style={{ top: 56, width: 240, backgroundColor: 'var(--secondary-color)' }}
+                />
+            }>
+                <AdminNavInner mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+            </Suspense>
+        </>
     )
 }
 
-function AdminNavInner() {
+function AdminNavInner({ mobileOpen, setMobileOpen }: { mobileOpen: boolean; setMobileOpen: (open: boolean) => void }) {
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const brandingCtx = useBranding()
@@ -292,7 +310,7 @@ function AdminNavInner() {
     if (!isMounted) {
         return (
             <aside
-                className="fixed left-0 bottom-0 flex flex-col border-r border-gray-700 z-40"
+                className={`fixed left-0 bottom-0 flex flex-col border-r border-gray-700 z-40 transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
                 style={{
                     top: 56,
                     width: 240,
@@ -306,7 +324,7 @@ function AdminNavInner() {
     return (
         <>
             <aside
-                className="fixed left-0 bottom-0 flex flex-col border-r border-gray-700 z-40"
+                className={`fixed left-0 bottom-0 flex flex-col border-r border-gray-700 z-40 transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
                 style={{
                     top: 56,
                     width: 240,
@@ -358,6 +376,7 @@ function AdminNavInner() {
                                                 <li key={item.href}>
                                                     <Link
                                                         href={item.href}
+                                                        onClick={() => setMobileOpen(false)}
                                                         className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-all ${active
                                                             ? 'text-white font-semibold'
                                                             : 'text-gray-300 hover:bg-white/10 hover:text-white'
@@ -417,6 +436,7 @@ function AdminNavInner() {
                                                         href={href}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
+                                                        onClick={() => setMobileOpen(false)}
                                                         className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all text-gray-300 hover:bg-white/10 hover:text-white"
                                                         style={{ color: 'var(--sidebar-text)', opacity: 0.8 }}
                                                     >
@@ -428,6 +448,7 @@ function AdminNavInner() {
                                                     <Link
                                                         href={href}
                                                         target={item.open_in_new_tab ? '_blank' : undefined}
+                                                        onClick={() => setMobileOpen(false)}
                                                         className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-all ${active
                                                             ? 'text-white font-semibold'
                                                             : 'text-gray-300 hover:bg-white/10 hover:text-white'
