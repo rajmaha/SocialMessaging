@@ -96,16 +96,16 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-100 pb-16 md:pb-0">
       {/* Navigation */}
       <nav className="bg-blue-700 text-white p-4">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Social Media Messenger</h1>
-          <div className="space-x-4">
-            <Link href="/dashboard" className="hover:bg-blue-600 px-3 py-2 rounded">
+          <h1 className="text-xl md:text-2xl font-bold">Social Media Messenger</h1>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/dashboard" className="hover:bg-blue-600 px-3 py-2 rounded text-sm">
               Dashboard
             </Link>
-            <Link href="/settings" className="hover:bg-blue-600 px-3 py-2 rounded">
+            <Link href="/settings" className="hover:bg-blue-600 px-3 py-2 rounded text-sm">
               Settings
             </Link>
             <button
@@ -113,7 +113,7 @@ export default function ChangePasswordPage() {
                 localStorage.removeItem('user');
                 router.push('/login');
               }}
-              className="hover:bg-blue-600 px-3 py-2 rounded"
+              className="hover:bg-blue-600 px-3 py-2 rounded text-sm"
             >
               Logout
             </button>
@@ -122,7 +122,7 @@ export default function ChangePasswordPage() {
       </nav>
 
       {/* Main Content */}
-      <main className="max-w-md mx-auto p-6 mt-8">
+      <main className="max-w-md mx-auto px-4 md:px-6 py-6 mt-4 md:mt-8">
         <div className="bg-white rounded-lg shadow-lg p-8">
           {/* Header */}
           <div className="mb-8">
