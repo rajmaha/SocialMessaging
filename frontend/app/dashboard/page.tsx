@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { FiArrowLeft } from 'react-icons/fi'
 
 function playNotificationSound() {
   try {
@@ -67,6 +68,7 @@ function DashboardPage() {
   )
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([])
   const [activeConvIds, setActiveConvIds] = useState<Set<number>>(new Set())
+  const [mobileShowChat, setMobileShowChat] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [mineOnly, setMineOnly] = useState(false)
   const [unassignedOnly, setUnassignedOnly] = useState(false)
@@ -145,6 +147,16 @@ function DashboardPage() {
   // Keep refs in sync with state for use inside event callbacks
   useEffect(() => { selectedConvRef.current = selectedConversation }, [selectedConversation])
   useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
+
+  // Hide bottom nav when chat is open on mobile
+  useEffect(() => {
+    if (mobileShowChat) {
+      document.body.classList.add('mobile-chat-open')
+    } else {
+      document.body.classList.remove('mobile-chat-open')
+    }
+    return () => document.body.classList.remove('mobile-chat-open')
+  }, [mobileShowChat])
 
   // Track which webchat visitors are currently online
   useEffect(() => {
@@ -266,7 +278,7 @@ function DashboardPage() {
       <MainHeader user={user} activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Tab content */}
-      <div className="flex-1 overflow-hidden pt-14">
+      <div className="flex-1 overflow-hidden pt-14 pb-16 md:pb-0">
         {activeTab === 'email' ? (
           // Email: full-screen iframe so the email page renders with all its functionality
           <iframe
@@ -278,7 +290,7 @@ function DashboardPage() {
           // Messaging
           <main className="flex h-full bg-white">
             {/* Sidebar */}
-            <div className="w-80 flex flex-col border-r border-gray-200">
+            <div className={`${mobileShowChat ? 'hidden' : 'flex'} md:flex w-full md:w-80 flex-col border-r border-gray-200`}>
               <PlatformFilter
                 selectedPlatform={selectedPlatform}
                 onPlatformChange={handlePlatformChange}
@@ -286,7 +298,7 @@ function DashboardPage() {
               {/* Filters */}
               <div className="border-b bg-white">
                 {/* Assignment filter row */}
-                <div className="px-3 pt-2 pb-1 flex gap-1">
+                <div className="flex overflow-x-auto gap-2 pb-2 -mx-3 px-3 md:mx-0 md:px-0 md:flex-wrap pt-2">
                   <button
                     onClick={() => { if (mineOnly || unassignedOnly) { setMineOnly(false); mineOnlyRef.current = false; setUnassignedOnly(false); unassignedOnlyRef.current = false; if (user) fetchConversations(user.user_id, undefined, undefined, false, false) } }}
                     className={`flex-1 text-xs py-1.5 rounded font-semibold transition ${!mineOnly && !unassignedOnly ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -316,7 +328,7 @@ function DashboardPage() {
                   </button>
                 </div>
                 {/* Status filter */}
-                <div className="px-3 pb-2 flex gap-1">
+                <div className="flex overflow-x-auto gap-2 pb-2 -mx-3 px-3 md:mx-0 md:px-0 md:flex-wrap">
                   {(['all', 'open', 'pending', 'resolved'] as const).map((s) => (
                     <button
                       key={s}
@@ -361,7 +373,7 @@ function DashboardPage() {
               <ConversationList
                 conversations={conversations}
                 selectedConversation={selectedConversation}
-                onSelectConversation={setSelectedConversation}
+                onSelectConversation={(conv) => { setSelectedConversation(conv); setMobileShowChat(true) }}
                 loading={loading}
                 activeConvIds={activeConvIds}
                 accountMap={accountMap}
@@ -370,10 +382,25 @@ function DashboardPage() {
               />
             </div>
             {/* Chat */}
-            <ChatWindow
-              conversation={selectedConversation}
-              onRefresh={() => user && fetchConversations(user.user_id)}
-            />
+            <div className={`${mobileShowChat ? 'flex' : 'hidden'} md:flex flex-1 flex-col`}>
+              {mobileShowChat && (
+                <div className="flex md:hidden items-center gap-2 px-3 py-2 border-b bg-white">
+                  <button
+                    onClick={() => { setMobileShowChat(false) }}
+                    className="p-2 -ml-2 rounded-lg hover:bg-gray-100"
+                  >
+                    <FiArrowLeft size={20} />
+                  </button>
+                  <span className="font-semibold truncate">
+                    {selectedConversation?.contact_name || 'Chat'}
+                  </span>
+                </div>
+              )}
+              <ChatWindow
+                conversation={selectedConversation}
+                onRefresh={() => user && fetchConversations(user.user_id)}
+              />
+            </div>
           </main>
         )}
       </div>
