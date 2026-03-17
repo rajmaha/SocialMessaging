@@ -1,0 +1,100 @@
+<h2>Mobile Header Navigation</h2>
+<p class="subtitle">The current header tabs won't fit on phone screens. How should we handle navigation?</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="height:260px;border:2px solid #666;border-radius:12px;overflow:hidden;background:#fff;">
+        <!-- Header with hamburger -->
+        <div style="background:#1a1a2e;color:white;padding:10px 12px;font-size:12px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:16px;">☰</span>
+          <span style="font-weight:bold;">SocialMedia</span>
+          <div style="width:28px;height:28px;background:#4a4a6a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;">RM</div>
+        </div>
+        <!-- Slide-out menu overlay -->
+        <div style="display:flex;height:calc(100% - 42px);">
+          <div style="width:65%;background:#1a1a2e;color:white;padding:16px 12px;">
+            <div style="padding:10px 0;border-bottom:1px solid #333;font-size:12px;">📧 Email</div>
+            <div style="padding:10px 0;border-bottom:1px solid #333;font-size:12px;background:#ffffff20;margin:-0 -12px;padding-left:12px;">💬 Messaging</div>
+            <div style="padding:10px 0;border-bottom:1px solid #333;font-size:12px;">🏢 Workspace</div>
+            <div style="padding:10px 0;border-bottom:1px solid #333;font-size:12px;">⚙️ Admin</div>
+            <div style="padding:10px 0;font-size:12px;">📋 Settings</div>
+          </div>
+          <div style="width:35%;background:rgba(0,0,0,0.4);"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Hamburger Drawer</h3>
+      <p>Hamburger icon opens a slide-out drawer with all nav items. Classic mobile pattern — hides nav until needed.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="height:260px;border:2px solid #666;border-radius:12px;overflow:hidden;background:#fff;display:flex;flex-direction:column;">
+        <!-- Header compact -->
+        <div style="background:#1a1a2e;color:white;padding:10px 12px;font-size:12px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:bold;">SocialMedia</span>
+          <div style="width:28px;height:28px;background:#4a4a6a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;">RM</div>
+        </div>
+        <!-- Content area -->
+        <div style="flex:1;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#999;font-size:11px;">
+          Page content here
+        </div>
+        <!-- Bottom tab bar -->
+        <div style="background:#fff;border-top:2px solid #eee;display:flex;justify-content:space-around;padding:8px 0 12px;">
+          <div style="text-align:center;font-size:9px;color:#999;">
+            <div style="font-size:16px;">📧</div>Email
+          </div>
+          <div style="text-align:center;font-size:9px;color:#3b82f6;">
+            <div style="font-size:16px;">💬</div>Messaging
+          </div>
+          <div style="text-align:center;font-size:9px;color:#999;">
+            <div style="font-size:16px;">🏢</div>Workspace
+          </div>
+          <div style="text-align:center;font-size:9px;color:#999;">
+            <div style="font-size:16px;">⚙️</div>Admin
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Bottom Tab Bar</h3>
+      <p>Fixed tabs at the bottom like native mobile apps. Always visible, thumb-friendly. Uses vertical space though.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="height:260px;border:2px solid #666;border-radius:12px;overflow:hidden;background:#fff;display:flex;flex-direction:column;">
+        <!-- Header with hamburger -->
+        <div style="background:#1a1a2e;color:white;padding:10px 12px;font-size:12px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:16px;">☰</span>
+          <span style="font-weight:bold;">SocialMedia</span>
+          <div style="width:28px;height:28px;background:#4a4a6a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;">RM</div>
+        </div>
+        <!-- Content area -->
+        <div style="flex:1;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#999;font-size:11px;">
+          Page content here
+        </div>
+        <!-- Bottom bar with just key actions -->
+        <div style="background:#fff;border-top:2px solid #eee;display:flex;justify-content:space-around;padding:8px 0 12px;">
+          <div style="text-align:center;font-size:9px;color:#3b82f6;">
+            <div style="font-size:16px;">💬</div>Messaging
+          </div>
+          <div style="text-align:center;font-size:9px;color:#999;">
+            <div style="font-size:16px;">📧</div>Email
+          </div>
+          <div style="text-align:center;font-size:9px;color:#999;">
+            <div style="font-size:16px;">☰</div>More
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Hybrid</h3>
+      <p>Bottom bar with 2-3 key sections (Messaging, Email) + "More" that opens a drawer for Admin, Workspace, Settings. Best of both.</p>
+    </div>
+  </div>
+</div>
