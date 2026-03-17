@@ -22,6 +22,7 @@ RUN if [ -f package-lock.json ]; then npm install; else npm install; fi
 
 # Copy source and build
 COPY . .
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 # Stage 2: Minimal production image
