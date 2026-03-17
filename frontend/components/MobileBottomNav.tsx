@@ -29,10 +29,10 @@ export default function MobileBottomNav() {
     { label: 'Profile', icon: FiUser, href: '/settings?tab=profile' },
   ]
 
-  const tab = searchParams.get('tab')
+  const activeTabParam = searchParams.get('tab')
   const isActive = (key: string) => {
-    if (key === 'messaging') return pathname === '/dashboard' && tab !== 'email'
-    if (key === 'email') return pathname.includes('/email') || (pathname === '/dashboard' && tab === 'email')
+    if (key === 'messaging') return pathname === '/dashboard' && activeTabParam !== 'email'
+    if (key === 'email') return pathname.includes('/email') || (pathname === '/dashboard' && activeTabParam === 'email')
     return false
   }
 

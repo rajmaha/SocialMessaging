@@ -259,14 +259,14 @@ body.mobile-chat-open .mobile-bottom-nav { display: none !important; }
   font-style: normal !important;
 }
 
-/* Prevent horizontal overflow on mobile */
-html, body {
-  overflow-x: hidden;
-  max-width: 100vw;
-}
-
-/* Minimum readable font size on mobile */
+/* Mobile-specific styles */
 @media (max-width: 767px) {
+  /* Prevent horizontal overflow on mobile */
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+  /* Minimum readable font size */
   body { font-size: 14px; }
 }
 

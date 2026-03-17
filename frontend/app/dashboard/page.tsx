@@ -259,7 +259,7 @@ function DashboardPage() {
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Toast notifications (bottom-left) */}
       {toasts.length > 0 && (
-        <div className="fixed bottom-6 left-6 z-50 flex flex-col gap-2 pointer-events-none">
+        <div className="fixed bottom-20 md:bottom-6 left-6 z-50 flex flex-col gap-2 pointer-events-none">
           {toasts.map((t) => (
             <div
               key={t.id}
