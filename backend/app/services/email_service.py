@@ -787,6 +787,10 @@ class EmailService:
                             synced_count += 1
 
                 
+                # Commit INBOX emails before spam sync to avoid session conflicts
+                if db:
+                    db.commit()
+
                 # --- Sync Spam/Junk folder ---
                 try:
                     available_folders = [f.name for f in mailbox.folder.list()]
@@ -803,11 +807,16 @@ class EmailService:
                             spam_hash = hashlib.md5(
                                 f"{smsg.subject or ''}{smsg.from_}{smsg.date}".encode()
                             ).hexdigest()
+                            # Check globally (unique index is not per-account)
                             existing_spam = db.query(Email).filter(
                                 Email.message_id == spam_hash,
-                                Email.account_id == account.id
                             ).first()
-                            if not existing_spam:
+                            if existing_spam:
+                                # Already synced (e.g. from INBOX) — just mark as spam
+                                if not existing_spam.is_spam:
+                                    existing_spam.is_spam = True
+                                continue
+                            try:
                                 spam_email = Email(
                                     account_id=account.id,
                                     message_id=spam_hash,
@@ -821,9 +830,17 @@ class EmailService:
                                     is_spam=True,
                                 )
                                 db.add(spam_email)
+                                db.flush()
                                 synced_count += 1
+                            except Exception:
+                                db.rollback()
+                        db.commit()
                 except Exception as _spam_err:
                     logger.warning(f"Spam folder sync failed: {_spam_err}")
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
                 # --- end spam sync ---
 
                 if db:
