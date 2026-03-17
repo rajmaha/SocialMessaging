@@ -8,8 +8,10 @@ import { API_URL } from '@/lib/config';
 // Resolve image URLs — if already absolute, use as-is; otherwise prepend API_URL
 function resolveUrl(url: string | null | undefined): string {
   if (!url) return ''
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//')) return url
-  return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`
+  // Strip localhost URLs so they become relative paths (works in production via rewrites)
+  const normalized = url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//, '/')
+  if (normalized.startsWith('http://') || normalized.startsWith('https://') || normalized.startsWith('//')) return normalized
+  return `${API_URL}${normalized.startsWith('/') ? '' : '/'}${normalized}`
 }
 
 // Singleton AudioContext — created on first user gesture; reused for all sounds

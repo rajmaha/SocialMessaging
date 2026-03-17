@@ -146,6 +146,8 @@ async def sync_emails(
             "message": f"Successfully synced {synced_count} emails from {account.email_address}"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to sync emails: {str(e)}")
 

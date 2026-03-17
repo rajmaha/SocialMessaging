@@ -48,6 +48,9 @@ def _get_email_branding(db) -> dict:
         if not b:
             return defaults
         logo_url = b.logo_url
+        # Normalize localhost URLs to use the configured BACKEND_URL
+        if logo_url and re.match(r'^https?://(localhost|127\.0\.0\.1)(:\d+)?/', logo_url):
+            logo_url = re.sub(r'^https?://(localhost|127\.0\.0\.1)(:\d+)?/', '/', logo_url)
         if logo_url and not logo_url.startswith("http"):
             logo_url = f"{_cfg.BACKEND_URL.rstrip('/')}/{logo_url.lstrip('/')}"
         return {

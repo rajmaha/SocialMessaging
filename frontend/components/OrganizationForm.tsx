@@ -39,7 +39,8 @@ export default function OrganizationForm({ initialData, onSuccess, onCancel }: O
                 is_active: initialData.is_active ?? 1
             })
             if (initialData.logo_url) {
-                setLogoPreview(`${API_URL}${initialData.logo_url}`)
+                const normalized = initialData.logo_url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//, '/')
+                setLogoPreview(`${API_URL}${normalized}`)
             }
         }
     }, [initialData])

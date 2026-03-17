@@ -105,6 +105,10 @@ const _DEFAULT_BRANDING = {
   timezone: 'UTC',
 }
 
+// Rewrite localhost URLs in HTML to relative paths so images/assets load in production
+const sanitizeLocalhostUrls = (html: string): string =>
+  html.replace(/https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//g, '/')
+
 const FOLDERS = [
   { id: 'inbox', label: 'Inbox', endpoint: 'inbox', icon: '📥', type: 'regular' },
   { id: 'sent', label: 'Sent', endpoint: 'sent', icon: '📤', type: 'regular' },
@@ -3442,7 +3446,7 @@ export default function EmailPage() {
                                 <div className="px-4 py-4">
                                   <div className="bg-white rounded-lg border border-gray-100 p-4 overflow-auto max-h-[60vh] text-sm text-gray-800 leading-relaxed email-body">
                                     {email.body_html ? (
-                                      <div dangerouslySetInnerHTML={{ __html: email.body_html }} />
+                                      <div dangerouslySetInnerHTML={{ __html: sanitizeLocalhostUrls(email.body_html) }} />
                                     ) : (
                                       <pre className="whitespace-pre-wrap font-sans">{email.body_text || 'No content'}</pre>
                                     )}

@@ -30,6 +30,7 @@ const nextConfig = {
       { source: '/attachments/:path*',         destination: `${backendUrl}/attachments/:path*` },
       { source: '/audio/:path*',               destination: `${backendUrl}/audio/:path*` },
       { source: '/subscription-logos/:path*',  destination: `${backendUrl}/subscription-logos/:path*` },
+      { source: '/uploads/:path*',              destination: `${backendUrl}/uploads/:path*` },
       { source: '/visitor-photos/:path*',      destination: `${backendUrl}/visitor-photos/:path*` },
       { source: '/visitor-cctv/:path*',        destination: `${backendUrl}/visitor-cctv/:path*` },
       // Real-time / WebSocket
