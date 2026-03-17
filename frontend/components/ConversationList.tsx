@@ -98,7 +98,7 @@ export default function ConversationList({
         <div
           key={conversation.id}
           onClick={() => onSelectConversation(conversation)}
-          className={`p-4 border-b cursor-pointer transition relative ${
+          className={`p-3 md:p-4 border-b cursor-pointer transition relative ${
             selectedConversation?.id === conversation.id
               ? 'bg-blue-50 border-l-4 border-l-blue-500'
               : !conversation.assigned_to && conversation.unread_count > 0
@@ -107,7 +107,7 @@ export default function ConversationList({
           } ${conversation.platform === 'webchat' && !activeConvIds.has(conversation.id) && conversation.assigned_to ? 'opacity-50' : ''}`}
         >
           <div className="flex justify-between items-start mb-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="relative">
                 <div
                   className={`w-3 h-3 rounded-full ${
