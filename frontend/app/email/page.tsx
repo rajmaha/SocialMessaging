@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import { FiArrowLeft } from 'react-icons/fi'
 import axios from 'axios'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -2273,7 +2274,7 @@ export default function EmailPage() {
   }
 
   return (
-    <div className="h-screen bg-gray-100 flex flex-col">
+    <div className="h-screen bg-gray-100 flex flex-col pb-16 md:pb-0">
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white font-semibold z-50 animate-fade-in ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
@@ -2752,7 +2753,7 @@ export default function EmailPage() {
         </div>
 
         {/* Email List Column */}
-        <div className={`${mobileView === 'detail' ? 'hidden' : 'flex'} w-full md:w-80 md:flex bg-white border-r border-gray-200 flex flex-col flex-shrink-0`}>
+        <div className={`${mobileView === 'detail' ? 'hidden' : 'flex'} md:flex w-full md:w-[380px] flex-col border-r border-gray-200 bg-white flex-shrink-0`}>
           <div className="p-4 border-b border-gray-200">
             <div className="mb-3">
               <input
@@ -2777,7 +2778,7 @@ export default function EmailPage() {
             </div>
 
             <div className="mb-3">
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex overflow-x-auto gap-1 whitespace-nowrap">
                 <button
                   onClick={() => {
                     if (sortBy === 'date') {
@@ -3113,6 +3114,15 @@ export default function EmailPage() {
 
         {/* Email Detail Column */}
         <div className={`${mobileView === 'list' ? 'hidden' : 'flex'} md:flex flex-1 overflow-hidden flex-col bg-white`}>
+          {/* Mobile back button */}
+          {mobileView === 'detail' && (
+            <div className="flex md:hidden items-center gap-2 px-3 py-2 border-b bg-white flex-shrink-0">
+              <button onClick={() => setMobileView('list')} className="p-2 -ml-2 rounded-lg hover:bg-gray-100">
+                <FiArrowLeft size={20} />
+              </button>
+              <span className="font-semibold truncate">Back to Inbox</span>
+            </div>
+          )}
           {showCompose ? (
             <div className="flex flex-col h-full">
               {/* Header */}
@@ -3183,7 +3193,7 @@ export default function EmailPage() {
                 </div>
               )}
               {/* Footer toolbar */}
-              <div className="border-t border-gray-200 px-3 py-2.5 flex items-center gap-1 flex-shrink-0 bg-white">
+              <div className="sticky bottom-0 border-t border-gray-200 px-3 py-2.5 flex items-center gap-1 flex-shrink-0 bg-white z-10">
                 <button
                   onClick={handleSendWithUndo}
                   disabled={isSending}
@@ -3213,7 +3223,7 @@ export default function EmailPage() {
                     <button
                       onClick={() => setShowCannedDropdown(v => !v)}
                       title="Insert template"
-                      className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:bg-teal-50 hover:text-teal-600 transition text-sm font-bold mr-0.5"
+                      className="w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-gray-500 hover:bg-teal-50 hover:text-teal-600 transition text-sm font-bold mr-0.5"
                     >
                       &#128196;
                     </button>
@@ -3236,7 +3246,7 @@ export default function EmailPage() {
                     onClick={() => setShowSendLater(v => !v)}
                     disabled={isSending}
                     title="Schedule send"
-                    className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition disabled:opacity-40 mr-1"
+                    className="w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition disabled:opacity-40 mr-1"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -3269,34 +3279,34 @@ export default function EmailPage() {
                 </div>
                 <div className="w-px bg-gray-200 h-5 mx-0.5" />
                 {editor && <>
-                  <button onClick={() => editor.chain().focus().toggleBold().run()} title="Bold" className={`w-7 h-7 rounded flex items-center justify-center text-xs font-bold transition ${editor.isActive('bold') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-600'}`}><strong>B</strong></button>
-                  <button onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic" className={`w-7 h-7 rounded flex items-center justify-center text-xs italic transition ${editor.isActive('italic') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-600'}`}><em>I</em></button>
-                  <button onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline" className={`w-7 h-7 rounded flex items-center justify-center text-xs transition ${editor.isActive('underline') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-600'}`}><u>U</u></button>
-                  <button onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough" className={`w-7 h-7 rounded flex items-center justify-center text-xs transition ${editor.isActive('strike') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-600'}`}><s>S</s></button>
+                  <button onClick={() => editor.chain().focus().toggleBold().run()} title="Bold" className={`w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-xs font-bold transition ${editor.isActive('bold') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-600'}`}><strong>B</strong></button>
+                  <button onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic" className={`w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-xs italic transition ${editor.isActive('italic') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-600'}`}><em>I</em></button>
+                  <button onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline" className={`w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-xs transition ${editor.isActive('underline') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-600'}`}><u>U</u></button>
+                  <button onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough" className={`w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-xs transition ${editor.isActive('strike') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-600'}`}><s>S</s></button>
                   <div className="w-px bg-gray-200 h-4 mx-0.5" />
-                  <label title="Text color" className="relative w-7 h-7 rounded flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 transition gap-px">
+                  <label title="Text color" className="relative w-10 h-10 md:w-7 md:h-7 rounded flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 transition gap-px">
                     <span className="text-xs font-bold text-gray-700 leading-none" style={{ color: textColor }}>A</span>
                     <span className="w-4 h-1 rounded-sm" style={{ backgroundColor: textColor }} />
                     <input type="color" value={textColor} onChange={(e) => { setTextColor(e.target.value); editor.chain().focus().setColor(e.target.value).run() }} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
                   </label>
                   <div className="w-px bg-gray-200 h-4 mx-0.5" />
-                  <button onClick={() => editor.chain().focus().toggleBulletList().run()} title="Bullet list" className={`w-7 h-7 rounded flex items-center justify-center transition ${editor.isActive('bulletList') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-500'}`}>
+                  <button onClick={() => editor.chain().focus().toggleBulletList().run()} title="Bullet list" className={`w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center transition ${editor.isActive('bulletList') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-500'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
                   </button>
-                  <button onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list" className={`w-7 h-7 rounded flex items-center justify-center transition ${editor.isActive('orderedList') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-500'}`}>
+                  <button onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list" className={`w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center transition ${editor.isActive('orderedList') ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-500'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                   </button>
                   <div className="w-px bg-gray-200 h-4 mx-0.5" />
-                  <label title="Insert image" className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 cursor-pointer transition">
+                  <label title="Insert image" className="w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 cursor-pointer transition">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = (ev) => { const src = ev.target?.result as string; if (src) editor.chain().focus().setImage({ src }).run() }; reader.readAsDataURL(file); e.currentTarget.value = '' }} />
                   </label>
                   <div className="w-px bg-gray-200 h-4 mx-0.5" />
-                  <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().chain().focus().undo().run()} title="Undo" className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition disabled:opacity-30 text-sm">↶</button>
-                  <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().chain().focus().redo().run()} title="Redo" className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition disabled:opacity-30 text-sm">↷</button>
+                  <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().chain().focus().undo().run()} title="Undo" className="w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition disabled:opacity-30 text-sm">↶</button>
+                  <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().chain().focus().redo().run()} title="Redo" className="w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition disabled:opacity-30 text-sm">↷</button>
                 </>}
                 <div className="flex-1" />
-                <label htmlFor="compose-attach-main" title="Attach file" className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 cursor-pointer transition">
+                <label htmlFor="compose-attach-main" title="Attach file" className="w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 cursor-pointer transition">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                   <input id="compose-attach-main" type="file" multiple className="hidden" onChange={(e) => setComposeData({ ...composeData, attachments: Array.from(e.target.files || []) })} />
                 </label>
@@ -3305,7 +3315,7 @@ export default function EmailPage() {
                     <button
                       onClick={() => setShowSigDropdown(v => !v)}
                       title="Insert signature"
-                      className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition text-base"
+                      className="w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition text-base"
                     >✍️</button>
                     {showSigDropdown && (
                       <>
@@ -3339,7 +3349,7 @@ export default function EmailPage() {
                 {autoSaveStatus === 'saved' && (
                   <span className="text-xs text-green-500 px-1">✓ Saved</span>
                 )}
-                <button onClick={() => saveDraft(false)} title="Save draft" className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition">
+                <button onClick={() => saveDraft(false)} title="Save draft" className="w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
                 </button>
                 <div className="ml-auto flex items-center gap-3">
@@ -3358,7 +3368,7 @@ export default function EmailPage() {
                       )}
                     </span>
                   )}
-                  <button onClick={resetCompose} title="Discard" className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500 transition">
+                  <button onClick={resetCompose} title="Discard" className="w-10 h-10 md:w-7 md:h-7 rounded flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500 transition">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   </button>
                 </div>
