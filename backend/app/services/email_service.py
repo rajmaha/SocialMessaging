@@ -6,6 +6,7 @@ import smtplib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formatdate as _formatdate
 from app.config import settings
 import os
 import re
@@ -219,6 +220,7 @@ class EmailService:
             # Send actual email
             message = MIMEMultipart("alternative")
             message["Subject"] = subject
+            message["Date"] = _formatdate(localtime=True)
             message["From"] = smtp_config.get("smtp_from_email", self.sender_email)
             message["To"] = to_email
             message.attach(MIMEText(html_body, "html"))
@@ -278,6 +280,7 @@ class EmailService:
 
             message = MIMEMultipart("alternative")
             message["Subject"] = subject
+            message["Date"] = _formatdate(localtime=True)
             message["From"] = smtp_config.get("smtp_from_email", self.sender_email)
             message["To"] = to_email
             message.attach(MIMEText(html_body, "html"))
@@ -339,6 +342,7 @@ class EmailService:
 
             message = MIMEMultipart("mixed")
             message["Subject"] = subject
+            message["Date"] = _formatdate(localtime=True)
             message["From"] = smtp_config.get("smtp_from_email", self.sender_email)
             message["To"] = to_email
 
@@ -487,6 +491,7 @@ class EmailService:
 
             message = MIMEMultipart("alternative")
             message["Subject"] = subject
+            message["Date"] = _formatdate(localtime=True)
             message["From"] = smtp_config.get("smtp_from_email", self.sender_email)
             message["To"] = to_email
             message.attach(MIMEText(html_body, "html"))
@@ -531,6 +536,7 @@ class EmailService:
             # Send actual email
             message = MIMEMultipart("alternative")
             message["Subject"] = subject
+            message["Date"] = _formatdate(localtime=True)
             message["From"] = self.sender_email
             message["To"] = to_email
             
@@ -589,7 +595,7 @@ class EmailService:
                                 bcc=", ".join([str(addr) for addr in msg.bcc]) if msg.bcc else None,
                                 body_text=msg.text or "",
                                 body_html=msg.html or "",
-                                received_at=_to_utc(msg.date),
+                                received_at=_to_utc(msg.date) or datetime.utcnow(),
                                 is_read=False,  # Always treat newly synced emails as unread
                                 in_reply_to=getattr(msg, 'in_reply_to', None),
                                 references=getattr(msg, 'references', None),
@@ -825,7 +831,7 @@ class EmailService:
                                     to_address=", ".join([str(a) for a in smsg.to]) if smsg.to else "",
                                     body_text=smsg.text or "",
                                     body_html=smsg.html or "",
-                                    received_at=_to_utc(smsg.date),
+                                    received_at=_to_utc(smsg.date) or datetime.utcnow(),
                                     is_read=False,
                                     is_spam=True,
                                 )
@@ -863,6 +869,7 @@ class EmailService:
             # Create message
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
+            msg['Date'] = _formatdate(localtime=True)
             msg['From'] = f"{account.display_name} <{account.email_address}>" if account.display_name else account.email_address
             msg['To'] = to_address
             if cc:
