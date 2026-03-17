@@ -306,8 +306,8 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                 </nav>
             </div>
 
-            {/* Right: todos icon + profile dropdown */}
-            <div className="hidden md:flex items-center gap-3">
+            {/* Right: todos icon (always visible) + profile dropdown (desktop only) */}
+            <div className="flex items-center gap-3">
                 <button
                     onClick={() => setTodosSidebarOpen(prev => !prev)}
                     className="relative p-2 text-gray-600 hover:text-gray-900 transition rounded-lg hover:bg-gray-100"
@@ -320,7 +320,9 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                         </span>
                     )}
                 </button>
-                <ProfileDropdown user={user} />
+                <div className="hidden md:block">
+                    <ProfileDropdown user={user} />
+                </div>
             </div>
             <TodosSidebar isOpen={todosSidebarOpen} onClose={() => setTodosSidebarOpen(false)} />
             {/* CRM notification toasts */}
