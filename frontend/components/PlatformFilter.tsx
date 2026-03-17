@@ -30,8 +30,8 @@ export default function PlatformFilter({
       .catch(() => {})
   }, [])
 
-  // Always show webchat (built-in), plus any configured platforms
-  const platformIds = ['all', 'webchat', ...activePlatforms.filter((p) => p !== 'webchat')]
+  // Always show webchat (built-in), plus any configured platforms (exclude email — it has its own tab)
+  const platformIds = ['all', 'webchat', ...activePlatforms.filter((p) => p !== 'webchat' && p !== 'email')]
 
   return (
     <div className="p-4 border-b">

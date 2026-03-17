@@ -144,6 +144,16 @@ function DashboardPage() {
     }
   }, [])
 
+  // Sync activeTab when URL search params change (e.g. MobileBottomNav taps)
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as 'messaging' | 'email' | null
+    const newTab = tabParam || 'messaging'
+    if (newTab !== activeTab) {
+      setActiveTab(newTab)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
   // Keep refs in sync with state for use inside event callbacks
   useEffect(() => { selectedConvRef.current = selectedConversation }, [selectedConversation])
   useEffect(() => { activeTabRef.current = activeTab }, [activeTab])

@@ -688,7 +688,18 @@ class EmailService:
                                     contact_name = contact_display or contact_email
 
                                     # Only bridge emails received from others (not our own sent copies)
-                                    if contact_email and contact_email != account.email_address.lower():
+                                    # AND only if the sender's email domain belongs to a known organization
+                                    _should_bridge = bool(contact_email and contact_email != account.email_address.lower())
+                                    if _should_bridge and "@" in contact_email:
+                                        from app.models.organization import Organization as _Org
+                                        sender_domain = contact_email.split("@", 1)[1]
+                                        org_match = db.query(_Org.id).filter(
+                                            _Org.domain_name.ilike(f"%{sender_domain}%")
+                                        ).first()
+                                        if not org_match:
+                                            _should_bridge = False
+
+                                    if _should_bridge:
                                         # Find an EXISTING open/pending email conversation for this sender
                                         # We do NOT create a new conversation here — the sender must have
                                         # already raised a ticket (opened a conversation) for emails to appear in chat.

@@ -20,10 +20,10 @@ export default function MobileBottomNav() {
   const tabs = [
     { key: 'messaging', label: 'Messaging', icon: FiMessageSquare, href: '/dashboard?tab=messaging' },
     { key: 'email', label: 'Email', icon: FiMail, href: '/dashboard?tab=email' },
+    { key: 'workspace', label: 'Workspace', icon: FiHeadphones, href: '/workspace' },
   ]
 
   const drawerItems = [
-    { label: 'Workspace', icon: FiHeadphones, href: '/workspace' },
     { label: 'Admin', icon: FiGrid, href: '/admin' },
     { label: 'Settings', icon: FiSettings, href: '/settings' },
     { label: 'Profile', icon: FiUser, href: '/settings?tab=profile' },
@@ -33,6 +33,7 @@ export default function MobileBottomNav() {
   const isActive = (key: string) => {
     if (key === 'messaging') return pathname === '/dashboard' && activeTabParam !== 'email'
     if (key === 'email') return pathname.includes('/email') || (pathname === '/dashboard' && activeTabParam === 'email')
+    if (key === 'workspace') return pathname.startsWith('/workspace')
     return false
   }
 
