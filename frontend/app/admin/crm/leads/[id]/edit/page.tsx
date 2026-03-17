@@ -90,13 +90,13 @@ export default function EditLeadPage() {
   const labelClass = "block text-sm font-medium text-gray-700 mb-1";
 
   if (fetching) return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 flex items-center justify-center pb-16 md:pb-0">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
     </div>
   );
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8">
@@ -111,7 +111,7 @@ export default function EditLeadPage() {
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
             )}
             <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>First name *</label>
                   <input name="first_name" value={form.first_name} onChange={handleChange} required className={inputClass} />
@@ -122,7 +122,7 @@ export default function EditLeadPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Email</label>
                   <input name="email" type="email" value={form.email} onChange={handleChange} className={inputClass} />
@@ -133,7 +133,7 @@ export default function EditLeadPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Company</label>
                   <input name="company" value={form.company} onChange={handleChange} className={inputClass} />
@@ -144,7 +144,7 @@ export default function EditLeadPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Status</label>
                   <select name="status" value={form.status} onChange={handleChange} className={inputClass}>
@@ -163,7 +163,7 @@ export default function EditLeadPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Estimated Value ($)</label>
                   <input name="estimated_value" type="number" min={0} value={form.estimated_value} onChange={handleChange} className={inputClass} placeholder="0" />

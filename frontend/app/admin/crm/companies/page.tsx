@@ -39,7 +39,7 @@ export default function CompaniesPage() {
   const industries = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Manufacturing', 'Education', 'Other']
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8">
@@ -76,7 +76,7 @@ export default function CompaniesPage() {
         <div className="text-center py-12 text-gray-400">No companies found.</div>
       ) : (
         <div className="bg-white rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
               <tr>
                 <th className="px-4 py-3 text-left">Company</th>
@@ -116,7 +116,7 @@ export default function CompaniesPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
       </main>

@@ -51,17 +51,17 @@ export default function VisitDetailPage() {
   const fmt = (dt?: string) => dt ? formatDateWithTimezone(dt, tz) : '—'
 
   if (loading) return (
-    <><MainHeader user={user!} /><AdminNav /><main className="ml-60 pt-14 p-6 text-gray-400">Loading…</main></>
+    <><MainHeader user={user!} /><AdminNav /><main className="ml-0 md:ml-60 pt-14 p-6 text-gray-400 pb-16 md:pb-0">Loading…</main></>
   )
   if (!visit) return (
-    <><MainHeader user={user!} /><AdminNav /><main className="ml-60 pt-14 p-6 text-red-500">Visit not found</main></>
+    <><MainHeader user={user!} /><AdminNav /><main className="ml-0 md:ml-60 pt-14 p-6 text-red-500 pb-16 md:pb-0">Visit not found</main></>
   )
 
   return (
     <>
       <MainHeader user={user!} />
       <AdminNav />
-      <main className="ml-60 pt-14 p-6 max-w-4xl">
+      <main className="ml-0 md:ml-60 pt-14 p-6 max-w-4xl pb-16 md:pb-0">
         <div className="flex items-center justify-between mb-6">
           <div>
             <button onClick={() => router.back()} className="text-sm text-gray-400 hover:text-gray-600 mb-1">
@@ -81,7 +81,7 @@ export default function VisitDetailPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Details */}
           <div className="bg-white rounded-xl border p-5 space-y-4">
             <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide">Visit Details</h2>

@@ -611,7 +611,7 @@ export default function ConnectedAccountsPage() {
                 {/* Account list table */}
                 {!loading && filteredAccounts.length > 0 && (
                     <div className="bg-white rounded-lg border overflow-hidden">
-                        <table className="w-full">
+                        <div className="overflow-x-auto"><table className="w-full">
                             <thead className="bg-gray-50 border-b">
                                 <tr>
                                     <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Platform</th>
@@ -728,7 +728,7 @@ export default function ConnectedAccountsPage() {
                                     );
                                 })}
                             </tbody>
-                        </table>
+                        </table></div>
                     </div>
                 )}
 

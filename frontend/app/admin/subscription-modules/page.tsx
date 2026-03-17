@@ -159,7 +159,7 @@ export default function SubscriptionModulesPage() {
                             </div>
                         ) : filteredModules.length > 0 ? (
                             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                                <table className="w-full text-left border-collapse">
+                                <div className="overflow-x-auto"><table className="w-full text-left border-collapse">
                                     <thead>
                                         <tr className="bg-gray-50/50 border-b border-gray-200">
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Module Name</th>
@@ -191,7 +191,7 @@ export default function SubscriptionModulesPage() {
                                             </tr>
                                         ))}
                                     </tbody>
-                                </table>
+                                </table></div>
                             </div>
                         ) : (
                             <div className="text-center py-20 bg-white rounded-2xl border-2 border-dashed border-gray-200">

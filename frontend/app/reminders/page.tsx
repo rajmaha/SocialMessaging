@@ -33,7 +33,7 @@ function RemindersPage() {
         <div className="min-h-screen bg-gray-50">
             <MainHeader user={user} />
             <AdminNav />
-            <div className="ml-60 pt-14">
+            <div className="ml-0 md:ml-60 pt-14 pb-16 md:pb-0">
                 <TodosPanel mode="page" />
             </div>
         </div>

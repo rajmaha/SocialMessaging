@@ -45,7 +45,7 @@ export default function TeamWorkloadPage() {
   if (!user) return null;
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user} />
       <AdminNav />
       <div className="p-6">
@@ -79,7 +79,7 @@ export default function TeamWorkloadPage() {
                   <EffBadge value={m.efficiency} />
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-center mb-3">
                   <div>
                     <p className="text-lg font-bold text-gray-900">{m.active_tasks}</p>
                     <p className="text-xs text-gray-500">Tasks</p>

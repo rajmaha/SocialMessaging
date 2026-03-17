@@ -98,7 +98,7 @@ export default function AdminTeams() {
   }
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
 

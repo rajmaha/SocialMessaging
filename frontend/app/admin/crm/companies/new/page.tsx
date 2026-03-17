@@ -35,7 +35,7 @@ export default function NewCompanyPage() {
   }
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8 max-w-3xl">
@@ -47,7 +47,7 @@ export default function NewCompanyPage() {
           <input value={form.organization_name} onChange={e => set('organization_name', e.target.value)}
             className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Industry</label>
             <select value={form.industry} onChange={e => set('industry', e.target.value)}
@@ -65,7 +65,7 @@ export default function NewCompanyPage() {
             </select>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Email</label>
             <input value={form.email} onChange={e => set('email', e.target.value)}

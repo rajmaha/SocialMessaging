@@ -37,7 +37,7 @@ export default function ProjectDetailPage() {
 
   if (!user) return null;
   if (loading) return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user} />
       <AdminNav />
       <div className="flex items-center justify-center h-64 text-gray-400">Loading...</div>
@@ -45,7 +45,7 @@ export default function ProjectDetailPage() {
   );
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50 flex flex-col">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 flex flex-col pb-16 md:pb-0">
       <MainHeader user={user} />
       <AdminNav />
       {/* Project header */}

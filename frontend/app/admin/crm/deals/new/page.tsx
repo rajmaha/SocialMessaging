@@ -68,7 +68,7 @@ function NewDealPageContent() {
   const labelClass = "block text-sm font-medium text-gray-700 mb-1";
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8">
@@ -98,7 +98,7 @@ function NewDealPageContent() {
                 <input name="name" value={form.name} onChange={handleChange} required className={inputClass} placeholder="e.g. Enterprise plan upgrade" />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Stage</label>
                   <select name="stage" value={form.stage} onChange={handleChange} className={inputClass}>
@@ -113,7 +113,7 @@ function NewDealPageContent() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Probability ({form.probability}%)</label>
                   <input

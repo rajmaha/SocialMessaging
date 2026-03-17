@@ -218,7 +218,7 @@ export default function MyTasksPage() {
   );
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user} />
       <AdminNav />
       <div className="p-6">
@@ -269,12 +269,12 @@ export default function MyTasksPage() {
           <div className="text-gray-400 text-center py-20">No tasks assigned to you.</div>
         ) : groupBy === 'flat' ? (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <table className="w-full">
+            <div className="overflow-x-auto"><table className="w-full">
               <TableHead />
               <tbody>
                 {sortedTasks.map(t => <TaskRow key={t.id} t={t} />)}
               </tbody>
-            </table>
+            </table></div>
           </div>
         ) : (
           <div className="space-y-6">
@@ -286,12 +286,12 @@ export default function MyTasksPage() {
                   <span className="text-xs text-gray-400">({g.tasks.length})</span>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <table className="w-full">
+                  <div className="overflow-x-auto"><table className="w-full">
                     <TableHead />
                     <tbody>
                       {g.tasks.map(t => <TaskRow key={t.id} t={t} />)}
                     </tbody>
-                  </table>
+                  </table></div>
                 </div>
               </div>
             ))}

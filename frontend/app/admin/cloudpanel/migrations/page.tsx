@@ -293,7 +293,7 @@ export default function MigrationsPage() {
                         ) : migrations.length === 0 ? (
                             <p className="text-gray-400 text-sm">No migrations uploaded yet.</p>
                         ) : (
-                            <table className="w-full text-sm text-left">
+                            <div className="overflow-x-auto"><table className="w-full text-sm text-left">
                                 <thead>
                                     <tr className="text-gray-400 border-b border-gray-700">
                                         <th className="py-2 pr-4">Filename</th>
@@ -343,7 +343,7 @@ export default function MigrationsPage() {
                                         </tr>
                                     ))}
                                 </tbody>
-                            </table>
+                            </table></div>
                         )}
                     </div>
 
@@ -353,7 +353,7 @@ export default function MigrationsPage() {
                         {schedules.length === 0 ? (
                             <p className="text-gray-400 text-sm">No servers found.</p>
                         ) : (
-                            <table className="w-full text-sm text-left">
+                            <div className="overflow-x-auto"><table className="w-full text-sm text-left">
                                 <thead>
                                     <tr className="text-gray-400 border-b border-gray-700">
                                         <th className="py-2 pr-4">Server</th>
@@ -372,7 +372,7 @@ export default function MigrationsPage() {
                                         />
                                     ))}
                                 </tbody>
-                            </table>
+                            </table></div>
                         )}
                     </div>
                 </main>
@@ -392,7 +392,7 @@ export default function MigrationsPage() {
                         {logsDrawer.logs.length === 0 ? (
                             <p className="text-gray-400 text-sm">No logs yet.</p>
                         ) : (
-                            <table className="w-full text-sm text-left">
+                            <div className="overflow-x-auto"><table className="w-full text-sm text-left">
                                 <thead>
                                     <tr className="text-gray-400 border-b border-gray-700">
                                         <th className="py-2 pr-3">Domain</th>
@@ -418,7 +418,7 @@ export default function MigrationsPage() {
                                         </tr>
                                     ))}
                                 </tbody>
-                            </table>
+                            </table></div>
                         )}
                     </div>
                 </div>
@@ -439,7 +439,7 @@ export default function MigrationsPage() {
                             <span className="text-gray-400">Skipped: <strong>{runResult.skipped}</strong></span>
                         </div>
                         {runResult.details.length > 0 && (
-                            <table className="w-full text-xs text-left">
+                            <div className="overflow-x-auto"><table className="w-full text-xs text-left">
                                 <thead>
                                     <tr className="text-gray-400 border-b border-gray-700">
                                         <th className="py-1 pr-3">Site</th>
@@ -458,7 +458,7 @@ export default function MigrationsPage() {
                                         </tr>
                                     ))}
                                 </tbody>
-                            </table>
+                            </table></div>
                         )}
                     </div>
                 </div>

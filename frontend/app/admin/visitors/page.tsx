@@ -82,7 +82,7 @@ export default function VisitorsPage() {
     <>
       <MainHeader user={user!} />
       <AdminNav />
-      <main className="ml-60 pt-14 p-6">
+      <main className="ml-0 md:ml-60 pt-14 p-6 pb-16 md:pb-0">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Visitors</h1>
           <Link href="/admin/visitors/new"
@@ -116,7 +116,7 @@ export default function VisitorsPage() {
 
         {/* Table */}
         <div className="bg-white rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-left">
               <tr>
                 <th className="px-4 py-3 font-medium">Visitor</th>
@@ -173,7 +173,7 @@ export default function VisitorsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
 
           {/* Pagination footer */}
           {total > PAGE_SIZE && (

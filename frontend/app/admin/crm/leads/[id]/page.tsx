@@ -144,7 +144,7 @@ export default function LeadDetailPage() {
 
   if (loading) {
     return (
-      <div className="ml-60 pt-14 min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 flex items-center justify-center pb-16 md:pb-0">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500" />
       </div>
     );
@@ -152,7 +152,7 @@ export default function LeadDetailPage() {
 
   if (error) {
     return (
-      <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
         <MainHeader user={user!} />
         <AdminNav />
         <main className="w-full px-6 py-8">
@@ -172,7 +172,7 @@ export default function LeadDetailPage() {
   );
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8">
@@ -238,7 +238,7 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 md:grid-cols-3 gap-6">
           {/* Main */}
           <div className="col-span-2 space-y-6">
             {/* Contact Info */}

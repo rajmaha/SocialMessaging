@@ -142,7 +142,7 @@ export default function AdminTicketViewer() {
     if (!user) return null;
 
     return (
-        <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+        <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
             <MainHeader user={user} />
             <AdminNav />
 
@@ -316,7 +316,7 @@ export default function AdminTicketViewer() {
                             </p>
                         </div>
                     ) : (
-                        <table className="min-w-full divide-y divide-gray-100">
+                        <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-100">
                             <thead className="bg-gray-50">
                                 <tr>
                                     <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Ticket</th>
@@ -410,7 +410,7 @@ export default function AdminTicketViewer() {
                                     </tr>
                                 ))}
                             </tbody>
-                        </table>
+                        </table></div>
                     )}
 
                     {/* Pagination Footer */}

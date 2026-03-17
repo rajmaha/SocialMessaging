@@ -39,14 +39,14 @@ export default function EscalationsPage() {
     .sort((a: any, b: any) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9));
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user} />
       <AdminNav />
       <div className="p-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Escalations</h1>
 
         {/* Summary Bar */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white rounded-xl border border-red-200 p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
               <span className="text-red-600 font-bold text-lg">{counts.critical}</span>

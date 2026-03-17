@@ -370,7 +370,7 @@ export default function NewVisitPage() {
     <>
       <MainHeader user={user!} />
       <AdminNav />
-      <main className="ml-60 pt-14 p-6 max-w-5xl">
+      <main className="ml-0 md:ml-60 pt-14 p-6 max-w-5xl pb-16 md:pb-0">
         <div className="mb-6">
           <button onClick={() => router.back()} className="text-sm text-gray-400 hover:text-gray-600 mb-1">
             ← Back
@@ -381,10 +381,10 @@ export default function NewVisitPage() {
         {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">{error}</div>}
 
         {/* Main layout: left col = Visitor Details, right col = Photo + Visit Details */}
-        <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5 items-start">
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
 
           {/* ── LEFT: Visitor Details ── */}
-          <div className="bg-white rounded-xl border p-5 grid grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl border p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
             <h2 className="col-span-2 font-semibold text-sm text-gray-700 uppercase tracking-wide">Visitor Details</h2>
             {([
               ['visitor_name', 'Full Name *', 'text', true],
@@ -416,7 +416,7 @@ export default function NewVisitPage() {
             {/* ── Visit Details (moved here, below visitor fields) ── */}
             <div className="col-span-2 border-t pt-4 mt-1">
               <h2 className="font-semibold text-sm text-gray-700 uppercase tracking-wide mb-3">Visit Details</h2>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="block text-xs text-gray-500 mb-1">Purpose *</label>
                   <input required className="w-full border rounded-lg px-3 py-2 text-sm"

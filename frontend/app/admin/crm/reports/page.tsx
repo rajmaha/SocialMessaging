@@ -45,7 +45,7 @@ export default function ReportsPage() {
   const maxRevenue = Math.max(...revenueData.flatMap(r => [r.actual, r.forecasted]), 1)
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8">
@@ -67,7 +67,7 @@ export default function ReportsPage() {
 
       {!loading && tab === 'agents' && (
         <div className="bg-white rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
               <tr>
                 <th className="px-4 py-3 text-left">Agent</th>
@@ -100,13 +100,13 @@ export default function ReportsPage() {
                 <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No data yet.</td></tr>
               )}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 
       {!loading && tab === 'aging' && (
         <div className="bg-white rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
               <tr>
                 <th className="px-4 py-3 text-left">Status</th>
@@ -132,7 +132,7 @@ export default function ReportsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 

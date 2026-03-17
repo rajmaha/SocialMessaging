@@ -241,7 +241,7 @@ function CamerasContent() {
   const activeCameras = locations.filter(l => selectedIds.includes(l.id))
 
   return (
-    <main className="ml-60 pt-14 p-6">
+    <main className="ml-0 md:ml-60 pt-14 p-6 pb-16 md:pb-0">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Live Camera View</h1>
@@ -318,7 +318,7 @@ export default function CamerasPage() {
     <>
       <MainHeader user={user!} />
       <AdminNav />
-      <Suspense fallback={<main className="ml-60 pt-14 p-6"><p className="text-gray-400">Loading…</p></main>}>
+      <Suspense fallback={<main className="ml-0 md:ml-60 pt-14 p-6 pb-16 md:pb-0"><p className="text-gray-400">Loading…</p></main>}>
         <CamerasContent />
       </Suspense>
     </>

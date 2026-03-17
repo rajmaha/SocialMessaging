@@ -302,7 +302,7 @@ export default function ApiServersPage() {
   if (!user) return null;
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user} />
       <AdminNav />
       <div className="p-6 max-w-4xl">
@@ -733,7 +733,7 @@ export default function ApiServersPage() {
                   <p className="text-xs text-gray-400 mt-1">JSON path to the boolean field indicating success. If empty, auto-checks both <code className="bg-gray-200 px-0.5 rounded">status</code> and <code className="bg-gray-200 px-0.5 rounded">success</code>.</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Message Path</label>
                     <input

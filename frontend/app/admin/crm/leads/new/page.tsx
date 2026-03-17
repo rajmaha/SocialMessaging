@@ -74,7 +74,7 @@ export default function NewLeadPage() {
   const labelClass = "block text-sm font-medium text-gray-700 mb-1";
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8">
@@ -89,7 +89,7 @@ export default function NewLeadPage() {
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
             )}
             <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>First name *</label>
                   <input name="first_name" value={form.first_name} onChange={handleChange} required className={inputClass} />
@@ -100,7 +100,7 @@ export default function NewLeadPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Email</label>
                   <input name="email" type="email" value={form.email} onChange={handleChange} className={inputClass} />
@@ -111,7 +111,7 @@ export default function NewLeadPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Company</label>
                   <input name="company" value={form.company} onChange={handleChange} className={inputClass} />

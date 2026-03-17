@@ -449,7 +449,7 @@ function SettingsPage() {
       <MainHeader user={user} />
       <AdminNav />
 
-      <main className="ml-60 pt-14 px-6 py-8">
+      <main className="ml-0 md:ml-60 pt-14 px-6 py-8 pb-16 md:pb-0">
 
         {/* Alerts */}
         {error && (

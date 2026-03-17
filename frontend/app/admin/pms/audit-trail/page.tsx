@@ -109,7 +109,7 @@ export default function AuditTrailPage() {
     <>
       <MainHeader user={user!} />
       <AdminNav />
-      <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
         <div className="p-6 max-w-5xl mx-auto">
           <h1 className="text-xl font-bold text-gray-900 mb-6">Audit Trail</h1>
 

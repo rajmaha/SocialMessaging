@@ -38,7 +38,7 @@ export default function ReportsPage() {
     <>
       <MainHeader user={user!} />
       <AdminNav />
-      <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
         <div className="p-6 max-w-7xl mx-auto">
           {/* Top Bar */}
           <div className="flex flex-wrap items-center justify-between gap-4 mb-6">

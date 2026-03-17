@@ -254,7 +254,7 @@ export default function AdminSettings() {
     }
 
     return (
-        <div className="ml-60 pt-14 min-h-screen bg-gray-100">
+        <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-100 pb-16 md:pb-0">
             <MainHeader user={user!} />
             <AdminNav />
 

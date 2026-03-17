@@ -72,7 +72,7 @@ export default function DealDetailPage() {
 
   if (loading) {
     return (
-      <div className="ml-60 pt-14 min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 flex items-center justify-center pb-16 md:pb-0">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500" />
       </div>
     );
@@ -80,7 +80,7 @@ export default function DealDetailPage() {
 
   if (error || !deal) {
     return (
-      <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
         <MainHeader user={user!} />
         <AdminNav />
         <main className="w-full px-6 py-8">
@@ -93,7 +93,7 @@ export default function DealDetailPage() {
   const expectedValue = (deal.amount || 0) * (deal.probability / 100);
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8">
@@ -128,12 +128,12 @@ export default function DealDetailPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
           {/* Main */}
           <div className="col-span-2 space-y-6">
             {/* Stats */}
             <div className="bg-white rounded-lg shadow p-6">
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
                 <div className="text-center p-4 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-500 mb-1">Amount</p>
                   <p className="text-2xl font-bold text-gray-900">${(deal.amount || 0).toLocaleString()}</p>

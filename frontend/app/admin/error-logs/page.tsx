@@ -107,7 +107,7 @@ function ErrorDetailPanel({ entry, onClose }: { entry: ErrorEntry; onClose: () =
           {/* Request info */}
           <div className="bg-white border border-gray-100 rounded-xl p-4 space-y-3">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Request</p>
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
               <div>
                 <p className="text-xs text-gray-400 mb-1">Method & Path</p>
                 <div className="flex items-center gap-2">
@@ -227,7 +227,7 @@ export default function ErrorLogsPage() {
     <div className="min-h-screen bg-gray-50">
       <MainHeader user={user!} />
       <AdminNav />
-      <main className="ml-60 pt-14 p-6">
+      <main className="ml-0 md:ml-60 pt-14 p-6 pb-16 md:pb-0">
         <div className="max-w-7xl mx-auto">
 
           {/* Header */}

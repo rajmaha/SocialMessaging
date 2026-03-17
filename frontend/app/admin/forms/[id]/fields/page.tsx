@@ -354,7 +354,7 @@ export default function FieldBuilderPage() {
   if (!user) return null;
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user} />
       <AdminNav />
       <div className="p-6 max-w-4xl">
@@ -617,7 +617,7 @@ export default function FieldBuilderPage() {
             {field.field_type === 'number' && (
               <div className="border border-gray-200 rounded-lg p-3 mb-3 bg-gray-50 space-y-2">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Number Validation</p>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Default Value</label>
                     <input

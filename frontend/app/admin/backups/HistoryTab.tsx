@@ -102,7 +102,7 @@ export default function BackupHistoryTab() {
       </div>
 
       <div className="bg-white rounded-xl shadow overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
             <tr>
               <th className="px-4 py-3 text-left">Job</th>
@@ -173,7 +173,7 @@ export default function BackupHistoryTab() {
               <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No backup runs yet</td></tr>
             )}
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   );

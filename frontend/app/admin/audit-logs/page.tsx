@@ -87,7 +87,7 @@ function AuditDetailPanel({ entry, onClose }: { entry: AuditEntry; onClose: () =
           {/* User info */}
           <div className="bg-white border border-gray-100 rounded-xl p-4 space-y-3">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">User</p>
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
               <div>
                 <p className="text-xs text-gray-400 mb-0.5">Email</p>
                 <p className="text-gray-800 font-medium">{entry.user_email || '—'}</p>
@@ -217,7 +217,7 @@ export default function AuditLogsPage() {
     <div className="min-h-screen bg-gray-50">
       <MainHeader user={user!} />
       <AdminNav />
-      <main className="ml-60 pt-14 p-6">
+      <main className="ml-0 md:ml-60 pt-14 p-6 pb-16 md:pb-0">
         <div className="max-w-7xl mx-auto">
 
           {/* Header */}
@@ -262,7 +262,7 @@ export default function AuditLogsPage() {
 
           {/* Table */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-            <table className="min-w-full text-sm">
+            <div className="overflow-x-auto"><table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
                 <tr>
                   <th className="px-4 py-3 text-left">#</th>
@@ -305,7 +305,7 @@ export default function AuditLogsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
 
           {/* Pagination */}

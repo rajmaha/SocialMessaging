@@ -68,7 +68,7 @@ export default function CapacityPlanningPage() {
   const members = data?.members || [];
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user} />
       <AdminNav />
       <div className="p-6">
@@ -144,7 +144,7 @@ export default function CapacityPlanningPage() {
               <div className="text-gray-400 text-center py-20">No team members found.</div>
             ) : (
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto"><table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-200 bg-gray-50">
                       <th className="text-left px-4 py-3 font-medium text-gray-600">Member</th>
@@ -213,7 +213,7 @@ export default function CapacityPlanningPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               </div>
             )}
           </>

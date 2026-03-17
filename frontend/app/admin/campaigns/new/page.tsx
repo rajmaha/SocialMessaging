@@ -190,7 +190,7 @@ export default function NewCampaignPage() {
   };
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8 max-w-4xl">
@@ -311,7 +311,7 @@ export default function NewCampaignPage() {
                 {/* A/B Test Settings */}
                 <div className="border border-gray-200 rounded-lg p-4 bg-gray-50/50">
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">A/B Test Settings</h3>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Test Size %</label>
                       <input

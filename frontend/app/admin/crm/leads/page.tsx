@@ -199,7 +199,7 @@ export default function LeadListPage() {
   };
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
 
@@ -338,7 +338,7 @@ export default function LeadListPage() {
             ) : (
               /* Full table when no lead is selected */
               <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto"><table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b">
                     <tr>
                       <th className="px-4 py-3 text-left">
@@ -411,7 +411,7 @@ export default function LeadListPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               </div>
             )}
           </div>

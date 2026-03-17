@@ -170,7 +170,7 @@ export default function PBXSetup() {
     };
 
     return (
-        <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+        <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
             <MainHeader user={user!} />
             <AdminNav />
 
@@ -214,7 +214,7 @@ export default function PBXSetup() {
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                         </div>
                     ) : (
-                        <table className="min-w-full divide-y divide-gray-200">
+                        <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
                                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent / User</th>
@@ -377,7 +377,7 @@ export default function PBXSetup() {
                                     );
                                 })}
                             </tbody>
-                        </table>
+                        </table></div>
                     )}
                 </div>
             </main>

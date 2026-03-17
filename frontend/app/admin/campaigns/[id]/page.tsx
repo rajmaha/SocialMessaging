@@ -82,7 +82,7 @@ export default function CampaignStatsPage() {
   }, [id, token]);
 
   if (loading) return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 flex items-center justify-center pb-16 md:pb-0">
       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500" />
     </div>
   );
@@ -94,7 +94,7 @@ export default function CampaignStatsPage() {
   );
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8">
@@ -108,7 +108,7 @@ export default function CampaignStatsPage() {
         </div>
 
         {/* Overview cards */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow p-5 text-center">
             <p className="text-xs text-gray-400 uppercase tracking-wide">Sent</p>
             <p className="text-4xl font-bold text-gray-900 mt-1">{stats?.sent_count ?? 0}</p>
@@ -185,7 +185,7 @@ export default function CampaignStatsPage() {
 
         {/* Engagement breakdowns */}
         {hasBreakdowns && (
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
             <BreakdownCard
               title="📱 Device Type"
               data={stats.device_breakdown || {}}

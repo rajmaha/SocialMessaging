@@ -71,7 +71,7 @@ export default function AdminDashboard() {
   const canSeePms = isAdmin || hasModuleAccess('pms');
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
       <main className="w-full px-6 py-8 space-y-8">
@@ -154,7 +154,7 @@ export default function AdminDashboard() {
 
             {/* Pipeline by Stage + Agent Leaderboard */}
             {(canSeeCrm || isAdmin) && (
-            <div className={`grid ${isAdmin ? "grid-cols-3" : "grid-cols-1"} gap-6`}>
+            <div className={`grid ${isAdmin ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" : "grid-cols-1"} gap-6`}>
               {/* Pipeline — only if CRM access */}
               {canSeeCrm && (
               <div className={`${isAdmin ? "col-span-2" : ""} bg-white rounded-xl shadow p-6`}>

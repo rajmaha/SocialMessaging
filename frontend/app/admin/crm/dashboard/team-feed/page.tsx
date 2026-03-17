@@ -64,7 +64,7 @@ export default function TeamFeedPage() {
 
   if (loading) {
     return (
-      <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
         {user && <MainHeader user={user} />}
         <AdminNav />
         <div className="flex items-center justify-center h-96">
@@ -76,7 +76,7 @@ export default function TeamFeedPage() {
 
   if (error || !data) {
     return (
-      <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+      <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
         {user && <MainHeader user={user} />}
         <AdminNav />
         <div className="flex flex-col items-center justify-center h-96 gap-4">
@@ -90,7 +90,7 @@ export default function TeamFeedPage() {
   const { stats } = data;
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       {user && <MainHeader user={user} />}
       <AdminNav />
       <main className="w-full px-6 py-8">

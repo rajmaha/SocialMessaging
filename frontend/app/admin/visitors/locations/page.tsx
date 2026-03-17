@@ -132,7 +132,7 @@ export default function VisitorLocationsPage() {
     <>
       <MainHeader user={user!} />
       <AdminNav />
-      <main className="ml-60 pt-14 p-6 max-w-3xl">
+      <main className="ml-0 md:ml-60 pt-14 p-6 max-w-3xl pb-16 md:pb-0">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Visitor Locations</h1>
           <button onClick={openCreate}

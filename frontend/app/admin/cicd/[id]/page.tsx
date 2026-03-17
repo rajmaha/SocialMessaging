@@ -307,7 +307,7 @@ export default function CICDDetailPage() {
     <div className="min-h-screen bg-gray-50">
       <MainHeader user={user!} />
       <AdminNav />
-      <main className="ml-60 pt-14 p-6">
+      <main className="ml-0 md:ml-60 pt-14 p-6 pb-16 md:pb-0">
         <div className="max-w-6xl mx-auto">
 
           {/* ── Header ──────────────────────────────────────────────────── */}

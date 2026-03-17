@@ -112,7 +112,7 @@ export default function BackupJobsTab() {
       </div>
 
       <div className="bg-white rounded-xl shadow overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
             <tr>
               <th className="px-4 py-3 text-left">Name</th>
@@ -154,7 +154,7 @@ export default function BackupJobsTab() {
               <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No backup jobs yet</td></tr>
             )}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {showModal && (

@@ -323,7 +323,7 @@ export default function BrandingAdmin() {
   }
 
   return (
-    <div className="ml-60 pt-14 min-h-screen bg-gray-50">
+    <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
       <AdminNav />
 
@@ -462,7 +462,7 @@ export default function BrandingAdmin() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Contact Email
@@ -508,7 +508,7 @@ export default function BrandingAdmin() {
         {/* Colors */}
         {activeTab === 'colors' && (
           <div className="bg-white rounded-lg shadow p-6 space-y-6">
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Primary Color
@@ -719,7 +719,7 @@ export default function BrandingAdmin() {
         {/* SMTP Settings */}
         {activeTab === 'smtp' && (
           <div className="bg-white rounded-lg shadow p-6 space-y-6">
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   SMTP Server
@@ -859,7 +859,7 @@ export default function BrandingAdmin() {
                 Connect your Postal mail server to automatically remove emails from its suppression list when deleted locally.
               </p>
 
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Postal Server URL
