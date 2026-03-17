@@ -962,7 +962,7 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
       </div>
 
       {/* Message Input */}
-      <div className="border-t px-6 py-4">
+      <div className="sticky bottom-0 bg-white border-t px-2 py-2 md:px-6 md:py-4">
         {/* Pending file preview */}
         {pendingFile && (
           <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
@@ -1026,7 +1026,7 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
           <button
             onClick={handleSendMessage}
             disabled={sending || (!messageText.trim() && !pendingFile)}
-            className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white px-4 py-3 rounded-lg flex items-center gap-2 transition"
+            className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white px-4 py-3 rounded-lg flex items-center gap-2 transition min-w-[44px] min-h-[44px]"
           >
             <FiSend size={18} />
           </button>
@@ -1152,24 +1152,40 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
         </div>
       )}
       </div>
-      {/* CRM Sidebar */}
+      {/* CRM Sidebar — full-screen overlay on mobile, fixed panel on desktop */}
       {crmSidebarOpen && conversation && (
-        <CrmSidebar
-          conversationId={conversation.id}
-          contactName={conversation.contact_name}
-          contactPhone={conversation.contact_id}
-          onCreateLead={(prefill) => {
-            const nameParts = (prefill.first_name || conversation.contact_name || '').trim().split(' ')
-            setLeadForm({
-              first_name: nameParts[0] || '',
-              last_name: nameParts.slice(1).join(' '),
-              email: prefill.email || '',
-              phone: prefill.phone || '',
-              company: '',
-            })
-            setShowLeadModal(true)
-          }}
-        />
+        <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-auto bg-white flex flex-col">
+          {/* Mobile close button */}
+          <div className="flex items-center justify-between px-4 py-2 border-b md:hidden">
+            <span className="text-sm font-semibold text-gray-700">CRM Details</span>
+            <button
+              onClick={() => setCrmSidebarOpen(false)}
+              className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
+              aria-label="Close CRM sidebar"
+            >
+              <FiX size={18} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto md:overflow-visible md:flex-none">
+            <CrmSidebar
+              conversationId={conversation.id}
+              contactName={conversation.contact_name}
+              contactPhone={conversation.contact_id}
+              onCreateLead={(prefill) => {
+                const nameParts = (prefill.first_name || conversation.contact_name || '').trim().split(' ')
+                setLeadForm({
+                  first_name: nameParts[0] || '',
+                  last_name: nameParts.slice(1).join(' '),
+                  email: prefill.email || '',
+                  phone: prefill.phone || '',
+                  company: '',
+                })
+                setCrmSidebarOpen(false)
+                setShowLeadModal(true)
+              }}
+            />
+          </div>
+        </div>
       )}
       <QuickTicketModal
         open={quickTicketOpen}
