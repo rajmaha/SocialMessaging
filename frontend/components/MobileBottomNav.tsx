@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { FiMessageSquare, FiMail, FiMoreHorizontal, FiX,
          FiHeadphones, FiGrid, FiSettings, FiUser } from 'react-icons/fi'
 
 export default function MobileBottomNav() {
   const pathname = usePathname()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   // Hide on login/register/widget pages
@@ -28,9 +29,10 @@ export default function MobileBottomNav() {
     { label: 'Profile', icon: FiUser, href: '/settings?tab=profile' },
   ]
 
+  const tab = searchParams.get('tab')
   const isActive = (key: string) => {
-    if (key === 'messaging') return pathname === '/dashboard' && !pathname.includes('tab=email')
-    if (key === 'email') return pathname.includes('/email') || pathname.includes('tab=email')
+    if (key === 'messaging') return pathname === '/dashboard' && tab !== 'email'
+    if (key === 'email') return pathname.includes('/email') || (pathname === '/dashboard' && tab === 'email')
     return false
   }
 
