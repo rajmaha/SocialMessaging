@@ -111,7 +111,8 @@ const FOLDERS = [
   { id: 'drafts', label: 'Drafts', endpoint: 'drafts', icon: '📝', type: 'regular' },
   { id: 'outbox', label: 'Outbox', endpoint: 'outbox', icon: '📦', type: 'regular' },
   { id: 'scheduled', label: 'Scheduled', endpoint: 'scheduled', icon: '🕐', type: 'regular' },
-  { id: 'trash', label: 'Trash', endpoint: 'trash', icon: '🗑️', type: 'regular' },
+  { id: 'trash', label: 'Trash', endpoint: 'archived', icon: '🗑️', type: 'regular' },
+  { id: 'spam', label: 'Spam', endpoint: 'spam', icon: '🚫', type: 'regular' },
 ]
 
 const SMART_FOLDERS = [
@@ -502,6 +503,16 @@ export default function EmailPage() {
     const id = setInterval(poll, POLL_INTERVAL)
     return () => clearInterval(id)
   }, [])
+
+  // Debounced search: re-fetch emails 400ms after the user stops typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setEmailOffset(0)
+      setHasMore(false)
+      fetchEmails()
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   // Auto-save draft while composing (debounced 3s after last change)
   useEffect(() => {
@@ -1275,8 +1286,8 @@ export default function EmailPage() {
     let comparison = 0
 
     if (sortBy === 'date') {
-      const dateA = a.emails[0]?.received_at ? parseUtcDate(a.emails[0].received_at).getTime() : 0
-      const dateB = b.emails[0]?.received_at ? parseUtcDate(b.emails[0].received_at).getTime() : 0
+      const dateA = a.emails[a.emails.length - 1]?.received_at ? parseUtcDate(a.emails[a.emails.length - 1].received_at).getTime() : 0
+      const dateB = b.emails[b.emails.length - 1]?.received_at ? parseUtcDate(b.emails[b.emails.length - 1].received_at).getTime() : 0
       comparison = dateA - dateB
     } else if (sortBy === 'sender') {
       comparison = a.from_address.localeCompare(b.from_address)
@@ -1612,6 +1623,34 @@ export default function EmailPage() {
     } catch (error) {
       console.error('Error starring email:', error)
       showToast('Failed to update star', 'error')
+    }
+  }
+
+  const handleMarkAsSpam = async (emailId: number) => {
+    try {
+      const token = getAuthToken()
+      await axios.put(`${API_URL}/email/emails/${emailId}/spam`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setSelectedThread(null)
+      fetchEmails()
+      showToast('✓ Marked as spam')
+    } catch (error) {
+      showToast('Failed to mark as spam', 'error')
+    }
+  }
+
+  const handleNotSpam = async (emailId: number) => {
+    try {
+      const token = getAuthToken()
+      await axios.put(`${API_URL}/email/emails/${emailId}/not-spam`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setSelectedThread(null)
+      fetchEmails()
+      showToast('✓ Moved to inbox')
+    } catch (error) {
+      showToast('Failed to move email', 'error')
     }
   }
 
@@ -3001,6 +3040,19 @@ export default function EmailPage() {
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
                         </button>
+                        {currentFolder === 'spam' ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleNotSpam(thread.emails[0].id) }}
+                            title="Not spam"
+                            className="w-6 h-6 rounded flex items-center justify-center text-gray-400 hover:bg-green-50 hover:text-green-600 transition flex-shrink-0 text-xs"
+                          >✅</button>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleMarkAsSpam(thread.emails[0].id) }}
+                            title="Mark as spam"
+                            className="w-6 h-6 rounded flex items-center justify-center text-gray-400 hover:bg-orange-50 hover:text-orange-500 transition flex-shrink-0 text-xs"
+                          >🚫</button>
+                        )}
                         <button
                           onClick={() => handleDelete(thread)}
                           title="Delete"
@@ -3501,6 +3553,15 @@ export default function EmailPage() {
                       <button onClick={() => handleStar(latestEmail.id, latestEmail.is_starred)} className={`w-8 h-8 rounded-full flex items-center justify-center transition text-base ${latestEmail.is_starred ? 'bg-amber-100 text-amber-500 hover:bg-amber-200' : 'hover:bg-gray-100 text-gray-400'}`} title={latestEmail.is_starred ? 'Unstar' : 'Star'}>
                         {latestEmail.is_starred ? '⭐' : '☆'}
                       </button>
+                      {currentFolder === 'spam' ? (
+                        <button onClick={() => handleNotSpam(latestEmail.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-green-50 hover:text-green-600 transition" title="Not Spam – move to inbox">
+                          ✅
+                        </button>
+                      ) : (
+                        <button onClick={() => handleMarkAsSpam(latestEmail.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-orange-50 hover:text-orange-500 transition" title="Mark as Spam">
+                          🚫
+                        </button>
+                      )}
                       <button onClick={() => handleDelete(latestEmail.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition" title="Delete">
                         <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                       </button>

@@ -559,7 +559,7 @@ class EmailService:
                 # Get folder and fetch recent emails
                 mailbox.folder.set('INBOX')
                 messages = mailbox.fetch(limit=100, reverse=True)
-                
+
                 synced_count = 0
                 for msg in messages:
                     if db:
@@ -784,11 +784,50 @@ class EmailService:
                             synced_count += 1
 
                 
+                # --- Sync Spam/Junk folder ---
+                try:
+                    available_folders = [f.name for f in mailbox.folder.list()]
+                    spam_folder_name = None
+                    for candidate in ['Spam', 'Junk', 'Junk Email', 'Junk Mail', 'SPAM', 'JUNK']:
+                        if candidate in available_folders:
+                            spam_folder_name = candidate
+                            break
+
+                    if spam_folder_name and db:
+                        mailbox.folder.set(spam_folder_name)
+                        spam_messages = mailbox.fetch(limit=50, reverse=True)
+                        for smsg in spam_messages:
+                            spam_hash = hashlib.md5(
+                                f"{smsg.subject or ''}{smsg.from_}{smsg.date}".encode()
+                            ).hexdigest()
+                            existing_spam = db.query(Email).filter(
+                                Email.message_id == spam_hash,
+                                Email.account_id == account.id
+                            ).first()
+                            if not existing_spam:
+                                spam_email = Email(
+                                    account_id=account.id,
+                                    message_id=spam_hash,
+                                    subject=smsg.subject or "(No Subject)",
+                                    from_address=str(smsg.from_) if smsg.from_ else "Unknown",
+                                    to_address=", ".join([str(a) for a in smsg.to]) if smsg.to else "",
+                                    body_text=smsg.text or "",
+                                    body_html=smsg.html or "",
+                                    received_at=_to_utc(smsg.date),
+                                    is_read=False,
+                                    is_spam=True,
+                                )
+                                db.add(spam_email)
+                                synced_count += 1
+                except Exception as _spam_err:
+                    logger.warning(f"Spam folder sync failed: {_spam_err}")
+                # --- end spam sync ---
+
                 if db:
                     db.commit()
                     account.last_sync = datetime.utcnow()
                     db.commit()
-                
+
                 logger.info(f"✅ Synced {synced_count} new emails for {account.email_address}")
                 return synced_count
                 

@@ -335,6 +335,91 @@ def get_archived_threads(
     return {"total": total, "emails": emails}
 
 
+@router.get("/spam", response_model=EmailListResponse)
+def get_spam_emails(
+    account_id: Optional[int] = None,
+    limit: int = 50,
+    skip: int = 0,
+    offset: int = 0,
+    search: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get spam emails for current user"""
+    from app.models.email import Email as EmailModel
+
+    query = db.query(UserEmailAccount).filter(UserEmailAccount.user_id == current_user.id)
+    if account_id:
+        account = query.filter(UserEmailAccount.id == account_id).first()
+    else:
+        account = query.first()
+
+    if not account:
+        raise HTTPException(status_code=404, detail="No email account configured for this user")
+
+    base_filter = [
+        EmailModel.account_id == account.id,
+        EmailModel.is_spam == True
+    ]
+    if search:
+        from sqlalchemy import or_
+        term = f"%{search}%"
+        base_filter.append(
+            or_(
+                EmailModel.subject.ilike(term),
+                EmailModel.from_address.ilike(term),
+                EmailModel.body_text.ilike(term),
+            )
+        )
+
+    page_offset = skip or offset
+    emails = db.query(EmailModel).filter(
+        *base_filter
+    ).order_by(EmailModel.received_at.desc()).offset(page_offset).limit(limit).all()
+
+    total = db.query(EmailModel).filter(*base_filter).count()
+
+    return {"total": total, "emails": emails}
+
+
+@router.put("/emails/{email_id}/spam")
+def mark_email_spam(
+    email_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark an email as spam"""
+    from app.models.email import Email as EmailModel
+    email = db.query(EmailModel).join(UserEmailAccount).filter(
+        EmailModel.id == email_id,
+        UserEmailAccount.user_id == current_user.id
+    ).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+    email.is_spam = True
+    db.commit()
+    return {"success": True}
+
+
+@router.put("/emails/{email_id}/not-spam")
+def mark_email_not_spam(
+    email_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark an email as not spam (move to inbox)"""
+    from app.models.email import Email as EmailModel
+    email = db.query(EmailModel).join(UserEmailAccount).filter(
+        EmailModel.id == email_id,
+        UserEmailAccount.user_id == current_user.id
+    ).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+    email.is_spam = False
+    db.commit()
+    return {"success": True}
+
+
 @router.get("/starred", response_model=EmailListResponse)
 def get_starred_threads(
     account_id: Optional[int] = None,
