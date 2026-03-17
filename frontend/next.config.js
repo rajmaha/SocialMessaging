@@ -9,6 +9,7 @@ const nextConfig = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || '',
   },
 
+
   // Proxy API calls to the backend when running behind the same origin (Docker/Coolify).
   // The internal backend URL defaults to http://backend:8000 (Docker service name).
   // Locally this is unused because NEXT_PUBLIC_API_URL is set to the full backend URL.
