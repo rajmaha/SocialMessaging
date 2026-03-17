@@ -241,6 +241,12 @@ body {
   animation: fadeIn 0.3s ease-in-out forwards;
 }
 
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+body.mobile-chat-open .mobile-bottom-nav { display: none !important; }
+
 /* Blockquote styling — email read view and compose editor */
 .email-body blockquote,
 .ProseMirror blockquote {

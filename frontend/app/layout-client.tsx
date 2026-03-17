@@ -7,6 +7,7 @@ import { SoftphoneProvider } from '@/lib/softphone-context'
 import { EmailComposeProvider } from '@/lib/email-compose-context'
 import Softphone from '@/components/Softphone'
 import EmailComposePopover from '@/components/EmailComposePopover'
+import MobileBottomNav from '@/components/MobileBottomNav'
 import { useEffect } from 'react'
 import { getAuthToken } from '@/lib/auth'
 import { fetchMyPermissions } from '@/lib/permissions'
@@ -28,6 +29,7 @@ export function LayoutClient({ children }: { children: React.ReactNode }) {
             {children}
             <Softphone />
             <EmailComposePopover />
+            <MobileBottomNav />
           </EmailComposeProvider>
         </SoftphoneProvider>
       </EventsProvider>
