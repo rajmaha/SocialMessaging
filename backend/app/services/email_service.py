@@ -572,10 +572,15 @@ class EmailService:
                 synced_count = 0
                 for msg in messages:
                     if db:
-                        # Create a unique identifier for the email (using subject + from + date)
-                        email_hash = hashlib.md5(
-                            f"{msg.subject or ''}{msg.from_}{msg.date}".encode()
-                        ).hexdigest()
+                        # Use the email's Message-ID header as unique identifier (globally unique per RFC 2822).
+                        # Fall back to a hash of subject+from+date+uid for emails missing Message-ID.
+                        raw_msg_id = msg.headers.get('message-id', [None])[0] if msg.headers else None
+                        if raw_msg_id:
+                            email_hash = raw_msg_id.strip().strip('<>')
+                        else:
+                            email_hash = hashlib.md5(
+                                f"{msg.subject or ''}{msg.from_}{msg.date}{getattr(msg, 'uid', '')}".encode()
+                            ).hexdigest()
                         
                         # Check if email already exists
                         existing = db.query(Email).filter(
@@ -810,9 +815,13 @@ class EmailService:
                         mailbox.folder.set(spam_folder_name)
                         spam_messages = mailbox.fetch(limit=50, reverse=True)
                         for smsg in spam_messages:
-                            spam_hash = hashlib.md5(
-                                f"{smsg.subject or ''}{smsg.from_}{smsg.date}".encode()
-                            ).hexdigest()
+                            raw_spam_id = smsg.headers.get('message-id', [None])[0] if smsg.headers else None
+                            if raw_spam_id:
+                                spam_hash = raw_spam_id.strip().strip('<>')
+                            else:
+                                spam_hash = hashlib.md5(
+                                    f"{smsg.subject or ''}{smsg.from_}{smsg.date}{getattr(smsg, 'uid', '')}".encode()
+                                ).hexdigest()
                             # Check globally (unique index is not per-account)
                             existing_spam = db.query(Email).filter(
                                 Email.message_id == spam_hash,
