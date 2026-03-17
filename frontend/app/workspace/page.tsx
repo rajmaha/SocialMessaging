@@ -167,7 +167,7 @@ export default function Workspace() {
     if (!user) return null;
 
     return (
-        <div className="pt-14 min-h-screen bg-gray-50 flex flex-col">
+        <div className="pt-14 min-h-screen bg-gray-50 flex flex-col pb-16 md:pb-0">
             <MainHeader user={user} />
 
             <main className="flex-1 w-full mx-auto p-4 md:p-6 flex flex-col lg:flex-row gap-6">

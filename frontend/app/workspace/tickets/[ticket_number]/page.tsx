@@ -125,7 +125,7 @@ function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
     if (!ticket || !user) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">Ticket not found or unauthorized.</div>;
 
     return (
-        <div className="pt-14 min-h-screen bg-gray-50 flex flex-col">
+        <div className="pt-14 min-h-screen bg-gray-50 flex flex-col pb-16 md:pb-0">
             <MainHeader user={user} />
 
             {/* Top Navigation */}

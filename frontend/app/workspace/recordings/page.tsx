@@ -122,7 +122,7 @@ export default function MyRecordings() {
     if (!user) return null;
 
     return (
-        <div className="pt-14 min-h-screen bg-gray-50">
+        <div className="pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
             <MainHeader user={user} />
 
             {playingId !== null && (
