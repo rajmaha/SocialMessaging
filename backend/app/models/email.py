@@ -122,6 +122,7 @@ class EmailAttachment(Base):
     
     # Store file path or URL
     file_path = Column(String, nullable=True)
+    content_id = Column(String, nullable=True)  # CID for inline images (e.g. logo in signature)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     

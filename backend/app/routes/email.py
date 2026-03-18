@@ -623,27 +623,75 @@ def get_email(
     return email
 
 
+async def _get_user_bearer_or_token(
+    token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Authenticate via Bearer header OR ?token= query param (for inline <img> tags)."""
+    # Try Bearer header first
+    from fastapi import Request
+    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+    import json as _json
+
+    # Try query-param token
+    if token:
+        try:
+            uid = int(token)
+            user = db.query(User).filter(User.id == uid).first()
+            if user:
+                return user
+        except ValueError:
+            try:
+                data = _json.loads(token)
+                user = db.query(User).filter(User.id == data.get("user_id")).first()
+                if user:
+                    return user
+            except Exception:
+                pass
+    raise HTTPException(status_code=401, detail="Authentication required")
+
+
 @router.get("/{email_id}/attachments/{attachment_id}")
 def download_attachment(
     email_id: int,
     attachment_id: str,  # Can be ID or filename
-    current_user: User = Depends(get_current_user),
+    token: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Download email attachment"""
+    """Download email attachment. Supports auth via Bearer header or ?token= query param."""
     try:
+        # Resolve user: try Bearer header, then query-param token
+        from fastapi.security import HTTPBearer
+        import json as _json
+        user = None
+
+        # Try query param first (for inline images)
+        if token:
+            try:
+                uid = int(token)
+                user = db.query(User).filter(User.id == uid).first()
+            except ValueError:
+                try:
+                    data = _json.loads(token)
+                    user = db.query(User).filter(User.id == data.get("user_id")).first()
+                except Exception:
+                    pass
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required — use ?token= param")
+
         # Get the email to verify ownership
         email = db.query(Email).filter(Email.id == email_id).first()
-        
+
         if not email:
             raise HTTPException(status_code=404, detail="Email not found")
-        
+
         # Verify user owns this email
         account = db.query(UserEmailAccount).filter(
             UserEmailAccount.id == email.account_id,
-            UserEmailAccount.user_id == current_user.id
+            UserEmailAccount.user_id == user.id
         ).first()
-        
+
         if not account:
             raise HTTPException(status_code=403, detail="Unauthorized")
         

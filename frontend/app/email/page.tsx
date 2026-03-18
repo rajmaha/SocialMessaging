@@ -106,9 +106,15 @@ const _DEFAULT_BRANDING = {
   timezone: 'UTC',
 }
 
-// Rewrite localhost URLs in HTML to relative paths so images/assets load in production
-const sanitizeLocalhostUrls = (html: string): string =>
-  html.replace(/https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//g, '/')
+// Rewrite localhost URLs in HTML to relative paths so images/assets load in production,
+// and resolve relative /email/ attachment paths to the full API URL with auth token for inline images
+const sanitizeLocalhostUrls = (html: string): string => {
+  const token = getAuthToken() || ''
+  return html
+    .replace(/https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//g, '/')
+    .replace(/src="\/email\/([^"]+)"/g, `src="${API_URL}/email/$1?token=${token}"`)
+    .replace(/src='\/email\/([^']+)'/g, `src='${API_URL}/email/$1?token=${token}'`)
+}
 
 const FOLDERS = [
   { id: 'inbox', label: 'Inbox', endpoint: 'inbox', icon: '📥', type: 'regular' },

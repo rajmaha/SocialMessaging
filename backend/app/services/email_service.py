@@ -644,7 +644,8 @@ class EmailService:
                                 logger.warning(f'Thread assignment failed: {_te}')
                             # --- end thread assignment ---
 
-                            # Store attachments
+                            # Store attachments and collect CID mappings for inline images
+                            cid_map = {}  # content_id -> attachment_id
                             for attachment in msg.attachments:
                                 # Save payload to disk
                                 saved_path = None
@@ -660,14 +661,31 @@ class EmailService:
                                     saved_path = os.path.join(attach_dir, safe_name)
                                     with open(saved_path, 'wb') as f:
                                         f.write(attachment.payload)
+                                # Extract Content-ID for inline images
+                                raw_cid = getattr(attachment, 'content_id', None) or ''
+                                clean_cid = raw_cid.strip().strip('<>')
                                 email_attachment = EmailAttachment(
                                     email_id=email.id,
                                     filename=attachment.filename,
                                     content_type=attachment.content_type,
                                     size=len(attachment.payload) if attachment.payload else 0,
                                     file_path=saved_path,
+                                    content_id=clean_cid or None,
                                 )
                                 db.add(email_attachment)
+                                db.flush()
+                                if clean_cid:
+                                    cid_map[clean_cid] = email_attachment.id
+
+                            # Replace cid: references in HTML body with actual attachment URLs
+                            if cid_map and email.body_html:
+                                html = email.body_html
+                                for cid, att_id in cid_map.items():
+                                    html = html.replace(
+                                        f"cid:{cid}",
+                                        f"/email/{email.id}/attachments/{att_id}"
+                                    )
+                                email.body_html = html
 
                             # --- Bridge incoming email to unified conversation inbox ---
                             # Only bridge if this account has chat integration enabled

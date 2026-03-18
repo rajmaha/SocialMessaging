@@ -1696,6 +1696,10 @@ def _run_inline_migrations():
         """))
         conn.commit()
 
+        # Add content_id column to email_attachments for inline CID images
+        conn.execute(text("ALTER TABLE email_attachments ADD COLUMN IF NOT EXISTS content_id VARCHAR"))
+        conn.commit()
+
 # ── Log DB Init ────────────────────────────────────────────────────────────
 from app.log_database import init_log_db
 init_log_db()
