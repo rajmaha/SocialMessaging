@@ -809,6 +809,7 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
                 {message.sender_name && (
                   <p className={`text-xs font-semibold mb-1 ${message.is_sent ? 'text-blue-100' : 'text-gray-500'}`}>
                     {message.sender_name} <span className="font-normal">· {fmtMsgTime(message.timestamp)}</span>
+                    {!!message.is_sent && <DeliveryTick status={message.delivery_status} />}
                   </p>
                 )}
                 {/* Image attachment */}
@@ -825,9 +826,7 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
                         />
                       </a>
                       <div className={`flex items-center justify-between gap-2 pt-0.5 ${message.is_sent ? 'text-blue-100' : 'text-gray-500'}`}>
-                        <span className="text-xs">
-                          {fmtMsgTime(message.timestamp)}
-                        </span>
+                        <span className="text-xs"></span>
                         <button
                           onClick={async () => {
                             try {
@@ -882,10 +881,6 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
                           ⬇ Download
                         </button>
                       </div>
-                      <p className={`text-xs mt-1 ${message.is_sent ? 'text-blue-100' : 'text-gray-500'}`}>
-                        {fmtMsgTime(message.timestamp)}
-                        {!!message.is_sent && <DeliveryTick status={message.delivery_status} />}
-                      </p>
                     </>
                   )
                 })()}
@@ -898,9 +893,6 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
                       </p>
                     )}
                     <p className="break-words whitespace-pre-wrap">{message.message_text}</p>
-                    <p className={`text-xs mt-1 ${message.is_sent ? 'text-blue-100' : 'text-gray-500'}`}>
-                      {fmtMsgTime(message.timestamp)}
-                    </p>
                   </>
                 )}
                 {/* Text (always show for text messages; captions for attachments) */}
@@ -910,10 +902,6 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
                   return (
                     <>
                       <p className="break-words">{message.message_text}</p>
-                      <p className={`text-xs mt-1 ${message.is_sent ? 'text-blue-100' : 'text-gray-500'}`}>
-                        {fmtMsgTime(message.timestamp)}
-                        {!!message.is_sent && <DeliveryTick status={message.delivery_status} />}
-                      </p>
                       {preview && (
                         <a href={preview.url} target="_blank" rel="noreferrer"
                           className={`mt-2 block rounded-xl overflow-hidden border text-left no-underline ${
