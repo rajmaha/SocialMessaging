@@ -1557,11 +1557,12 @@ export default function EmailPage() {
 
     const isDrafts = currentFolder === 'drafts';
     const isTrash = currentFolder === 'trash';
-    const msg = isDrafts ? 'Permanently delete this thread?' : isTrash ? 'Permanently delete this thread?' : 'Move this to Trash?';
+    const isSpam = currentFolder === 'spam';
+    const msg = (isDrafts || isTrash || isSpam) ? 'Permanently delete this thread?' : 'Move this to Trash?';
     requestDelete(msg, async () => {
       try {
         const token = getAuthToken()
-        if (isDrafts || isTrash) {
+        if (isDrafts || isTrash || isSpam) {
           // Single-email permanent delete cascades to the full thread via thread_id on the backend
           await axios.delete(`${API_URL}/email/emails/${primaryId}/permanent`, {
             headers: { Authorization: `Bearer ${token}` }
@@ -1574,7 +1575,7 @@ export default function EmailPage() {
         }
         setSelectedThread(null)
         fetchEmails()
-        showToast(isDrafts ? '✓ Draft thread deleted' : isTrash ? '✓ Thread permanently deleted' : '✓ Thread deleted')
+        showToast((isDrafts || isTrash || isSpam) ? '✓ Thread permanently deleted' : '✓ Thread moved to trash')
       } catch (error) {
         console.error('Error deleting email:', error)
         showToast('Failed to delete', 'error')
