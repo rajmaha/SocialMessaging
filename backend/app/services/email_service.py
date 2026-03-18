@@ -781,13 +781,38 @@ class EmailService:
                                     )
 
                                     # Check we haven't already replied to this message
-                                    replied_ids = auto_reply.replied_message_ids or []
+                                    replied_ids = list(auto_reply.replied_message_ids or [])
                                     already_replied = email.message_id in replied_ids
 
                                     # Don't auto-reply to ourselves
                                     is_self = account.email_address.lower() in sender_lower
 
-                                    if not skip_hit and not already_replied and not is_self:
+                                    # Don't auto-reply to auto-replies (prevents infinite loops)
+                                    _headers = msg.headers or {}
+                                    auto_submitted = (_headers.get('auto-submitted', [''])[0] or '').lower()
+                                    is_auto = auto_submitted and auto_submitted != 'no'
+                                    # Also check X-Auto-Response-Suppress and Precedence headers
+                                    precedence = (_headers.get('precedence', [''])[0] or '').lower()
+                                    is_auto = is_auto or precedence in ('bulk', 'junk', 'list', 'auto_reply')
+                                    x_auto = (_headers.get('x-auto-response-suppress', [''])[0] or '').lower()
+                                    is_auto = is_auto or bool(x_auto)
+
+                                    # Don't reply to noreply/mailer-daemon addresses
+                                    is_noreply = any(x in sender_lower for x in ['noreply', 'no-reply', 'mailer-daemon', 'postmaster'])
+
+                                    # Rate limit: don't auto-reply to same sender more than once per 24h
+                                    from datetime import timedelta
+                                    recent_cutoff = datetime.utcnow() - timedelta(hours=24)
+                                    already_replied_to_sender = db.query(Email).filter(
+                                        Email.account_id == account.id,
+                                        Email.from_address == account.email_address,
+                                        Email.to_address.contains(email.from_address),
+                                        Email.subject.like(f"%{auto_reply.subject_prefix or 'Re: '}%"),
+                                        Email.received_at >= recent_cutoff,
+                                        Email.is_sent == True,
+                                    ).first() is not None
+
+                                    if not skip_hit and not already_replied and not is_self and not is_auto and not is_noreply and not already_replied_to_sender:
                                         subject = f"{auto_reply.subject_prefix or 'Re: '}{email.subject}"
                                         reply_body = auto_reply.reply_body or ""
                                         # Convert plain text to HTML if not already HTML
@@ -841,9 +866,12 @@ class EmailService:
                                                 full_body,
                                                 in_reply_to=email.message_id,
                                             )
-                                            # Mark as replied
+                                            # Mark as replied — use new list to ensure SQLAlchemy detects the change
+                                            from sqlalchemy.orm.attributes import flag_modified
                                             auto_reply.replied_message_ids = replied_ids + [email.message_id]
+                                            flag_modified(auto_reply, "replied_message_ids")
                                             db.add(auto_reply)
+                                            db.flush()  # Persist immediately so next email in same sync sees it
                                             logger.info(f"🤖 Auto-replied to {email.from_address} re: {email.subject}")
                             except Exception as _ar_err:
                                 logger.warning(f"Auto-reply failed for message {email.message_id}: {_ar_err}")
