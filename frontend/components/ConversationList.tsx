@@ -123,6 +123,11 @@ export default function ConversationList({
               <span className="font-semibold text-gray-800">
                 {conversation.contact_name}
               </span>
+              {conversation.contact_id && conversation.contact_id !== conversation.contact_name && (
+                <span className="text-[11px] text-gray-400 font-normal truncate max-w-[140px]" title={conversation.contact_id}>
+                  {conversation.contact_id}
+                </span>
+              )}
               {(conversation.ticket_count ?? 0) > 0 && (
                 <span
                   className="ml-1 inline-flex items-center gap-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full"
