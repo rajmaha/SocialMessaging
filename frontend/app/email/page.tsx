@@ -1805,11 +1805,7 @@ export default function EmailPage() {
       // Try different endpoint patterns
       const endpoints = [
         `${API_URL}/email/${emailId}/attachments/${attachment.id}`,
-        `${API_URL}/email/${emailId}/attachments/${attachment.filename}`,
-        `${API_URL}/email/${emailId}/attachment/${attachment.id}`,
-        `${API_URL}/email/${emailId}/attachment/${attachment.filename}`,
-        `${API_URL}/attachment/${attachment.id}`,
-        attachment.url // If attachment has direct URL
+        `${API_URL}/email/${emailId}/attachments/${encodeURIComponent(attachment.filename)}`,
       ].filter(Boolean)
 
       let downloaded = false

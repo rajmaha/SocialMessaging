@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -757,17 +757,30 @@ def download_attachment(
     email_id: int,
     attachment_id: str,  # Can be ID or filename
     token: Optional[str] = None,
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
     """Download email attachment. Supports auth via Bearer header or ?token= query param."""
     try:
-        # Resolve user: try Bearer header, then query-param token
-        from fastapi.security import HTTPBearer
-        import json as _json
+        import json as _json, jwt
+        from app.config import settings
         user = None
 
-        # Try query param first (for inline images)
-        if token:
+        # Try Bearer header first (from frontend axios calls)
+        if not user and request:
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.startswith("Bearer "):
+                bearer_token = auth_header[7:]
+                try:
+                    payload = jwt.decode(bearer_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+                    uid = payload.get("user_id")
+                    if uid:
+                        user = db.query(User).filter(User.id == uid).first()
+                except Exception:
+                    pass
+
+        # Try query param token (for inline images in HTML)
+        if not user and token:
             try:
                 uid = int(token)
                 user = db.query(User).filter(User.id == uid).first()
@@ -779,7 +792,7 @@ def download_attachment(
                     pass
 
         if not user:
-            raise HTTPException(status_code=401, detail="Authentication required — use ?token= param")
+            raise HTTPException(status_code=401, detail="Authentication required")
 
         # Get the email to verify ownership
         email = db.query(Email).filter(Email.id == email_id).first()
