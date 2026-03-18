@@ -20,8 +20,43 @@ from app.schemas.email import (
 )
 from app.services.email_service import email_service
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/email", tags=["email"])
+
+
+def _delete_from_imap(account, message_ids: list):
+    """Delete emails from IMAP server by their Message-ID headers"""
+    if not message_ids:
+        return
+    try:
+        from imap_tools import MailBox, AND
+        with MailBox(account.imap_host, account.imap_port).login(
+            account.imap_username, account.imap_password
+        ) as mailbox:
+            for folder in ['INBOX', 'Spam', 'Junk']:
+                try:
+                    mailbox.folder.set(folder)
+                except Exception:
+                    continue
+                for msg_id in message_ids:
+                    # Search by Message-ID header
+                    criteria = AND(header=[('Message-ID', f'<{msg_id}>')])
+                    try:
+                        uids = [msg.uid for msg in mailbox.fetch(criteria, headers_only=True)]
+                        if not uids:
+                            # Try without angle brackets
+                            criteria = AND(header=[('Message-ID', msg_id)])
+                            uids = [msg.uid for msg in mailbox.fetch(criteria, headers_only=True)]
+                        if uids:
+                            mailbox.delete(uids)
+                            logger.info(f"Deleted {len(uids)} email(s) from IMAP {folder} for message_id={msg_id}")
+                    except Exception as e:
+                        logger.warning(f"IMAP delete search failed for {msg_id} in {folder}: {e}")
+    except Exception as e:
+        logger.warning(f"IMAP connection failed for delete: {e}")
 
 require_email = require_module("module_email")
 
@@ -1731,27 +1766,42 @@ def permanently_delete_email(
     ).first()
     if not account:
         raise HTTPException(status_code=403, detail="Unauthorized")
-    from app.models.email import EmailAttachment
-    # If part of a thread, permanently delete all emails in thread
+    from app.models.email import EmailAttachment, DeletedEmailTombstone
+    # Collect all emails to delete (thread or single)
     if email.thread_id is not None:
-        thread_email_ids = [e.id for e in db.query(EmailModel.id).filter(
+        emails_to_delete = db.query(EmailModel).filter(
             EmailModel.thread_id == email.thread_id,
             EmailModel.account_id == email.account_id
-        ).all()]
-        # Delete attachments first
-        if thread_email_ids:
-            db.query(EmailAttachment).filter(
-                EmailAttachment.email_id.in_(thread_email_ids)
-            ).delete(synchronize_session=False)
-            db.query(EmailModel).filter(
-                EmailModel.id.in_(thread_email_ids)
-            ).delete(synchronize_session=False)
+        ).all()
     else:
+        emails_to_delete = [email]
+
+    # Save tombstones so these message_ids won't be re-synced from IMAP
+    for e in emails_to_delete:
+        if e.message_id and not e.message_id.startswith(('sent_', 'draft_')):
+            existing_tomb = db.query(DeletedEmailTombstone).filter(
+                DeletedEmailTombstone.account_id == e.account_id,
+                DeletedEmailTombstone.message_id == e.message_id
+            ).first()
+            if not existing_tomb:
+                db.add(DeletedEmailTombstone(account_id=e.account_id, message_id=e.message_id))
+
+    email_ids_to_delete = [e.id for e in emails_to_delete]
+    # Delete attachments first
+    if email_ids_to_delete:
         db.query(EmailAttachment).filter(
-            EmailAttachment.email_id == email.id
+            EmailAttachment.email_id.in_(email_ids_to_delete)
         ).delete(synchronize_session=False)
-        db.delete(email)
-        
+        db.query(EmailModel).filter(
+            EmailModel.id.in_(email_ids_to_delete)
+        ).delete(synchronize_session=False)
+
+    # Try to delete from IMAP server too
+    try:
+        _delete_from_imap(account, [e.message_id for e in emails_to_delete if e.message_id])
+    except Exception as imap_err:
+        logger.warning(f"IMAP delete failed (tombstone will prevent re-sync): {imap_err}")
+
     db.commit()
     return {"status": "success", "message": "Email permanently deleted"}
 
@@ -1765,10 +1815,29 @@ def bulk_permanently_delete_emails(
     db: Session = Depends(get_db)
 ):
     """Permanently delete multiple emails"""
-    from app.models.email import Email as EmailModel, EmailAttachment
+    from app.models.email import Email as EmailModel, EmailAttachment, DeletedEmailTombstone
     account = get_user_email_account(db, current_user.id, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="No email account configured")
+
+    # Fetch emails to get their message_ids for tombstones
+    emails = db.query(EmailModel).filter(
+        EmailModel.id.in_(email_ids),
+        EmailModel.account_id == account.id
+    ).all()
+
+    # Save tombstones
+    imap_msg_ids = []
+    for e in emails:
+        if e.message_id and not e.message_id.startswith(('sent_', 'draft_')):
+            imap_msg_ids.append(e.message_id)
+            existing_tomb = db.query(DeletedEmailTombstone).filter(
+                DeletedEmailTombstone.account_id == account.id,
+                DeletedEmailTombstone.message_id == e.message_id
+            ).first()
+            if not existing_tomb:
+                db.add(DeletedEmailTombstone(account_id=account.id, message_id=e.message_id))
+
     # Delete attachments first to avoid FK violation
     db.query(EmailAttachment).filter(
         EmailAttachment.email_id.in_(email_ids)
@@ -1777,6 +1846,13 @@ def bulk_permanently_delete_emails(
         EmailModel.id.in_(email_ids),
         EmailModel.account_id == account.id
     ).delete(synchronize_session=False)
+
+    # Try to delete from IMAP server
+    try:
+        _delete_from_imap(account, imap_msg_ids)
+    except Exception as imap_err:
+        logger.warning(f"IMAP bulk delete failed (tombstones will prevent re-sync): {imap_err}")
+
     db.commit()
     return {"status": "success", "deleted": len(email_ids)}
 

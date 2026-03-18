@@ -582,12 +582,22 @@ class EmailService:
                                 f"{msg.subject or ''}{msg.from_}{msg.date}{getattr(msg, 'uid', '')}".encode()
                             ).hexdigest()
                         
-                        # Check if email already exists
+                        # Check if email already exists or was permanently deleted
                         existing = db.query(Email).filter(
                             Email.message_id == email_hash,
                             Email.account_id == account.id
                         ).first()
-                        
+
+                        # Check tombstone table — skip emails that were permanently deleted
+                        if not existing:
+                            from app.models.email import DeletedEmailTombstone
+                            tombstoned = db.query(DeletedEmailTombstone).filter(
+                                DeletedEmailTombstone.message_id == email_hash,
+                                DeletedEmailTombstone.account_id == account.id
+                            ).first()
+                            if tombstoned:
+                                continue
+
                         if not existing:
                             # Create new email record
                             email = Email(

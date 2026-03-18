@@ -26,6 +26,7 @@ from app.routes.ci_cd import router as ci_cd_router
 from app.routes.visitors import router as visitors_router
 from app.models.email_template import CampaignEmailTemplate  # noqa: F401 — ensures table creation
 from app.models.email_suppression import EmailSuppression  # noqa: F401
+from app.models.email import DeletedEmailTombstone  # noqa: F401 — ensures table creation
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule  # noqa: F401
 from app.models.backup_destination import BackupDestination  # noqa: F401
 from app.models.backup_job import BackupJob  # noqa: F401

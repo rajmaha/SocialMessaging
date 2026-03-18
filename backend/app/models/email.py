@@ -286,3 +286,17 @@ class EmailAutoReply(Base):
 
     def __repr__(self):
         return f"<EmailAutoReply(user_id={self.user_id}, enabled={self.is_enabled})>"
+
+
+class DeletedEmailTombstone(Base):
+    """Track permanently deleted email message_ids to prevent re-sync from IMAP"""
+    __tablename__ = "deleted_email_tombstones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("user_email_accounts.id"), nullable=False)
+    message_id = Column(String, nullable=False, index=True)
+    deleted_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('account_id', 'message_id', name='uq_tombstone_account_message'),
+    )
