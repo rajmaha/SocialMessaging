@@ -756,94 +756,49 @@ async def _get_user_bearer_or_token(
 def download_attachment(
     email_id: int,
     attachment_id: str,  # Can be ID or filename
-    token: Optional[str] = None,
-    request: Request = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Download email attachment. Supports auth via Bearer header or ?token= query param."""
+    """Download email attachment. Auth via standard Bearer token (handled by router dependency)."""
+    # Get the email to verify ownership
+    email = db.query(Email).filter(Email.id == email_id).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    # Verify user owns this email
+    account = db.query(UserEmailAccount).filter(
+        UserEmailAccount.id == email.account_id,
+        UserEmailAccount.user_id == current_user.id
+    ).first()
+    if not account:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    # Find attachment - try both by ID and by filename
+    attachment = None
     try:
-        import json as _json, jwt
-        from app.config import settings
-        user = None
-
-        # Try Bearer header first (from frontend axios calls)
-        if not user and request:
-            auth_header = request.headers.get("authorization", "")
-            if auth_header.startswith("Bearer "):
-                bearer_token = auth_header[7:]
-                try:
-                    payload = jwt.decode(bearer_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-                    uid = payload.get("user_id")
-                    if uid:
-                        user = db.query(User).filter(User.id == uid).first()
-                except Exception:
-                    pass
-
-        # Try query param token (for inline images in HTML)
-        if not user and token:
-            try:
-                uid = int(token)
-                user = db.query(User).filter(User.id == uid).first()
-            except ValueError:
-                try:
-                    data = _json.loads(token)
-                    user = db.query(User).filter(User.id == data.get("user_id")).first()
-                except Exception:
-                    pass
-
-        if not user:
-            raise HTTPException(status_code=401, detail="Authentication required")
-
-        # Get the email to verify ownership
-        email = db.query(Email).filter(Email.id == email_id).first()
-
-        if not email:
-            raise HTTPException(status_code=404, detail="Email not found")
-
-        # Verify user owns this email
-        account = db.query(UserEmailAccount).filter(
-            UserEmailAccount.id == email.account_id,
-            UserEmailAccount.user_id == user.id
+        attachment_id_int = int(attachment_id)
+        attachment = db.query(EmailAttachment).filter(
+            EmailAttachment.id == attachment_id_int,
+            EmailAttachment.email_id == email_id
+        ).first()
+    except ValueError:
+        attachment = db.query(EmailAttachment).filter(
+            EmailAttachment.email_id == email_id,
+            EmailAttachment.filename == attachment_id
         ).first()
 
-        if not account:
-            raise HTTPException(status_code=403, detail="Unauthorized")
-        
-        # Find attachment - try both by ID and by filename
-        attachment = None
-        try:
-            # Try as integer ID first
-            attachment_id_int = int(attachment_id)
-            attachment = db.query(EmailAttachment).filter(
-                EmailAttachment.id == attachment_id_int,
-                EmailAttachment.email_id == email_id
-            ).first()
-        except ValueError:
-            # If not an integer, search by filename
-            attachment = db.query(EmailAttachment).filter(
-                EmailAttachment.email_id == email_id,
-                EmailAttachment.filename == attachment_id
-            ).first()
-        
-        if not attachment:
-            raise HTTPException(status_code=404, detail="Attachment not found")
-        
-        # Check if file exists
-        file_path = attachment.file_path
-        if not file_path or not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="File not found on server")
-        
-        # Return file as download
-        return FileResponse(
-            path=file_path,
-            filename=attachment.filename,
-            media_type=attachment.content_type or 'application/octet-stream'
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error downloading attachment: {str(e)}")
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    file_path = attachment.file_path
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found on server")
+
+    return FileResponse(
+        path=file_path,
+        filename=attachment.filename,
+        media_type=attachment.content_type or 'application/octet-stream'
+    )
 
 @router.post("/send")
 def send_email(

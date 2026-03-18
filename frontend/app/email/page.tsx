@@ -1802,46 +1802,24 @@ export default function EmailPage() {
       console.log('Downloading attachment:', attachment)
       const token = getAuthToken()
 
-      // Try different endpoint patterns
-      const endpoints = [
+      const response = await axios.get(
         `${API_URL}/email/${emailId}/attachments/${attachment.id}`,
-        `${API_URL}/email/${emailId}/attachments/${encodeURIComponent(attachment.filename)}`,
-      ].filter(Boolean)
-
-      let downloaded = false
-
-      for (const endpoint of endpoints) {
-        try {
-          console.log('Trying endpoint:', endpoint)
-          const response = await axios.get(endpoint, {
-            headers: { Authorization: `Bearer ${token}` },
-            responseType: 'blob'
-          })
-
-          // Create blob URL and trigger download
-          const blob = new Blob([response.data])
-          const url = window.URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = url
-          link.download = attachment.filename || 'attachment'
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          window.URL.revokeObjectURL(url)
-
-          downloaded = true
-          showToast('✓ Attachment downloaded successfully!')
-          break
-        } catch (err) {
-          console.log('Endpoint failed:', endpoint, err)
-          continue
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          responseType: 'blob'
         }
-      }
+      )
 
-      if (!downloaded) {
-        console.error('All download endpoints failed')
-        showToast('Could not download attachment. The download endpoint may not be implemented on the backend yet.', 'error')
-      }
+      const blob = new Blob([response.data])
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = attachment.filename || 'attachment'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      showToast('✓ Attachment downloaded')
     } catch (error) {
       console.error('Error downloading attachment:', error)
       showToast('Failed to download attachment. Please check the browser console for details.', 'error')
