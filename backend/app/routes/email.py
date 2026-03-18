@@ -537,6 +537,7 @@ def get_outbox(
 
     base_filter = [
         Email.account_id == account.id,
+        Email.from_address == account.email_address,  # Only outgoing emails (sent by us)
         Email.is_sent == False,
         Email.is_draft == False,
         Email.is_archived == False,

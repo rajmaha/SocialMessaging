@@ -780,6 +780,10 @@ class EmailService:
                                     if not skip_hit and not already_replied and not is_self:
                                         subject = f"{auto_reply.subject_prefix or 'Re: '}{email.subject}"
                                         reply_body = auto_reply.reply_body or ""
+                                        # Convert plain text to HTML if not already HTML
+                                        if reply_body and '<' not in reply_body:
+                                            reply_body = reply_body.replace('\n', '<br>')
+                                            reply_body = f"<p>{reply_body}</p>"
 
                                         if auto_reply.mode == "ai" and auto_reply.ai_system_prompt:
                                             try:

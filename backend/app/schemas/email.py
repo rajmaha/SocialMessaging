@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from datetime import datetime
 from typing import Optional, List
 
@@ -122,6 +122,7 @@ class EmailAttachmentResponse(BaseModel):
     filename: str
     content_type: Optional[str]
     size: Optional[int]
+    content_id: Optional[str] = None
 
 
 class EmailResponse(BaseModel):
@@ -148,6 +149,34 @@ class EmailResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+    @model_validator(mode='after')
+    def resolve_cid_images(self):
+        """Replace any remaining cid: references in body_html with attachment download URLs."""
+        import re as _re
+        if self.body_html and 'cid:' in self.body_html:
+            # First pass: resolve by stored content_id
+            for att in self.attachments:
+                if att.content_id:
+                    self.body_html = self.body_html.replace(
+                        f'cid:{att.content_id}',
+                        f'/email/{self.id}/attachments/{att.id}'
+                    )
+            # Second pass: for remaining cid: refs, try matching by filename
+            remaining_cids = _re.findall(r'cid:([^"\'>\s]+)', self.body_html)
+            for cid in remaining_cids:
+                # Try to find attachment whose filename (without extension) matches the CID
+                cid_lower = cid.lower().strip('<>').replace('@', '')
+                for att in self.attachments:
+                    fname = (att.filename or '').lower()
+                    fname_no_ext = fname.rsplit('.', 1)[0] if '.' in fname else fname
+                    if fname_no_ext and (fname_no_ext in cid_lower or cid_lower in fname_no_ext or fname == cid_lower):
+                        self.body_html = self.body_html.replace(
+                            f'cid:{cid}',
+                            f'/email/{self.id}/attachments/{att.id}'
+                        )
+                        break
+        return self
 
 
 class SendEmailRequest(BaseModel):
