@@ -106,48 +106,67 @@ def _delete_from_imap(account, message_ids: list):
 def _refetch_attachment_from_imap(account, email_obj, attachment_obj, db):
     """Re-fetch a single attachment from IMAP when it's missing from disk."""
     import re
-    from imap_tools import MailBox, AND
 
+    # Use same path as email_service.py sync
     ATTACHMENT_DIR = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), '..', 'attachment_storage'
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'attachment_storage'
     )
 
-    with MailBox(account.imap_host, account.imap_port).login(
-        account.imap_username, account.imap_password
-    ) as mailbox:
-        # Search in common folders
-        for folder in ['INBOX', 'Sent', 'Trash', 'Spam', 'Junk', 'Archive']:
-            try:
-                mailbox.folder.set(folder)
-            except Exception:
-                continue
+    try:
+        from imap_tools import MailBox, AND
+    except ImportError:
+        logger.warning("imap_tools not installed, cannot re-fetch attachment")
+        return None
 
-            # Search by Message-ID header
-            msg_id = email_obj.message_id
-            if not msg_id:
-                continue
-            criteria = AND(header=[('Message-ID', f'<{msg_id}>')])
-            for msg in mailbox.fetch(criteria):
-                for att in msg.attachments:
-                    # Match by filename or content_id
-                    if att.filename == attachment_obj.filename or (
-                        attachment_obj.content_id and
-                        getattr(att, 'content_id', '').strip('<>') == attachment_obj.content_id
-                    ):
-                        if att.payload:
-                            attach_dir = os.path.join(ATTACHMENT_DIR, str(account.id), str(email_obj.id))
-                            os.makedirs(attach_dir, exist_ok=True)
-                            safe_name = re.sub(r'[^\w\-. ]', '_', att.filename or 'attachment')
-                            saved_path = os.path.join(attach_dir, safe_name)
-                            with open(saved_path, 'wb') as f:
-                                f.write(att.payload)
-                            # Update DB record
-                            attachment_obj.file_path = saved_path
-                            attachment_obj.size = len(att.payload)
-                            db.add(attachment_obj)
-                            db.commit()
-                            logger.info(f"Re-fetched attachment {attachment_obj.id} from IMAP {folder}")
-                            return saved_path
+    msg_id = email_obj.message_id
+    if not msg_id:
+        return None
+
+    try:
+        with MailBox(account.imap_host, account.imap_port).login(
+            account.imap_username, account.imap_password
+        ) as mailbox:
+            # Get all available folders
+            try:
+                all_folders = [f.name for f in mailbox.folder.list()]
+            except Exception:
+                all_folders = ['INBOX', 'Sent', 'Trash', 'Spam', 'Junk', 'Archive']
+
+            for folder in all_folders:
+                try:
+                    mailbox.folder.set(folder)
+                except Exception:
+                    continue
+
+                # Try searching with angle brackets, then without
+                for search_id in [f'<{msg_id}>', msg_id]:
+                    try:
+                        criteria = AND(header=[('Message-ID', search_id)])
+                        for msg in mailbox.fetch(criteria):
+                            for att in msg.attachments:
+                                if att.filename == attachment_obj.filename or (
+                                    attachment_obj.content_id and
+                                    getattr(att, 'content_id', '').strip('<>') == attachment_obj.content_id
+                                ):
+                                    if att.payload:
+                                        attach_dir = os.path.join(ATTACHMENT_DIR, str(account.id), str(email_obj.id))
+                                        os.makedirs(attach_dir, exist_ok=True)
+                                        safe_name = re.sub(r'[^\w\-. ]', '_', att.filename or 'attachment')
+                                        saved_path = os.path.join(attach_dir, safe_name)
+                                        with open(saved_path, 'wb') as f:
+                                            f.write(att.payload)
+                                        attachment_obj.file_path = saved_path
+                                        attachment_obj.size = len(att.payload)
+                                        db.add(attachment_obj)
+                                        db.commit()
+                                        logger.info(f"Re-fetched attachment {attachment_obj.id} from IMAP {folder}")
+                                        return saved_path
+                    except Exception as e:
+                        logger.debug(f"IMAP search failed in {folder} for {search_id}: {e}")
+                        continue
+    except Exception as e:
+        logger.warning(f"IMAP re-fetch connection failed: {e}")
+
     return None
 
 
