@@ -63,12 +63,14 @@ export const authAPI = {
       // Set role cookie for middleware route protection
       if (typeof document !== 'undefined') {
         document.cookie = `user_role=${data.role || 'support'}; path=/; SameSite=Lax`
-        // Fetch and cache page permissions
-        import('@/lib/permissions').then(({ fetchAndStoreUserPages }) => {
-          fetchAndStoreUserPages().then(pages => {
-            document.cookie = `user_pages=${encodeURIComponent(JSON.stringify(pages))}; path=/; SameSite=Lax`
-          })
-        })
+        // Fetch and cache page permissions (await so cookie is set before navigation)
+        try {
+          const { fetchAndStoreUserPages } = await import('@/lib/permissions')
+          const pages = await fetchAndStoreUserPages()
+          document.cookie = `user_pages=${encodeURIComponent(JSON.stringify(pages))}; path=/; SameSite=Lax`
+        } catch (e) {
+          console.error('Failed to fetch user pages:', e)
+        }
       }
     }
     return data
