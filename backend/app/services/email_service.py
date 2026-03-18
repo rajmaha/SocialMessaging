@@ -22,7 +22,7 @@ def _to_utc(dt):
 
 # Directory where attachment files are stored on disk
 ATTACHMENT_STORAGE_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), '..', '..', 'attachment_storage'
+    os.path.dirname(os.path.abspath(__file__)), '..', 'attachment_storage'
 )
 
 logger = logging.getLogger(__name__)

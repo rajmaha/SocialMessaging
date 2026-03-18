@@ -107,9 +107,9 @@ def _refetch_attachment_from_imap(account, email_obj, attachment_obj, db):
     """Re-fetch a single attachment from IMAP when it's missing from disk."""
     import re
 
-    # Use same path as email_service.py sync
+    # Use same path as email_service.py sync — must match Docker volume mount at /app/app/attachment_storage
     ATTACHMENT_DIR = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'attachment_storage'
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'attachment_storage'
     )
 
     try:

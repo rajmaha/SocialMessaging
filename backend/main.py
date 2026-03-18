@@ -2039,7 +2039,7 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 # Serve message attachments (images, files, documents)
-MSG_ATTACH_DIR = os.path.join(os.path.dirname(__file__), "attachment_storage", "messages")
+MSG_ATTACH_DIR = os.path.join(os.path.dirname(__file__), "app", "attachment_storage", "messages")
 os.makedirs(MSG_ATTACH_DIR, exist_ok=True)
 app.mount("/attachments/messages", StaticFiles(directory=MSG_ATTACH_DIR), name="msg_attachments")
 
