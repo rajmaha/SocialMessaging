@@ -150,15 +150,27 @@ def _refetch_attachment_from_imap(account, email_obj, attachment_obj, db):
         return None
 
     msg_id = email_obj.message_id
-    errors = []
+    logs = []
+    logs.append(f"Looking for: filename={attachment_obj.filename}, content_id={attachment_obj.content_id}, msg_id={msg_id}")
+    logs.append(f"ATTACHMENT_DIR={ATTACHMENT_DIR}")
 
     try:
         with MailBox(account.imap_host, account.imap_port).login(
             account.imap_username, account.imap_password
         ) as mailbox:
+            logs.append("IMAP connected OK")
+
+            # List available folders
+            try:
+                available = [f.name for f in mailbox.folder.list()]
+                logs.append(f"Folders: {available[:15]}")
+            except Exception as e:
+                available = ['INBOX', 'Sent', 'Trash', 'Junk']
+                logs.append(f"Could not list folders: {e}")
+
             # Strategy 1: Search by Message-ID header
             if msg_id:
-                for folder in ['INBOX', 'Sent', '[Gmail]/Sent Mail', '[Gmail]/All Mail']:
+                for folder in available:
                     try:
                         mailbox.folder.set(folder)
                     except Exception:
@@ -166,56 +178,71 @@ def _refetch_attachment_from_imap(account, email_obj, attachment_obj, db):
                     for search_id in [f'<{msg_id}>', msg_id]:
                         try:
                             criteria = AND(header=[('Message-ID', search_id)])
-                            for msg in mailbox.fetch(criteria):
-                                att = _match_attachment(msg)
-                                if att:
-                                    return _save_attachment(att, folder)
+                            found_msgs = list(mailbox.fetch(criteria))
+                            if found_msgs:
+                                logs.append(f"Strategy1: Found {len(found_msgs)} msg(s) in {folder}")
+                                for msg in found_msgs:
+                                    att_names = [a.filename for a in msg.attachments]
+                                    logs.append(f"  Attachments in msg: {att_names}")
+                                    att = _match_attachment(msg)
+                                    if att:
+                                        result = _save_attachment(att, folder)
+                                        return result, logs
                         except Exception as e:
-                            errors.append(f"Header search in {folder}: {e}")
+                            logs.append(f"Strategy1 error in {folder}: {e}")
 
-            # Strategy 2: Search by date range + from address (fallback for servers that don't support header search)
+            # Strategy 2: Search by date range + from address
             if email_obj.received_at:
                 date_start = (email_obj.received_at - timedelta(days=1)).date()
                 date_end = (email_obj.received_at + timedelta(days=1)).date()
                 from_addr = email_obj.from_address or ""
+                logs.append(f"Strategy2: date={date_start}..{date_end}, from={from_addr}")
 
-                for folder in ['INBOX', 'Sent', '[Gmail]/Sent Mail', '[Gmail]/All Mail']:
+                for folder in ['INBOX', 'Sent', 'Trash']:
                     try:
                         mailbox.folder.set(folder)
                     except Exception:
                         continue
                     try:
-                        criteria = AND(date_gte=date_start, date_lt=date_end)
                         if from_addr:
                             criteria = AND(date_gte=date_start, date_lt=date_end, from_=from_addr)
+                        else:
+                            criteria = AND(date_gte=date_start, date_lt=date_end)
+                        found_count = 0
                         for msg in mailbox.fetch(criteria):
-                            # Verify this is the right email by checking subject
+                            found_count += 1
                             if email_obj.subject and msg.subject and email_obj.subject.strip() == msg.subject.strip():
+                                att_names = [a.filename for a in msg.attachments]
+                                logs.append(f"Strategy2: Subject match in {folder}, atts={att_names}")
                                 att = _match_attachment(msg)
                                 if att:
-                                    return _save_attachment(att, folder)
+                                    result = _save_attachment(att, folder)
+                                    return result, logs
+                        logs.append(f"Strategy2: {found_count} emails in {folder}, no subject match")
                     except Exception as e:
-                        errors.append(f"Date search in {folder}: {e}")
+                        logs.append(f"Strategy2 error in {folder}: {e}")
 
-            # Strategy 3: Brute force — fetch last 200 emails from INBOX
+            # Strategy 3: Brute force last 200 INBOX emails
             try:
                 mailbox.folder.set('INBOX')
+                count = 0
                 for msg in mailbox.fetch(limit=200, reverse=True):
-                    # Match by Message-ID in headers
+                    count += 1
                     raw_mid = (msg.headers.get('message-id', [''])[0] or '').strip().strip('<>')
                     if msg_id and raw_mid and (raw_mid == msg_id or raw_mid == msg_id.strip('<>')):
+                        logs.append(f"Strategy3: Found msg at position {count}")
                         att = _match_attachment(msg)
                         if att:
-                            return _save_attachment(att, 'INBOX-brute')
+                            result = _save_attachment(att, 'INBOX-brute')
+                            return result, logs
+                logs.append(f"Strategy3: Scanned {count} emails, no match")
             except Exception as e:
-                errors.append(f"Brute force: {e}")
+                logs.append(f"Strategy3 error: {e}")
 
     except Exception as e:
-        errors.append(f"IMAP connection: {e}")
+        logs.append(f"IMAP connection error: {e}")
 
-    if errors:
-        logger.warning(f"IMAP re-fetch failed for attachment {attachment_obj.id}: {'; '.join(errors)}")
-    return None
+    return None, logs
 
 
 require_email = require_module("module_email")
@@ -915,15 +942,14 @@ def download_attachment(
 
     # If file doesn't exist on disk, try to re-fetch from IMAP
     if not file_path or not os.path.exists(file_path):
-        refetch_error = None
         try:
-            file_path = _refetch_attachment_from_imap(account, email, attachment, db)
+            file_path, refetch_logs = _refetch_attachment_from_imap(account, email, attachment, db)
             debug_info["refetch_result"] = file_path
+            debug_info["refetch_logs"] = refetch_logs
         except Exception as e:
-            refetch_error = str(e)
             logger.warning(f"IMAP re-fetch failed for attachment {attachment.id}: {e}")
             file_path = None
-            debug_info["refetch_error"] = refetch_error
+            debug_info["refetch_error"] = str(e)
 
     if not file_path or not os.path.exists(file_path):
         raise HTTPException(
