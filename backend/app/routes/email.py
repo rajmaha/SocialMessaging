@@ -103,6 +103,54 @@ def _delete_from_imap(account, message_ids: list):
     except Exception as e:
         logger.warning(f"IMAP connection failed for delete: {e}")
 
+def _refetch_attachment_from_imap(account, email_obj, attachment_obj, db):
+    """Re-fetch a single attachment from IMAP when it's missing from disk."""
+    import re
+    from imap_tools import MailBox, AND
+
+    ATTACHMENT_DIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..', 'attachment_storage'
+    )
+
+    with MailBox(account.imap_host, account.imap_port).login(
+        account.imap_username, account.imap_password
+    ) as mailbox:
+        # Search in common folders
+        for folder in ['INBOX', 'Sent', 'Trash', 'Spam', 'Junk', 'Archive']:
+            try:
+                mailbox.folder.set(folder)
+            except Exception:
+                continue
+
+            # Search by Message-ID header
+            msg_id = email_obj.message_id
+            if not msg_id:
+                continue
+            criteria = AND(header=[('Message-ID', f'<{msg_id}>')])
+            for msg in mailbox.fetch(criteria):
+                for att in msg.attachments:
+                    # Match by filename or content_id
+                    if att.filename == attachment_obj.filename or (
+                        attachment_obj.content_id and
+                        getattr(att, 'content_id', '').strip('<>') == attachment_obj.content_id
+                    ):
+                        if att.payload:
+                            attach_dir = os.path.join(ATTACHMENT_DIR, str(account.id), str(email_obj.id))
+                            os.makedirs(attach_dir, exist_ok=True)
+                            safe_name = re.sub(r'[^\w\-. ]', '_', att.filename or 'attachment')
+                            saved_path = os.path.join(attach_dir, safe_name)
+                            with open(saved_path, 'wb') as f:
+                                f.write(att.payload)
+                            # Update DB record
+                            attachment_obj.file_path = saved_path
+                            attachment_obj.size = len(att.payload)
+                            db.add(attachment_obj)
+                            db.commit()
+                            logger.info(f"Re-fetched attachment {attachment_obj.id} from IMAP {folder}")
+                            return saved_path
+    return None
+
+
 require_email = require_module("module_email")
 
 # Add the dependency to the router after it's defined
@@ -791,8 +839,17 @@ def download_attachment(
         raise HTTPException(status_code=404, detail="Attachment not found")
 
     file_path = attachment.file_path
+
+    # If file doesn't exist on disk, try to re-fetch from IMAP
     if not file_path or not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found on server")
+        try:
+            file_path = _refetch_attachment_from_imap(account, email, attachment, db)
+        except Exception as e:
+            logger.warning(f"IMAP re-fetch failed for attachment {attachment.id}: {e}")
+            file_path = None
+
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found on server and could not be re-fetched from mail server")
 
     return FileResponse(
         path=file_path,
