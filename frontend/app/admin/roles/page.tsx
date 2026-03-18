@@ -13,7 +13,7 @@ const MODULE_CATEGORIES = [
   },
   {
     label: 'Business',
-    keys: ['crm', 'tickets', 'pms', 'campaigns', 'reports', 'kb', 'teams'],
+    keys: ['crm', 'tickets', 'pms', 'pms_tasks', 'pms_milestones', 'campaigns', 'reports', 'kb', 'teams'],
   },
   {
     label: 'Administration',
