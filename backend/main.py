@@ -1344,7 +1344,7 @@ def _run_inline_migrations():
             "callcenter": ["callcenter"],
             "crm": ["crm"],
             "tickets": ["tickets"],
-            "pms": ["pms"],
+            "pms": ["pms", "pms_tasks", "pms_milestones"],
             "campaigns": ["campaigns"],
             "reports": ["reports"],
             "kb": ["kb"],
@@ -1368,6 +1368,20 @@ def _run_inline_migrations():
                 conn.execute(text(
                     "UPDATE roles SET permissions = CAST(:perms AS jsonb) WHERE id = :rid"
                 ), {"perms": json.dumps(new_perms), "rid": role_id})
+
+        # ── Backfill pms_tasks + pms_milestones for roles that already have pms ──
+        backfill_result = conn.execute(text(
+            "SELECT id, permissions FROM roles WHERE permissions ? 'pms' AND NOT permissions ? 'pms_tasks'"
+        ))
+        for row in backfill_result:
+            role_id = row[0]
+            perms = row[1] if isinstance(row[1], dict) else json.loads(row[1]) if row[1] else {}
+            pms_actions = perms.get("pms", [])
+            perms["pms_tasks"] = list(set(pms_actions) | {"assign"}) if pms_actions else MODULE_REGISTRY["pms_tasks"]["actions"][:]
+            perms["pms_milestones"] = [a for a in pms_actions if a in MODULE_REGISTRY["pms_milestones"]["actions"]] or MODULE_REGISTRY["pms_milestones"]["actions"][:]
+            conn.execute(text(
+                "UPDATE roles SET permissions = CAST(:perms AS jsonb) WHERE id = :rid"
+            ), {"perms": json.dumps(perms), "rid": role_id})
 
         # ── Migrate user_permissions → user_permission_overrides (one-time) ──
         override_count = conn.execute(text("SELECT COUNT(*) FROM user_permission_overrides")).scalar()

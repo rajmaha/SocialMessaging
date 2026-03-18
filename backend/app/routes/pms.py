@@ -41,6 +41,24 @@ WORKFLOW_TRANSITIONS = {
 def _is_admin(user: User) -> bool:
     return getattr(user, 'role', '') == "admin"
 
+def _has_permission(user: User, db: Session, module_key: str, action: str) -> bool:
+    """Inline permission check (for places where we need membership + permission)."""
+    if _is_admin(user):
+        return True
+    from app.models.role import Role
+    from app.models.user_permission_override import UserPermissionOverride
+    role = db.query(Role).filter(Role.slug == user.role).first()
+    role_actions = (role.permissions or {}).get(module_key, []) if role else []
+    override = db.query(UserPermissionOverride).filter(
+        UserPermissionOverride.user_id == user.id,
+        UserPermissionOverride.module_key == module_key
+    ).first()
+    if override:
+        effective = set(role_actions) | set(override.granted_actions or []) - set(override.revoked_actions or [])
+    else:
+        effective = set(role_actions)
+    return action in effective
+
 def _get_membership(db, project_id: int, user_id: int) -> Optional[PMSProjectMember]:
     return db.query(PMSProjectMember).filter_by(project_id=project_id, user_id=user_id).first()
 
@@ -175,8 +193,8 @@ def update_project(project_id: int, data: PMSProjectUpdate, db: Session = Depend
     if not p:
         raise HTTPException(404)
     m = _require_member(db, project_id, current_user)
-    if m.role not in ("pm",) and not _is_admin(current_user):
-        raise HTTPException(403, "PM or admin only")
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms", "edit"):
+        raise HTTPException(403, "PM or edit permission required")
     for k, v in data.dict(exclude_none=True).items():
         setattr(p, k, v)
     db.commit()
@@ -187,8 +205,8 @@ def update_project(project_id: int, data: PMSProjectUpdate, db: Session = Depend
 
 @router.delete("/projects/{project_id}")
 def delete_project(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not _is_admin(current_user):
-        raise HTTPException(403)
+    if not _has_permission(current_user, db, "pms", "delete"):
+        raise HTTPException(403, "Delete permission required")
     p = db.query(PMSProject).filter_by(id=project_id).first()
     if not p:
         raise HTTPException(404)
@@ -209,8 +227,8 @@ def list_members(project_id: int, db: Session = Depends(get_db), current_user: U
 @router.post("/projects/{project_id}/members")
 def add_member(project_id: int, data: PMSMemberAdd, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     m = _require_member(db, project_id, current_user)
-    if m.role not in ("pm",) and not _is_admin(current_user):
-        raise HTTPException(403, "PM or admin only")
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms", "edit"):
+        raise HTTPException(403, "PM or edit permission required")
     existing = _get_membership(db, project_id, data.user_id)
     if existing:
         existing.role = data.role
@@ -226,8 +244,8 @@ def add_member(project_id: int, data: PMSMemberAdd, db: Session = Depends(get_db
 @router.delete("/projects/{project_id}/members/{user_id}")
 def remove_member(project_id: int, user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     m = _require_member(db, project_id, current_user)
-    if m.role not in ("pm",) and not _is_admin(current_user):
-        raise HTTPException(403)
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms", "edit"):
+        raise HTTPException(403, "PM or edit permission required")
     mem = _get_membership(db, project_id, user_id)
     if not mem:
         raise HTTPException(404)
@@ -248,8 +266,8 @@ def list_milestones(project_id: int, db: Session = Depends(get_db), current_user
 @router.post("/projects/{project_id}/milestones")
 def create_milestone(project_id: int, data: PMSMilestoneCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     m = _require_member(db, project_id, current_user)
-    if m.role not in ("pm",) and not _is_admin(current_user):
-        raise HTTPException(403)
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms_milestones", "add"):
+        raise HTTPException(403, "PM or milestone add permission required")
     ms = PMSMilestone(**data.dict(), project_id=project_id)
     db.add(ms)
     db.commit()
@@ -277,8 +295,8 @@ def delete_milestone(milestone_id: int, db: Session = Depends(get_db), current_u
     if not ms:
         raise HTTPException(404)
     m = _require_member(db, ms.project_id, current_user)
-    if m.role not in ("pm",) and not _is_admin(current_user):
-        raise HTTPException(403)
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms_milestones", "delete"):
+        raise HTTPException(403, "PM or milestone delete permission required")
     db.delete(ms)
     db.commit()
     return {"ok": True}
@@ -295,7 +313,7 @@ def list_tasks(project_id: int, db: Session = Depends(get_db), current_user: Use
 def create_task(project_id: int, data: PMSTaskCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _require_member(db, project_id, current_user)
     if data.assignee_id:
-        if not _get_membership(db, project_id, data.assignee_id) and not _is_admin(current_user):
+        if not _get_membership(db, project_id, data.assignee_id) and not _has_permission(current_user, db, "pms_tasks", "assign"):
             raise HTTPException(400, "Assignee must be a project member")
     count = db.query(PMSTask).filter_by(project_id=project_id).count()
     task = PMSTask(**data.dict(), project_id=project_id, position=count)
@@ -321,7 +339,7 @@ def update_task(task_id: int, data: PMSTaskUpdate, db: Session = Depends(get_db)
         raise HTTPException(404)
     _require_member(db, task.project_id, current_user)
     if data.assignee_id:
-        if not _get_membership(db, task.project_id, data.assignee_id) and not _is_admin(current_user):
+        if not _get_membership(db, task.project_id, data.assignee_id) and not _has_permission(current_user, db, "pms_tasks", "assign"):
             raise HTTPException(400, "Assignee must be a project member")
     # Before updates: capture old assignee
     old_assignee_name = task.assignee.full_name if task.assignee else None
@@ -343,8 +361,8 @@ def delete_task(task_id: int, db: Session = Depends(get_db), current_user: User 
     if not task:
         raise HTTPException(404)
     m = _require_member(db, task.project_id, current_user)
-    if m.role not in ("pm",) and not _is_admin(current_user):
-        raise HTTPException(403)
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms_tasks", "delete"):
+        raise HTTPException(403, "PM or task delete permission required")
     db.delete(task)
     db.commit()
     return {"ok": True}
@@ -360,7 +378,7 @@ def transition_task(task_id: int, data: PMSTransitionRequest, db: Session = Depe
     allowed = WORKFLOW_TRANSITIONS.get(task.stage, {}).get(data.to_stage, [])
     if not allowed:
         raise HTTPException(400, f"No transition from {task.stage} to {data.to_stage}")
-    if m.role not in allowed and not _is_admin(current_user):
+    if m.role not in allowed and not _has_permission(current_user, db, "pms_tasks", "edit"):
         raise HTTPException(403, f"Role '{m.role}' cannot perform this transition")
     old_stage = task.stage
     task.stage = data.to_stage
@@ -441,7 +459,7 @@ def delete_comment(comment_id: int, db: Session = Depends(get_db), current_user:
     c = db.query(PMSTaskComment).filter_by(id=comment_id).first()
     if not c:
         raise HTTPException(404)
-    if c.user_id != current_user.id and not _is_admin(current_user):
+    if c.user_id != current_user.id and not _has_permission(current_user, db, "pms_tasks", "delete"):
         raise HTTPException(403)
     db.delete(c)
     db.commit()
@@ -599,8 +617,8 @@ def list_labels(db: Session = Depends(get_db), current_user: User = Depends(get_
 
 @router.post("/labels")
 def create_label(data: PMSLabelDefCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not _is_admin(current_user):
-        raise HTTPException(403, "Admins only")
+    if not _has_permission(current_user, db, "pms", "edit"):
+        raise HTTPException(403, "Edit permission required")
     existing = db.query(PMSLabelDefinition).filter_by(name=data.name).first()
     if existing:
         raise HTTPException(400, "Label name already exists")
@@ -612,8 +630,8 @@ def create_label(data: PMSLabelDefCreate, db: Session = Depends(get_db), current
 
 @router.put("/labels/{label_id}")
 def update_label(label_id: int, data: PMSLabelDefUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not _is_admin(current_user):
-        raise HTTPException(403, "Admins only")
+    if not _has_permission(current_user, db, "pms", "edit"):
+        raise HTTPException(403, "Edit permission required")
     label = db.query(PMSLabelDefinition).filter_by(id=label_id).first()
     if not label:
         raise HTTPException(404)
@@ -625,8 +643,8 @@ def update_label(label_id: int, data: PMSLabelDefUpdate, db: Session = Depends(g
 
 @router.delete("/labels/{label_id}")
 def delete_label(label_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not _is_admin(current_user):
-        raise HTTPException(403)
+    if not _has_permission(current_user, db, "pms", "delete"):
+        raise HTTPException(403, "Delete permission required")
     label = db.query(PMSLabelDefinition).filter_by(id=label_id).first()
     if not label:
         raise HTTPException(404)

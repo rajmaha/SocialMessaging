@@ -4,10 +4,11 @@ import { pmsApi } from '@/lib/api';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
 import { authAPI } from '@/lib/auth';
+import { hasPermission } from '@/lib/permissions';
 
 export default function LabelsPage() {
   const user = authAPI.getUser();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = hasPermission('pms', 'edit');
   const [labels, setLabels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);

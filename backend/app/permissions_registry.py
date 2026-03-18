@@ -14,7 +14,9 @@ MODULE_REGISTRY = {
     # Business modules
     "crm":          {"label": "CRM",                  "actions": ["view", "add", "edit", "delete", "import", "export"]},
     "tickets":      {"label": "Tickets",              "actions": ["view", "add", "edit", "delete", "assign"]},
-    "pms":          {"label": "Projects (PMS)",       "actions": ["view", "add", "edit", "delete"]},
+    "pms":              {"label": "Projects (PMS)",       "actions": ["view", "add", "edit", "delete"]},
+    "pms_tasks":        {"label": "Tasks",                "actions": ["view", "add", "edit", "delete", "assign"]},
+    "pms_milestones":   {"label": "Milestones",           "actions": ["view", "add", "edit", "delete"]},
     "campaigns":    {"label": "Email Campaigns",      "actions": ["view", "add", "edit", "delete", "send"]},
     "reports":      {"label": "Reports",              "actions": ["view", "export"]},
     "kb":           {"label": "Knowledge Base",       "actions": ["view", "add", "edit", "delete", "publish"]},
