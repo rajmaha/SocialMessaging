@@ -76,6 +76,7 @@ function DashboardPage() {
   const [accountFilter, setAccountFilter] = useState<string>('')
   const [widgetDomains, setWidgetDomains] = useState<any[]>([])
   const [domainFilter, setDomainFilter] = useState<string>('')
+  const [badgeCounts, setBadgeCounts] = useState<{ unassigned: number; pending: number }>({ unassigned: 0, pending: 0 })
   const userRef = useRef<User | null>(null)
   const platformRef = useRef<string>('all')
   const statusFilterRef = useRef<string>('all')
@@ -121,6 +122,20 @@ function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
+  const fetchBadgeCounts = useCallback(async (userId: number) => {
+    try {
+      const plat = platformRef.current
+      const params: any = { user_id: userId }
+      if (plat !== 'all') params.platform = plat
+      const response = await axios.get(`${API_URL}/conversations/`, { params })
+      const all: Conversation[] = response.data
+      setBadgeCounts({
+        unassigned: all.filter(c => !c.assigned_to).length,
+        pending: all.filter(c => c.status === 'pending').length,
+      })
+    } catch { /* ignore */ }
+  }, [])
+
   const fetchConversations = useCallback(async (userId: number, platform?: string, status?: string, mine?: boolean, unassigned?: boolean, accountId?: string) => {
     const plat = platform ?? platformRef.current
     const stat = status ?? statusFilterRef.current
@@ -137,12 +152,14 @@ function DashboardPage() {
       if (acctId) params.platform_account_id = acctId
       const response = await axios.get(`${API_URL}/conversations/`, { params })
       setConversations(response.data)
+      // Refresh badge counts alongside
+      fetchBadgeCounts(userId)
     } catch (error) {
       console.error('Error fetching conversations:', error)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchBadgeCounts])
 
   // Sync activeTab when URL search params change (e.g. MobileBottomNav taps)
   useEffect(() => {
@@ -329,12 +346,9 @@ function DashboardPage() {
                       }`}
                   >
                     Unassigned
-                    {(() => {
-                      const n = conversations.filter(c => !c.assigned_to && c.unread_count > 0).length
-                      return n > 0 ? (
-                        <span className={`text-[10px] font-bold px-1 rounded-full ${unassignedOnly ? 'bg-white text-orange-600' : 'bg-orange-500 text-white'}`}>{n}</span>
-                      ) : null
-                    })()}
+                    {badgeCounts.unassigned > 0 && (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${unassignedOnly ? 'bg-white text-orange-600' : 'bg-orange-500 text-white'}`}>{badgeCounts.unassigned}</span>
+                    )}
                   </button>
                 </div>
                 {/* Status filter */}
@@ -343,10 +357,13 @@ function DashboardPage() {
                     <button
                       key={s}
                       onClick={() => handleStatusFilter(s)}
-                      className={`flex-1 text-xs py-1 rounded font-medium capitalize transition ${statusFilter === s ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                      className={`flex-1 text-xs py-1 rounded font-medium capitalize transition flex items-center justify-center gap-1 ${statusFilter === s ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                       style={statusFilter === s ? { backgroundColor: s === 'open' ? 'var(--primary-color)' : s === 'pending' ? 'var(--accent-color)' : s === 'resolved' ? 'var(--secondary-color)' : 'var(--sidebar-bg)' } : {}}
                     >
                       {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                      {s === 'pending' && badgeCounts.pending > 0 && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${statusFilter === 'pending' ? 'bg-white text-orange-600' : 'bg-orange-500 text-white'}`}>{badgeCounts.pending}</span>
+                      )}
                     </button>
                   ))}
                 </div>
