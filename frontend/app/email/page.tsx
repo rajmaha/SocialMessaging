@@ -2842,6 +2842,20 @@ export default function EmailPage() {
           {/* Bulk action bar */}
           {selectedThreadIds.size > 0 && (
             <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-b border-blue-200 flex-shrink-0">
+              <input
+                type="checkbox"
+                checked={threads.length > 0 && selectedThreadIds.size === threads.length}
+                ref={(el) => { if (el) el.indeterminate = selectedThreadIds.size > 0 && selectedThreadIds.size < threads.length }}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedThreadIds(new Set(threads.map(t => t.id)))
+                  } else {
+                    setSelectedThreadIds(new Set())
+                  }
+                }}
+                className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                title={selectedThreadIds.size === threads.length ? 'Deselect all' : 'Select all'}
+              />
               <span className="text-xs font-semibold text-blue-700">{selectedThreadIds.size} selected</span>
               <button onClick={() => handleBulkMarkRead(true)} className="text-xs px-2.5 py-1 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition text-gray-600">Mark Read</button>
               <button onClick={() => handleBulkMarkRead(false)} className="text-xs px-2.5 py-1 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition text-gray-600">Mark Unread</button>
