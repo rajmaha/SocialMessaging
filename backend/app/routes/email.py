@@ -933,29 +933,17 @@ def download_attachment(
         raise HTTPException(status_code=404, detail="Attachment not found")
 
     file_path = attachment.file_path
-    debug_info = {
-        "attachment_id": attachment.id,
-        "db_file_path": file_path,
-        "file_exists": bool(file_path and os.path.exists(file_path)),
-        "message_id": email.message_id,
-    }
 
     # If file doesn't exist on disk, try to re-fetch from IMAP
     if not file_path or not os.path.exists(file_path):
         try:
-            file_path, refetch_logs = _refetch_attachment_from_imap(account, email, attachment, db)
-            debug_info["refetch_result"] = file_path
-            debug_info["refetch_logs"] = refetch_logs
+            file_path, _logs = _refetch_attachment_from_imap(account, email, attachment, db)
         except Exception as e:
             logger.warning(f"IMAP re-fetch failed for attachment {attachment.id}: {e}")
             file_path = None
-            debug_info["refetch_error"] = str(e)
 
     if not file_path or not os.path.exists(file_path):
-        raise HTTPException(
-            status_code=404,
-            detail=f"File not found. Debug: {debug_info}"
-        )
+        raise HTTPException(status_code=404, detail="Attachment file not available")
 
     return FileResponse(
         path=file_path,
