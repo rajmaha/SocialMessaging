@@ -3035,8 +3035,8 @@ export default function EmailPage() {
                           </div>
                         </div>
                       </button>
-                      {/* Action buttons column — collapses to 0 width, expands on hover */}
-                      <div className="flex flex-col justify-center gap-0.5 overflow-hidden transition-all flex-shrink-0 w-0 group-hover:w-8">
+                      {/* Action buttons — horizontal overlay on hover (appears over date area) */}
+                      <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-row items-center gap-0.5 bg-white shadow-sm border border-gray-200 rounded-lg px-1 py-0.5 z-10 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
                         <button
                           onClick={() => handleStar(thread.emails[0].id, thread.emails[0].is_starred)}
                           title={thread.emails[0]?.is_starred ? 'Unstar' : 'Star'}
