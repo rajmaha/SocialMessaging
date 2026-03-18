@@ -211,7 +211,6 @@ def get_inbox(
             )
         )
     if search:
-        from sqlalchemy import or_
         term = f"%{search}%"
         base_filter.append(
             or_(
@@ -276,7 +275,6 @@ def get_sent_threads(
             detail="No email account configured for this user"
         )
 
-    from sqlalchemy import or_
     base_filter = [
         EmailModel.account_id == account.id,
         # "Sent" = emails the user composed: either flagged is_sent=True by the app,
@@ -291,7 +289,6 @@ def get_sent_threads(
         EmailModel.is_scheduled == False,
     ]
     if search:
-        from sqlalchemy import or_
         term = f"%{search}%"
         base_filter.append(
             or_(
@@ -340,7 +337,6 @@ def get_archived_threads(
         EmailModel.is_archived == True
     ]
     if search:
-        from sqlalchemy import or_
         term = f"%{search}%"
         base_filter.append(
             or_(
@@ -386,7 +382,6 @@ def get_spam_emails(
         EmailModel.is_spam == True
     ]
     if search:
-        from sqlalchemy import or_
         term = f"%{search}%"
         base_filter.append(
             or_(
@@ -473,7 +468,6 @@ def get_starred_threads(
         EmailModel.is_draft == False
     ]
     if search:
-        from sqlalchemy import or_
         term = f"%{search}%"
         base_filter.append(
             or_(
@@ -514,7 +508,6 @@ def get_drafts(
         Email.is_draft == True
     ]
     if search:
-        from sqlalchemy import or_
         term = f"%{search}%"
         base_filter.append(
             or_(
@@ -572,7 +565,6 @@ def get_outbox(
         ),
     ]
     if search:
-        from sqlalchemy import or_
         term = f"%{search}%"
         base_filter.append(
             or_(
