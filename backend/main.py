@@ -1662,6 +1662,26 @@ def _run_inline_migrations():
         """))
         conn.commit()
 
+        # Replace global unique index on emails.message_id with composite unique (account_id, message_id)
+        # so the same email can exist in multiple accounts without conflict.
+        conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'ix_emails_message_id') THEN
+                    ALTER TABLE emails DROP CONSTRAINT IF EXISTS ix_emails_message_id;
+                    DROP INDEX IF EXISTS ix_emails_message_id;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'uq_emails_account_message') THEN
+                    ALTER TABLE emails ADD CONSTRAINT uq_emails_account_message UNIQUE (account_id, message_id);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'ix_emails_message_id_nonunique') THEN
+                    CREATE INDEX ix_emails_message_id_nonunique ON emails (message_id);
+                END IF;
+            END
+            $$;
+        """))
+        conn.commit()
+
 # ── Log DB Init ────────────────────────────────────────────────────────────
 from app.log_database import init_log_db
 init_log_db()

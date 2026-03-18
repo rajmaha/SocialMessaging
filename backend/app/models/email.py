@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, LargeBinary, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, LargeBinary, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -52,13 +52,16 @@ class UserEmailAccount(Base):
 class Email(Base):
     """Store email messages"""
     __tablename__ = "emails"
+    __table_args__ = (
+        UniqueConstraint("account_id", "message_id", name="uq_emails_account_message"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("user_email_accounts.id"), nullable=False)
     thread_id = Column(Integer, ForeignKey("email_threads.id"), nullable=True)  # Thread this email belongs to
-    
+
     # Email headers
-    message_id = Column(String, unique=True, index=True, nullable=False)
+    message_id = Column(String, index=True, nullable=False)
     subject = Column(String, nullable=True)
     from_address = Column(String, nullable=False)
     to_address = Column(Text, nullable=False)  # Can be multiple, comma-separated
