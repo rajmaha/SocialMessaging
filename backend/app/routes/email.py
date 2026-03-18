@@ -1739,13 +1739,25 @@ def permanently_delete_email(
     ).first()
     if not account:
         raise HTTPException(status_code=403, detail="Unauthorized")
+    from app.models.email import EmailAttachment
     # If part of a thread, permanently delete all emails in thread
     if email.thread_id is not None:
-        db.query(EmailModel).filter(
+        thread_email_ids = [e.id for e in db.query(EmailModel.id).filter(
             EmailModel.thread_id == email.thread_id,
             EmailModel.account_id == email.account_id
-        ).delete(synchronize_session=False)
+        ).all()]
+        # Delete attachments first
+        if thread_email_ids:
+            db.query(EmailAttachment).filter(
+                EmailAttachment.email_id.in_(thread_email_ids)
+            ).delete(synchronize_session=False)
+            db.query(EmailModel).filter(
+                EmailModel.id.in_(thread_email_ids)
+            ).delete(synchronize_session=False)
     else:
+        db.query(EmailAttachment).filter(
+            EmailAttachment.email_id == email.id
+        ).delete(synchronize_session=False)
         db.delete(email)
         
     db.commit()
@@ -1761,10 +1773,14 @@ def bulk_permanently_delete_emails(
     db: Session = Depends(get_db)
 ):
     """Permanently delete multiple emails"""
-    from app.models.email import Email as EmailModel
+    from app.models.email import Email as EmailModel, EmailAttachment
     account = get_user_email_account(db, current_user.id, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="No email account configured")
+    # Delete attachments first to avoid FK violation
+    db.query(EmailAttachment).filter(
+        EmailAttachment.email_id.in_(email_ids)
+    ).delete(synchronize_session=False)
     db.query(EmailModel).filter(
         EmailModel.id.in_(email_ids),
         EmailModel.account_id == account.id
