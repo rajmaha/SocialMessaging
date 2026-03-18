@@ -106,8 +106,9 @@ def _delete_from_imap(account, message_ids: list):
 def _refetch_attachment_from_imap(account, email_obj, attachment_obj, db):
     """Re-fetch a single attachment from IMAP when it's missing from disk."""
     import re
+    from datetime import timedelta
 
-    # Use same path as email_service.py sync — must match Docker volume mount at /app/app/attachment_storage
+    # Must match Docker volume mount at /app/app/attachment_storage
     ATTACHMENT_DIR = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'attachment_storage'
     )
@@ -118,55 +119,102 @@ def _refetch_attachment_from_imap(account, email_obj, attachment_obj, db):
         logger.warning("imap_tools not installed, cannot re-fetch attachment")
         return None
 
-    msg_id = email_obj.message_id
-    if not msg_id:
+    def _save_attachment(att, folder_name):
+        """Save matched attachment to disk and update DB."""
+        if not att.payload:
+            return None
+        attach_dir = os.path.join(ATTACHMENT_DIR, str(account.id), str(email_obj.id))
+        os.makedirs(attach_dir, exist_ok=True)
+        safe_name = re.sub(r'[^\w\-. ]', '_', att.filename or 'attachment')
+        saved_path = os.path.join(attach_dir, safe_name)
+        with open(saved_path, 'wb') as f:
+            f.write(att.payload)
+        attachment_obj.file_path = saved_path
+        attachment_obj.size = len(att.payload)
+        db.add(attachment_obj)
+        db.commit()
+        logger.info(f"Re-fetched attachment {attachment_obj.id} ({att.filename}) from IMAP {folder_name}")
+        return saved_path
+
+    def _match_attachment(msg):
+        """Check all attachments in a message for a match."""
+        for att in msg.attachments:
+            # Match by filename
+            if att.filename and att.filename == attachment_obj.filename:
+                return att
+            # Match by content_id
+            if attachment_obj.content_id:
+                att_cid = (getattr(att, 'content_id', '') or '').strip('<>')
+                if att_cid and att_cid == attachment_obj.content_id:
+                    return att
         return None
+
+    msg_id = email_obj.message_id
+    errors = []
 
     try:
         with MailBox(account.imap_host, account.imap_port).login(
             account.imap_username, account.imap_password
         ) as mailbox:
-            # Get all available folders
-            try:
-                all_folders = [f.name for f in mailbox.folder.list()]
-            except Exception:
-                all_folders = ['INBOX', 'Sent', 'Trash', 'Spam', 'Junk', 'Archive']
-
-            for folder in all_folders:
-                try:
-                    mailbox.folder.set(folder)
-                except Exception:
-                    continue
-
-                # Try searching with angle brackets, then without
-                for search_id in [f'<{msg_id}>', msg_id]:
+            # Strategy 1: Search by Message-ID header
+            if msg_id:
+                for folder in ['INBOX', 'Sent', '[Gmail]/Sent Mail', '[Gmail]/All Mail']:
                     try:
-                        criteria = AND(header=[('Message-ID', search_id)])
-                        for msg in mailbox.fetch(criteria):
-                            for att in msg.attachments:
-                                if att.filename == attachment_obj.filename or (
-                                    attachment_obj.content_id and
-                                    getattr(att, 'content_id', '').strip('<>') == attachment_obj.content_id
-                                ):
-                                    if att.payload:
-                                        attach_dir = os.path.join(ATTACHMENT_DIR, str(account.id), str(email_obj.id))
-                                        os.makedirs(attach_dir, exist_ok=True)
-                                        safe_name = re.sub(r'[^\w\-. ]', '_', att.filename or 'attachment')
-                                        saved_path = os.path.join(attach_dir, safe_name)
-                                        with open(saved_path, 'wb') as f:
-                                            f.write(att.payload)
-                                        attachment_obj.file_path = saved_path
-                                        attachment_obj.size = len(att.payload)
-                                        db.add(attachment_obj)
-                                        db.commit()
-                                        logger.info(f"Re-fetched attachment {attachment_obj.id} from IMAP {folder}")
-                                        return saved_path
-                    except Exception as e:
-                        logger.debug(f"IMAP search failed in {folder} for {search_id}: {e}")
+                        mailbox.folder.set(folder)
+                    except Exception:
                         continue
-    except Exception as e:
-        logger.warning(f"IMAP re-fetch connection failed: {e}")
+                    for search_id in [f'<{msg_id}>', msg_id]:
+                        try:
+                            criteria = AND(header=[('Message-ID', search_id)])
+                            for msg in mailbox.fetch(criteria):
+                                att = _match_attachment(msg)
+                                if att:
+                                    return _save_attachment(att, folder)
+                        except Exception as e:
+                            errors.append(f"Header search in {folder}: {e}")
 
+            # Strategy 2: Search by date range + from address (fallback for servers that don't support header search)
+            if email_obj.received_at:
+                date_start = (email_obj.received_at - timedelta(days=1)).date()
+                date_end = (email_obj.received_at + timedelta(days=1)).date()
+                from_addr = email_obj.from_address or ""
+
+                for folder in ['INBOX', 'Sent', '[Gmail]/Sent Mail', '[Gmail]/All Mail']:
+                    try:
+                        mailbox.folder.set(folder)
+                    except Exception:
+                        continue
+                    try:
+                        criteria = AND(date_gte=date_start, date_lt=date_end)
+                        if from_addr:
+                            criteria = AND(date_gte=date_start, date_lt=date_end, from_=from_addr)
+                        for msg in mailbox.fetch(criteria):
+                            # Verify this is the right email by checking subject
+                            if email_obj.subject and msg.subject and email_obj.subject.strip() == msg.subject.strip():
+                                att = _match_attachment(msg)
+                                if att:
+                                    return _save_attachment(att, folder)
+                    except Exception as e:
+                        errors.append(f"Date search in {folder}: {e}")
+
+            # Strategy 3: Brute force — fetch last 200 emails from INBOX
+            try:
+                mailbox.folder.set('INBOX')
+                for msg in mailbox.fetch(limit=200, reverse=True):
+                    # Match by Message-ID in headers
+                    raw_mid = (msg.headers.get('message-id', [''])[0] or '').strip().strip('<>')
+                    if msg_id and raw_mid and (raw_mid == msg_id or raw_mid == msg_id.strip('<>')):
+                        att = _match_attachment(msg)
+                        if att:
+                            return _save_attachment(att, 'INBOX-brute')
+            except Exception as e:
+                errors.append(f"Brute force: {e}")
+
+    except Exception as e:
+        errors.append(f"IMAP connection: {e}")
+
+    if errors:
+        logger.warning(f"IMAP re-fetch failed for attachment {attachment_obj.id}: {'; '.join(errors)}")
     return None
 
 
