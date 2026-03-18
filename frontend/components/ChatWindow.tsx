@@ -805,6 +805,12 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
                     : 'message-received bg-gray-200 text-gray-800'
                 }`}
               >
+                {/* Sender name with timestamp */}
+                {message.sender_name && (
+                  <p className={`text-xs font-semibold mb-1 ${message.is_sent ? 'text-blue-100' : 'text-gray-500'}`}>
+                    {message.sender_name} <span className="font-normal">· {fmtMsgTime(message.timestamp)}</span>
+                  </p>
+                )}
                 {/* Image attachment */}
                 {message.message_type === 'image' && message.media_url && (() => {
                   const imgUrl = `${API_URL}${message.media_url}`
