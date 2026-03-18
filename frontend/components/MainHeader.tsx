@@ -82,9 +82,60 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
         }
     }, [user])
 
+    const eventsCtx = useEvents()
+
+    // Badge counts for Email (unread) and Messaging (unassigned)
+    const [unreadEmailCount, setUnreadEmailCount] = useState(0)
+    const [unassignedMsgCount, setUnassignedMsgCount] = useState(0)
+
+    useEffect(() => {
+        const fetchBadges = async () => {
+            try {
+                const token = getAuthToken()
+                if (!token) return
+                const headers = { Authorization: `Bearer ${token}` }
+                // Fetch unread email count
+                const emailRes = await fetch(`${API_URL}/email/inbox/unread-count`, { headers })
+                if (emailRes.ok) {
+                    const data = await emailRes.json()
+                    setUnreadEmailCount(data.count ?? 0)
+                }
+                // Fetch unassigned conversation count
+                const msgRes = await fetch(`${API_URL}/conversations/?user_id=${user.user_id}&assigned_to=none`, { headers })
+                if (msgRes.ok) {
+                    const data = await msgRes.json()
+                    setUnassignedMsgCount(Array.isArray(data) ? data.length : 0)
+                }
+            } catch {}
+        }
+        fetchBadges()
+    }, [user])
+
+    // Refresh badge counts on SSE events
+    useEffect(() => {
+        const evts = eventsCtx
+        if (!evts) return
+        const refresh = () => {
+            const token = getAuthToken()
+            if (!token) return
+            const headers = { Authorization: `Bearer ${token}` }
+            fetch(`${API_URL}/email/inbox/unread-count`, { headers })
+                .then(r => r.ok ? r.json() : null)
+                .then(d => { if (d) setUnreadEmailCount(d.count ?? 0) })
+                .catch(() => {})
+            fetch(`${API_URL}/conversations/?user_id=${user.user_id}&assigned_to=none`, { headers })
+                .then(r => r.ok ? r.json() : null)
+                .then(d => { if (d) setUnassignedMsgCount(Array.isArray(d) ? d.length : 0) })
+                .catch(() => {})
+        }
+        const unsub1 = evts.subscribe('new_email', refresh)
+        const unsub2 = evts.subscribe('new_message', refresh)
+        const unsub3 = evts.subscribe('conversation_assigned', refresh)
+        return () => { unsub1(); unsub2(); unsub3() }
+    }, [eventsCtx, user])
+
     // Unseen shared reminders badge count
     const [unseenCount, setUnseenCount] = useState(0)
-    const eventsCtx = useEvents()
 
     useEffect(() => {
         const fetchUnseenCount = async () => {
@@ -210,6 +261,11 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                         >
                             <FiMail size={15} />
                             Email
+                            {unreadEmailCount > 0 && (
+                                <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                                    {unreadEmailCount > 99 ? '99+' : unreadEmailCount}
+                                </span>
+                            )}
                         </Link>
                     )}
                     {canAccessMessaging && (
@@ -229,6 +285,11 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                         >
                             <FiMessageSquare size={15} />
                             Messaging
+                            {unassignedMsgCount > 0 && (
+                                <span className="bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                                    {unassignedMsgCount > 99 ? '99+' : unassignedMsgCount}
+                                </span>
+                            )}
                         </Link>
                     )}
                     {canAccessWorkspace && (

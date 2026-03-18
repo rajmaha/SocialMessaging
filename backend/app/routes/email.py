@@ -153,6 +153,27 @@ async def sync_emails(
         raise HTTPException(status_code=400, detail=f"Failed to sync emails: {str(e)}")
 
 
+@router.get("/inbox/unread-count")
+def get_inbox_unread_count(
+    account_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get count of unread emails in inbox"""
+    account = get_user_email_account(db, current_user.id, account_id)
+    if not account:
+        return {"count": 0}
+    count = db.query(Email).filter(
+        Email.account_id == account.id,
+        Email.from_address != account.email_address,
+        Email.is_archived == False,
+        Email.is_spam == False,
+        Email.is_draft == False,
+        Email.is_read == False,
+    ).count()
+    return {"count": count}
+
+
 @router.get("/inbox", response_model=EmailListResponse)
 def get_inbox(
     account_id: Optional[int] = None,
