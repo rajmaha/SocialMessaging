@@ -517,20 +517,26 @@ def get_outbox(
     skip: int = 0,
     limit: int = 20,
     search: Optional[str] = None,
+    account_id: Optional[int] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get unsent outgoing emails from outbox (emails sent by us that failed to send)"""
-    account = db.query(UserEmailAccount).filter(
-        UserEmailAccount.user_id == current_user.id
-    ).first()
-    
+    if account_id:
+        account = db.query(UserEmailAccount).filter(
+            UserEmailAccount.id == account_id,
+            UserEmailAccount.user_id == current_user.id
+        ).first()
+    else:
+        account = db.query(UserEmailAccount).filter(
+            UserEmailAccount.user_id == current_user.id
+        ).first()
+
     if not account:
         raise HTTPException(status_code=404, detail="No email account configured for this user")
-    
+
     base_filter = [
         Email.account_id == account.id,
-        Email.from_address == account.email_address,
         Email.is_sent == False,
         Email.is_draft == False,
         Email.is_archived == False,

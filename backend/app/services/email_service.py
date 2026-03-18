@@ -791,11 +791,22 @@ class EmailService:
                                                 logger.warning(f"AI auto-reply generation failed: {_ai_err}, falling back to fixed body")
 
                                         if reply_body:
+                                            # Build full HTML with original email quoted below
+                                            original_html = email.body_html or (email.body_text or "").replace("\n", "<br>")
+                                            full_body = (
+                                                f"{reply_body}"
+                                                f"<br><br>"
+                                                f"<div style=\"border-left:2px solid #ccc; padding-left:12px; margin-top:12px; color:#555;\">"
+                                                f"<p style=\"margin:0 0 8px 0;\"><strong>On {email.received_at.strftime('%b %d, %Y at %I:%M %p') if email.received_at else ''}, "
+                                                f"{email.from_address} wrote:</strong></p>"
+                                                f"{original_html}"
+                                                f"</div>"
+                                            )
                                             self.send_email_from_account(
                                                 account,
                                                 email.from_address,
                                                 subject,
-                                                reply_body,
+                                                full_body,
                                                 in_reply_to=email.message_id,
                                             )
                                             # Mark as replied
