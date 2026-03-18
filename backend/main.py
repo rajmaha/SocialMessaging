@@ -2235,6 +2235,7 @@ def retry_outbox_emails():
             UserEmailAccount.is_active == True
         ).all()
         for account in accounts:
+            from sqlalchemy import or_ as _or
             pending = db.query(EmailModel).filter(
                 EmailModel.account_id == account.id,
                 EmailModel.from_address == account.email_address,  # MUST be from the account
@@ -2248,6 +2249,11 @@ def retry_outbox_emails():
                                                   # scheduled emails and causes double-sends)
                 EmailModel.to_address != None,
                 EmailModel.to_address != "",
+                # Only retry locally composed emails, not IMAP-synced self-emails
+                _or(
+                    EmailModel.message_id.like("sent_%"),
+                    EmailModel.message_id.like("draft_%"),
+                ),
             ).all()
             for email in pending:
                 try:

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List, Optional
 from datetime import datetime
 import os
@@ -542,6 +543,12 @@ def get_outbox(
         Email.is_draft == False,
         Email.is_archived == False,
         Email.is_scheduled == False,   # scheduled emails belong in Scheduled, not Outbox
+        # Only locally composed emails (their message_id starts with sent_ or draft_),
+        # NOT emails synced from IMAP that happen to be from ourselves (e.g. auto-reply to self)
+        or_(
+            Email.message_id.like("sent_%"),
+            Email.message_id.like("draft_%"),
+        ),
     ]
     if search:
         from sqlalchemy import or_
