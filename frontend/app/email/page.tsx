@@ -1701,6 +1701,7 @@ export default function EmailPage() {
   const handleBulkMoveToTrash = async () => {
     const isDrafts = currentFolder === 'drafts';
     const isTrash = currentFolder === 'trash';
+    const isSpam = currentFolder === 'spam';
     const ids = Array.from(selectedThreadIds)
     // Send all email IDs in the selected threads so the entire thread gets trashed/deleted
     const emailIds = threads
@@ -1709,7 +1710,7 @@ export default function EmailPage() {
 
     const token = getAuthToken()
     try {
-      if (isDrafts || isTrash) {
+      if (isDrafts || isTrash || isSpam) {
         await axios.post(`${API_URL}/email/bulk-delete-permanent`, emailIds, {
           headers: { Authorization: `Bearer ${token}` }
         })
@@ -1720,16 +1721,14 @@ export default function EmailPage() {
       }
       setSelectedThreadIds(new Set())
       fetchEmails()
-      if (isDrafts) {
-        showToast(`✓ Deleted ${ids.length} draft thread${ids.length > 1 ? 's' : ''}`)
-      } else if (isTrash) {
+      if (isDrafts || isTrash || isSpam) {
         showToast(`✓ Permanently deleted ${ids.length} thread${ids.length > 1 ? 's' : ''}`)
       } else {
         showToast(`✓ Moved ${ids.length} thread${ids.length > 1 ? 's' : ''} to trash`)
       }
     } catch (e) {
-      console.error((isDrafts || isTrash) ? 'Bulk permanent delete failed:' : 'Bulk trash failed:', e)
-      showToast((isDrafts || isTrash) ? 'Bulk delete failed' : 'Bulk move to trash failed', 'error')
+      console.error((isDrafts || isTrash || isSpam) ? 'Bulk permanent delete failed:' : 'Bulk trash failed:', e)
+      showToast((isDrafts || isTrash || isSpam) ? 'Bulk delete failed' : 'Bulk move to trash failed', 'error')
     }
   }
 
