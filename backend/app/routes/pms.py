@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 import os, shutil
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_page
+from app.dependencies import get_current_user, require_page, require_permission
 from app.models.user import User
 from app.models.pms import (
     PMSProject, PMSProjectMember, PMSMilestone, PMSTask,
@@ -143,9 +143,7 @@ def list_projects(db: Session = Depends(get_db), current_user: User = Depends(ge
     return result
 
 @router.post("/projects")
-def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Admins only")
+def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("pms", "add"))):
     p = PMSProject(**data.dict(), owner_id=current_user.id)
     db.add(p)
     db.flush()

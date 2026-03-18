@@ -6,6 +6,7 @@ import { pmsApi } from '@/lib/api';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
 import { authAPI } from '@/lib/auth';
+import { hasPermission } from '@/lib/permissions';
 
 const PRIORITY_DOT: Record<string, string> = { low: 'bg-gray-400', medium: 'bg-yellow-500', high: 'bg-orange-500', urgent: 'bg-red-500' };
 const STAGE_BADGE: Record<string, string> = { development: 'bg-indigo-100 text-indigo-700', qa: 'bg-amber-100 text-amber-700', pm_review: 'bg-purple-100 text-purple-700', client_review: 'bg-cyan-100 text-cyan-700', approved: 'bg-green-100 text-green-700', completed: 'bg-gray-100 text-gray-600' };
@@ -54,10 +55,12 @@ export default function PMSDashboard() {
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900">PMS Dashboard</h1>
-          <button onClick={() => setShowCreate(true)}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-medium text-sm">
-            + New Project
-          </button>
+          {hasPermission('pms', 'add') && (
+            <button onClick={() => setShowCreate(true)}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-medium text-sm">
+              + New Project
+            </button>
+          )}
         </div>
 
         {loading ? (
