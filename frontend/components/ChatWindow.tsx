@@ -507,9 +507,9 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
   }
 
   return (
-    <div className="flex-1 flex">
+    <div className="flex-1 flex overflow-hidden">
       {/* Main chat column */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
       {/* Chat Header */}
       <div className="border-b px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
         <div>
