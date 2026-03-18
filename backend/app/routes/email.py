@@ -27,34 +27,79 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/email", tags=["email"])
 
 
-def _delete_from_imap(account, message_ids: list):
-    """Delete emails from IMAP server by their Message-ID headers"""
+def _find_imap_uids(mailbox, msg_id):
+    """Search for email UIDs by Message-ID header (with and without angle brackets)"""
+    from imap_tools import AND
+    criteria = AND(header=[('Message-ID', f'<{msg_id}>')])
+    try:
+        uids = [msg.uid for msg in mailbox.fetch(criteria, headers_only=True)]
+        if not uids:
+            criteria = AND(header=[('Message-ID', msg_id)])
+            uids = [msg.uid for msg in mailbox.fetch(criteria, headers_only=True)]
+        return uids
+    except Exception:
+        return []
+
+
+def _move_to_imap_trash(account, message_ids: list):
+    """Move emails to Trash folder on IMAP server"""
     if not message_ids:
         return
     try:
-        from imap_tools import MailBox, AND
+        from imap_tools import MailBox
         with MailBox(account.imap_host, account.imap_port).login(
             account.imap_username, account.imap_password
         ) as mailbox:
-            for folder in ['INBOX', 'Spam', 'Junk']:
+            # Detect the Trash folder name (varies by provider)
+            trash_folder = 'Trash'
+            try:
+                folders = [f.name for f in mailbox.folder.list()]
+                for candidate in ['Trash', '[Gmail]/Trash', 'Deleted Items', 'Deleted', 'INBOX.Trash']:
+                    if candidate in folders:
+                        trash_folder = candidate
+                        break
+            except Exception:
+                pass
+
+            for folder in ['INBOX', 'Spam', 'Junk', 'Sent']:
                 try:
                     mailbox.folder.set(folder)
                 except Exception:
                     continue
                 for msg_id in message_ids:
-                    # Search by Message-ID header
-                    criteria = AND(header=[('Message-ID', f'<{msg_id}>')])
-                    try:
-                        uids = [msg.uid for msg in mailbox.fetch(criteria, headers_only=True)]
-                        if not uids:
-                            # Try without angle brackets
-                            criteria = AND(header=[('Message-ID', msg_id)])
-                            uids = [msg.uid for msg in mailbox.fetch(criteria, headers_only=True)]
-                        if uids:
+                    uids = _find_imap_uids(mailbox, msg_id)
+                    if uids:
+                        try:
+                            mailbox.move(uids, trash_folder)
+                            logger.info(f"Moved {len(uids)} email(s) to IMAP {trash_folder} from {folder} for message_id={msg_id}")
+                        except Exception as e:
+                            logger.warning(f"IMAP move to trash failed for {msg_id}: {e}")
+    except Exception as e:
+        logger.warning(f"IMAP connection failed for move-to-trash: {e}")
+
+
+def _delete_from_imap(account, message_ids: list):
+    """Permanently delete emails from IMAP server (expunge from all folders including Trash)"""
+    if not message_ids:
+        return
+    try:
+        from imap_tools import MailBox
+        with MailBox(account.imap_host, account.imap_port).login(
+            account.imap_username, account.imap_password
+        ) as mailbox:
+            for folder in ['INBOX', 'Trash', '[Gmail]/Trash', 'Deleted Items', 'Deleted', 'INBOX.Trash', 'Spam', 'Junk', 'Sent']:
+                try:
+                    mailbox.folder.set(folder)
+                except Exception:
+                    continue
+                for msg_id in message_ids:
+                    uids = _find_imap_uids(mailbox, msg_id)
+                    if uids:
+                        try:
                             mailbox.delete(uids)
-                            logger.info(f"Deleted {len(uids)} email(s) from IMAP {folder} for message_id={msg_id}")
-                    except Exception as e:
-                        logger.warning(f"IMAP delete search failed for {msg_id} in {folder}: {e}")
+                            logger.info(f"Permanently deleted {len(uids)} email(s) from IMAP {folder} for message_id={msg_id}")
+                        except Exception as e:
+                            logger.warning(f"IMAP delete failed for {msg_id} in {folder}: {e}")
     except Exception as e:
         logger.warning(f"IMAP connection failed for delete: {e}")
 
@@ -1004,17 +1049,29 @@ def trash_email(
     if not account:
         raise HTTPException(status_code=403, detail="Unauthorized")
     
-    email.is_archived = True
-    
-    # If part of a thread, move all emails in thread to trash
+    # Collect all emails to trash (thread or single)
     if email.thread_id is not None:
+        emails_to_trash = db.query(Email).filter(
+            Email.thread_id == email.thread_id,
+            Email.account_id == email.account_id
+        ).all()
         db.query(Email).filter(
             Email.thread_id == email.thread_id,
             Email.account_id == email.account_id
         ).update({"is_archived": True}, synchronize_session=False)
-        
+    else:
+        emails_to_trash = [email]
+        email.is_archived = True
+
+    # Move to Trash on IMAP server too
+    imap_msg_ids = [e.message_id for e in emails_to_trash if e.message_id and not e.message_id.startswith(('sent_', 'draft_'))]
+    try:
+        _move_to_imap_trash(account, imap_msg_ids)
+    except Exception as imap_err:
+        logger.warning(f"IMAP move-to-trash failed: {imap_err}")
+
     db.commit()
-    
+
     return {"status": "success", "message": "Email moved to trash"}
 
 
@@ -1890,10 +1947,25 @@ def bulk_trash_emails(
     account = get_user_email_account(db, current_user.id, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="No email account configured")
+
+    # Fetch emails to get message_ids for IMAP
+    emails = db.query(EmailModel).filter(
+        EmailModel.id.in_(email_ids),
+        EmailModel.account_id == account.id
+    ).all()
+    imap_msg_ids = [e.message_id for e in emails if e.message_id and not e.message_id.startswith(('sent_', 'draft_'))]
+
     db.query(EmailModel).filter(
         EmailModel.id.in_(email_ids),
         EmailModel.account_id == account.id
     ).update({EmailModel.is_archived: True}, synchronize_session=False)
+
+    # Move to Trash on IMAP server
+    try:
+        _move_to_imap_trash(account, imap_msg_ids)
+    except Exception as imap_err:
+        logger.warning(f"IMAP bulk move-to-trash failed: {imap_err}")
+
     db.commit()
     return {"status": "success", "trashed": len(email_ids)}
 
