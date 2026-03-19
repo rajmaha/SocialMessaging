@@ -16,6 +16,8 @@ export default function TelephonySettings() {
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
     const [testingAmi, setTestingAmi] = useState(false);
+    const [testingSsh, setTestingSsh] = useState(false);
+    const [sshTestResult, setSshTestResult] = useState<{ status: string; message: string } | null>(null);
     const [message, setMessage] = useState({ type: '', text: '' });
     const [testResult, setTestResult] = useState<{ status: string; message: string; diagnostics?: string[]; help?: string; method?: string; instructions?: string[] } | null>(null);
     const [amiTestResult, setAmiTestResult] = useState<{ status: string; message: string } | null>(null);
@@ -37,6 +39,9 @@ export default function TelephonySettings() {
         turn_server: '',
         turn_username: '',
         turn_credential: '',
+        ssh_port: 22,
+        ssh_username: '',
+        ssh_password: '',
         is_active: false
     });
 
@@ -69,6 +74,9 @@ export default function TelephonySettings() {
                     turn_server: data.turn_server || '',
                     turn_username: data.turn_username || '',
                     turn_credential: data.turn_credential || '',
+                    ssh_port: data.ssh_port || 22,
+                    ssh_username: data.ssh_username || '',
+                    ssh_password: data.ssh_password || '',
                     is_active: data.is_active || false
                 });
             }
@@ -153,6 +161,33 @@ export default function TelephonySettings() {
             setAmiTestResult({ status: 'error', message: `❌ AMI test failed: ${error instanceof Error ? error.message : 'Check network/host settings.'}` });
         } finally {
             setTestingAmi(false);
+        }
+    };
+
+    const testSSH = async () => {
+        setTestingSsh(true);
+        setSshTestResult(null);
+        try {
+            const token = getAuthToken();
+            await fetch(`${API_URL}/admin/telephony/settings`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings),
+            });
+            const response = await fetch(`${API_URL}/admin/telephony/test-ssh`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                setSshTestResult({ status: 'error', message: result.detail || 'Request failed.' });
+            } else {
+                setSshTestResult(result);
+            }
+        } catch (error) {
+            setSshTestResult({ status: 'error', message: `❌ SSH test failed: ${error instanceof Error ? error.message : 'Check settings.'}` });
+        } finally {
+            setTestingSsh(false);
         }
     };
 
@@ -501,6 +536,82 @@ export default function TelephonySettings() {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* SSH Section — for PJSIP WebRTC configuration */}
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                            <div className="flex items-center justify-between mb-4 border-b pb-3">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-gray-900">SSH Access (for PJSIP / WebRTC Config)</h3>
+                                    <p className="text-sm text-gray-500 mt-0.5">
+                                        SSH into the FreePBX server to configure PJSIP WebRTC settings (DTLS, ICE, codecs, transport)
+                                        and apply config automatically. This is the <strong>most reliable</strong> method for FreePBX 17.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={testSSH}
+                                    disabled={testingSsh}
+                                    className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium disabled:opacity-50 shrink-0"
+                                >
+                                    <Wifi className={`w-4 h-4 ${testingSsh ? 'animate-pulse' : ''}`} />
+                                    {testingSsh ? 'Testing…' : 'Test SSH'}
+                                </button>
+                            </div>
+
+                            {sshTestResult && (
+                                <div className={`p-3 rounded-lg mb-5 border flex items-start gap-2 text-sm ${
+                                    sshTestResult.status === 'success'
+                                        ? 'bg-green-50 border-green-200 text-green-800'
+                                        : sshTestResult.status === 'warning'
+                                        ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                        : 'bg-red-50 border-red-200 text-red-800'
+                                }`}>
+                                    {sshTestResult.status === 'success'
+                                        ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                                        : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />}
+                                    <span>{sshTestResult.message}</span>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div>
+                                    <label className={labelClass}>SSH Username</label>
+                                    <input
+                                        type="text"
+                                        value={settings.ssh_username}
+                                        onChange={(e) => setSettings({ ...settings, ssh_username: e.target.value })}
+                                        className={inputClass}
+                                        placeholder="root"
+                                    />
+                                    <p className="mt-1 text-xs text-gray-500">Usually root for FreePBX servers.</p>
+                                </div>
+                                <div>
+                                    <label className={labelClass}>SSH Password</label>
+                                    <input
+                                        type="password"
+                                        value={settings.ssh_password}
+                                        onChange={(e) => setSettings({ ...settings, ssh_password: e.target.value })}
+                                        className={inputClass}
+                                        placeholder="••••••••"
+                                    />
+                                </div>
+                                <div>
+                                    <label className={labelClass}>SSH Port</label>
+                                    <input
+                                        type="number"
+                                        value={settings.ssh_port}
+                                        onChange={(e) => setSettings({ ...settings, ssh_port: parseInt(e.target.value) || 22 })}
+                                        className={inputClass}
+                                        placeholder="22"
+                                    />
+                                </div>
+                            </div>
+                            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                                <strong>How it works:</strong> When you sync an extension, the system SSHs into your FreePBX server,
+                                writes WebRTC PJSIP settings (DTLS, ICE, codecs, transport) directly to the MySQL <code className="bg-blue-100 px-1 rounded">pjsip</code> table,
+                                then runs <code className="bg-blue-100 px-1 rounded">fwconsole reload</code> to apply the config. The PBX Host from the API section above is used as the SSH hostname.
                             </div>
                         </div>
 

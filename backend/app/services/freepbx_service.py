@@ -599,6 +599,122 @@ class FreePBXService:
         return False
 
     # ---------------------------------------------------------------
+    #  SSH-based PJSIP configuration (most reliable for FreePBX 17)
+    # ---------------------------------------------------------------
+
+    def _get_ssh_settings(self, db) -> Tuple[Optional[dict], Optional[str]]:
+        """Load SSH connection settings from DB."""
+        try:
+            from app.models.telephony import TelephonySettings
+            settings = db.query(TelephonySettings).first()
+            if not settings or not settings.host:
+                return None, "No telephony settings found"
+            if not settings.ssh_username or not settings.ssh_password:
+                return None, "SSH credentials not configured — set SSH username and password in Telephony Settings"
+
+            host = settings.host.rstrip("/")
+            for prefix in ("https://", "http://"):
+                if host.startswith(prefix):
+                    host = host[len(prefix):]
+                    break
+            if ":" in host:
+                host = host.split(":")[0]
+
+            return {
+                "host": host,
+                "port": settings.ssh_port or 22,
+                "username": settings.ssh_username,
+                "password": settings.ssh_password,
+            }, None
+        except Exception as e:
+            return None, f"Error reading SSH settings: {e}"
+
+    def _configure_webrtc_via_ssh(self, db, extension: str) -> Tuple[bool, str]:
+        """Configure WebRTC PJSIP settings by SSHing into FreePBX and running MySQL + fwconsole reload.
+
+        This is the most reliable approach for FreePBX 17 since the GraphQL API
+        doesn't expose PJSIP endpoint fields and the web form login requires
+        admin panel credentials (not OAuth2).
+        """
+        ssh_cfg, err = self._get_ssh_settings(db)
+        if not ssh_cfg:
+            return False, err
+
+        # SQL to write all WebRTC PJSIP settings into the pjsip table
+        sql_rows = [
+            ("webrtc", "yes"),
+            ("avpf", "yes"),
+            ("force_avp", "yes"),
+            ("icesupport", "yes"),
+            ("media_encryption", "dtls"),
+            ("media_encryption_optimistic", "yes"),
+            ("dtls_auto_generate_cert", "yes"),
+            ("dtls_verify", "fingerprint"),
+            ("dtls_setup", "actpass"),
+            ("media_use_received_transport", "yes"),
+            ("rtcp_mux", "yes"),
+            ("rtp_symmetric", "yes"),
+            ("transport", "0.0.0.0-wss"),
+            ("disallow", "all"),
+            ("allow", "opus,ulaw,alaw"),
+            ("force_rport", "yes"),
+            ("rewrite_contact", "yes"),
+            ("direct_media", "no"),
+            ("max_contacts", "5"),
+        ]
+
+        values_sql = ", ".join(
+            f"('{extension}', '{kw}', '{val}', 0)"
+            for kw, val in sql_rows
+        )
+        sql = f"REPLACE INTO pjsip (id, keyword, data, flags) VALUES {values_sql};"
+        mysql_cmd = f'mysql asterisk -e "{sql}"'
+
+        try:
+            import paramiko
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(
+                hostname=ssh_cfg["host"],
+                port=ssh_cfg["port"],
+                username=ssh_cfg["username"],
+                password=ssh_cfg["password"],
+                timeout=15,
+            )
+
+            # Step 1: Write PJSIP settings to MySQL
+            stdin, stdout, stderr = client.exec_command(mysql_cmd, timeout=15)
+            exit_code = stdout.channel.recv_exit_status()
+            err_output = stderr.read().decode(errors="ignore").strip()
+
+            if exit_code != 0:
+                client.close()
+                return False, f"MySQL command failed (exit {exit_code}): {err_output}"
+
+            logger.info("✅ SSH: wrote %d PJSIP WebRTC settings for extension %s", len(sql_rows), extension)
+
+            # Step 2: Apply Config (fwconsole reload)
+            stdin, stdout, stderr = client.exec_command("fwconsole reload", timeout=30)
+            reload_exit = stdout.channel.recv_exit_status()
+            reload_out = stdout.read().decode(errors="ignore").strip()
+            reload_err = stderr.read().decode(errors="ignore").strip()
+
+            client.close()
+
+            if reload_exit != 0:
+                logger.warning("SSH: fwconsole reload exit %d: %s %s", reload_exit, reload_out, reload_err)
+                return True, f"PJSIP settings written but fwconsole reload failed (exit {reload_exit}). Click Apply Config in FreePBX admin."
+
+            logger.info("✅ SSH: fwconsole reload succeeded for extension %s", extension)
+            return True, f"WebRTC PJSIP settings configured + Apply Config done ({len(sql_rows)} settings)"
+
+        except ImportError:
+            return False, "paramiko not installed — run: pip install paramiko"
+        except Exception as e:
+            logger.error("SSH PJSIP config error for %s: %s", extension, e)
+            return False, f"SSH error: {e}"
+
+    # ---------------------------------------------------------------
     #  FreePBX admin web session — configure PJSIP via form POST
     # ---------------------------------------------------------------
 
@@ -953,27 +1069,32 @@ class FreePBXService:
             )
 
         # --- After extension is created/updated, configure WebRTC PJSIP settings ---
-        # Use FreePBX admin web session (form POST) — the most reliable method
+        # Strategy 1: SSH (most reliable — writes directly to MySQL + fwconsole reload)
+        ssh_ok, ssh_detail = self._configure_webrtc_via_ssh(db, extension)
+        if ssh_ok:
+            logger.info("✅ Extension %s: WebRTC PJSIP settings applied via SSH", extension)
+            return True, ssh_detail
+
+        logger.info("SSH PJSIP config not available for %s (%s), trying web session…", extension, ssh_detail)
+
+        # Strategy 2: FreePBX admin web session (form POST)
         web_ok, web_detail = self._configure_webrtc_via_web(
             db, extension, sip_password, display_name,
         )
         if web_ok:
             logger.info("✅ Extension %s: WebRTC PJSIP settings applied via web session", extension)
-        else:
-            logger.warning(
-                "Extension %s created OK but WebRTC web config failed: %s. "
-                "Configure transport/DTLS/ICE manually in FreePBX admin panel.",
-                extension, web_detail,
-            )
-            # Try GraphQL apply config as a fallback
-            if auth["mode"] == "bpx":
-                self._bpx_apply_config(base, auth["token"])
+            return True, web_detail
 
-        result_msg = "OK"
-        if not web_ok:
-            result_msg = f"OK — extension synced but WebRTC settings need manual config: {web_detail}"
+        logger.warning(
+            "Extension %s created OK but WebRTC config failed (SSH: %s, Web: %s). "
+            "Configure transport/DTLS/ICE manually in FreePBX admin panel.",
+            extension, ssh_detail, web_detail,
+        )
+        # Try GraphQL apply config as a last resort
+        if auth["mode"] == "bpx":
+            self._bpx_apply_config(base, auth["token"])
 
-        return True, result_msg
+        return True, f"OK — extension synced but WebRTC settings need manual config. SSH: {ssh_detail}. Web: {web_detail}"
 
     def enable_extension(self, db, extension: str) -> bool:
         return self._set_extension_state(db, extension, enabled=True)

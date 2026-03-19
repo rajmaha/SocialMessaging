@@ -73,6 +73,12 @@ def update_telephony_settings(
         settings.turn_username = settings_update.turn_username
     if settings_update.turn_credential is not None:
         settings.turn_credential = settings_update.turn_credential
+    if settings_update.ssh_port is not None:
+        settings.ssh_port = settings_update.ssh_port
+    if settings_update.ssh_username is not None:
+        settings.ssh_username = settings_update.ssh_username
+    if settings_update.ssh_password is not None:
+        settings.ssh_password = settings_update.ssh_password
     if settings_update.is_active is not None:
         settings.is_active = settings_update.is_active
 
@@ -414,3 +420,72 @@ def test_ami_connection(
                 return {"status": "error", "message": f"Unexpected AMI response: {response_str[:200]}"}
     except socket.timeout:
         return {"status": "error", "message": f"AMI at {host}:{port} connected but did not respond in time."}
+
+
+@router.post("/test-ssh")
+def test_ssh_connection(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_telephony)
+):
+    """Test SSH connectivity to FreePBX server and verify mysql + fwconsole are available."""
+    settings = db.query(TelephonySettings).first()
+    if not settings or not settings.host:
+        raise HTTPException(status_code=400, detail="FreePBX host is not configured.")
+    if not settings.ssh_username or not settings.ssh_password:
+        raise HTTPException(status_code=400, detail="SSH username and password are required.")
+
+    # Resolve hostname (strip scheme if present)
+    host = settings.host.rstrip("/")
+    for prefix in ("https://", "http://"):
+        if host.startswith(prefix):
+            host = host[len(prefix):]
+            break
+    # Strip port from host if present
+    if ":" in host:
+        host = host.split(":")[0]
+
+    ssh_port = settings.ssh_port or 22
+
+    try:
+        import paramiko
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(
+            hostname=host,
+            port=ssh_port,
+            username=settings.ssh_username,
+            password=settings.ssh_password,
+            timeout=10,
+        )
+
+        # Test mysql access
+        stdin, stdout, stderr = client.exec_command("mysql asterisk -e 'SELECT 1' 2>&1", timeout=10)
+        mysql_out = stdout.read().decode(errors="ignore").strip()
+        mysql_ok = "1" in mysql_out
+
+        # Test fwconsole
+        stdin, stdout, stderr = client.exec_command("which fwconsole 2>&1", timeout=10)
+        fwconsole_out = stdout.read().decode(errors="ignore").strip()
+        fwconsole_ok = "fwconsole" in fwconsole_out
+
+        client.close()
+
+        issues = []
+        if not mysql_ok:
+            issues.append("mysql: cannot access asterisk database")
+        if not fwconsole_ok:
+            issues.append("fwconsole: not found in PATH")
+
+        if issues:
+            return {
+                "status": "warning",
+                "message": f"SSH connected to {host}:{ssh_port} but: {'; '.join(issues)}",
+            }
+
+        return {
+            "status": "success",
+            "message": f"✅ SSH connected to {host}:{ssh_port}. MySQL and fwconsole are available.",
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": f"SSH connection failed to {host}:{ssh_port}: {e}"}

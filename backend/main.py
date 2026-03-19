@@ -1610,6 +1610,11 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS turn_username VARCHAR"))
         conn.execute(text("ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS turn_credential VARCHAR"))
 
+        # SSH access for PJSIP WebRTC configuration on FreePBX server
+        conn.execute(text("ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS ssh_port INTEGER DEFAULT 22"))
+        conn.execute(text("ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS ssh_username VARCHAR"))
+        conn.execute(text("ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS ssh_password VARCHAR"))
+
         # Contact phone for email footer
         conn.execute(text("ALTER TABLE branding_settings ADD COLUMN IF NOT EXISTS contact_phone VARCHAR"))
 
