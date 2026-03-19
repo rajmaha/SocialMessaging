@@ -2104,9 +2104,9 @@ def _log_job_error(message: str, exc: Exception = None, job_name: str = None):
 
 def auto_sync_emails():
     """Scheduled task to sync all emails and broadcast new-email events."""
+    from app.models import UserEmailAccount
+    db = SessionLocal()
     try:
-        from app.models import UserEmailAccount
-        db = SessionLocal()
         accounts = db.query(UserEmailAccount).filter(UserEmailAccount.is_active == True).all()
         for account in accounts:
             try:
@@ -2125,18 +2125,19 @@ def auto_sync_emails():
             except Exception as e:
                 logger.error(f"Auto-sync error for {account.email_address}: {str(e)}")
                 _log_job_error(f"Auto-sync error for {account.email_address}: {e}", exc=e, job_name="auto_sync_emails")
-        db.close()
     except Exception as e:
         logger.error(f"Error in scheduled email sync: {str(e)}")
         _log_job_error(f"Error in scheduled email sync: {e}", exc=e, job_name="auto_sync_emails")
+    finally:
+        db.close()
 
 
 def send_scheduled_emails():
     """Fire off any scheduled emails whose send time has arrived."""
+    from app.models.email import Email as EmailModel
+    from app.models import UserEmailAccount
+    db = SessionLocal()
     try:
-        from app.models.email import Email as EmailModel
-        from app.models import UserEmailAccount
-        db = SessionLocal()
         now = datetime.utcnow()
         due = (
             db.query(EmailModel)
@@ -2201,17 +2202,18 @@ def send_scheduled_emails():
                     pass
                 logger.error(f"Failed to send scheduled email {email.id}: {str(e)}")
                 _log_job_error(f"Failed to send scheduled email {email.id}: {e}", exc=e, job_name="send_scheduled_emails")
-        db.close()
     except Exception as e:
         logger.error(f"Error in send_scheduled_emails: {str(e)}")
         _log_job_error(f"Error in send_scheduled_emails: {e}", exc=e, job_name="send_scheduled_emails")
+    finally:
+        db.close()
 
 
 def unsnooze_emails():
     """Wake up any snoozed emails whose snooze time has expired."""
+    from app.models.email import Email as EmailModel
+    db = SessionLocal()
     try:
-        from app.models.email import Email as EmailModel
-        db = SessionLocal()
         now = datetime.utcnow()
         expired = db.query(EmailModel).filter(
             EmailModel.snoozed_until != None,
@@ -2222,18 +2224,19 @@ def unsnooze_emails():
         if expired:
             db.commit()
             logger.info(f"Unsnoozed {len(expired)} email(s)")
-        db.close()
     except Exception as e:
         logger.error(f"Error in unsnooze_emails: {str(e)}")
         _log_job_error(f"Error in unsnooze_emails: {e}", exc=e, job_name="unsnooze_emails")
+    finally:
+        db.close()
 
 
 def retry_outbox_emails():
     """Automatically retry sending any emails stuck in the outbox."""
+    from app.models.email import Email as EmailModel
+    from app.models import UserEmailAccount
+    db = SessionLocal()
     try:
-        from app.models.email import Email as EmailModel
-        from app.models import UserEmailAccount
-        db = SessionLocal()
         # Only retry emails the user explicitly composed (from_address must match the
         # account's email address). WITHOUT this guard, received inbox emails (which
         # are also stored with is_sent=False) would be picked up and re-sent via SMTP
@@ -2279,10 +2282,11 @@ def retry_outbox_emails():
                 except Exception as e:
                     logger.warning(f"Outbox retry failed for email {email.id}: {str(e)}")
                     _log_job_error(f"Outbox retry failed for email {email.id}: {e}", exc=e, job_name="retry_outbox_emails")
-        db.close()
     except Exception as e:
         logger.error(f"Error in retry_outbox_emails: {str(e)}")
         _log_job_error(f"Error in retry_outbox_emails: {e}", exc=e, job_name="retry_outbox_emails")
+    finally:
+        db.close()
 
 
 def purge_old_logs():
@@ -2384,49 +2388,52 @@ async def startup_event():
         scheduler.add_job(retry_outbox_emails, 'interval', minutes=5, id='retry_outbox_emails')
         # Sync FreePBX CDR call records every 5 minutes
         def sync_freepbx_cdr():
+            db = SessionLocal()
             try:
-                db = SessionLocal()
                 count = freepbx_cdr_service.sync_cdrs_to_db(db)
                 if count > 0:
                     logger.info("CDR Sync: %d new records imported", count)
-                db.close()
             except Exception as e:
                 logger.error("CDR sync error: %s", e)
                 _log_job_error(f"CDR sync error: {e}", exc=e, job_name="freepbx_cdr_sync")
+            finally:
+                db.close()
         scheduler.add_job(sync_freepbx_cdr, 'interval', minutes=5, id='freepbx_cdr_sync')
         # Process due reminder calls every minute
         def run_reminder_calls():
+            from app.services.reminder_service import process_due_reminders
+            db = SessionLocal()
             try:
-                from app.services.reminder_service import process_due_reminders
-                db = SessionLocal()
                 count = process_due_reminders(db)
                 if count > 0:
                     logger.info("Reminder calls: %d action(s) taken", count)
-                db.close()
             except Exception as e:
                 logger.error("Reminder call scheduler error: %s", e)
                 _log_job_error(f"Reminder call scheduler error: {e}", exc=e, job_name="reminder_calls")
+            finally:
+                db.close()
         scheduler.add_job(run_reminder_calls, 'interval', minutes=1, id='reminder_calls')
         # Process due notification calls every minute
         def run_notification_calls():
+            from app.services.notification_service import process_due_notifications
+            db = SessionLocal()
             try:
-                from app.services.notification_service import process_due_notifications
-                db = SessionLocal()
                 count = process_due_notifications(db)
                 if count > 0:
                     logger.info("Notification calls: %d action(s) taken", count)
-                db.close()
             except Exception as e:
                 logger.error("Notification call scheduler error: %s", e)
                 _log_job_error(f"Notification call scheduler error: {e}", exc=e, job_name="notification_calls")
+            finally:
+                db.close()
         scheduler.add_job(run_notification_calls, 'interval', minutes=1, id='notification_calls')
         # Check for overdue reminders every minute
         def check_overdue_reminders():
+            from app.models.todo import Reminder
+            from app.services.events_service import events_service
+            import asyncio
+            db = SessionLocal()
             try:
-                from app.models.todo import Reminder
-                from app.services.events_service import events_service
-                import asyncio
-                db = SessionLocal()
                 now = datetime.utcnow()
                 overdue = db.query(Reminder).filter(
                     Reminder.status == "scheduled",
@@ -2447,10 +2454,11 @@ async def startup_event():
                 if overdue:
                     db.commit()
                     logger.info("Marked %d reminder(s) as pending (overdue)", len(overdue))
-                db.close()
             except Exception as e:
                 logger.error("Overdue reminders check error: %s", e)
                 _log_job_error(f"Overdue reminders check error: {e}", exc=e, job_name="check_overdue_reminders")
+            finally:
+                db.close()
         scheduler.add_job(check_overdue_reminders, 'interval', minutes=1, id='check_overdue_reminders')
 
         def check_overdue_crm_tasks():
@@ -2748,16 +2756,17 @@ async def startup_event():
 
         # Refresh expiring calendar tokens every 30 minutes
         def refresh_calendar_tokens():
+            from app.services.calendar_service import calendar_service
+            db = SessionLocal()
             try:
-                from app.services.calendar_service import calendar_service
-                db = SessionLocal()
                 count = calendar_service.refresh_all_expiring_tokens(db)
                 if count > 0:
                     logger.info("Refreshed %d calendar token(s)", count)
-                db.close()
             except Exception as e:
                 logger.error("Calendar token refresh error: %s", e)
                 _log_job_error(f"Calendar token refresh error: {e}", exc=e, job_name="refresh_calendar_tokens")
+            finally:
+                db.close()
         scheduler.add_job(refresh_calendar_tokens, 'interval', minutes=30, id='refresh_calendar_tokens')
 
         def send_scheduled_campaigns():
@@ -2876,6 +2885,7 @@ async def startup_event():
         scheduler.start()
 
         # ── Seed CI/CD scheduled deployments from DB ──────────────────────────
+        _cicd_db = None
         try:
             from app.models.ci_cd import CICDRepo as _CICDRepo
             from app.routes.ci_cd import _deploy_in_thread as _cicd_deploy
@@ -2897,9 +2907,11 @@ async def startup_event():
                     logger.info("CI/CD: scheduled deploy for repo '%s' (%s)", _repo.name, _repo.schedule_cron)
                 except Exception as _e:
                     logger.warning("CI/CD: could not schedule repo %d: %s", _repo.id, _e)
-            _cicd_db.close()
         except Exception as _e:
             logger.warning("CI/CD scheduler seeding error: %s", _e)
+        finally:
+            if _cicd_db:
+                _cicd_db.close()
 
         # Wire scheduler reference for routes
         import app.scheduler_ref as _sched_ref
