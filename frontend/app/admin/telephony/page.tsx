@@ -5,7 +5,7 @@ import MainHeader from "@/components/MainHeader";
 import AdminNav from '@/components/AdminNav';
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
-import { Wifi, CheckCircle, XCircle } from 'lucide-react';
+import { Wifi, CheckCircle, XCircle, Code2, ChevronDown, ChevronUp } from 'lucide-react';
 import { API_URL } from '@/lib/config';
 
 export default function TelephonySettings() {
@@ -19,6 +19,9 @@ export default function TelephonySettings() {
     const [message, setMessage] = useState({ type: '', text: '' });
     const [testResult, setTestResult] = useState<{ status: string; message: string; diagnostics?: string[]; help?: string; method?: string; instructions?: string[] } | null>(null);
     const [amiTestResult, setAmiTestResult] = useState<{ status: string; message: string } | null>(null);
+    const [introspecting, setIntrospecting] = useState(false);
+    const [schemaResult, setSchemaResult] = useState<{ status: string; message: string; types?: Record<string, { found: boolean; fields: { name: string; type: string; default?: string }[]; note?: string }> } | null>(null);
+    const [schemaOpen, setSchemaOpen] = useState(false);
 
     const [settings, setSettings] = useState({
         pbx_type: 'freepbx',
@@ -142,6 +145,35 @@ export default function TelephonySettings() {
             setAmiTestResult({ status: 'error', message: `❌ AMI test failed: ${error instanceof Error ? error.message : 'Check network/host settings.'}` });
         } finally {
             setTestingAmi(false);
+        }
+    };
+
+    const introspectSchema = async () => {
+        setIntrospecting(true);
+        setSchemaResult(null);
+        try {
+            const token = getAuthToken();
+            // Save settings first so introspection uses latest credentials
+            await fetch(`${API_URL}/admin/telephony/settings`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings),
+            });
+            const response = await fetch(`${API_URL}/admin/telephony/introspect-schema`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                setSchemaResult({ status: 'error', message: result.detail || 'Introspection failed.' });
+            } else {
+                setSchemaResult(result);
+                setSchemaOpen(true);
+            }
+        } catch (error) {
+            setSchemaResult({ status: 'error', message: `Introspection failed: ${error instanceof Error ? error.message : 'Check connection.'}` });
+        } finally {
+            setIntrospecting(false);
         }
     };
 
@@ -285,6 +317,106 @@ export default function TelephonySettings() {
                                     <p className="mt-1 text-xs text-gray-500">Default 443 for HTTPS, 80 for HTTP.</p>
                                 </div>
                             </div>
+                        </div>
+
+                        {/* GraphQL Schema Introspection */}
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                            <div className="flex items-center justify-between mb-2">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-gray-900">FreePBX GraphQL Schema</h3>
+                                    <p className="text-sm text-gray-500 mt-0.5">
+                                        Discover available PJSIP/WebRTC fields in your FreePBX 17 installation.
+                                        This helps verify which extension settings (transport, DTLS, codecs, ICE) are supported by the API.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={introspectSchema}
+                                    disabled={introspecting}
+                                    className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium disabled:opacity-50 shrink-0"
+                                >
+                                    <Code2 className={`w-4 h-4 ${introspecting ? 'animate-spin' : ''}`} />
+                                    {introspecting ? 'Inspecting…' : 'Show FreePBX Schema'}
+                                </button>
+                            </div>
+
+                            {schemaResult && (
+                                <div className="mt-4">
+                                    {schemaResult.status === 'error' || schemaResult.status === 'warning' ? (
+                                        <div className={`p-3 rounded-lg text-sm border ${
+                                            schemaResult.status === 'error'
+                                                ? 'bg-red-50 text-red-800 border-red-200'
+                                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                                        }`}>
+                                            <div className="flex items-start gap-2">
+                                                <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                                                <span>{schemaResult.message}</span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSchemaOpen(!schemaOpen)}
+                                                className="flex items-center gap-2 text-sm font-medium text-indigo-700 hover:text-indigo-900 mb-3"
+                                            >
+                                                {schemaOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                {schemaOpen ? 'Hide schema details' : 'Show schema details'}
+                                            </button>
+
+                                            {schemaOpen && schemaResult.types && (
+                                                <div className="space-y-4">
+                                                    {Object.entries(schemaResult.types).map(([typeName, info]) => (
+                                                        <div key={typeName} className="border border-gray-200 rounded-lg overflow-hidden">
+                                                            <div className={`px-4 py-2 text-sm font-semibold ${
+                                                                info.found ? 'bg-green-50 text-green-800' : 'bg-gray-50 text-gray-500'
+                                                            }`}>
+                                                                {typeName}
+                                                                {!info.found && <span className="font-normal ml-2 text-xs">({info.note || 'not found'})</span>}
+                                                                {info.found && <span className="font-normal ml-2 text-xs text-green-600">({info.fields.length} fields)</span>}
+                                                            </div>
+                                                            {info.found && info.fields.length > 0 && (
+                                                                <div className="overflow-x-auto">
+                                                                    <table className="min-w-full text-xs">
+                                                                        <thead className="bg-gray-50">
+                                                                            <tr>
+                                                                                <th className="px-4 py-1.5 text-left font-semibold text-gray-500">Field Name</th>
+                                                                                <th className="px-4 py-1.5 text-left font-semibold text-gray-500">Type</th>
+                                                                                <th className="px-4 py-1.5 text-left font-semibold text-gray-500">Default</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody className="divide-y divide-gray-100">
+                                                                            {info.fields.map((f) => {
+                                                                                const isWebRTC = ['webrtc', 'transport', 'dtlsEnable', 'dtlsVerify', 'dtlsSetup', 'dtlsCertfile', 'mediaEncryption', 'mediaUseReceivedTransport', 'iceSupport', 'allow', 'maxContacts'].includes(f.name);
+                                                                                return (
+                                                                                    <tr key={f.name} className={isWebRTC ? 'bg-indigo-50' : ''}>
+                                                                                        <td className={`px-4 py-1 font-mono ${isWebRTC ? 'text-indigo-700 font-semibold' : 'text-gray-800'}`}>
+                                                                                            {f.name}
+                                                                                            {isWebRTC && <span className="ml-1.5 text-[10px] font-sans font-medium text-indigo-500 bg-indigo-100 px-1.5 py-0.5 rounded">WebRTC</span>}
+                                                                                        </td>
+                                                                                        <td className="px-4 py-1 text-gray-500">{f.type || '—'}</td>
+                                                                                        <td className="px-4 py-1 text-gray-400">{f.default || '—'}</td>
+                                                                                    </tr>
+                                                                                );
+                                                                            })}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+
+                                                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                                                        <strong>Note:</strong> Fields highlighted in blue with the <span className="font-mono bg-indigo-100 text-indigo-600 px-1 rounded">WebRTC</span> badge are
+                                                        automatically configured when extensions are created/synced.
+                                                        If your FreePBX schema supports them, transport, DTLS, codecs, and ICE will be set automatically for WebRTC softphone use.
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* WebRTC Section */}

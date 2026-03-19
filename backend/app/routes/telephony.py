@@ -1,3 +1,4 @@
+import logging
 import socket
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -6,6 +7,9 @@ from app.dependencies import get_current_user, require_admin_feature
 from app.models.user import User
 from app.models.telephony import TelephonySettings
 from app.schemas.telephony import TelephonySettingsResponse, TelephonySettingsUpdate
+from app.services.freepbx_service import freepbx_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin/telephony",
@@ -197,6 +201,135 @@ def test_freepbx_connection(
             "To list existing clients:  fwconsole pbxapi --listclients",
         ],
     }
+
+
+@router.post("/introspect-schema")
+def introspect_freepbx_schema(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_telephony)
+):
+    """Introspect the FreePBX 17 GraphQL schema to discover available extension fields.
+
+    Returns the fields for addExtensionInput, updateExtensionInput, and any
+    PJSIP-related input types so that admins can verify which WebRTC/transport/
+    codec/DTLS/ICE fields are supported by their FreePBX installation.
+    """
+    settings = db.query(TelephonySettings).first()
+    if not settings or not settings.host:
+        raise HTTPException(status_code=400, detail="FreePBX host is not configured.")
+    if not settings.freepbx_api_key or not settings.freepbx_api_secret:
+        raise HTTPException(status_code=400, detail="FreePBX API credentials are required.")
+
+    cfg = {
+        "host": settings.host,
+        "port": settings.freepbx_port or 443,
+        "api_key": settings.freepbx_api_key,
+        "api_secret": settings.freepbx_api_secret,
+    }
+
+    auth = freepbx_service._get_auth(cfg["host"], cfg["port"], cfg["api_key"], cfg["api_secret"])
+    if not auth:
+        return {
+            "status": "error",
+            "message": "Failed to authenticate with FreePBX API. Check credentials.",
+        }
+
+    if auth["mode"] != "bpx":
+        return {
+            "status": "warning",
+            "message": "Connected via REST API (FreePBX 15/16) — GraphQL introspection is only available on FreePBX 17 PBX API.",
+            "mode": auth["mode"],
+        }
+
+    base = freepbx_service._base_url(cfg["host"], cfg["port"])
+    token = auth["token"]
+
+    # Introspect the key input types
+    type_names = [
+        "addExtensionInput",
+        "updateExtensionInput",
+    ]
+
+    results = {}
+    for type_name in type_names:
+        results[type_name] = _introspect_type_detailed(base, token, type_name)
+
+    # Also try to discover PJSIP-specific types if they exist
+    for extra_type in [
+        "PjsipEndpointInput",
+        "pjsipEndpointInput",
+        "EndpointInput",
+        "endpointInput",
+        "TransportInput",
+        "transportInput",
+    ]:
+        detail = _introspect_type_detailed(base, token, extra_type)
+        if detail.get("fields"):
+            results[extra_type] = detail
+
+    return {
+        "status": "success",
+        "message": "GraphQL schema introspected successfully.",
+        "mode": auth["mode"],
+        "types": results,
+    }
+
+
+def _introspect_type_detailed(base: str, token: str, type_name: str) -> dict:
+    """Introspect a GraphQL input type and return structured field info."""
+    import requests as req
+
+    query = """
+    query InspectType($name: String!) {
+      __type(name: $name) {
+        name
+        kind
+        inputFields {
+          name
+          type {
+            name
+            kind
+            ofType { name kind ofType { name kind } }
+          }
+          defaultValue
+        }
+      }
+    }
+    """
+    try:
+        r = req.post(
+            f"{base}/admin/api/api/gql",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={"query": query, "variables": {"name": type_name}},
+            timeout=10,
+            verify=False,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            t = (data.get("data") or {}).get("__type")
+            if t and t.get("inputFields"):
+                fields = []
+                for f in t["inputFields"]:
+                    ftype = f.get("type") or {}
+                    type_str = ftype.get("name") or ftype.get("kind") or ""
+                    if not type_str and ftype.get("ofType"):
+                        of = ftype["ofType"]
+                        type_str = of.get("name") or of.get("kind") or ""
+                        if of.get("ofType"):
+                            type_str = of["ofType"].get("name") or type_str
+                    fields.append({
+                        "name": f["name"],
+                        "type": type_str,
+                        "default": f.get("defaultValue"),
+                    })
+                return {"found": True, "fields": fields}
+            return {"found": False, "fields": [], "note": f"{type_name} not found in schema"}
+        return {"found": False, "fields": [], "note": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"found": False, "fields": [], "note": f"Error: {e}"}
 
 
 @router.post("/test-ami")

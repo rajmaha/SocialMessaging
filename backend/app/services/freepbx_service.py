@@ -320,6 +320,55 @@ class FreePBXService:
             logger.error("BPX fetchExtension exception: %s", e)
         return None
 
+    # ---------------------------------------------------------------
+    #  WebRTC PJSIP settings for extensions
+    # ---------------------------------------------------------------
+
+    @staticmethod
+    def _webrtc_pjsip_fields() -> dict:
+        """Return the PJSIP fields required for a WebRTC-capable extension.
+
+        FreePBX 17's updateExtensionInput may accept a `webrtc` shortcut field
+        that auto-sets DTLS/ICE/transport/encryption.  We include explicit
+        fields as well so that the extension is fully configured even if the
+        `webrtc` shortcut is not supported by the installed schema version.
+
+        Field names match the FreePBX 17 PBX API GraphQL schema.
+        """
+        return {
+            # Master WebRTC toggle — when supported, auto-configures DTLS/ICE/etc.
+            "webrtc": "yes",
+            # Transport — must match a WSS transport defined in Asterisk SIP Settings
+            "transport": "0.0.0.0-wss",
+            # DTLS for secure media (required for WebRTC)
+            "dtlsEnable": "yes",
+            "dtlsVerify": "no",
+            "dtlsSetup": "actpass",
+            "dtlsCertfile": "",  # empty = use default Asterisk certificate
+            # Media encryption via DTLS-SRTP
+            "mediaEncryption": "dtls",
+            "mediaUseReceivedTransport": "yes",
+            # ICE (Interactive Connectivity Establishment)
+            "iceSupport": "yes",
+            # Codecs — opus first for WebRTC, then fallbacks
+            "allow": "opus,ulaw,alaw",
+            # Allow multiple WebRTC registrations (browser tabs / devices)
+            "maxContacts": "5",
+        }
+
+    @staticmethod
+    def _webrtc_shortcut_only() -> dict:
+        """Minimal WebRTC fields — just the `webrtc: yes` shortcut.
+
+        Some FreePBX 17 builds auto-set all DTLS/ICE/transport settings
+        when `webrtc` is set to "yes".  Use this as a fallback if the
+        full field list is rejected by the schema.
+        """
+        return {
+            "webrtc": "yes",
+            "maxContacts": "5",
+        }
+
     def _bpx_create_or_update(
         self, base: str, token: str, extension: str,
         sip_password: str, display_name: str, email: str,
@@ -338,7 +387,7 @@ class FreePBXService:
         #   updateExtensionInput: flat, includes extPassword for SIP credential
         #   addExtensionInput:    flat, NO password field — FreePBX separates
         #                         creation from credential setting.
-        # Workflow: addExtension to create, then updateExtension to set extPassword.
+        # Workflow: addExtension to create, then updateExtension to set extPassword + WebRTC settings.
 
         _update_mutation = """
         mutation updateExtension($input: updateExtensionInput!) {
@@ -349,14 +398,17 @@ class FreePBXService:
         }
         """
 
-        def _do_update(extra_hint: str = "") -> Tuple[bool, str]:
-            vars_ = {
-                "input": {
-                    "extensionId": extension,
-                    "name": display_name or f"Agent {extension}",
-                    "extPassword": sip_password,
-                },
+        def _do_update(extra_hint: str = "", webrtc_fields: dict = None) -> Tuple[bool, str]:
+            input_data = {
+                "extensionId": extension,
+                "name": display_name or f"Agent {extension}",
+                "extPassword": sip_password,
             }
+            # Merge WebRTC PJSIP settings into the mutation input
+            if webrtc_fields:
+                input_data.update(webrtc_fields)
+
+            vars_ = {"input": input_data}
             try:
                 r = self._gql(base, token, _update_mutation, vars_)
                 if r.status_code == 200:
@@ -376,12 +428,63 @@ class FreePBXService:
                 logger.error("BPX updateExtension exception: %s", e)
                 return False, f"updateExtension exception: {e}"
 
+        def _do_update_with_webrtc_fallback(extra_hint: str = "") -> Tuple[bool, str]:
+            """Try updating with full WebRTC fields, then shortcut-only, then basic."""
+            # Attempt 1: Full WebRTC PJSIP fields
+            ok, detail = _do_update(
+                extra_hint + " [full WebRTC fields]",
+                webrtc_fields=self._webrtc_pjsip_fields(),
+            )
+            if ok:
+                return True, "OK"
+
+            err_lower = detail.lower()
+            is_field_error = any(
+                kw in err_lower for kw in ("is not defined by type", "unknown argument", "unknown field")
+            )
+
+            if is_field_error:
+                logger.info(
+                    "Full WebRTC fields rejected for %s — retrying with webrtc shortcut only", extension
+                )
+                # Attempt 2: Just `webrtc: yes` shortcut
+                ok2, detail2 = _do_update(
+                    extra_hint + " [webrtc shortcut]",
+                    webrtc_fields=self._webrtc_shortcut_only(),
+                )
+                if ok2:
+                    return True, "OK"
+
+                err_lower2 = detail2.lower()
+                is_field_error2 = any(
+                    kw in err_lower2 for kw in ("is not defined by type", "unknown argument", "unknown field")
+                )
+
+                if is_field_error2:
+                    logger.warning(
+                        "WebRTC shortcut also rejected for %s — falling back to basic fields only. "
+                        "WebRTC settings must be configured manually in FreePBX admin panel.",
+                        extension,
+                    )
+                    # Attempt 3: Basic fields only (password + name, no WebRTC)
+                    ok3, detail3 = _do_update(extra_hint + " [basic only — no WebRTC]")
+                    if ok3:
+                        return True, (
+                            "OK — extension updated but WebRTC/PJSIP settings could not be set via API. "
+                            "Please configure transport, DTLS, ICE, and codecs manually in FreePBX admin panel."
+                        )
+                    return False, detail3
+
+                return False, detail2
+
+            return False, detail
+
         # --- UPDATE path (extension already exists) ---
         if exists or exists is None:
-            ok, detail = _do_update()
+            ok, detail = _do_update_with_webrtc_fallback()
             if ok:
                 self._bpx_apply_config(base, token)
-                return True, "OK"
+                return True, detail
             err_msgs = detail.lower()
             if exists:
                 # Confident it exists — surface the error
@@ -404,13 +507,14 @@ class FreePBXService:
             # ['extensionId','tech','channelName','name','outboundCid','emergencyCid',
             #  'email','umEnable','umGroups','vmEnable','vmPassword','callerID',
             #  'umPassword','maxContacts','ringtimer','clientMutationId']
-            # Password is set via a subsequent updateExtension call.
+            # Password + WebRTC settings are applied via a subsequent updateExtension call.
             add_vars = {
                 "input": {
                     "extensionId": extension,
                     "tech": "pjsip",
                     "name": display_name or f"Agent {extension}",
                     "email": email,
+                    "maxContacts": "5",
                 },
             }
             try:
@@ -418,16 +522,16 @@ class FreePBXService:
                 if r.status_code == 200:
                     result = r.json()
                     if not result.get("errors"):
-                        logger.info("✅ BPX API: extension %s created — setting password", extension)
-                        # Set the SIP password via updateExtension immediately after creation
-                        ok, detail = _do_update(" (post-create password set)")
+                        logger.info("✅ BPX API: extension %s created — setting password + WebRTC settings", extension)
+                        # Set the SIP password AND WebRTC PJSIP settings via updateExtension
+                        ok, detail = _do_update_with_webrtc_fallback(" (post-create)")
                         if not ok:
                             logger.warning(
-                                "Extension %s created but password set failed: %s", extension, detail
+                                "Extension %s created but update failed: %s", extension, detail
                             )
-                            return False, f"Extension created but extPassword update failed: {detail}"
+                            return False, f"Extension created but update failed: {detail}"
                         self._bpx_apply_config(base, token)
-                        return True, "OK"
+                        return True, detail
                     logger.warning("BPX addExtension errors: %s", result["errors"])
                     add_err_msgs = " ".join(
                         (e.get("message") or "") for e in result["errors"]
