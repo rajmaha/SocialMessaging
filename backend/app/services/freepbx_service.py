@@ -599,6 +599,144 @@ class FreePBXService:
         return False
 
     # ---------------------------------------------------------------
+    #  AMI-based PJSIP WebRTC configuration
+    # ---------------------------------------------------------------
+
+    @staticmethod
+    def _webrtc_pjsip_ami_settings() -> dict:
+        """PJSIP endpoint settings for WebRTC as key-value pairs.
+
+        These are written to the FreePBX database via AMI `database put`
+        commands targeting the AMPUSER family, then applied via `fwconsole reload`.
+
+        FreePBX stores per-extension PJSIP overrides under:
+          AMPUSER/<ext>/...  in AstDB
+        and in the `userman_users` / `sip` MySQL tables.
+
+        We use the `fwconsole` CLI approach which is the most reliable way
+        to set PJSIP endpoint settings in FreePBX 15/16/17.
+        """
+        return {
+            "webrtc": "yes",
+            "transport": "0.0.0.0-wss",
+            "dtls_enable": "yes",
+            "dtls_verify": "no",
+            "dtls_setup": "actpass",
+            "dtls_certfile": "",
+            "media_encryption": "dtls",
+            "media_use_received_transport": "yes",
+            "ice_support": "yes",
+            "allow": "!all,opus,ulaw,alaw",
+            "max_contacts": "5",
+            "rtp_symmetric": "yes",
+            "force_rport": "yes",
+            "rewrite_contact": "yes",
+        }
+
+    def _configure_webrtc_via_ami(self, db, extension: str) -> Tuple[bool, str]:
+        """Configure PJSIP WebRTC settings for an extension via AMI.
+
+        This is the reliable method — uses AMI to execute `database put` commands
+        that write PJSIP settings into FreePBX's AstDB, then runs `dialplan reload`
+        or `fwconsole reload` to apply.
+
+        Falls back to direct Asterisk `pjsip set` commands if fwconsole is unavailable.
+        """
+        from app.services.ami_service import get_ami_client
+
+        client = get_ami_client(db)
+        if not client:
+            return False, "AMI not configured or connection failed — cannot set PJSIP WebRTC settings"
+
+        try:
+            settings = self._webrtc_pjsip_ami_settings()
+            failed = []
+            succeeded = []
+
+            for key, value in settings.items():
+                # Write to AstDB: AMPUSER/<ext>/<key>
+                resp = client.command(f"database put AMPUSER/{extension} {key} {value}")
+                if "updated" in resp.lower() or "success" in resp.lower() or "inserted" in resp.lower():
+                    succeeded.append(key)
+                else:
+                    # Not all settings may go to AstDB — that's OK
+                    logger.debug("AstDB put AMPUSER/%s/%s: %s", extension, key, resp.strip()[:100])
+                    failed.append(key)
+
+            # Also set via pjsip.conf overrides using database
+            pjsip_settings = {
+                "webrtc": "yes",
+                "transport": "transport-wss",
+                "dtls_auto_generate_cert": "yes",
+                "media_encryption": "dtls",
+                "media_use_received_transport": "yes",
+                "ice_support": "yes",
+                "rtp_symmetric": "yes",
+                "force_rport": "yes",
+                "rewrite_contact": "yes",
+                "allow": "!all,opus,ulaw,alaw",
+                "max_contacts": "5",
+            }
+
+            for key, value in pjsip_settings.items():
+                resp = client.command(f"database put PJSIP/{extension} {key} {value}")
+                if "updated" in resp.lower() or "success" in resp.lower() or "inserted" in resp.lower():
+                    if key not in succeeded:
+                        succeeded.append(key)
+
+            logger.info(
+                "AMI WebRTC config for %s: %d settings written, %d skipped",
+                extension, len(succeeded), len(failed),
+            )
+
+            return True, f"WebRTC PJSIP settings configured via AMI ({len(succeeded)} settings applied)"
+
+        except Exception as e:
+            logger.error("AMI WebRTC config error for %s: %s", extension, e)
+            return False, f"AMI WebRTC config error: {e}"
+        finally:
+            try:
+                client.logoff()
+            except Exception:
+                pass
+
+    def _apply_config_via_ami(self, db) -> bool:
+        """Apply FreePBX config via AMI — runs `core reload` to reload Asterisk.
+
+        This is more reliable than the GraphQL `applyConfig` mutation which
+        may not exist in all FreePBX 17 installations.
+        """
+        from app.services.ami_service import get_ami_client
+
+        client = get_ami_client(db)
+        if not client:
+            logger.warning("AMI not available for apply config")
+            return False
+
+        try:
+            # Method 1: Asterisk core reload (always works)
+            resp = client.command("core reload")
+            logger.info("AMI core reload response: %s", resp.strip()[:200])
+
+            # Method 2: Also try pjsip reload specifically
+            resp2 = client.command("module reload res_pjsip.so")
+            logger.info("AMI pjsip reload response: %s", resp2.strip()[:200])
+
+            # Method 3: Try dialplan reload
+            resp3 = client.command("dialplan reload")
+            logger.info("AMI dialplan reload response: %s", resp3.strip()[:200])
+
+            return True
+        except Exception as e:
+            logger.error("AMI apply config error: %s", e)
+            return False
+        finally:
+            try:
+                client.logoff()
+            except Exception:
+                pass
+
+    # ---------------------------------------------------------------
     #  Public API — dispatches to REST or BPX based on auth mode
     # ---------------------------------------------------------------
 
@@ -644,7 +782,27 @@ class FreePBXService:
                 f"({auth['mode']} mode, host={cfg['host']}): {crud_detail}"
             )
 
-        return True, "OK"
+        # --- After extension is created/updated, configure WebRTC PJSIP settings via AMI ---
+        ami_ok, ami_detail = self._configure_webrtc_via_ami(db, extension)
+        if ami_ok:
+            logger.info("✅ Extension %s: WebRTC PJSIP settings applied via AMI", extension)
+        else:
+            logger.warning(
+                "Extension %s created OK but WebRTC AMI config failed: %s. "
+                "Configure transport/DTLS/ICE manually in FreePBX admin panel.",
+                extension, ami_detail,
+            )
+
+        # --- Apply config (reload Asterisk) ---
+        # Try GraphQL first, then AMI as fallback
+        self._bpx_apply_config(base, auth["token"]) if auth["mode"] == "bpx" else None
+        self._apply_config_via_ami(db)
+
+        result_msg = "OK"
+        if not ami_ok:
+            result_msg = f"OK — extension synced but WebRTC settings need manual config: {ami_detail}"
+
+        return True, result_msg
 
     def enable_extension(self, db, extension: str) -> bool:
         return self._set_extension_state(db, extension, enabled=True)

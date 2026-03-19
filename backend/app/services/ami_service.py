@@ -87,6 +87,17 @@ class AMIClient:
         # Still return action_id even on non-clear responses (async=true acks vary)
         return action_id
 
+    def command(self, cmd: str) -> str:
+        """Execute an Asterisk CLI command via AMI and return the output."""
+        action_id = f"cmd-{int(time.time() * 1000)}"
+        self._send(
+            f"Action: Command\r\n"
+            f"ActionID: {action_id}\r\n"
+            f"Command: {cmd}\r\n"
+            f"\r\n"
+        )
+        return self._read_response()
+
     def logoff(self):
         try:
             self._send("Action: Logoff\r\n\r\n")
@@ -146,9 +157,15 @@ def get_ami_client(db) -> Optional[AMIClient]:
         if not settings or not settings.host or not settings.ami_username or not settings.ami_secret:
             logger.warning("AMI not configured in TelephonySettings – skipping call origination")
             return None
+        # Strip scheme from host — AMI is raw TCP, not HTTP
+        ami_host = settings.host.rstrip("/")
+        for prefix in ("https://", "http://"):
+            if ami_host.startswith(prefix):
+                ami_host = ami_host[len(prefix):]
+                break
         client = AMIClient(
-            host=settings.host,
-            port=settings.port or 5038,
+            host=ami_host,
+            port=settings.ami_port or 5038,
             username=settings.ami_username,
             secret=settings.ami_secret,
         )
