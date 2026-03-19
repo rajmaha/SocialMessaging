@@ -602,24 +602,17 @@ class FreePBXService:
     #  FreePBX admin web session — configure PJSIP via form POST
     # ---------------------------------------------------------------
 
-    def _configure_webrtc_via_web(self, db, extension: str, sip_password: str,
-                                   display_name: str = "") -> Tuple[bool, str]:
-        """Configure WebRTC PJSIP settings by POSTing to FreePBX admin web UI.
+    def _get_freepbx_web_session(self, db) -> Tuple[Optional[requests.Session], str, str]:
+        """Login to FreePBX admin and return (session, base_url, error).
 
-        This is the most reliable method — it uses the exact same mechanism as
-        a human admin editing the extension in the FreePBX web panel. It:
-        1. Logs into FreePBX admin via form POST
-        2. Submits the extension edit form with all WebRTC PJSIP settings
-        3. Triggers 'Apply Config' via the admin AJAX API
-
-        This bypasses all GraphQL/AMI limitations.
+        Returns (session, base, "") on success or (None, "", error_msg) on failure.
         """
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         cfg, err = self._get_settings(db)
         if not cfg:
-            return False, f"No telephony settings: {err}"
+            return None, "", f"No telephony settings: {err}"
 
         base = self._base_url(cfg["host"], cfg.get("port"))
         username = cfg["api_key"]
@@ -628,8 +621,6 @@ class FreePBXService:
         try:
             session = requests.Session()
             session.verify = False
-
-            # Step 1: Login to FreePBX admin
             session.get(f"{base}/admin/config.php", timeout=10)
             login_resp = session.post(
                 f"{base}/admin/config.php",
@@ -638,69 +629,215 @@ class FreePBXService:
                 allow_redirects=True, timeout=10,
             )
             if not any(k in login_resp.text.lower() for k in ("logout", "dashboard", "fpbx_csrf")):
-                return False, "FreePBX admin login failed — check credentials"
+                return None, base, "FreePBX admin login failed — check credentials"
+            return session, base, ""
+        except Exception as e:
+            return None, base, f"FreePBX login error: {e}"
 
-            logger.info("FreePBX admin login OK for WebRTC config of extension %s", extension)
+    def scrape_extension_form(self, db, extension: str) -> dict:
+        """Scrape the FreePBX extension edit page and return all form field names + values.
 
-            # Step 2: Load the extension edit page to get CSRF token and current form state
+        This is used for diagnostics — shows the REAL form field names so we can
+        configure them correctly.
+        """
+        import re
+        session, base, err = self._get_freepbx_web_session(db)
+        if not session:
+            return {"status": "error", "message": err}
+
+        try:
             ext_page = session.get(
                 f"{base}/admin/config.php",
                 params={"display": "extensions", "extdisplay": extension},
                 timeout=10,
             )
 
-            # Extract CSRF token if present
-            import re
-            csrf_match = re.search(r'name="__csrf_token"\s+value="([^"]+)"', ext_page.text)
-            csrf_token = csrf_match.group(1) if csrf_match else ""
+            # Parse all form inputs (input, select, textarea)
+            fields = {}
 
-            # Step 3: POST the extension edit form with WebRTC settings
-            # These field names match FreePBX 17's extension edit form
-            form_data = {
-                "display": "extensions",
-                "action": "edit",
-                "extdisplay": extension,
+            # Input fields: <input name="..." value="..." />
+            for m in re.finditer(
+                r'<input[^>]+name=["\']([^"\']+)["\'][^>]*value=["\']([^"\']*)["\']',
+                ext_page.text, re.IGNORECASE,
+            ):
+                fields[m.group(1)] = m.group(2)
+
+            # Also capture inputs where value comes before name
+            for m in re.finditer(
+                r'<input[^>]+value=["\']([^"\']*)["\'][^>]*name=["\']([^"\']+)["\']',
+                ext_page.text, re.IGNORECASE,
+            ):
+                if m.group(2) not in fields:
+                    fields[m.group(2)] = m.group(1)
+
+            # Select fields with selected option
+            for m in re.finditer(
+                r'<select[^>]+name=["\']([^"\']+)["\'].*?</select>',
+                ext_page.text, re.IGNORECASE | re.DOTALL,
+            ):
+                select_name = m.group(1)
+                selected = re.search(r'<option[^>]+selected[^>]*value=["\']([^"\']*)["\']', m.group(0))
+                if not selected:
+                    selected = re.search(r'<option[^>]*value=["\']([^"\']*)["\'][^>]*selected', m.group(0))
+                if selected:
+                    fields[select_name] = selected.group(1)
+
+            # Filter to WebRTC-relevant fields
+            webrtc_keywords = [
+                "webrtc", "dtls", "transport", "media_encryption", "ice", "avpf",
+                "rtcp_mux", "rtp_symmetric", "force_rport", "rewrite_contact",
+                "direct_media", "allow", "disallow", "max_contacts", "secret",
+                "codec", "media_use", "force_avp", "encryption",
+            ]
+            webrtc_fields = {
+                k: v for k, v in fields.items()
+                if any(kw in k.lower() for kw in webrtc_keywords)
+            }
+
+            return {
+                "status": "success",
                 "extension": extension,
-                "name": display_name or f"Agent {extension}",
-                "tech": "pjsip",
-                # SIP password
-                "devinfo_secret": sip_password,
-                # WebRTC defaults toggle
+                "total_fields": len(fields),
+                "webrtc_fields": webrtc_fields,
+                "all_fields": fields,
+            }
+        except Exception as e:
+            return {"status": "error", "message": f"Scrape error: {e}"}
+
+    def _configure_webrtc_via_web(self, db, extension: str, sip_password: str,
+                                   display_name: str = "") -> Tuple[bool, str]:
+        """Configure WebRTC PJSIP settings by POSTing to FreePBX admin web UI.
+
+        Approach: scrape the extension edit form to get the REAL field names,
+        then modify WebRTC-related fields and submit.
+        """
+        import re
+
+        session, base, err = self._get_freepbx_web_session(db)
+        if not session:
+            return False, err
+
+        try:
+            logger.info("FreePBX admin login OK for WebRTC config of extension %s", extension)
+
+            # Step 1: Load the extension edit page — get ALL current form fields
+            ext_page = session.get(
+                f"{base}/admin/config.php",
+                params={"display": "extensions", "extdisplay": extension},
+                timeout=10,
+            )
+
+            if extension not in ext_page.text:
+                return False, f"Extension {extension} not found on FreePBX edit page"
+
+            # Step 2: Parse ALL form fields (preserve existing values)
+            form_data = {}
+
+            # Input fields
+            for m in re.finditer(
+                r'<input[^>]+name=["\']([^"\']+)["\'][^>]*value=["\']([^"\']*)["\']',
+                ext_page.text, re.IGNORECASE,
+            ):
+                name, value = m.group(1), m.group(2)
+                if name not in form_data:
+                    form_data[name] = value
+
+            for m in re.finditer(
+                r'<input[^>]+value=["\']([^"\']*)["\'][^>]*name=["\']([^"\']+)["\']',
+                ext_page.text, re.IGNORECASE,
+            ):
+                name, value = m.group(2), m.group(1)
+                if name not in form_data:
+                    form_data[name] = value
+
+            # Select fields with selected option
+            for m in re.finditer(
+                r'<select[^>]+name=["\']([^"\']+)["\'].*?</select>',
+                ext_page.text, re.IGNORECASE | re.DOTALL,
+            ):
+                select_name = m.group(1)
+                selected = re.search(r'<option[^>]+selected[^>]*value=["\']([^"\']*)["\']', m.group(0))
+                if not selected:
+                    selected = re.search(r'<option[^>]*value=["\']([^"\']*)["\'][^>]*selected', m.group(0))
+                if selected and select_name not in form_data:
+                    form_data[select_name] = selected.group(1)
+
+            logger.info("FreePBX form for %s: parsed %d fields", extension, len(form_data))
+
+            # Log the WebRTC-relevant field names we found
+            webrtc_keys = [k for k in form_data if any(
+                kw in k.lower() for kw in ["webrtc", "dtls", "transport", "media_enc", "ice", "avpf",
+                                             "rtcp_mux", "rtp_sym", "allow", "disallow", "max_contact",
+                                             "codec", "media_use", "force_avp", "encryption", "secret"]
+            )]
+            logger.info("FreePBX WebRTC-related fields for %s: %s", extension, webrtc_keys)
+
+            # Step 3: Override WebRTC settings — map known patterns
+            # We try multiple field name patterns since FreePBX versions differ
+            webrtc_overrides = {
+                # WebRTC toggle
                 "devinfo_webrtc": "yes",
+                "webrtc": "yes",
                 # Transport
                 "devinfo_transport": "0.0.0.0-wss",
-                # DTLS settings
+                "transport": "0.0.0.0-wss",
+                # DTLS
                 "devinfo_dtls_enable": "yes",
+                "dtls_enable": "yes",
                 "devinfo_dtls_auto_generate_cert": "yes",
+                "dtls_auto_generate_cert": "yes",
                 "devinfo_dtls_verify": "fingerprint",
+                "dtls_verify": "fingerprint",
                 "devinfo_dtls_setup": "actpass",
+                "dtls_setup": "actpass",
                 # Media encryption
                 "devinfo_media_encryption": "dtls",
+                "media_encryption": "dtls",
                 "devinfo_media_encryption_optimistic": "yes",
                 "devinfo_media_use_received_transport": "yes",
+                "media_use_received_transport": "yes",
                 # ICE / AVPF / RTP
                 "devinfo_icesupport": "yes",
+                "icesupport": "yes",
                 "devinfo_avpf": "yes",
+                "avpf": "yes",
                 "devinfo_force_avp": "yes",
+                "force_avp": "yes",
                 "devinfo_rtcp_mux": "yes",
+                "rtcp_mux": "yes",
                 "devinfo_rtp_symmetric": "yes",
+                "rtp_symmetric": "yes",
                 # NAT
                 "devinfo_force_rport": "yes",
+                "force_rport": "yes",
                 "devinfo_rewrite_contact": "yes",
+                "rewrite_contact": "yes",
                 "devinfo_direct_media": "no",
+                "direct_media": "no",
                 # Codecs
                 "devinfo_disallow": "all",
                 "devinfo_allow": "opus,ulaw,alaw",
                 # Contacts
                 "devinfo_max_contacts": "5",
-                # DTMF
-                "devinfo_dtmfmode": "auto",
-                # Submit
-                "Submit": "Submit",
+                "max_contacts": "5",
             }
-            if csrf_token:
-                form_data["__csrf_token"] = csrf_token
 
+            # Only apply overrides for fields that actually exist in the form
+            applied = []
+            for field_name, value in webrtc_overrides.items():
+                if field_name in form_data:
+                    old_val = form_data[field_name]
+                    form_data[field_name] = value
+                    if old_val != value:
+                        applied.append(f"{field_name}: {old_val} → {value}")
+
+            logger.info("FreePBX WebRTC overrides applied for %s: %s", extension, applied)
+
+            # Ensure action=edit and Submit are set
+            form_data["action"] = "edit"
+            form_data["Submit"] = "Submit"
+
+            # Step 4: Submit the form
             edit_resp = session.post(
                 f"{base}/admin/config.php",
                 data=form_data,
@@ -708,34 +845,23 @@ class FreePBXService:
                 allow_redirects=True, timeout=15,
             )
 
-            # Check if the form submission succeeded
             if edit_resp.status_code in (200, 302):
-                # Look for success indicators or absence of error messages
-                if "error" in edit_resp.text.lower() and "exception" in edit_resp.text.lower():
-                    logger.warning("FreePBX form POST may have errors for %s: checking...", extension)
-                else:
-                    logger.info("✅ FreePBX form POST succeeded for extension %s", extension)
+                logger.info("✅ FreePBX form POST succeeded for extension %s (%d fields applied)", extension, len(applied))
             else:
                 logger.warning("FreePBX form POST HTTP %s for %s", edit_resp.status_code, extension)
 
-            # Step 4: Apply Config (equivalent of clicking the red Apply Config button)
+            # Step 5: Apply Config
             apply_resp = session.get(
                 f"{base}/admin/config.php",
                 params={"handler": "reload"},
                 timeout=30,
             )
-            if apply_resp.status_code == 200:
-                logger.info("✅ FreePBX Apply Config triggered for extension %s", extension)
-            else:
-                # Try alternative apply config URL
-                apply_resp2 = session.post(
-                    f"{base}/admin/config.php",
-                    data={"handler": "reload"},
-                    timeout=30,
-                )
-                logger.info("FreePBX Apply Config (POST) status: %s", apply_resp2.status_code)
+            logger.info("FreePBX Apply Config: HTTP %s", apply_resp.status_code)
 
-            return True, "WebRTC PJSIP settings configured via FreePBX admin web session"
+            if not applied:
+                return True, "Form submitted but no WebRTC fields were found to override — field names may differ. Use /admin/telephony/scrape-form to check."
+
+            return True, f"WebRTC PJSIP settings configured ({len(applied)} fields changed)"
 
         except Exception as e:
             logger.error("FreePBX web session error for %s: %s", extension, e)

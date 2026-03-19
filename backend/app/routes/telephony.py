@@ -211,6 +211,21 @@ def test_freepbx_connection(
     }
 
 
+@router.post("/scrape-form")
+def scrape_extension_form(
+    extension: str = "9001",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_telephony)
+):
+    """Scrape the FreePBX extension edit form to discover real field names.
+
+    This is a diagnostic endpoint — use it to see what form fields FreePBX
+    actually uses for extension PJSIP settings (transport, DTLS, codecs, etc.)
+    so we can configure them correctly during sync.
+    """
+    return freepbx_service.scrape_extension_form(db, extension)
+
+
 @router.post("/introspect-schema")
 def introspect_freepbx_schema(
     db: Session = Depends(get_db),
