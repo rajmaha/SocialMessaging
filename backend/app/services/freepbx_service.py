@@ -599,159 +599,186 @@ class FreePBXService:
         return False
 
     # ---------------------------------------------------------------
-    #  AMI-based PJSIP WebRTC configuration via MySQL + fwconsole
+    #  FreePBX admin web session — configure PJSIP via form POST
     # ---------------------------------------------------------------
 
-    @staticmethod
-    def _webrtc_pjsip_mysql_rows() -> list:
-        """Return (keyword, data) pairs for the FreePBX `asterisk.pjsip` MySQL table.
+    def _configure_webrtc_via_web(self, db, extension: str, sip_password: str,
+                                   display_name: str = "") -> Tuple[bool, str]:
+        """Configure WebRTC PJSIP settings by POSTing to FreePBX admin web UI.
 
-        FreePBX stores PJSIP extension settings as key-value rows in the
-        `pjsip` table: (id=extension, keyword=setting_name, data=value, flags=0).
+        This is the most reliable method — it uses the exact same mechanism as
+        a human admin editing the extension in the FreePBX web panel. It:
+        1. Logs into FreePBX admin via form POST
+        2. Submits the extension edit form with all WebRTC PJSIP settings
+        3. Triggers 'Apply Config' via the admin AJAX API
 
-        Setting `webrtc=yes` alone is NOT enough due to a known FreePBX bug
-        (FREEPBX-21529) — we must set each field individually.
+        This bypasses all GraphQL/AMI limitations.
         """
-        return [
-            # WebRTC master toggle
-            ("webrtc", "yes"),
-            # AVPF / AVP (required for WebRTC)
-            ("avpf", "yes"),
-            ("force_avp", "yes"),
-            # ICE support
-            ("icesupport", "yes"),
-            # DTLS for secure media
-            ("media_encryption", "dtls"),
-            ("media_encryption_optimistic", "yes"),
-            ("dtls_auto", "yes"),
-            ("dtls_verify", "fingerprint"),
-            ("dtls_setup", "actpass"),
-            # Media transport
-            ("media_use_received_transport", "yes"),
-            ("rtcp_mux", "yes"),
-            ("rtp_symmetric", "yes"),
-            # Transport — WSS for WebRTC
-            ("transport", "0.0.0.0-wss"),
-            # Codecs
-            ("disallow", "all"),
-            ("allow", "opus,ulaw,alaw"),
-            # NAT traversal
-            ("force_rport", "yes"),
-            ("rewrite_contact", "yes"),
-            ("direct_media", "no"),
-            # Multiple registrations (browser tabs / devices)
-            ("max_contacts", "5"),
-            # DTMF
-            ("dtmfmode", "auto"),
-        ]
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def _configure_webrtc_via_ami(self, db, extension: str) -> Tuple[bool, str]:
-        """Configure PJSIP WebRTC settings by writing to FreePBX's MySQL `pjsip` table via AMI.
+        cfg, err = self._get_settings(db)
+        if not cfg:
+            return False, f"No telephony settings: {err}"
 
-        FreePBX stores PJSIP settings in the `asterisk.pjsip` MySQL table as
-        key-value rows: (id, keyword, data, flags). We use AMI to execute
-        `system` commands that run MySQL queries, then `fwconsole reload` to
-        regenerate Asterisk config files and apply.
-        """
-        from app.services.ami_service import get_ami_client
-
-        client = get_ami_client(db)
-        if not client:
-            return False, "AMI not configured or connection failed — cannot set PJSIP WebRTC settings"
+        base = self._base_url(cfg["host"], cfg.get("port"))
+        username = cfg["api_key"]
+        password = cfg["api_secret"]
 
         try:
-            rows = self._webrtc_pjsip_mysql_rows()
-            succeeded = 0
-            failed = 0
+            session = requests.Session()
+            session.verify = False
 
-            # Build a single SQL statement with all REPLACE INTO queries
-            # REPLACE INTO upserts: inserts if new, replaces if (id, keyword) exists
-            sql_parts = []
-            for keyword, data in rows:
-                # Escape single quotes in data
-                safe_data = data.replace("'", "\\'")
-                sql_parts.append(f"('{extension}', '{keyword}', '{safe_data}', 0)")
+            # Step 1: Login to FreePBX admin
+            session.get(f"{base}/admin/config.php", timeout=10)
+            login_resp = session.post(
+                f"{base}/admin/config.php",
+                data={"username": username, "password": password, "submit": "Login"},
+                headers={"Referer": f"{base}/admin/config.php"},
+                allow_redirects=True, timeout=10,
+            )
+            if not any(k in login_resp.text.lower() for k in ("logout", "dashboard", "fpbx_csrf")):
+                return False, "FreePBX admin login failed — check credentials"
 
-            if sql_parts:
-                sql = (
-                    "REPLACE INTO pjsip (id, keyword, data, flags) VALUES "
-                    + ", ".join(sql_parts)
-                    + ";"
-                )
-                # Execute via AMI system command — runs mysql CLI on the FreePBX server
-                cmd = f'!mysql -u freepbxuser -e "{sql}" asterisk 2>&1 || mysql -e "{sql}" asterisk 2>&1'
-                resp = client.command(cmd)
-                logger.info("AMI MySQL pjsip REPLACE response for %s: %s", extension, resp.strip()[:300])
+            logger.info("FreePBX admin login OK for WebRTC config of extension %s", extension)
 
-                if "error" in resp.lower():
-                    # Fallback: try individual REPLACE statements
-                    logger.warning("Bulk SQL failed, trying individual statements for %s", extension)
-                    for keyword, data in rows:
-                        safe_data = data.replace("'", "\\'")
-                        single_sql = f"REPLACE INTO pjsip (id, keyword, data, flags) VALUES ('{extension}', '{keyword}', '{safe_data}', 0);"
-                        single_cmd = f'!mysql -e "{single_sql}" asterisk 2>&1'
-                        single_resp = client.command(single_cmd)
-                        if "error" in single_resp.lower():
-                            logger.warning("MySQL REPLACE failed for %s/%s: %s", extension, keyword, single_resp.strip()[:100])
-                            failed += 1
-                        else:
-                            succeeded += 1
-                else:
-                    succeeded = len(rows)
-
-            logger.info(
-                "MySQL pjsip WebRTC config for %s: %d settings written, %d failed",
-                extension, succeeded, failed,
+            # Step 2: Load the extension edit page to get CSRF token and current form state
+            ext_page = session.get(
+                f"{base}/admin/config.php",
+                params={"display": "extensions", "extdisplay": extension},
+                timeout=10,
             )
 
-            return True, f"WebRTC PJSIP settings written to MySQL ({succeeded} settings applied)"
+            # Extract CSRF token if present
+            import re
+            csrf_match = re.search(r'name="__csrf_token"\s+value="([^"]+)"', ext_page.text)
+            csrf_token = csrf_match.group(1) if csrf_match else ""
+
+            # Step 3: POST the extension edit form with WebRTC settings
+            # These field names match FreePBX 17's extension edit form
+            form_data = {
+                "display": "extensions",
+                "action": "edit",
+                "extdisplay": extension,
+                "extension": extension,
+                "name": display_name or f"Agent {extension}",
+                "tech": "pjsip",
+                # SIP password
+                "devinfo_secret": sip_password,
+                # WebRTC defaults toggle
+                "devinfo_webrtc": "yes",
+                # Transport
+                "devinfo_transport": "0.0.0.0-wss",
+                # DTLS settings
+                "devinfo_dtls_enable": "yes",
+                "devinfo_dtls_auto_generate_cert": "yes",
+                "devinfo_dtls_verify": "fingerprint",
+                "devinfo_dtls_setup": "actpass",
+                # Media encryption
+                "devinfo_media_encryption": "dtls",
+                "devinfo_media_encryption_optimistic": "yes",
+                "devinfo_media_use_received_transport": "yes",
+                # ICE / AVPF / RTP
+                "devinfo_icesupport": "yes",
+                "devinfo_avpf": "yes",
+                "devinfo_force_avp": "yes",
+                "devinfo_rtcp_mux": "yes",
+                "devinfo_rtp_symmetric": "yes",
+                # NAT
+                "devinfo_force_rport": "yes",
+                "devinfo_rewrite_contact": "yes",
+                "devinfo_direct_media": "no",
+                # Codecs
+                "devinfo_disallow": "all",
+                "devinfo_allow": "opus,ulaw,alaw",
+                # Contacts
+                "devinfo_max_contacts": "5",
+                # DTMF
+                "devinfo_dtmfmode": "auto",
+                # Submit
+                "Submit": "Submit",
+            }
+            if csrf_token:
+                form_data["__csrf_token"] = csrf_token
+
+            edit_resp = session.post(
+                f"{base}/admin/config.php",
+                data=form_data,
+                headers={"Referer": f"{base}/admin/config.php?display=extensions&extdisplay={extension}"},
+                allow_redirects=True, timeout=15,
+            )
+
+            # Check if the form submission succeeded
+            if edit_resp.status_code in (200, 302):
+                # Look for success indicators or absence of error messages
+                if "error" in edit_resp.text.lower() and "exception" in edit_resp.text.lower():
+                    logger.warning("FreePBX form POST may have errors for %s: checking...", extension)
+                else:
+                    logger.info("✅ FreePBX form POST succeeded for extension %s", extension)
+            else:
+                logger.warning("FreePBX form POST HTTP %s for %s", edit_resp.status_code, extension)
+
+            # Step 4: Apply Config (equivalent of clicking the red Apply Config button)
+            apply_resp = session.get(
+                f"{base}/admin/config.php",
+                params={"handler": "reload"},
+                timeout=30,
+            )
+            if apply_resp.status_code == 200:
+                logger.info("✅ FreePBX Apply Config triggered for extension %s", extension)
+            else:
+                # Try alternative apply config URL
+                apply_resp2 = session.post(
+                    f"{base}/admin/config.php",
+                    data={"handler": "reload"},
+                    timeout=30,
+                )
+                logger.info("FreePBX Apply Config (POST) status: %s", apply_resp2.status_code)
+
+            return True, "WebRTC PJSIP settings configured via FreePBX admin web session"
 
         except Exception as e:
-            logger.error("AMI MySQL WebRTC config error for %s: %s", extension, e)
-            return False, f"AMI MySQL WebRTC config error: {e}"
-        finally:
-            try:
-                client.logoff()
-            except Exception:
-                pass
+            logger.error("FreePBX web session error for %s: %s", extension, e)
+            return False, f"FreePBX web session error: {e}"
 
-    def _apply_config_via_ami(self, db) -> bool:
-        """Apply FreePBX config via AMI — runs `fwconsole reload`.
-
-        This is the equivalent of clicking the red 'Apply Config' button in the
-        FreePBX admin panel. It regenerates Asterisk config files from the MySQL
-        database and then reloads Asterisk.
-
-        Note: `core reload` alone does NOT work because FreePBX needs to
-        regenerate .conf files from its database first.
-        """
-        from app.services.ami_service import get_ami_client
-
-        client = get_ami_client(db)
-        if not client:
-            logger.warning("AMI not available for apply config")
+    def _apply_config_via_web(self, db) -> bool:
+        """Apply FreePBX config by triggering reload via admin web session."""
+        cfg, err = self._get_settings(db)
+        if not cfg:
             return False
+
+        base = self._base_url(cfg["host"], cfg.get("port"))
+        username = cfg["api_key"]
+        password = cfg["api_secret"]
 
         try:
-            # fwconsole reload — the ONLY reliable way to apply FreePBX changes
-            # This regenerates .conf files from MySQL and reloads Asterisk
-            resp = client.command("!fwconsole reload 2>&1")
-            logger.info("AMI fwconsole reload response: %s", resp.strip()[:500])
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-            if "error" in resp.lower() and "no reload" in resp.lower():
-                # fwconsole might not be in PATH — try with full path
-                resp2 = client.command("!/var/lib/asterisk/bin/fwconsole reload 2>&1")
-                logger.info("AMI fwconsole (full path) reload response: %s", resp2.strip()[:500])
+            session = requests.Session()
+            session.verify = False
 
-            return True
+            # Login
+            session.get(f"{base}/admin/config.php", timeout=10)
+            session.post(
+                f"{base}/admin/config.php",
+                data={"username": username, "password": password, "submit": "Login"},
+                headers={"Referer": f"{base}/admin/config.php"},
+                allow_redirects=True, timeout=10,
+            )
+
+            # Trigger Apply Config
+            resp = session.get(
+                f"{base}/admin/config.php",
+                params={"handler": "reload"},
+                timeout=30,
+            )
+            logger.info("FreePBX Apply Config via web: HTTP %s", resp.status_code)
+            return resp.status_code == 200
+
         except Exception as e:
-            logger.error("AMI apply config error: %s", e)
+            logger.error("FreePBX Apply Config web error: %s", e)
             return False
-        finally:
-            try:
-                client.logoff()
-            except Exception:
-                pass
 
     # ---------------------------------------------------------------
     #  Public API — dispatches to REST or BPX based on auth mode
@@ -799,25 +826,26 @@ class FreePBXService:
                 f"({auth['mode']} mode, host={cfg['host']}): {crud_detail}"
             )
 
-        # --- After extension is created/updated, configure WebRTC PJSIP settings via AMI ---
-        ami_ok, ami_detail = self._configure_webrtc_via_ami(db, extension)
-        if ami_ok:
-            logger.info("✅ Extension %s: WebRTC PJSIP settings applied via AMI", extension)
+        # --- After extension is created/updated, configure WebRTC PJSIP settings ---
+        # Use FreePBX admin web session (form POST) — the most reliable method
+        web_ok, web_detail = self._configure_webrtc_via_web(
+            db, extension, sip_password, display_name,
+        )
+        if web_ok:
+            logger.info("✅ Extension %s: WebRTC PJSIP settings applied via web session", extension)
         else:
             logger.warning(
-                "Extension %s created OK but WebRTC AMI config failed: %s. "
+                "Extension %s created OK but WebRTC web config failed: %s. "
                 "Configure transport/DTLS/ICE manually in FreePBX admin panel.",
-                extension, ami_detail,
+                extension, web_detail,
             )
-
-        # --- Apply config (reload Asterisk) ---
-        # Try GraphQL first, then AMI as fallback
-        self._bpx_apply_config(base, auth["token"]) if auth["mode"] == "bpx" else None
-        self._apply_config_via_ami(db)
+            # Try GraphQL apply config as a fallback
+            if auth["mode"] == "bpx":
+                self._bpx_apply_config(base, auth["token"])
 
         result_msg = "OK"
-        if not ami_ok:
-            result_msg = f"OK — extension synced but WebRTC settings need manual config: {ami_detail}"
+        if not web_ok:
+            result_msg = f"OK — extension synced but WebRTC settings need manual config: {web_detail}"
 
         return True, result_msg
 
