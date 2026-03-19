@@ -599,48 +599,59 @@ class FreePBXService:
         return False
 
     # ---------------------------------------------------------------
-    #  AMI-based PJSIP WebRTC configuration
+    #  AMI-based PJSIP WebRTC configuration via MySQL + fwconsole
     # ---------------------------------------------------------------
 
     @staticmethod
-    def _webrtc_pjsip_ami_settings() -> dict:
-        """PJSIP endpoint settings for WebRTC as key-value pairs.
+    def _webrtc_pjsip_mysql_rows() -> list:
+        """Return (keyword, data) pairs for the FreePBX `asterisk.pjsip` MySQL table.
 
-        These are written to the FreePBX database via AMI `database put`
-        commands targeting the AMPUSER family, then applied via `fwconsole reload`.
+        FreePBX stores PJSIP extension settings as key-value rows in the
+        `pjsip` table: (id=extension, keyword=setting_name, data=value, flags=0).
 
-        FreePBX stores per-extension PJSIP overrides under:
-          AMPUSER/<ext>/...  in AstDB
-        and in the `userman_users` / `sip` MySQL tables.
-
-        We use the `fwconsole` CLI approach which is the most reliable way
-        to set PJSIP endpoint settings in FreePBX 15/16/17.
+        Setting `webrtc=yes` alone is NOT enough due to a known FreePBX bug
+        (FREEPBX-21529) — we must set each field individually.
         """
-        return {
-            "webrtc": "yes",
-            "transport": "0.0.0.0-wss",
-            "dtls_enable": "yes",
-            "dtls_verify": "no",
-            "dtls_setup": "actpass",
-            "dtls_certfile": "",
-            "media_encryption": "dtls",
-            "media_use_received_transport": "yes",
-            "ice_support": "yes",
-            "allow": "!all,opus,ulaw,alaw",
-            "max_contacts": "5",
-            "rtp_symmetric": "yes",
-            "force_rport": "yes",
-            "rewrite_contact": "yes",
-        }
+        return [
+            # WebRTC master toggle
+            ("webrtc", "yes"),
+            # AVPF / AVP (required for WebRTC)
+            ("avpf", "yes"),
+            ("force_avp", "yes"),
+            # ICE support
+            ("icesupport", "yes"),
+            # DTLS for secure media
+            ("media_encryption", "dtls"),
+            ("media_encryption_optimistic", "yes"),
+            ("dtls_auto", "yes"),
+            ("dtls_verify", "fingerprint"),
+            ("dtls_setup", "actpass"),
+            # Media transport
+            ("media_use_received_transport", "yes"),
+            ("rtcp_mux", "yes"),
+            ("rtp_symmetric", "yes"),
+            # Transport — WSS for WebRTC
+            ("transport", "0.0.0.0-wss"),
+            # Codecs
+            ("disallow", "all"),
+            ("allow", "opus,ulaw,alaw"),
+            # NAT traversal
+            ("force_rport", "yes"),
+            ("rewrite_contact", "yes"),
+            ("direct_media", "no"),
+            # Multiple registrations (browser tabs / devices)
+            ("max_contacts", "5"),
+            # DTMF
+            ("dtmfmode", "auto"),
+        ]
 
     def _configure_webrtc_via_ami(self, db, extension: str) -> Tuple[bool, str]:
-        """Configure PJSIP WebRTC settings for an extension via AMI.
+        """Configure PJSIP WebRTC settings by writing to FreePBX's MySQL `pjsip` table via AMI.
 
-        This is the reliable method — uses AMI to execute `database put` commands
-        that write PJSIP settings into FreePBX's AstDB, then runs `dialplan reload`
-        or `fwconsole reload` to apply.
-
-        Falls back to direct Asterisk `pjsip set` commands if fwconsole is unavailable.
+        FreePBX stores PJSIP settings in the `asterisk.pjsip` MySQL table as
+        key-value rows: (id, keyword, data, flags). We use AMI to execute
+        `system` commands that run MySQL queries, then `fwconsole reload` to
+        regenerate Asterisk config files and apply.
         """
         from app.services.ami_service import get_ami_client
 
@@ -649,51 +660,55 @@ class FreePBXService:
             return False, "AMI not configured or connection failed — cannot set PJSIP WebRTC settings"
 
         try:
-            settings = self._webrtc_pjsip_ami_settings()
-            failed = []
-            succeeded = []
+            rows = self._webrtc_pjsip_mysql_rows()
+            succeeded = 0
+            failed = 0
 
-            for key, value in settings.items():
-                # Write to AstDB: AMPUSER/<ext>/<key>
-                resp = client.command(f"database put AMPUSER/{extension} {key} {value}")
-                if "updated" in resp.lower() or "success" in resp.lower() or "inserted" in resp.lower():
-                    succeeded.append(key)
+            # Build a single SQL statement with all REPLACE INTO queries
+            # REPLACE INTO upserts: inserts if new, replaces if (id, keyword) exists
+            sql_parts = []
+            for keyword, data in rows:
+                # Escape single quotes in data
+                safe_data = data.replace("'", "\\'")
+                sql_parts.append(f"('{extension}', '{keyword}', '{safe_data}', 0)")
+
+            if sql_parts:
+                sql = (
+                    "REPLACE INTO pjsip (id, keyword, data, flags) VALUES "
+                    + ", ".join(sql_parts)
+                    + ";"
+                )
+                # Execute via AMI system command — runs mysql CLI on the FreePBX server
+                cmd = f'!mysql -u freepbxuser -e "{sql}" asterisk 2>&1 || mysql -e "{sql}" asterisk 2>&1'
+                resp = client.command(cmd)
+                logger.info("AMI MySQL pjsip REPLACE response for %s: %s", extension, resp.strip()[:300])
+
+                if "error" in resp.lower():
+                    # Fallback: try individual REPLACE statements
+                    logger.warning("Bulk SQL failed, trying individual statements for %s", extension)
+                    for keyword, data in rows:
+                        safe_data = data.replace("'", "\\'")
+                        single_sql = f"REPLACE INTO pjsip (id, keyword, data, flags) VALUES ('{extension}', '{keyword}', '{safe_data}', 0);"
+                        single_cmd = f'!mysql -e "{single_sql}" asterisk 2>&1'
+                        single_resp = client.command(single_cmd)
+                        if "error" in single_resp.lower():
+                            logger.warning("MySQL REPLACE failed for %s/%s: %s", extension, keyword, single_resp.strip()[:100])
+                            failed += 1
+                        else:
+                            succeeded += 1
                 else:
-                    # Not all settings may go to AstDB — that's OK
-                    logger.debug("AstDB put AMPUSER/%s/%s: %s", extension, key, resp.strip()[:100])
-                    failed.append(key)
-
-            # Also set via pjsip.conf overrides using database
-            pjsip_settings = {
-                "webrtc": "yes",
-                "transport": "transport-wss",
-                "dtls_auto_generate_cert": "yes",
-                "media_encryption": "dtls",
-                "media_use_received_transport": "yes",
-                "ice_support": "yes",
-                "rtp_symmetric": "yes",
-                "force_rport": "yes",
-                "rewrite_contact": "yes",
-                "allow": "!all,opus,ulaw,alaw",
-                "max_contacts": "5",
-            }
-
-            for key, value in pjsip_settings.items():
-                resp = client.command(f"database put PJSIP/{extension} {key} {value}")
-                if "updated" in resp.lower() or "success" in resp.lower() or "inserted" in resp.lower():
-                    if key not in succeeded:
-                        succeeded.append(key)
+                    succeeded = len(rows)
 
             logger.info(
-                "AMI WebRTC config for %s: %d settings written, %d skipped",
-                extension, len(succeeded), len(failed),
+                "MySQL pjsip WebRTC config for %s: %d settings written, %d failed",
+                extension, succeeded, failed,
             )
 
-            return True, f"WebRTC PJSIP settings configured via AMI ({len(succeeded)} settings applied)"
+            return True, f"WebRTC PJSIP settings written to MySQL ({succeeded} settings applied)"
 
         except Exception as e:
-            logger.error("AMI WebRTC config error for %s: %s", extension, e)
-            return False, f"AMI WebRTC config error: {e}"
+            logger.error("AMI MySQL WebRTC config error for %s: %s", extension, e)
+            return False, f"AMI MySQL WebRTC config error: {e}"
         finally:
             try:
                 client.logoff()
@@ -701,10 +716,14 @@ class FreePBXService:
                 pass
 
     def _apply_config_via_ami(self, db) -> bool:
-        """Apply FreePBX config via AMI — runs `core reload` to reload Asterisk.
+        """Apply FreePBX config via AMI — runs `fwconsole reload`.
 
-        This is more reliable than the GraphQL `applyConfig` mutation which
-        may not exist in all FreePBX 17 installations.
+        This is the equivalent of clicking the red 'Apply Config' button in the
+        FreePBX admin panel. It regenerates Asterisk config files from the MySQL
+        database and then reloads Asterisk.
+
+        Note: `core reload` alone does NOT work because FreePBX needs to
+        regenerate .conf files from its database first.
         """
         from app.services.ami_service import get_ami_client
 
@@ -714,17 +733,15 @@ class FreePBXService:
             return False
 
         try:
-            # Method 1: Asterisk core reload (always works)
-            resp = client.command("core reload")
-            logger.info("AMI core reload response: %s", resp.strip()[:200])
+            # fwconsole reload — the ONLY reliable way to apply FreePBX changes
+            # This regenerates .conf files from MySQL and reloads Asterisk
+            resp = client.command("!fwconsole reload 2>&1")
+            logger.info("AMI fwconsole reload response: %s", resp.strip()[:500])
 
-            # Method 2: Also try pjsip reload specifically
-            resp2 = client.command("module reload res_pjsip.so")
-            logger.info("AMI pjsip reload response: %s", resp2.strip()[:200])
-
-            # Method 3: Try dialplan reload
-            resp3 = client.command("dialplan reload")
-            logger.info("AMI dialplan reload response: %s", resp3.strip()[:200])
+            if "error" in resp.lower() and "no reload" in resp.lower():
+                # fwconsole might not be in PATH — try with full path
+                resp2 = client.command("!/var/lib/asterisk/bin/fwconsole reload 2>&1")
+                logger.info("AMI fwconsole (full path) reload response: %s", resp2.strip()[:500])
 
             return True
         except Exception as e:
