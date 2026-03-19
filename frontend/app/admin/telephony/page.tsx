@@ -33,6 +33,10 @@ export default function TelephonySettings() {
         webrtc_wss_url: '',
         freepbx_api_key: '',
         freepbx_api_secret: '',
+        stun_servers: '',
+        turn_server: '',
+        turn_username: '',
+        turn_credential: '',
         is_active: false
     });
 
@@ -61,6 +65,10 @@ export default function TelephonySettings() {
                     webrtc_wss_url: data.webrtc_wss_url || '',
                     freepbx_api_key: data.freepbx_api_key || '',
                     freepbx_api_secret: data.freepbx_api_secret || '',
+                    stun_servers: data.stun_servers || '',
+                    turn_server: data.turn_server || '',
+                    turn_username: data.turn_username || '',
+                    turn_credential: data.turn_credential || '',
                     is_active: data.is_active || false
                 });
             }
@@ -422,18 +430,77 @@ export default function TelephonySettings() {
                         {/* WebRTC Section */}
                         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                             <h3 className="text-lg font-semibold text-gray-900 mb-4 border-b pb-3">WebRTC Softphone Configuration</h3>
-                            <div>
-                                <label className={labelClass}>WebRTC WSS URL</label>
-                                <input
-                                    type="text"
-                                    value={settings.webrtc_wss_url}
-                                    onChange={(e) => setSettings({ ...settings, webrtc_wss_url: e.target.value })}
-                                    className={inputClass}
-                                    placeholder="wss://pbx.yourdomain.com:8089/ws"
-                                />
-                                <p className="mt-1 text-sm text-gray-500">
-                                    External WebSocket Secure URL for SIP.js softphone to connect to Asterisk.
-                                </p>
+                            <div className="space-y-6">
+                                <div>
+                                    <label className={labelClass}>WebRTC WSS URL</label>
+                                    <input
+                                        type="text"
+                                        value={settings.webrtc_wss_url}
+                                        onChange={(e) => setSettings({ ...settings, webrtc_wss_url: e.target.value })}
+                                        className={inputClass}
+                                        placeholder="wss://pbx.yourdomain.com:8089/ws"
+                                    />
+                                    <p className="mt-1 text-sm text-gray-500">
+                                        External WebSocket Secure URL for SIP.js softphone to connect to Asterisk.
+                                    </p>
+                                </div>
+
+                                {/* STUN/TURN Configuration */}
+                                <div className="pt-4 border-t border-gray-100">
+                                    <h4 className="text-sm font-semibold text-gray-800 mb-3">ICE Servers (STUN / TURN)</h4>
+                                    <p className="text-xs text-gray-500 mb-4">
+                                        STUN helps discover public IP addresses. TURN relays media when direct connections fail (agents behind strict NAT/firewall).
+                                        If left empty, Google STUN servers are used by default.
+                                    </p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="md:col-span-2">
+                                            <label className={labelClass}>STUN Servers</label>
+                                            <input
+                                                type="text"
+                                                value={settings.stun_servers}
+                                                onChange={(e) => setSettings({ ...settings, stun_servers: e.target.value })}
+                                                className={inputClass}
+                                                placeholder="stun:stun.l.google.com:19302, stun:stun.cloudflare.com:3478"
+                                            />
+                                            <p className="mt-1 text-xs text-gray-500">
+                                                Comma-separated STUN server URLs. Leave empty to use Google STUN (default).
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>TURN Server</label>
+                                            <input
+                                                type="text"
+                                                value={settings.turn_server}
+                                                onChange={(e) => setSettings({ ...settings, turn_server: e.target.value })}
+                                                className={inputClass}
+                                                placeholder="turn:turn.yourdomain.com:3478"
+                                            />
+                                            <p className="mt-1 text-xs text-gray-500">
+                                                Optional. Only needed if agents connect from behind strict firewalls.
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>TURN Username</label>
+                                            <input
+                                                type="text"
+                                                value={settings.turn_username}
+                                                onChange={(e) => setSettings({ ...settings, turn_username: e.target.value })}
+                                                className={inputClass}
+                                                placeholder="webrtc"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>TURN Password</label>
+                                            <input
+                                                type="password"
+                                                value={settings.turn_credential}
+                                                onChange={(e) => setSettings({ ...settings, turn_credential: e.target.value })}
+                                                className={inputClass}
+                                                placeholder="••••••••"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 

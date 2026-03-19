@@ -1604,6 +1604,12 @@ def _run_inline_migrations():
                 ADD COLUMN IF NOT EXISTS freepbx_port INTEGER DEFAULT 443
         """))
 
+        # STUN/TURN server configuration for WebRTC softphone
+        conn.execute(text("ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS stun_servers VARCHAR"))
+        conn.execute(text("ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS turn_server VARCHAR"))
+        conn.execute(text("ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS turn_username VARCHAR"))
+        conn.execute(text("ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS turn_credential VARCHAR"))
+
         # Contact phone for email footer
         conn.execute(text("ALTER TABLE branding_settings ADD COLUMN IF NOT EXISTS contact_phone VARCHAR"))
 

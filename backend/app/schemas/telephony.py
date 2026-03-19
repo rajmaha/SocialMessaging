@@ -12,6 +12,10 @@ class TelephonySettingsBase(BaseModel):
     webrtc_wss_url: Optional[str] = None
     freepbx_api_key: Optional[str] = None
     freepbx_api_secret: Optional[str] = None
+    stun_servers: Optional[str] = None
+    turn_server: Optional[str] = None
+    turn_username: Optional[str] = None
+    turn_credential: Optional[str] = None
     is_active: bool = False
 
 class TelephonySettingsCreate(TelephonySettingsBase):

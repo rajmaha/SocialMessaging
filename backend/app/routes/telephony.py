@@ -65,6 +65,14 @@ def update_telephony_settings(
         settings.freepbx_api_key = settings_update.freepbx_api_key
     if settings_update.freepbx_api_secret is not None:
         settings.freepbx_api_secret = settings_update.freepbx_api_secret
+    if settings_update.stun_servers is not None:
+        settings.stun_servers = settings_update.stun_servers
+    if settings_update.turn_server is not None:
+        settings.turn_server = settings_update.turn_server
+    if settings_update.turn_username is not None:
+        settings.turn_username = settings_update.turn_username
+    if settings_update.turn_credential is not None:
+        settings.turn_credential = settings_update.turn_credential
     if settings_update.is_active is not None:
         settings.is_active = settings_update.is_active
 

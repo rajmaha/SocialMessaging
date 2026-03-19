@@ -122,9 +122,47 @@ def get_sip_credentials(
     realm_match = re.match(r"wss://([^/:]+)", settings.webrtc_wss_url)
     realm = realm_match.group(1) if realm_match else settings.host or "pbx"
 
+    # Build ICE servers list for WebRTC
+    ice_servers = []
+
+    # STUN servers (comma-separated in DB, e.g. "stun:stun.l.google.com:19302,stun:stun.cloudflare.com:3478")
+    if settings.stun_servers:
+        for stun_url in settings.stun_servers.split(","):
+            stun_url = stun_url.strip()
+            if stun_url:
+                ice_servers.append({"urls": stun_url})
+
+    # TURN server (single URL with optional credentials)
+    if settings.turn_server:
+        turn_entry: dict = {"urls": settings.turn_server.strip()}
+        if settings.turn_username:
+            turn_entry["username"] = settings.turn_username
+        if settings.turn_credential:
+            turn_entry["credential"] = settings.turn_credential
+        ice_servers.append(turn_entry)
+        # Also add TURNS (TLS) variant if it's a turn: URL
+        if settings.turn_server.strip().startswith("turn:"):
+            turns_url = settings.turn_server.strip().replace("turn:", "turns:", 1)
+            # Replace port 3478 with 5349 for TURNS if present
+            turns_url = turns_url.replace(":3478", ":5349")
+            turns_entry: dict = {"urls": turns_url}
+            if settings.turn_username:
+                turns_entry["username"] = settings.turn_username
+            if settings.turn_credential:
+                turns_entry["credential"] = settings.turn_credential
+            ice_servers.append(turns_entry)
+
+    # Default fallback: Google STUN if nothing configured
+    if not ice_servers:
+        ice_servers = [
+            {"urls": "stun:stun.l.google.com:19302"},
+            {"urls": "stun:stun1.l.google.com:19302"},
+        ]
+
     return {
         "extension": ext.extension,
         "password": ext.sip_password,
         "wss_url": settings.webrtc_wss_url,
         "realm": realm,
+        "ice_servers": ice_servers,
     }

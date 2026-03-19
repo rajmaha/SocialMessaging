@@ -136,12 +136,23 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
         const uri = UserAgent.makeURI(`sip:${creds.extension}@${creds.realm}`)
         if (!uri) { setStatus('error'); return }
 
+        // Build ICE servers config from API response (STUN/TURN)
+        const iceServers = creds.ice_servers && creds.ice_servers.length > 0
+          ? creds.ice_servers
+          : [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+            ]
+
         const ua = new UserAgent({
           uri,
           transportOptions: { server: creds.wss_url },
           authorizationUsername: creds.extension,
           authorizationPassword: creds.password,
           sessionDescriptionHandlerFactoryOptions: {
+            peerConnectionConfiguration: {
+              iceServers,
+            },
             constraints: { audio: true, video: false },
           },
           delegate: {
