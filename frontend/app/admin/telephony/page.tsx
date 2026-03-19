@@ -5,7 +5,7 @@ import MainHeader from "@/components/MainHeader";
 import AdminNav from '@/components/AdminNav';
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
-import { Wifi, CheckCircle, XCircle, Code2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Wifi, CheckCircle, XCircle, Code2, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
 import { API_URL } from '@/lib/config';
 
 export default function TelephonySettings() {
@@ -24,6 +24,8 @@ export default function TelephonySettings() {
     const [introspecting, setIntrospecting] = useState(false);
     const [schemaResult, setSchemaResult] = useState<{ status: string; message: string; types?: Record<string, { found: boolean; fields: { name: string; type: string; default?: string }[]; note?: string }> } | null>(null);
     const [schemaOpen, setSchemaOpen] = useState(false);
+    const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+    const togglePassword = (field: string) => setShowPasswords(prev => ({ ...prev, [field]: !prev[field] }));
 
     const [settings, setSettings] = useState({
         pbx_type: 'freepbx',
@@ -39,6 +41,7 @@ export default function TelephonySettings() {
         turn_server: '',
         turn_username: '',
         turn_credential: '',
+        ssh_host: '',
         ssh_port: 22,
         ssh_username: '',
         ssh_password: '',
@@ -74,6 +77,7 @@ export default function TelephonySettings() {
                     turn_server: data.turn_server || '',
                     turn_username: data.turn_username || '',
                     turn_credential: data.turn_credential || '',
+                    ssh_host: data.ssh_host || '',
                     ssh_port: data.ssh_port || 22,
                     ssh_username: data.ssh_username || '',
                     ssh_password: data.ssh_password || '',
@@ -338,13 +342,18 @@ export default function TelephonySettings() {
 
                                 <div>
                                     <label className={labelClass}>FreePBX Password / API Secret</label>
-                                    <input
-                                        type="password"
-                                        value={settings.freepbx_api_secret}
-                                        onChange={(e) => setSettings({ ...settings, freepbx_api_secret: e.target.value })}
-                                        className={inputClass}
-                                        placeholder="••••••••••••"
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            type={showPasswords.freepbx ? "text" : "password"}
+                                            value={settings.freepbx_api_secret}
+                                            onChange={(e) => setSettings({ ...settings, freepbx_api_secret: e.target.value })}
+                                            className={inputClass + " pr-10"}
+                                            placeholder="••••••••••••"
+                                        />
+                                        <button type="button" onClick={() => togglePassword('freepbx')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                            {showPasswords.freepbx ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                        </button>
+                                    </div>
                                     <p className="mt-1 text-xs text-gray-500">FreePBX 17: use your admin password. FreePBX 15/16: use the API Secret.</p>
                                 </div>
 
@@ -526,13 +535,18 @@ export default function TelephonySettings() {
                                         </div>
                                         <div>
                                             <label className={labelClass}>TURN Password</label>
-                                            <input
-                                                type="password"
-                                                value={settings.turn_credential}
-                                                onChange={(e) => setSettings({ ...settings, turn_credential: e.target.value })}
-                                                className={inputClass}
-                                                placeholder="••••••••"
-                                            />
+                                            <div className="relative">
+                                                <input
+                                                    type={showPasswords.turn ? "text" : "password"}
+                                                    value={settings.turn_credential}
+                                                    onChange={(e) => setSettings({ ...settings, turn_credential: e.target.value })}
+                                                    className={inputClass + " pr-10"}
+                                                    placeholder="••••••••"
+                                                />
+                                                <button type="button" onClick={() => togglePassword('turn')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                                    {showPasswords.turn ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -575,7 +589,18 @@ export default function TelephonySettings() {
                                 </div>
                             )}
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label className={labelClass}>SSH Host / IP</label>
+                                    <input
+                                        type="text"
+                                        value={settings.ssh_host}
+                                        onChange={(e) => setSettings({ ...settings, ssh_host: e.target.value })}
+                                        className={inputClass}
+                                        placeholder="192.168.1.100 or freepbx.example.com"
+                                    />
+                                    <p className="mt-1 text-xs text-gray-500">Leave empty to use the PBX Host from API section above.</p>
+                                </div>
                                 <div>
                                     <label className={labelClass}>SSH Username</label>
                                     <input
@@ -589,13 +614,18 @@ export default function TelephonySettings() {
                                 </div>
                                 <div>
                                     <label className={labelClass}>SSH Password</label>
-                                    <input
-                                        type="password"
-                                        value={settings.ssh_password}
-                                        onChange={(e) => setSettings({ ...settings, ssh_password: e.target.value })}
-                                        className={inputClass}
-                                        placeholder="••••••••"
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            type={showPasswords.ssh ? "text" : "password"}
+                                            value={settings.ssh_password}
+                                            onChange={(e) => setSettings({ ...settings, ssh_password: e.target.value })}
+                                            className={inputClass + " pr-10"}
+                                            placeholder="••••••••"
+                                        />
+                                        <button type="button" onClick={() => togglePassword('ssh')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                            {showPasswords.ssh ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                        </button>
+                                    </div>
                                 </div>
                                 <div>
                                     <label className={labelClass}>SSH Port</label>
@@ -652,13 +682,18 @@ export default function TelephonySettings() {
                                 </div>
                                 <div>
                                     <label className={labelClass}>AMI Secret / Password</label>
-                                    <input
-                                        type="password"
-                                        value={settings.ami_secret}
-                                        onChange={(e) => setSettings({ ...settings, ami_secret: e.target.value })}
-                                        className={inputClass}
-                                        placeholder="••••••••"
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            type={showPasswords.ami ? "text" : "password"}
+                                            value={settings.ami_secret}
+                                            onChange={(e) => setSettings({ ...settings, ami_secret: e.target.value })}
+                                            className={inputClass + " pr-10"}
+                                            placeholder="••••••••"
+                                        />
+                                        <button type="button" onClick={() => togglePassword('ami')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                            {showPasswords.ami ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 

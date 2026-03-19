@@ -612,7 +612,12 @@ class FreePBXService:
             if not settings.ssh_username or not settings.ssh_password:
                 return None, "SSH credentials not configured — set SSH username and password in Telephony Settings"
 
-            host = settings.host.rstrip("/")
+            # Use ssh_host if set, otherwise derive from PBX host
+            if settings.ssh_host and settings.ssh_host.strip():
+                host = settings.ssh_host.strip()
+            else:
+                host = settings.host.rstrip("/")
+            # Strip scheme if present
             for prefix in ("https://", "http://"):
                 if host.startswith(prefix):
                     host = host[len(prefix):]

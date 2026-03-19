@@ -16,6 +16,7 @@ class TelephonySettingsBase(BaseModel):
     turn_server: Optional[str] = None
     turn_username: Optional[str] = None
     turn_credential: Optional[str] = None
+    ssh_host: Optional[str] = None
     ssh_port: Optional[int] = 22
     ssh_username: Optional[str] = None
     ssh_password: Optional[str] = None

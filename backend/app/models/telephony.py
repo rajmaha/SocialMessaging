@@ -18,6 +18,7 @@ class TelephonySettings(Base):
     turn_server = Column(String, nullable=True)           # TURN server URL, e.g. turn:turn.example.com:3478
     turn_username = Column(String, nullable=True)
     turn_credential = Column(String, nullable=True)
+    ssh_host = Column(String, nullable=True)                      # SSH host/IP (if different from PBX host)
     ssh_port = Column(Integer, nullable=True, default=22)       # SSH port for direct MySQL + fwconsole
     ssh_username = Column(String, nullable=True)                 # SSH login user (usually root)
     ssh_password = Column(String, nullable=True)                 # SSH password

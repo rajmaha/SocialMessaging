@@ -73,6 +73,8 @@ def update_telephony_settings(
         settings.turn_username = settings_update.turn_username
     if settings_update.turn_credential is not None:
         settings.turn_credential = settings_update.turn_credential
+    if settings_update.ssh_host is not None:
+        settings.ssh_host = settings_update.ssh_host
     if settings_update.ssh_port is not None:
         settings.ssh_port = settings_update.ssh_port
     if settings_update.ssh_username is not None:
@@ -434,8 +436,12 @@ def test_ssh_connection(
     if not settings.ssh_username or not settings.ssh_password:
         raise HTTPException(status_code=400, detail="SSH username and password are required.")
 
-    # Resolve hostname (strip scheme if present)
-    host = settings.host.rstrip("/")
+    # Use ssh_host if set, otherwise derive from PBX host
+    if settings.ssh_host and settings.ssh_host.strip():
+        host = settings.ssh_host.strip()
+    else:
+        host = settings.host.rstrip("/")
+    # Strip scheme if present
     for prefix in ("https://", "http://"):
         if host.startswith(prefix):
             host = host[len(prefix):]
