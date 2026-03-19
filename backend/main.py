@@ -2469,7 +2469,7 @@ async def startup_event():
                 ).all()
 
                 for task in overdue:
-                    event = EventTypes.create_event(
+                    event = events_service.create_event(
                         EventTypes.CRM_TASK_OVERDUE,
                         {
                             "task_id": task.id,

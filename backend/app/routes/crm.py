@@ -276,7 +276,7 @@ def update_lead(
 
     # Broadcast assignment event if assigned_to changed
     if "assigned_to" in update_data and update_data["assigned_to"] is not None:
-        event = EventTypes.create_event(
+        event = events_service.create_event(
             EventTypes.CRM_LEAD_ASSIGNED,
             {
                 "lead_id": lead.id,
@@ -473,7 +473,7 @@ def update_deal(
             apply_score(deal.lead_id, "deal_won", db)
         elif deal.stage == "lost":
             apply_score(deal.lead_id, "deal_lost", db)
-        stage_event = EventTypes.create_event(
+        stage_event = events_service.create_event(
             EventTypes.CRM_DEAL_STAGE_CHANGED,
             {
                 "deal_id": deal.id,

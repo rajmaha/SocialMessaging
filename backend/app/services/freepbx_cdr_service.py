@@ -37,7 +37,7 @@ class FreePBXCDRService:
                 return None
             return {
                 "host": settings.host,
-                "port": settings.port or 443,
+                "port": settings.freepbx_port or 443,
                 "api_key": settings.freepbx_api_key,
                 "api_secret": settings.freepbx_api_secret,
             }
