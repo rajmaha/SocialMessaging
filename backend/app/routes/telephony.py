@@ -474,6 +474,11 @@ def test_ssh_connection(
         fwconsole_out = stdout.read().decode(errors="ignore").strip()
         fwconsole_ok = "fwconsole" in fwconsole_out
 
+        # Test asterisk CLI (primary reload method)
+        stdin, stdout, stderr = client.exec_command("which asterisk 2>&1", timeout=10)
+        asterisk_out = stdout.read().decode(errors="ignore").strip()
+        asterisk_ok = "asterisk" in asterisk_out
+
         client.close()
 
         issues = []
@@ -481,6 +486,8 @@ def test_ssh_connection(
             issues.append("mysql: cannot access asterisk database")
         if not fwconsole_ok:
             issues.append("fwconsole: not found in PATH")
+        if not asterisk_ok:
+            issues.append("asterisk CLI: not found in PATH")
 
         if issues:
             return {
@@ -490,7 +497,7 @@ def test_ssh_connection(
 
         return {
             "status": "success",
-            "message": f"✅ SSH connected to {host}:{ssh_port}. MySQL and fwconsole are available.",
+            "message": f"✅ SSH connected to {host}:{ssh_port}. MySQL, fwconsole, and Asterisk CLI are available.",
         }
 
     except Exception as e:

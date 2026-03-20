@@ -698,20 +698,45 @@ class FreePBXService:
 
             logger.info("✅ SSH: wrote %d PJSIP WebRTC settings for extension %s", len(sql_rows), extension)
 
-            # Step 2: Apply Config (fwconsole reload)
-            stdin, stdout, stderr = client.exec_command("fwconsole reload", timeout=30)
-            reload_exit = stdout.channel.recv_exit_status()
-            reload_out = stdout.read().decode(errors="ignore").strip()
-            reload_err = stderr.read().decode(errors="ignore").strip()
+            # Step 2: Apply Config — try multiple reload strategies
+            # fwconsole reload often fails on FreePBX 17 with PJSip.class.php trunk_name bug,
+            # so we try direct Asterisk CLI commands first which bypass the PHP layer entirely.
+            reload_strategies = [
+                # Strategy A: Direct Asterisk PJSIP reload (fastest, bypasses FreePBX PHP)
+                ("asterisk -rx 'module reload res_pjsip.so'", "Asterisk PJSIP module reload"),
+                # Strategy B: Full Asterisk core reload
+                ("asterisk -rx 'core reload'", "Asterisk core reload"),
+                # Strategy C: fwconsole reload (may fail on FreePBX 17 with trunk_name bug)
+                ("fwconsole reload", "fwconsole reload"),
+            ]
+
+            reload_success = False
+            reload_method = ""
+            last_err = ""
+
+            for cmd, label in reload_strategies:
+                logger.info("SSH: trying %s …", label)
+                stdin, stdout, stderr = client.exec_command(cmd, timeout=30)
+                r_exit = stdout.channel.recv_exit_status()
+                r_out = stdout.read().decode(errors="ignore").strip()
+                r_err = stderr.read().decode(errors="ignore").strip()
+
+                if r_exit == 0:
+                    logger.info("✅ SSH: %s succeeded for extension %s", label, extension)
+                    reload_success = True
+                    reload_method = label
+                    break
+                else:
+                    logger.warning("SSH: %s exit %d: %s %s", label, r_exit, r_out, r_err)
+                    last_err = f"{label} exit {r_exit}: {r_out} {r_err}"
 
             client.close()
 
-            if reload_exit != 0:
-                logger.warning("SSH: fwconsole reload exit %d: %s %s", reload_exit, reload_out, reload_err)
-                return True, f"PJSIP settings written but fwconsole reload failed (exit {reload_exit}). Click Apply Config in FreePBX admin."
+            if not reload_success:
+                logger.warning("SSH: all reload strategies failed for extension %s. Last: %s", extension, last_err)
+                return True, f"PJSIP settings written but reload failed ({last_err}). Click Apply Config in FreePBX admin."
 
-            logger.info("✅ SSH: fwconsole reload succeeded for extension %s", extension)
-            return True, f"WebRTC PJSIP settings configured + Apply Config done ({len(sql_rows)} settings)"
+            return True, f"WebRTC PJSIP settings configured + {reload_method} done ({len(sql_rows)} settings)"
 
         except ImportError:
             return False, "paramiko not installed — run: pip install paramiko"
