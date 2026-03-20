@@ -671,12 +671,15 @@ class FreePBXService:
             ("bundle", "yes"),
         ]
 
-        # Build UPDATE statements for the sip table (rows already exist with flags)
-        update_stmts = " ".join(
-            f"UPDATE sip SET data='{val}' WHERE id='{extension}' AND keyword='{kw}';"
+        # Use INSERT ... ON DUPLICATE KEY UPDATE to handle both existing and new rows.
+        # Existing rows: updates data, preserves flags.
+        # New rows (e.g. dtls_auto_generate_cert): inserts with flags=0.
+        values_sql = ", ".join(
+            f"('{extension}', '{kw}', '{val}', 0)"
             for kw, val in sip_rows
         )
-        mysql_cmd = f'mysql asterisk -e "{update_stmts}"'
+        sql = f"INSERT INTO sip (id, keyword, data, flags) VALUES {values_sql} ON DUPLICATE KEY UPDATE data=VALUES(data);"
+        mysql_cmd = f'mysql asterisk -e "{sql}"'
 
         try:
             import paramiko
