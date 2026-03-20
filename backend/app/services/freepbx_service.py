@@ -645,8 +645,10 @@ class FreePBXService:
         if not ssh_cfg:
             return False, err
 
-        # SQL to write all WebRTC PJSIP settings into the pjsip table
-        sql_rows = [
+        # FreePBX stores extension settings in the `sip` table (source of truth).
+        # During `fwconsole reload`, FreePBX reads `sip` → generates `pjsip` entries → writes config files.
+        # We must update the `sip` table so both the UI and Asterisk reflect our changes.
+        sip_rows = [
             ("webrtc", "yes"),
             ("avpf", "yes"),
             ("force_avp", "yes"),
@@ -666,14 +668,15 @@ class FreePBXService:
             ("rewrite_contact", "yes"),
             ("direct_media", "no"),
             ("max_contacts", "5"),
+            ("bundle", "yes"),
         ]
 
-        values_sql = ", ".join(
-            f"('{extension}', '{kw}', '{val}', 0)"
-            for kw, val in sql_rows
+        # Build UPDATE statements for the sip table (rows already exist with flags)
+        update_stmts = " ".join(
+            f"UPDATE sip SET data='{val}' WHERE id='{extension}' AND keyword='{kw}';"
+            for kw, val in sip_rows
         )
-        sql = f"REPLACE INTO pjsip (id, keyword, data, flags) VALUES {values_sql};"
-        mysql_cmd = f'mysql asterisk -e "{sql}"'
+        mysql_cmd = f'mysql asterisk -e "{update_stmts}"'
 
         try:
             import paramiko
@@ -696,7 +699,7 @@ class FreePBXService:
                 client.close()
                 return False, f"MySQL command failed (exit {exit_code}): {err_output}"
 
-            logger.info("✅ SSH: wrote %d PJSIP WebRTC settings for extension %s", len(sql_rows), extension)
+            logger.info("✅ SSH: wrote %d WebRTC settings to sip table for extension %s", len(sip_rows), extension)
 
             # Step 2: Apply Config — MUST use fwconsole reload to regenerate config files from DB.
             # FreePBX stores settings in MySQL `pjsip` table, but Asterisk reads from config files.
@@ -737,7 +740,7 @@ class FreePBXService:
                 logger.warning("SSH: all reload strategies failed for extension %s. Last: %s", extension, last_err)
                 return True, f"PJSIP settings written but reload failed ({last_err}). Click Apply Config in FreePBX admin."
 
-            return True, f"WebRTC PJSIP settings configured + {reload_method} done ({len(sql_rows)} settings)"
+            return True, f"WebRTC PJSIP settings configured + {reload_method} done ({len(sip_rows)} settings)"
 
         except ImportError:
             return False, "paramiko not installed — run: pip install paramiko"
