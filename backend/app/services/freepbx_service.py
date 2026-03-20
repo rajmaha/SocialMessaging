@@ -698,16 +698,17 @@ class FreePBXService:
 
             logger.info("✅ SSH: wrote %d PJSIP WebRTC settings for extension %s", len(sql_rows), extension)
 
-            # Step 2: Apply Config — try multiple reload strategies
-            # fwconsole reload often fails on FreePBX 17 with PJSip.class.php trunk_name bug,
-            # so we try direct Asterisk CLI commands first which bypass the PHP layer entirely.
+            # Step 2: Apply Config — MUST use fwconsole reload to regenerate config files from DB.
+            # FreePBX stores settings in MySQL `pjsip` table, but Asterisk reads from config files.
+            # fwconsole reload: reads MySQL → generates /etc/asterisk/pjsip_additional.conf → reloads Asterisk.
+            # asterisk -rx 'module reload' only re-reads existing conf files (won't pick up our MySQL changes).
             reload_strategies = [
-                # Strategy A: Direct Asterisk PJSIP reload (fastest, bypasses FreePBX PHP)
-                ("asterisk -rx 'module reload res_pjsip.so'", "Asterisk PJSIP module reload"),
-                # Strategy B: Full Asterisk core reload
-                ("asterisk -rx 'core reload'", "Asterisk core reload"),
-                # Strategy C: fwconsole reload (may fail on FreePBX 17 with trunk_name bug)
+                # Strategy A: fwconsole reload (REQUIRED — regenerates config files from MySQL)
                 ("fwconsole reload", "fwconsole reload"),
+                # Strategy B: If fwconsole fails, try direct Asterisk reload as fallback
+                ("asterisk -rx 'module reload res_pjsip.so'", "Asterisk PJSIP module reload"),
+                # Strategy C: Full Asterisk core reload
+                ("asterisk -rx 'core reload'", "Asterisk core reload"),
             ]
 
             reload_success = False
