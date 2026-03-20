@@ -647,28 +647,24 @@ class FreePBXService:
 
         # FreePBX stores extension settings in the `sip` table (source of truth).
         # During `fwconsole reload`, FreePBX reads `sip` → generates `pjsip` entries → writes config files.
-        # We must update the `sip` table so both the UI and Asterisk reflect our changes.
+        # Only write keywords that FreePBX recognizes — it deletes unknown ones on next UI save.
+        # DTLS sub-settings (dtls_setup, dtls_verify, dtls_auto_generate_cert) are derived
+        # automatically by FreePBX from media_encryption=dtls during fwconsole reload.
         sip_rows = [
-            ("webrtc", "yes"),
-            ("avpf", "yes"),
-            ("force_avp", "yes"),
-            ("icesupport", "yes"),
             ("media_encryption", "dtls"),
             ("media_encryption_optimistic", "yes"),
-            ("dtls_auto_generate_cert", "yes"),
-            ("dtls_verify", "fingerprint"),
-            ("dtls_setup", "actpass"),
             ("media_use_received_transport", "yes"),
+            ("avpf", "yes"),
+            ("icesupport", "yes"),
             ("rtcp_mux", "yes"),
             ("rtp_symmetric", "yes"),
-            ("transport", "0.0.0.0-wss"),
+            ("bundle", "yes"),
             ("disallow", "all"),
             ("allow", "opus,ulaw,alaw"),
+            ("direct_media", "no"),
             ("force_rport", "yes"),
             ("rewrite_contact", "yes"),
-            ("direct_media", "no"),
             ("max_contacts", "5"),
-            ("bundle", "yes"),
         ]
 
         # Use INSERT ... ON DUPLICATE KEY UPDATE to handle both existing and new rows.
