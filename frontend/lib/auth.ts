@@ -10,12 +10,12 @@ export interface User {
 
 export const getAuthToken = (): string | null => {
   if (typeof window === 'undefined') return null
-  const user = localStorage.getItem('user')
-  if (!user) return null
   try {
+    const user = localStorage.getItem('user')
+    if (!user) return null
     const userData = JSON.parse(user)
     return userData.user_id ? String(userData.user_id) : null
-  } catch (e) {
+  } catch {
     return null
   }
 }
@@ -86,8 +86,8 @@ export const authAPI = {
   },
 
   logout: () => {
-    localStorage.removeItem('user')
-    localStorage.removeItem('user_pages')
+    try { localStorage.removeItem('user') } catch {}
+    try { localStorage.removeItem('user_pages') } catch {}
     if (typeof document !== 'undefined') {
       document.cookie = 'user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
       document.cookie = 'user_pages=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
@@ -96,13 +96,21 @@ export const authAPI = {
 
   getUser: (): User | null => {
     if (typeof window === 'undefined') return null
-    const user = localStorage.getItem('user')
-    return user ? JSON.parse(user) : null
+    try {
+      const user = localStorage.getItem('user')
+      return user ? JSON.parse(user) : null
+    } catch {
+      return null
+    }
   },
 
   isAuthenticated: (): boolean => {
     if (typeof window === 'undefined') return false
-    return !!localStorage.getItem('user')
+    try {
+      return !!localStorage.getItem('user')
+    } catch {
+      return false
+    }
   },
 }
 
