@@ -200,6 +200,20 @@ function WidgetPageInner() {
     scrollToBottom(smooth)
   }, [messages, isTyping, scrollToBottom])
 
+  // Extract assigned agent name from handover messages (moved out of render to avoid setState during render)
+  useEffect(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i]
+      if (msg.message_type === 'handover') {
+        const fwdMatch = msg.text.match(/Forwarded to ([^\u2014"\n(]+?) by /)
+        if (fwdMatch) {
+          setAssignedAgent(fwdMatch[1].trim())
+          break
+        }
+      }
+    }
+  }, [messages])
+
   const resumeSession = async (sid: string, name: string) => {
     setConnecting(true)
     try {
@@ -687,9 +701,6 @@ function WidgetPageInner() {
 
           // Handover / transfer notice — shown as a neutral centered strip, not a chat bubble
           if (msg.message_type === 'handover') {
-            // Parse new assigned agent from handover text ("Forwarded to Alex by ...")
-            const fwdMatch = msg.text.match(/Forwarded to ([^\u2014"\n(]+?) by /)
-            if (fwdMatch) setAssignedAgent(fwdMatch[1].trim())
             return (
               <div key={i} className="flex justify-center my-2 px-2">
                 <div className="bg-gray-100 border border-gray-200 text-gray-500 text-[10px] px-3 py-1.5 rounded-full text-center max-w-[90%]">

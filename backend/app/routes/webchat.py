@@ -212,6 +212,16 @@ def request_otp(req: OtpRequest, db: Session = Depends(get_db)):
 
     token = _sign_otp_token(email, otp, name)
 
+    # Store OTP in DB as fallback (covers page reloads, token loss, multi-tab)
+    db.query(WebchatOtp).filter(WebchatOtp.email == email).delete()
+    db.add(WebchatOtp(
+        email=email,
+        otp=otp,
+        name=name,
+        expires_at=datetime.utcnow() + timedelta(minutes=10),
+    ))
+    db.commit()
+
     email_service.send_otp_email(
         to_email=email,
         full_name=name,
