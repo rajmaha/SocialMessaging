@@ -1568,6 +1568,10 @@ def _run_inline_migrations():
             ADD COLUMN IF NOT EXISTS email_valid BOOLEAN
         """))
 
+        conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS address VARCHAR"))
+        conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS inquiry_for VARCHAR"))
+        conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS remarks TEXT"))
+
         # visitor_pass_cards table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS visitor_pass_cards (

@@ -275,9 +275,12 @@ export default function LeadDetailPage() {
                   </dd>
                 </div>
                 <Field label="Phone" value={lead.phone} />
-                <Field label="Company" value={lead.company} />
+                <Field label="Organization" value={lead.organization_name || lead.company} />
                 <Field label="Position" value={lead.position} />
+                <Field label="Address" value={lead.address} />
+                <Field label="Inquiry For" value={lead.inquiry_for} />
                 <Field label="Source" value={lead.source} />
+                <Field label="Remarks" value={lead.remarks} />
                 <Field label="Created" value={new Date(lead.created_at).toLocaleDateString()} />
               </dl>
             </div>

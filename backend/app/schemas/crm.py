@@ -13,6 +13,9 @@ class LeadCreate(BaseModel):
     phone: Optional[str] = None
     company: Optional[str] = None
     position: Optional[str] = None
+    address: Optional[str] = None
+    inquiry_for: Optional[str] = None
+    remarks: Optional[str] = None
     status: Optional[LeadStatus] = LeadStatus.NEW
     source: Optional[LeadSource] = LeadSource.OTHER
     assigned_to: Optional[int] = None
@@ -29,12 +32,16 @@ class LeadUpdate(BaseModel):
     phone: Optional[str] = None
     company: Optional[str] = None
     position: Optional[str] = None
+    address: Optional[str] = None
+    inquiry_for: Optional[str] = None
+    remarks: Optional[str] = None
     status: Optional[LeadStatus] = None
     source: Optional[LeadSource] = None
     assigned_to: Optional[int] = None
     estimated_value: Optional[float] = None
     score: Optional[int] = None
     tags: Optional[list[str]] = None
+    organization_id: Optional[int] = None
 
 
 class LeadResponse(BaseModel):
@@ -45,6 +52,9 @@ class LeadResponse(BaseModel):
     phone: Optional[str]
     company: Optional[str]
     position: Optional[str]
+    address: Optional[str]
+    inquiry_for: Optional[str]
+    remarks: Optional[str]
     status: LeadStatus
     source: LeadSource
     assigned_to: Optional[int]
@@ -52,6 +62,7 @@ class LeadResponse(BaseModel):
     estimated_value: Optional[float]
     conversation_id: Optional[int]
     organization_id: Optional[int]
+    organization_name: Optional[str] = None
     tags: Optional[list[str]] = []
     email_valid: Optional[bool] = None
     created_at: datetime

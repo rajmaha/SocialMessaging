@@ -72,7 +72,10 @@ class Lead(Base):
     phone = Column(String)
     company = Column(String)
     position = Column(String)
-    
+    address = Column(String)
+    inquiry_for = Column(String)
+    remarks = Column(Text)
+
     # Lead management
     status = Column(Enum(LeadStatus), default=LeadStatus.NEW)
     source = Column(Enum(LeadSource), default=LeadSource.OTHER)
@@ -105,6 +108,10 @@ class Lead(Base):
     assigned_user = relationship("User", foreign_keys=[assigned_to])
     organization = relationship("Organization", back_populates="leads", foreign_keys="[Lead.organization_id]")
     notes = relationship("LeadNote", back_populates="lead", cascade="all, delete-orphan")
+
+    @property
+    def organization_name(self):
+        return self.organization.organization_name if self.organization else None
 
 
 class Deal(Base):

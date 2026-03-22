@@ -1,0 +1,78 @@
+Return-Path: <noreply@saraloms.com>
+Received: from [127.0.0.1] (localhost [127.0.0.1]) by localhost (Mailerdaemon)
+ with ESMTPSA id B60FE181557
+	for <test@example.com>; Fri, 20 Mar 2026 17:59:48 +0545 (+0545)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=saraloms.com;
+	s=dkim; t=1774008888; h=from:subject:date:to:mime-version:content-type;
+	bh=dRJXK2i45coI7sVsDUL5W54dC1wpGXnw3lPsZBUqpJI=;
+	b=YeBqZuLOJiF325MjWm4HohAKE4rUw7mkmuQdZYna2+UDaCgIKCOsAPuJaKJxAEqst9hVlQ
+	yK53dy9ZKNAfx2smAfcB/DhJhv5pCyEXdg0dOGbaLNW/IupTtLothh/J4VuteGozZ3egRv
+	1TP98SDIHj7OjH5Uy2Z4h49WgQXmmZdSt8w0EYuFE4s9YZWylUusXqFKMhDMtmWcmTBeXv
+	YWqR3O/z1+rIySo4mxJHq2bAsf9u/lDHUrHg8cgsUWCnd6nIcpNrRiMvC1oRpSR0kuIqRq
+	ZxuQTleJgNrUMJVLqqyGgY1MEaUFNe0kpzHgxwIn9i+BSNAKr/jaDYdAb3w/8g==
+Content-Type: multipart/alternative;
+ boundary="===============4409947562960704721=="
+MIME-Version: 1.0
+Subject: =?utf-8?q?Your_verification_code_=E2=80=94_Workspaces?=
+Date: Fri, 20 Mar 2026 17:59:48 +0545
+From: noreply@saraloms.com
+To: test@example.com
+X-Last-TLS-Session-Version: TLSv1.3
+
+--===============4409947562960704721==
+Content-Type: text/html; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,'Helvetica Neue',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;">
+    <tr>
+      <td align="center" style="padding:36px 16px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+
+          <!-- HEADER -->
+          <tr>
+            <td style="background:#a8c6fe;padding:28px 32px;text-align:center;">
+              <img src="https://saraloms.com/uploads/deaf3546-cd21-4fcf-8f26-0a7e97d87324.png" alt="Workspaces" style="max-height:52px;max-width:200px;object-fit:contain;display:block;margin:0 auto 10px;">
+              <div style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;line-height:1.2;">Workspaces</div>
+            </td>
+          </tr>
+
+          <!-- BODY -->
+          <tr>
+            <td style="padding:36px 36px 28px;color:#1f2937;font-size:15px;line-height:1.7;">
+              
+                <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">Verification Code</h2>
+                <p>Hi Test User,</p>
+                <p>Use the code below to complete your login. The code expires in <strong>10 minutes</strong>.</p>
+                <div style="margin:28px 0;text-align:center;">
+                    <span style="font-size:42px;font-weight:800;letter-spacing:14px;color:#a8c6fe;background:#eff6ff;padding:18px 36px;border-radius:12px;display:inline-block;">
+                        673725
+                    </span>
+                </div>
+                <p style="color:#ef4444;font-weight:600;">Do not share this code with anyone.</p>
+                <p style="color:#6b7280;font-size:13px;">If you did not request this code, please ignore this email.</p>
+            
+            </td>
+          </tr>
+
+          <!-- FOOTER -->
+          <tr>
+            <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:24px 32px;text-align:center;">
+              <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#1f2937;">Workspaces</p>
+              <p style="margin:4px 0;font-size:13px;color:#4b5563;"><a href="mailto:info@saraloms.com" style="color:#2563eb;text-decoration:none;">info@saraloms.com</a></p>
+              <p style="margin:10px 0 0;font-size:11px;color:#9ca3af;">&copy; 2026 Workspaces. All rights reserved.</p>
+              
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+--===============4409947562960704721==--

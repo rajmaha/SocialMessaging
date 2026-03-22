@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models.crm import Lead, Deal, Task, Activity, LeadNote, LeadStatus, DealStage, TaskStatus, ActivityType
 from app.models.user import User
 from app.models.conversation import Conversation
+from app.models.organization import Organization
 from app.schemas.crm import (
     LeadCreate, LeadUpdate, LeadResponse, LeadDetailResponse,
     DealCreate, DealUpdate, DealResponse, DealDetailResponse,
@@ -76,7 +77,14 @@ def create_lead(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new lead."""
-    db_lead = Lead(**lead.model_dump())
+    data = lead.model_dump()
+    # If company name provided but no organization selected, create a new organization
+    if data.get("company") and not data.get("organization_id"):
+        new_org = Organization(organization_name=data["company"])
+        db.add(new_org)
+        db.flush()
+        data["organization_id"] = new_org.id
+    db_lead = Lead(**data)
     db.add(db_lead)
     db.commit()
     db.refresh(db_lead)
@@ -186,7 +194,7 @@ def merge_leads(
         raise HTTPException(status_code=404, detail="One or both leads not found")
 
     # Fill in blank fields on primary from secondary
-    for field in ["last_name", "email", "phone", "company", "position", "estimated_value", "organization_id"]:
+    for field in ["last_name", "email", "phone", "company", "position", "address", "inquiry_for", "remarks", "estimated_value", "organization_id"]:
         if not getattr(primary, field) and getattr(secondary, field):
             setattr(primary, field, getattr(secondary, field))
 
@@ -254,6 +262,12 @@ def update_lead(
         raise HTTPException(status_code=404, detail="Lead not found")
     
     update_data = lead_update.model_dump(exclude_unset=True)
+    # If company name provided but no organization selected, create a new organization
+    if update_data.get("company") and not update_data.get("organization_id") and not lead.organization_id:
+        new_org = Organization(organization_name=update_data["company"])
+        db.add(new_org)
+        db.flush()
+        update_data["organization_id"] = new_org.id
     for field, value in update_data.items():
         setattr(lead, field, value)
     

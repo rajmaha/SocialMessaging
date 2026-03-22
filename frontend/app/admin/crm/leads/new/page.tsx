@@ -42,6 +42,9 @@ export default function NewLeadPage() {
     phone: "",
     company: "",
     position: "",
+    address: "",
+    inquiry_for: "",
+    remarks: "",
     source: "other",
     organization_id: null as number | null,
   });
@@ -111,10 +114,21 @@ export default function NewLeadPage() {
                 </div>
               </div>
 
+              <div>
+                <label className={labelClass}>Organization (existing)</label>
+                <select value={form.organization_id || ''} onChange={e => {
+                  const orgId = e.target.value ? parseInt(e.target.value) : null;
+                  setForm((f: any) => ({...f, organization_id: orgId, company: orgId ? '' : f.company}));
+                }} className={inputClass}>
+                  <option value="">— New organization —</option>
+                  {orgs.map(o => <option key={o.id} value={o.id}>{o.organization_name}</option>)}
+                </select>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className={labelClass}>Company</label>
-                  <input name="company" value={form.company} onChange={handleChange} className={inputClass} />
+                  <label className={labelClass}>Company {!form.organization_id ? '(new organization)' : ''}</label>
+                  <input name="company" value={form.organization_id ? (orgs.find(o => o.id === form.organization_id)?.organization_name || '') : form.company} onChange={handleChange} disabled={!!form.organization_id} className={inputClass + (form.organization_id ? ' bg-gray-100 text-gray-500' : '')} />
                 </div>
                 <div>
                   <label className={labelClass}>Position</label>
@@ -123,21 +137,28 @@ export default function NewLeadPage() {
               </div>
 
               <div>
-                <label className={labelClass}>Source</label>
-                <select name="source" value={form.source} onChange={handleChange} className={inputClass}>
-                  {SOURCES.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
+                <label className={labelClass}>Address</label>
+                <input name="address" value={form.address} onChange={handleChange} className={inputClass} />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Inquiry For</label>
+                  <input name="inquiry_for" value={form.inquiry_for} onChange={handleChange} className={inputClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Source</label>
+                  <select name="source" value={form.source} onChange={handleChange} className={inputClass}>
+                    {SOURCES.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>
-                <label className={labelClass}>Company</label>
-                <select value={form.organization_id || ''} onChange={e => setForm((f: any) => ({...f, organization_id: e.target.value ? parseInt(e.target.value) : null}))}
-                  className={inputClass}>
-                  <option value="">No company</option>
-                  {orgs.map(o => <option key={o.id} value={o.id}>{o.organization_name}</option>)}
-                </select>
+                <label className={labelClass}>Remarks</label>
+                <textarea name="remarks" value={form.remarks} onChange={(e: any) => setForm({...form, remarks: e.target.value})} rows={3} className={inputClass + " resize-none"} />
               </div>
 
               <div className="flex justify-end gap-3 pt-2">

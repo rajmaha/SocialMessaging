@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import axios from "axios";
 import { authAPI, getAuthToken } from "@/lib/auth";
+import { api } from "@/lib/api";
 import { API_URL } from "@/lib/config";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
@@ -31,16 +32,20 @@ export default function EditLeadPage() {
   const router = useRouter();
   const token = getAuthToken();
 
+  const [orgs, setOrgs] = useState<{id: number, organization_name: string}[]>([])
   const [form, setForm] = useState<any>({
     first_name: "", last_name: "", email: "", phone: "",
-    company: "", position: "", status: "new", source: "other",
+    company: "", position: "", address: "", inquiry_for: "", remarks: "",
+    status: "new", source: "other",
     estimated_value: "", score: 0,
+    organization_id: null as number | null,
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
+    api.get('/crm/organizations?limit=200').then(r => setOrgs(r.data));
     if (!id) return;
     axios.get(`${API_URL}/crm/leads/${id}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => {
@@ -52,10 +57,14 @@ export default function EditLeadPage() {
           phone: d.phone || "",
           company: d.company || "",
           position: d.position || "",
+          address: d.address || "",
+          inquiry_for: d.inquiry_for || "",
+          remarks: d.remarks || "",
           status: d.status || "new",
           source: d.source || "other",
           estimated_value: d.estimated_value ?? "",
           score: d.score ?? 0,
+          organization_id: d.organization_id || null,
         });
       })
       .catch(err => setError(err.response?.data?.detail || "Failed to load lead"))
@@ -133,14 +142,41 @@ export default function EditLeadPage() {
                 </div>
               </div>
 
+              <div>
+                <label className={labelClass}>Organization (existing)</label>
+                <select value={form.organization_id || ''} onChange={e => {
+                  const orgId = e.target.value ? parseInt(e.target.value) : null;
+                  setForm((f: any) => ({...f, organization_id: orgId, company: orgId ? '' : f.company}));
+                }} className={inputClass}>
+                  <option value="">— New organization —</option>
+                  {orgs.map(o => <option key={o.id} value={o.id}>{o.organization_name}</option>)}
+                </select>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className={labelClass}>Company</label>
-                  <input name="company" value={form.company} onChange={handleChange} className={inputClass} />
+                  <label className={labelClass}>Company {!form.organization_id ? '(new organization)' : ''}</label>
+                  <input name="company" value={form.organization_id ? (orgs.find(o => o.id === form.organization_id)?.organization_name || '') : form.company} onChange={handleChange} disabled={!!form.organization_id} className={inputClass + (form.organization_id ? ' bg-gray-100 text-gray-500' : '')} />
                 </div>
                 <div>
                   <label className={labelClass}>Position</label>
                   <input name="position" value={form.position} onChange={handleChange} className={inputClass} />
+                </div>
+              </div>
+
+              <div>
+                <label className={labelClass}>Address</label>
+                <input name="address" value={form.address} onChange={handleChange} className={inputClass} />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Inquiry For</label>
+                  <input name="inquiry_for" value={form.inquiry_for} onChange={handleChange} className={inputClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Remarks</label>
+                  <textarea name="remarks" value={form.remarks} onChange={(e: any) => setForm({...form, remarks: e.target.value})} rows={2} className={inputClass + " resize-none"} />
                 </div>
               </div>
 
