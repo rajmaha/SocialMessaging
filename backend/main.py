@@ -1185,6 +1185,202 @@ def _run_inline_migrations():
         conn.execute(text("""
             ALTER TABLE pms_project_members ADD COLUMN IF NOT EXISTS hours_per_day FLOAT DEFAULT 7.0
         """))
+
+        # ── PMS Enhancement Migrations ─────────────────────────
+
+        # Phase 1: Checklists
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_task_checklists (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                text VARCHAR NOT NULL,
+                is_checked BOOLEAN DEFAULT FALSE,
+                position INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
+        # Phase 2: Sprints
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_sprints (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                name VARCHAR NOT NULL,
+                start_date DATE,
+                end_date DATE,
+                goal TEXT,
+                status VARCHAR DEFAULT 'planning',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            ALTER TABLE pms_tasks ADD COLUMN IF NOT EXISTS sprint_id INTEGER REFERENCES pms_sprints(id) ON DELETE SET NULL
+        """))
+
+        # Phase 2: Recurring Tasks
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_recurring_tasks (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                source_task_id INTEGER REFERENCES pms_tasks(id) ON DELETE SET NULL,
+                title VARCHAR NOT NULL,
+                description TEXT,
+                assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                priority VARCHAR DEFAULT 'medium',
+                milestone_id INTEGER,
+                sprint_id INTEGER,
+                estimated_hours FLOAT DEFAULT 0,
+                recurrence_type VARCHAR NOT NULL,
+                recurrence_day INTEGER,
+                next_run_date DATE NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
+        # Phase 3: Watchers
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_task_watchers (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                watch_type VARCHAR DEFAULT 'watcher',
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(task_id, user_id)
+            )
+        """))
+
+        # Phase 3: Custom Fields
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_custom_field_defs (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                name VARCHAR NOT NULL,
+                field_type VARCHAR NOT NULL,
+                options TEXT,
+                required BOOLEAN DEFAULT FALSE,
+                position INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_custom_field_values (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                field_def_id INTEGER REFERENCES pms_custom_field_defs(id) ON DELETE CASCADE,
+                value TEXT,
+                UNIQUE(task_id, field_def_id)
+            )
+        """))
+
+        # Phase 3: Task Templates
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_task_templates (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                description TEXT,
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_template_items (
+                id SERIAL PRIMARY KEY,
+                template_id INTEGER REFERENCES pms_task_templates(id) ON DELETE CASCADE,
+                title VARCHAR NOT NULL,
+                description TEXT,
+                priority VARCHAR DEFAULT 'medium',
+                estimated_hours FLOAT DEFAULT 0,
+                parent_index INTEGER,
+                position INTEGER DEFAULT 0
+            )
+        """))
+
+        # Phase 4: Favorites
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_favorites (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                project_id INTEGER,
+                task_id INTEGER,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
+        # Phase 4: File Versioning
+        conn.execute(text("""
+            ALTER TABLE pms_task_attachments ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1
+        """))
+        conn.execute(text("""
+            ALTER TABLE pms_task_attachments ADD COLUMN IF NOT EXISTS replaced_by INTEGER REFERENCES pms_task_attachments(id) ON DELETE SET NULL
+        """))
+
+        # Phase 6: Project Templates
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_project_templates (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                description TEXT,
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_project_template_milestones (
+                id SERIAL PRIMARY KEY,
+                template_id INTEGER REFERENCES pms_project_templates(id) ON DELETE CASCADE,
+                name VARCHAR NOT NULL,
+                offset_days INTEGER DEFAULT 0,
+                color VARCHAR DEFAULT '#f59e0b'
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_project_template_tasks (
+                id SERIAL PRIMARY KEY,
+                template_id INTEGER REFERENCES pms_project_templates(id) ON DELETE CASCADE,
+                milestone_index INTEGER,
+                title VARCHAR NOT NULL,
+                description TEXT,
+                priority VARCHAR DEFAULT 'medium',
+                estimated_hours FLOAT DEFAULT 0,
+                position INTEGER DEFAULT 0,
+                parent_index INTEGER
+            )
+        """))
+
+        # Phase 6: Automations
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_automations (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                name VARCHAR NOT NULL,
+                trigger_type VARCHAR NOT NULL,
+                trigger_config TEXT,
+                action_type VARCHAR NOT NULL,
+                action_config TEXT,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
+        # Phase 6: Conversation-Task Links
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_task_conversation_links (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                conversation_id INTEGER REFERENCES conversations(id) ON DELETE CASCADE,
+                linked_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(task_id, conversation_id)
+            )
+        """))
+
+        # Phase 6: Milestone Dependencies
+        conn.execute(text("""
+            ALTER TABLE pms_milestones ADD COLUMN IF NOT EXISTS depends_on_id INTEGER REFERENCES pms_milestones(id) ON DELETE SET NULL
+        """))
+
         conn.commit()
 
         # Seed preset templates once
@@ -1606,7 +1802,7 @@ def _run_inline_migrations():
                 try:
                     conn.execute(text(f"ALTER TYPE {enum_type} RENAME VALUE '{old_val}' TO '{new_val}'"))
                 except Exception:
-                    pass  # already renamed or doesn't exist
+                    conn.rollback()  # rollback failed DDL to keep transaction usable
 
         # visitor_pass_cards table
         conn.execute(text("""
@@ -1658,6 +1854,9 @@ def _run_inline_migrations():
 
         # Contact phone for email footer
         conn.execute(text("ALTER TABLE branding_settings ADD COLUMN IF NOT EXISTS contact_phone VARCHAR"))
+
+        # Global currency setting
+        conn.execute(text("ALTER TABLE branding_settings ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD'"))
 
         # Webchat OTP table (replaces in-memory store — safe across multiple workers)
         conn.execute(text("""
@@ -1751,6 +1950,45 @@ def _run_inline_migrations():
 
         # Add content_id column to email_attachments for inline CID images
         conn.execute(text("ALTER TABLE email_attachments ADD COLUMN IF NOT EXISTS content_id VARCHAR"))
+        conn.commit()
+
+        # CRM enhancements: qualification, currency, audit log, workflow rules
+        # Start fresh transaction in case earlier migrations failed
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS qualification VARCHAR DEFAULT 'cold'"))
+        conn.execute(text("ALTER TABLE deals ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD'"))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS crm_audit_log (
+                id SERIAL PRIMARY KEY,
+                entity_type VARCHAR NOT NULL,
+                entity_id INTEGER NOT NULL,
+                field_name VARCHAR NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                changed_by INTEGER NOT NULL REFERENCES users(id),
+                changed_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_crm_audit_entity ON crm_audit_log(entity_type, entity_id)
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS crm_workflow_rules (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                trigger_type VARCHAR NOT NULL,
+                conditions JSON DEFAULT '{}',
+                action_type VARCHAR NOT NULL,
+                action_config JSON DEFAULT '{}',
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
         conn.commit()
 
 # ── Log DB Init ────────────────────────────────────────────────────────────
@@ -2550,6 +2788,53 @@ async def startup_event():
 
         scheduler.add_job(check_overdue_crm_tasks, 'interval', minutes=5, id='check_overdue_crm_tasks')
 
+        def check_upcoming_crm_tasks():
+            """Broadcast CRM_TASK_DUE_SOON for tasks due within the next hour."""
+            from app.models.crm import Task as CrmTask
+            from app.services.events_service import events_service, EventTypes
+            from datetime import datetime, timedelta
+            import asyncio
+
+            db = SessionLocal()
+            try:
+                now = datetime.utcnow()
+                one_hour_later = now + timedelta(hours=1)
+                upcoming = db.query(CrmTask).filter(
+                    CrmTask.due_date >= now,
+                    CrmTask.due_date <= one_hour_later,
+                    CrmTask.status.in_(["open", "in_progress"]),
+                    CrmTask.due_date.isnot(None),
+                ).all()
+
+                for task in upcoming:
+                    if not task.assigned_to:
+                        continue
+                    event = events_service.create_event(
+                        EventTypes.CRM_TASK_DUE_SOON,
+                        {
+                            "task_id": task.id,
+                            "task_title": task.title,
+                            "due_date": task.due_date.isoformat() if task.due_date else None,
+                            "lead_id": task.lead_id,
+                        },
+                    )
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            asyncio.run_coroutine_threadsafe(
+                                events_service.broadcast_to_user(task.assigned_to, event),
+                                loop,
+                            )
+                    except Exception as e:
+                        logger.warning(f"CRM task due-soon broadcast error: {e}")
+            except Exception as e:
+                logger.error(f"check_upcoming_crm_tasks error: {e}")
+                _log_job_error(f"check_upcoming_crm_tasks error: {e}", exc=e, job_name="check_upcoming_crm_tasks")
+            finally:
+                db.close()
+
+        scheduler.add_job(check_upcoming_crm_tasks, 'interval', minutes=5, id='check_upcoming_crm_tasks')
+
         def check_pms_overdue_tasks():
             """Fire alerts for PMS tasks past their due date."""
             from app.models.pms import PMSTask, PMSAlert, PMSProjectMember
@@ -2581,6 +2866,24 @@ async def startup_event():
                             notified_user_id=uid
                         ))
                     db.commit()
+                # Evaluate task_overdue automations
+                from app.models.pms import PMSAutomation, PMSWorkflowHistory as WFH
+                for task in overdue:
+                    autos = db.query(PMSAutomation).filter_by(
+                        project_id=task.project_id, trigger_type="task_overdue", is_active=True
+                    ).all()
+                    for auto in autos:
+                        import json as _ajson
+                        action_cfg = _ajson.loads(auto.action_config) if auto.action_config else {}
+                        if auto.action_type == "set_stage":
+                            new_stage = action_cfg.get("stage")
+                            if new_stage and new_stage != task.stage:
+                                old = task.stage
+                                task.stage = new_stage
+                                db.add(WFH(task_id=task.id, from_stage=old, to_stage=new_stage, moved_by=None, note=f"Automation: {auto.name}"))
+                        elif auto.action_type == "assign":
+                            task.assignee_id = action_cfg.get("user_id")
+                    db.commit()
             except Exception as e:
                 logger.error("PMS overdue check error: %s", e)
                 _log_job_error(f"PMS overdue check error: {e}", exc=e, job_name="pms_overdue_check")
@@ -2588,6 +2891,54 @@ async def startup_event():
                 db.close()
 
         scheduler.add_job(check_pms_overdue_tasks, 'interval', minutes=60, id='pms_overdue_check')
+
+        def create_pms_recurring_tasks():
+            """Create tasks from recurring task definitions where next_run_date <= today."""
+            from app.models.pms import PMSRecurringTask, PMSTask, PMSWorkflowHistory
+            from datetime import date as _date, timedelta as _td
+            db = SessionLocal()
+            try:
+                today = _date.today()
+                due = db.query(PMSRecurringTask).filter(
+                    PMSRecurringTask.is_active == True,
+                    PMSRecurringTask.next_run_date <= today
+                ).all()
+                for r in due:
+                    count = db.query(PMSTask).filter_by(project_id=r.project_id).count()
+                    task = PMSTask(
+                        project_id=r.project_id,
+                        title=r.title,
+                        description=r.description,
+                        assignee_id=r.assignee_id,
+                        priority=r.priority,
+                        milestone_id=r.milestone_id,
+                        sprint_id=r.sprint_id,
+                        estimated_hours=r.estimated_hours,
+                        position=count,
+                    )
+                    db.add(task)
+                    db.flush()
+                    db.add(PMSWorkflowHistory(task_id=task.id, from_stage=None, to_stage="development", moved_by=r.created_by, note="Auto-created from recurring task"))
+                    # advance next_run_date
+                    if r.recurrence_type == "daily":
+                        r.next_run_date = r.next_run_date + _td(days=1)
+                    elif r.recurrence_type == "weekly":
+                        r.next_run_date = r.next_run_date + _td(weeks=1)
+                    elif r.recurrence_type == "biweekly":
+                        r.next_run_date = r.next_run_date + _td(weeks=2)
+                    elif r.recurrence_type == "monthly":
+                        m = r.next_run_date.month % 12 + 1
+                        y = r.next_run_date.year + (1 if m == 1 else 0)
+                        d = min(r.next_run_date.day, 28)
+                        r.next_run_date = _date(y, m, d)
+                db.commit()
+            except Exception as e:
+                logger.error("PMS recurring task error: %s", e)
+                _log_job_error(f"PMS recurring task error: {e}", exc=e, job_name="pms_recurring_tasks")
+            finally:
+                db.close()
+
+        scheduler.add_job(create_pms_recurring_tasks, 'interval', minutes=30, id='pms_recurring_tasks')
 
         def send_pms_overdue_digest():
             """Send daily digest email of overdue PMS tasks to PM and admin users."""

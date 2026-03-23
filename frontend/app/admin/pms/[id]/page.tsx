@@ -8,8 +8,10 @@ import AdminNav from '@/components/AdminNav';
 import GanttChart from '@/components/pms/GanttChart';
 import BoardView from '@/components/pms/BoardView';
 import ListView from '@/components/pms/ListView';
+import ActivityFeed from '@/components/pms/ActivityFeed';
+import CalendarView from '@/components/pms/CalendarView';
 
-const TABS = ['Gantt', 'Board', 'List', 'Milestones', 'Settings'];
+const TABS = ['Gantt', 'Board', 'List', 'Calendar', 'Milestones', 'Sprints', 'Activity', 'Settings'];
 
 export default function ProjectDetailPage() {
   const { id } = useParams();
@@ -80,7 +82,10 @@ export default function ProjectDetailPage() {
           </div>
         )}
         {activeTab === 'List' && <ListView projectId={projectId} tasks={tasks} milestones={milestones} members={project?.members || []} onReload={reload} />}
+        {activeTab === 'Calendar' && <CalendarView tasks={tasks} milestones={milestones} />}
         {activeTab === 'Milestones' && <MilestonesTab projectId={projectId} milestones={milestones} onReload={reload} />}
+        {activeTab === 'Sprints' && <SprintsTab projectId={projectId} />}
+        {activeTab === 'Activity' && <ActivityFeed projectId={projectId} />}
         {activeTab === 'Settings' && <SettingsTab project={project} onReload={reload} />}
       </div>
     </div>
@@ -126,6 +131,83 @@ function MilestonesTab({ projectId, milestones, onReload }: any) {
             <div className="flex gap-3">
               <button onClick={() => setShowCreate(false)} className="flex-1 border rounded px-3 py-2 text-sm">Cancel</button>
               <button onClick={handleCreate} className="flex-1 bg-indigo-600 text-white rounded px-3 py-2 text-sm">Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SprintsTab({ projectId }: { projectId: number }) {
+  const [sprints, setSprints] = useState<any[]>([]);
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: '', start_date: '', end_date: '', goal: '' });
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
+    pmsApi.listSprints(projectId).then(r => { setSprints(r.data); setLoading(false); }).catch(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, [projectId]);
+
+  const handleCreate = async () => {
+    await pmsApi.createSprint(projectId, { ...form, status: 'planning' });
+    setShowCreate(false);
+    setForm({ name: '', start_date: '', end_date: '', goal: '' });
+    load();
+  };
+
+  const handleStatusChange = async (id: number, status: string) => {
+    await pmsApi.updateSprint(id, { status });
+    load();
+  };
+
+  const STATUS_COLORS: Record<string, string> = { planning: 'bg-gray-100 text-gray-700', active: 'bg-green-100 text-green-700', completed: 'bg-blue-100 text-blue-700' };
+
+  if (loading) return <div className="text-gray-400 text-center py-10">Loading sprints...</div>;
+
+  return (
+    <div className="p-6 max-w-3xl">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="font-semibold text-gray-800">Sprints</h2>
+        <button onClick={() => setShowCreate(true)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm">+ New Sprint</button>
+      </div>
+      <div className="space-y-3">
+        {sprints.map((s: any) => (
+          <div key={s.id} className="bg-white border rounded-lg p-4">
+            <div className="flex items-center gap-3 mb-2">
+              <h3 className="font-medium text-gray-900">{s.name}</h3>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[s.status] || 'bg-gray-100 text-gray-600'}`}>{s.status}</span>
+              <div className="ml-auto flex gap-1">
+                {s.status === 'planning' && <button onClick={() => handleStatusChange(s.id, 'active')} className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded hover:bg-green-100">Start</button>}
+                {s.status === 'active' && <button onClick={() => handleStatusChange(s.id, 'completed')} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100">Complete</button>}
+              </div>
+            </div>
+            {s.goal && <p className="text-sm text-gray-500 mb-2">{s.goal}</p>}
+            <div className="text-xs text-gray-400">
+              {s.start_date && <span>{s.start_date}</span>}
+              {s.start_date && s.end_date && <span> &rarr; </span>}
+              {s.end_date && <span>{s.end_date}</span>}
+            </div>
+          </div>
+        ))}
+        {sprints.length === 0 && <p className="text-gray-400 text-sm">No sprints yet.</p>}
+      </div>
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h3 className="font-semibold mb-3">New Sprint</h3>
+            <div className="space-y-2">
+              <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Sprint name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="text-xs text-gray-500">Start</label><input type="date" className="w-full border rounded px-3 py-2 text-sm" value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})} /></div>
+                <div><label className="text-xs text-gray-500">End</label><input type="date" className="w-full border rounded px-3 py-2 text-sm" value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})} /></div>
+              </div>
+              <textarea className="w-full border rounded px-3 py-2 text-sm" placeholder="Sprint goal" rows={2} value={form.goal} onChange={e => setForm({...form, goal: e.target.value})} />
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setShowCreate(false)} className="flex-1 border rounded px-3 py-2 text-sm">Cancel</button>
+              <button onClick={handleCreate} disabled={!form.name} className="flex-1 bg-indigo-600 text-white rounded px-3 py-2 text-sm disabled:opacity-50">Create</button>
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import Optional
+import re
 from app.models.crm import LeadStatus, LeadSource, DealStage, TaskStatus, ActivityType
 
 
@@ -24,6 +25,16 @@ class LeadCreate(BaseModel):
     organization_id: Optional[int] = None
     tags: Optional[list[str]] = []
 
+    @field_validator('phone')
+    @classmethod
+    def validate_phone(cls, v):
+        if v is None:
+            return v
+        digits = re.sub(r'\D', '', v)
+        if len(digits) < 7 or len(digits) > 15:
+            raise ValueError('Phone number must have 7-15 digits')
+        return v
+
 
 class LeadUpdate(BaseModel):
     first_name: Optional[str] = None
@@ -43,6 +54,16 @@ class LeadUpdate(BaseModel):
     tags: Optional[list[str]] = None
     organization_id: Optional[int] = None
 
+    @field_validator('phone')
+    @classmethod
+    def validate_phone(cls, v):
+        if v is None:
+            return v
+        digits = re.sub(r'\D', '', v)
+        if len(digits) < 7 or len(digits) > 15:
+            raise ValueError('Phone number must have 7-15 digits')
+        return v
+
 
 class LeadResponse(BaseModel):
     id: int
@@ -59,6 +80,7 @@ class LeadResponse(BaseModel):
     source: LeadSource
     assigned_to: Optional[int]
     score: int
+    qualification: Optional[str] = "cold"
     estimated_value: Optional[float]
     conversation_id: Optional[int]
     organization_id: Optional[int]
@@ -83,6 +105,7 @@ class DealCreate(BaseModel):
     probability: Optional[int] = 50
     expected_close_date: Optional[datetime] = None
     assigned_to: Optional[int] = None
+    currency: Optional[str] = "USD"
 
 
 class DealUpdate(BaseModel):
@@ -93,6 +116,7 @@ class DealUpdate(BaseModel):
     probability: Optional[int] = None
     expected_close_date: Optional[datetime] = None
     assigned_to: Optional[int] = None
+    currency: Optional[str] = None
 
 
 class DealResponse(BaseModel):
@@ -103,6 +127,7 @@ class DealResponse(BaseModel):
     stage: DealStage
     amount: Optional[float]
     probability: int
+    currency: Optional[str] = "USD"
     expected_close_date: Optional[datetime]
     closed_at: Optional[datetime]
     assigned_to: Optional[int]
@@ -213,3 +238,64 @@ class NoteResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ========== AUDIT LOG SCHEMAS ==========
+
+class AuditLogResponse(BaseModel):
+    id: int
+    entity_type: str
+    entity_id: int
+    field_name: str
+    old_value: Optional[str]
+    new_value: Optional[str]
+    changed_by: int
+    changed_by_name: Optional[str] = None
+    changed_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ========== WORKFLOW RULE SCHEMAS ==========
+
+class WorkflowRuleCreate(BaseModel):
+    name: str
+    is_active: Optional[bool] = True
+    trigger_type: str  # deal_stage_change, lead_status_change, task_overdue
+    conditions: Optional[dict] = {}
+    action_type: str  # create_task, change_status, send_notification
+    action_config: Optional[dict] = {}
+
+
+class WorkflowRuleUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+    trigger_type: Optional[str] = None
+    conditions: Optional[dict] = None
+    action_type: Optional[str] = None
+    action_config: Optional[dict] = None
+
+
+class WorkflowRuleResponse(BaseModel):
+    id: int
+    name: str
+    is_active: bool
+    trigger_type: str
+    conditions: Optional[dict] = {}
+    action_type: str
+    action_config: Optional[dict] = {}
+    created_by: Optional[int]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ========== IMPORT SCHEMAS ==========
+
+class ImportResult(BaseModel):
+    imported: int
+    errors: list[dict]
+    total_rows: int

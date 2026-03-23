@@ -8,6 +8,7 @@ export type FilterState = {
   priorities: string[];
   stages: string[];
   milestone_id: number | null;
+  sprint_id: number | null;
   due_from: string;
   due_to: string;
   labels: number[];
@@ -21,6 +22,7 @@ export const defaultFilters: FilterState = {
   priorities: [],
   stages: [],
   milestone_id: null,
+  sprint_id: null,
   due_from: '',
   due_to: '',
   labels: [],
@@ -32,6 +34,7 @@ export const defaultFilters: FilterState = {
 interface FilterBarProps {
   members: any[];
   milestones: any[];
+  sprints?: any[];
   labels: any[];
   filters: FilterState;
   onFilterChange: (filters: FilterState) => void;
@@ -118,6 +121,7 @@ function MultiSelectDropdown({ label, options, selected, onToggle, renderOption 
 export default function FilterBar({
   members,
   milestones,
+  sprints = [],
   labels,
   filters,
   onFilterChange,
@@ -141,6 +145,7 @@ export default function FilterBar({
     filters.priorities.length > 0 ||
     filters.stages.length > 0 ||
     filters.milestone_id !== null ||
+    filters.sprint_id !== null ||
     filters.due_from !== '' ||
     filters.due_to !== '' ||
     filters.labels.length > 0 ||
@@ -183,6 +188,15 @@ export default function FilterBar({
       key: 'milestone',
       label: `Milestone: ${ms?.title || ms?.name || filters.milestone_id}`,
       onRemove: () => update({ milestone_id: null }),
+    });
+  }
+
+  if (filters.sprint_id !== null) {
+    const sp = (sprints || []).find((x: any) => x.id === filters.sprint_id);
+    pills.push({
+      key: 'sprint',
+      label: `Sprint: ${sp?.name || filters.sprint_id}`,
+      onRemove: () => update({ sprint_id: null }),
     });
   }
 
@@ -313,6 +327,22 @@ export default function FilterBar({
             </div>
           )}
         </div>
+
+        {/* Sprint dropdown (single select) */}
+        {(sprints || []).length > 0 && (
+          <div className="relative">
+            <select
+              className={`text-sm px-3 py-1.5 rounded-lg border ${filters.sprint_id !== null ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-gray-300 text-gray-600'}`}
+              value={filters.sprint_id ?? ''}
+              onChange={e => update({ sprint_id: e.target.value ? Number(e.target.value) : null })}
+            >
+              <option value="">All Sprints</option>
+              {(sprints || []).map((s: any) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Due date range */}
         <div className="flex items-center gap-1">

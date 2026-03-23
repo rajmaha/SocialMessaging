@@ -226,6 +226,10 @@ export default function MyTasksPage() {
         <div className="flex items-center gap-4 mb-6">
           <h1 className="text-2xl font-bold text-gray-900">My Tasks</h1>
           {avgEff !== null && <EffBadge value={avgEff} />}
+          <button onClick={() => window.open(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/pms/my-tasks/export?format=csv`, '_blank')}
+            className="ml-auto text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 text-gray-600">
+            Export CSV
+          </button>
         </div>
 
         {/* Filter bar */}

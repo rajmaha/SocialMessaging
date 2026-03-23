@@ -28,10 +28,12 @@ export default function PMSDashboard() {
   const [form, setForm] = useState({ name: '', description: '', color: '#6366f1', status: 'planning' });
   const [digestOpen, setDigestOpen] = useState(true);
   const [cpSort, setCpSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'name', dir: 'asc' });
+  const [favorites, setFavorites] = useState<any[]>([]);
 
   useEffect(() => {
     setLoading(true);
     pmsApi.getDashboard(staleDays).then(r => { setData(r.data); setLoading(false); }).catch(() => setLoading(false));
+    pmsApi.listFavorites().then(r => setFavorites(r.data)).catch(() => {});
   }, [staleDays]);
 
   const handleCreate = async () => {
@@ -155,6 +157,26 @@ export default function PMSDashboard() {
                   </p>
                   <p className="text-sm text-gray-500 mt-1">awaiting review</p>
                 </Link>
+              </div>
+            )}
+
+            {/* ── Favorites ──────────────────────────────────── */}
+            {favorites.length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Favorites</h2>
+                <div className="flex gap-3 overflow-x-auto pb-2">
+                  {favorites.map((f: any) => (
+                    <div key={f.id} onClick={() => f.project_id && router.push(`/admin/pms/${f.project_id}`)}
+                      className="flex-none bg-white border rounded-lg px-4 py-3 cursor-pointer hover:shadow-md transition-shadow min-w-[200px]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-yellow-500">&#9733;</span>
+                        {f.project_color && <span className="w-2 h-2 rounded-full" style={{ background: f.project_color }} />}
+                        <span className="text-sm font-medium text-gray-900 truncate">{f.project_name || f.task_title || 'Item'}</span>
+                      </div>
+                      {f.task_stage && <span className="text-xs text-gray-400 mt-1 block">{f.task_stage?.replace('_', ' ')}</span>}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

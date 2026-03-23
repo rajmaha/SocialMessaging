@@ -281,6 +281,31 @@ export default function ReportsPage() {
             </div>
           )}
 
+          {/* ── Time Variance ──────────────────────────────── */}
+          {!loading && data && data.time_variance && data.time_variance.length > 0 && (
+            <div className="mt-6">
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <h3 className="text-sm font-semibold text-gray-700 mb-1">Time Variance</h3>
+                <p className="text-xs text-gray-400 mb-3">Estimated vs actual hours per task</p>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={data.time_variance.slice(0, 20)} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" tick={{ fontSize: 12 }} />
+                    <YAxis dataKey="title" type="category" tick={{ fontSize: 10 }} width={150} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="estimated" fill="#6366f1" name="Estimated" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="actual" fill={undefined} name="Actual" radius={[0, 4, 4, 0]}>
+                      {data.time_variance.slice(0, 20).map((entry: any, idx: number) => (
+                        <Cell key={idx} fill={entry.over_budget ? '#ef4444' : '#22c55e'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
           {/* ── Admin-Only: Project Comparison & Team Velocity ──── */}
           {!loading && data && user?.role === 'admin' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">

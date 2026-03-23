@@ -47,6 +47,9 @@ class BrandingSettings(Base):
     # Timezone Settings
     timezone = Column(String, default="UTC")  # e.g., "America/New_York", "Europe/London", "Asia/Kolkata"
 
+    # Currency Settings
+    currency = Column(String(3), default="USD")  # ISO 4217 code: USD, EUR, GBP, AED, etc.
+
     # Admin Contact
     admin_email = Column(String, nullable=True)
     contact_phone = Column(String, nullable=True)

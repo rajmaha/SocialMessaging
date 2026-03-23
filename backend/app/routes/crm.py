@@ -1,10 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_, func
 from datetime import datetime
+import asyncio
+import csv
+import io
+import re
 
 from app.database import get_db
-from app.models.crm import Lead, Deal, Task, Activity, LeadNote, LeadStatus, DealStage, TaskStatus, ActivityType
+from app.models.crm import (
+    Lead, Deal, Task, Activity, LeadNote, CRMAuditLog, CRMWorkflowRule,
+    LeadStatus, DealStage, TaskStatus, ActivityType,
+)
 from app.models.user import User
 from app.models.conversation import Conversation
 from app.models.organization import Organization
@@ -14,15 +21,44 @@ from app.schemas.crm import (
     TaskCreate, TaskUpdate, TaskResponse,
     ActivityCreate, ActivityResponse,
     NoteCreate, NoteUpdate, NoteResponse,
+    AuditLogResponse,
+    WorkflowRuleCreate, WorkflowRuleUpdate, WorkflowRuleResponse,
+    ImportResult,
 )
 from app.dependencies import get_current_user, require_admin_feature, require_page
 from app.services.crm_scoring import apply_score
 from app.services.events_service import events_service, EventTypes
-import asyncio
+from app.services.crm_workflow import evaluate_rules
 
 router = APIRouter(prefix="/crm", tags=["crm"], dependencies=[Depends(require_page("crm"))])
 
 require_crm = require_admin_feature("feature_manage_crm")
+
+
+# ========== HELPERS ==========
+
+def _broadcast(event):
+    """Fire-and-forget broadcast to all connected users."""
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(events_service.broadcast_to_all(event))
+    except RuntimeError:
+        pass
+
+
+def log_changes(db: Session, entity_type: str, entity_id: int, old_values: dict, new_values: dict, user_id: int):
+    """Record field-level changes in the audit log."""
+    for field, new_val in new_values.items():
+        old_val = old_values.get(field)
+        if str(old_val) != str(new_val):
+            db.add(CRMAuditLog(
+                entity_type=entity_type,
+                entity_id=entity_id,
+                field_name=field,
+                old_value=str(old_val) if old_val is not None else None,
+                new_value=str(new_val) if new_val is not None else None,
+                changed_by=user_id,
+            ))
 
 
 # ========== LEAD ENDPOINTS ==========
@@ -70,6 +106,75 @@ def get_all_tags(
     return sorted(all_tags)
 
 
+@router.get("/leads/check-duplicate")
+def check_duplicate(
+    email: str = Query(None),
+    phone: str = Query(None),
+    name: str = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Check for duplicates before creating — used by the create form."""
+    conditions = []
+    if email:
+        conditions.append(Lead.email == email)
+    if phone:
+        conditions.append(Lead.phone == phone)
+    if name:
+        conditions.append(func.concat(Lead.first_name, ' ', func.coalesce(Lead.last_name, '')).ilike(f"%{name}%"))
+    if not conditions:
+        return []
+    return [
+        {"id": m.id, "first_name": m.first_name, "last_name": m.last_name, "email": m.email, "phone": m.phone, "company": m.company}
+        for m in db.query(Lead).filter(or_(*conditions)).limit(5).all()
+    ]
+
+
+@router.get("/leads/duplicates/{lead_id}")
+def find_duplicates(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Find potential duplicate leads based on email, phone, name, company."""
+    target = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    conditions = []
+    if target.email:
+        conditions.append(Lead.email == target.email)
+    if target.phone:
+        conditions.append(Lead.phone == target.phone)
+    if target.first_name:
+        conditions.append(func.concat(Lead.first_name, ' ', func.coalesce(Lead.last_name, '')).ilike(f"%{target.first_name}%"))
+    if target.company:
+        conditions.append(Lead.company.ilike(f"%{target.company}%"))
+
+    if not conditions:
+        return []
+
+    matches = db.query(Lead).filter(Lead.id != lead_id, or_(*conditions)).limit(10).all()
+
+    results = []
+    for m in matches:
+        reasons = []
+        if target.email and m.email and m.email.lower() == target.email.lower():
+            reasons.append("email")
+        if target.phone and m.phone and m.phone == target.phone:
+            reasons.append("phone")
+        if target.first_name and m.first_name and target.first_name.lower() in m.first_name.lower():
+            reasons.append("name")
+        if target.company and m.company and target.company.lower() in m.company.lower():
+            reasons.append("company")
+        results.append({
+            "id": m.id, "first_name": m.first_name, "last_name": m.last_name,
+            "email": m.email, "phone": m.phone, "company": m.company,
+            "status": m.status.value if m.status else None, "match_reasons": reasons,
+        })
+    return results
+
+
 @router.post("/leads", response_model=LeadResponse)
 def create_lead(
     lead: LeadCreate,
@@ -106,6 +211,10 @@ def create_lead(
     db.commit()
     db.refresh(db_lead)
 
+    _broadcast(events_service.create_event(EventTypes.CRM_LEAD_CREATED, {
+        "lead_id": db_lead.id, "lead_name": f"{db_lead.first_name} {db_lead.last_name or ''}".strip(),
+    }))
+
     return db_lead
 
 
@@ -122,6 +231,9 @@ def list_leads(
 ):
     """List leads with optional filtering."""
     query = db.query(Lead)
+    # Assignment-based visibility: agents see only their assigned leads
+    if current_user.role != "admin":
+        query = query.filter(Lead.assigned_to == current_user.id)
     if status:
         query = query.filter(Lead.status == status)
     if assigned_to:
@@ -268,6 +380,11 @@ def update_lead(
         raise HTTPException(status_code=404, detail="Lead not found")
     
     update_data = lead_update.model_dump(exclude_unset=True)
+
+    # Capture old values for audit log
+    old_values = {field: getattr(lead, field) for field in update_data}
+    old_status = lead.status
+
     # If company name provided but no organization selected, create a new organization
     if update_data.get("company") and not update_data.get("organization_id") and not lead.organization_id:
         new_org = Organization(organization_name=update_data["company"])
@@ -281,7 +398,7 @@ def update_lead(
             update_data["company"] = org.organization_name
     for field, value in update_data.items():
         setattr(lead, field, value)
-    
+
     lead.updated_at = datetime.utcnow()
 
     # record an activity about the update
@@ -295,7 +412,10 @@ def update_lead(
             created_by=current_user.id,
         )
         db.add(activity)
-    
+
+    # Audit trail
+    log_changes(db, "lead", lead.id, old_values, update_data, current_user.id)
+
     db.commit()
     db.refresh(lead)
 
@@ -315,6 +435,19 @@ def update_lead(
         except RuntimeError:
             pass
 
+    # Broadcast generic update event
+    _broadcast(events_service.create_event(EventTypes.CRM_LEAD_UPDATED, {
+        "lead_id": lead.id, "lead_name": f"{lead.first_name} {lead.last_name or ''}".strip(),
+    }))
+
+    # Workflow: evaluate lead_status_change triggers
+    if "status" in update_data and str(old_status) != str(lead.status):
+        evaluate_rules(db, "lead_status_change", {
+            "lead_id": lead.id,
+            "old_status": old_status.value if hasattr(old_status, 'value') else str(old_status),
+            "new_status": lead.status.value if hasattr(lead.status, 'value') else str(lead.status),
+        })
+
     return lead
 
 
@@ -328,9 +461,11 @@ def delete_lead(
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    
+
+    lead_name = f"{lead.first_name} {lead.last_name or ''}".strip()
     db.delete(lead)
     db.commit()
+    _broadcast(events_service.create_event(EventTypes.CRM_LEAD_DELETED, {"lead_id": lead_id, "lead_name": lead_name}))
     return {"status": "deleted"}
 
 
@@ -423,6 +558,10 @@ def create_deal(
 
     apply_score(lead.id, "deal_created", db)
 
+    _broadcast(events_service.create_event(EventTypes.CRM_DEAL_CREATED, {
+        "deal_id": db_deal.id, "deal_name": db_deal.name, "stage": str(db_deal.stage), "lead_id": lead.id,
+    }))
+
     return db_deal
 
 
@@ -437,6 +576,8 @@ def list_deals(
 ):
     """List deals with optional filtering."""
     query = db.query(Deal)
+    if current_user.role != "admin":
+        query = query.filter(Deal.assigned_to == current_user.id)
     if stage:
         query = query.filter(Deal.stage == stage)
     if lead_id:
@@ -479,11 +620,15 @@ def update_deal(
     
     old_stage = deal.stage
     update_data = deal_update.model_dump(exclude_unset=True)
+
+    # Capture old values for audit
+    old_values = {field: getattr(deal, field) for field in update_data}
+
     for field, value in update_data.items():
         setattr(deal, field, value)
-    
+
     deal.updated_at = datetime.utcnow()
-    
+
     # If stage changed, create activity
     if "stage" in update_data and old_stage != deal.stage:
         activity = Activity(
@@ -495,28 +640,32 @@ def update_deal(
         )
         db.add(activity)
         if deal.stage == "won":
+            deal.closed_at = datetime.utcnow()
             apply_score(deal.lead_id, "deal_won", db)
         elif deal.stage == "lost":
+            deal.closed_at = datetime.utcnow()
             apply_score(deal.lead_id, "deal_lost", db)
-        stage_event = events_service.create_event(
-            EventTypes.CRM_DEAL_STAGE_CHANGED,
-            {
-                "deal_id": deal.id,
-                "deal_name": deal.name,
-                "old_stage": old_stage,
-                "new_stage": deal.stage,
-                "lead_id": deal.lead_id,
-            },
-        )
-        try:
-            loop = asyncio.get_event_loop()
-            loop.create_task(events_service.broadcast_to_all(stage_event))
-        except RuntimeError:
-            pass
+        _broadcast(events_service.create_event(EventTypes.CRM_DEAL_STAGE_CHANGED, {
+            "deal_id": deal.id, "deal_name": deal.name,
+            "old_stage": str(old_stage), "new_stage": str(deal.stage), "lead_id": deal.lead_id,
+        }))
+        # Workflow triggers
+        evaluate_rules(db, "deal_stage_change", {
+            "deal_id": deal.id, "lead_id": deal.lead_id,
+            "old_stage": old_stage.value if hasattr(old_stage, 'value') else str(old_stage),
+            "new_stage": deal.stage.value if hasattr(deal.stage, 'value') else str(deal.stage),
+        })
+
+    # Audit trail
+    log_changes(db, "deal", deal.id, old_values, update_data, current_user.id)
 
     db.commit()
     db.refresh(deal)
-    
+
+    _broadcast(events_service.create_event(EventTypes.CRM_DEAL_UPDATED, {
+        "deal_id": deal.id, "deal_name": deal.name,
+    }))
+
     return deal
 
 
@@ -530,9 +679,11 @@ def delete_deal(
     deal = db.query(Deal).filter(Deal.id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
-    
+
+    deal_name = deal.name
     db.delete(deal)
     db.commit()
+    _broadcast(events_service.create_event(EventTypes.CRM_DEAL_DELETED, {"deal_id": deal_id, "deal_name": deal_name}))
     return {"status": "deleted"}
 
 
@@ -580,6 +731,8 @@ def list_tasks(
 ):
     """List tasks with optional filtering."""
     query = db.query(Task)
+    if current_user.role != "admin":
+        query = query.filter(Task.assigned_to == current_user.id)
     if status:
         query = query.filter(Task.status == status)
     if assigned_to:
@@ -601,20 +754,27 @@ def update_task(
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     update_data = task_update.model_dump(exclude_unset=True)
-    
+    old_values = {field: getattr(task, field) for field in update_data}
+
     # Handle completion
     if "status" in update_data and update_data["status"] == TaskStatus.COMPLETED:
         task.completed_at = datetime.utcnow()
-    
+
     for field, value in update_data.items():
         setattr(task, field, value)
-    
+
     task.updated_at = datetime.utcnow()
+
+    log_changes(db, "task", task.id, old_values, update_data, current_user.id)
     db.commit()
     db.refresh(task)
-    
+
+    _broadcast(events_service.create_event(EventTypes.CRM_TASK_UPDATED, {
+        "task_id": task.id, "task_title": task.title, "status": str(task.status), "lead_id": task.lead_id,
+    }))
+
     return task
 
 
@@ -1160,3 +1320,150 @@ def get_team_feed(
             "team_activities_this_week": len(recent_activity),
         },
     }
+
+
+# ========== CSV IMPORT ==========
+
+@router.post("/leads/import")
+async def import_leads_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Import leads from a CSV file."""
+    content = await file.read()
+    text = content.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+
+    imported = 0
+    errors = []
+    total = 0
+
+    for row_num, row in enumerate(reader, start=1):
+        total += 1
+        first_name = (row.get("first_name") or "").strip()
+        if not first_name:
+            errors.append({"row": row_num, "error": "first_name is required"})
+            continue
+        email = (row.get("email") or "").strip() or None
+        phone = (row.get("phone") or "").strip() or None
+        if phone:
+            digits = re.sub(r'\D', '', phone)
+            if len(digits) < 7 or len(digits) > 15:
+                errors.append({"row": row_num, "error": f"Invalid phone: {phone}"})
+                continue
+
+        tags_str = (row.get("tags") or "").strip()
+        tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
+
+        source_val = (row.get("source") or "other").strip().lower()
+        status_val = (row.get("status") or "new").strip().lower()
+
+        lead = Lead(
+            first_name=first_name,
+            last_name=(row.get("last_name") or "").strip() or None,
+            email=email,
+            phone=phone,
+            company=(row.get("company") or "").strip() or None,
+            position=(row.get("position") or "").strip() or None,
+            source=source_val,
+            status=status_val,
+            tags=tags,
+            assigned_to=current_user.id,
+        )
+        db.add(lead)
+        imported += 1
+
+    if imported:
+        db.commit()
+
+    return {"imported": imported, "errors": errors, "total_rows": total}
+
+
+# ========== AUDIT LOG ==========
+
+@router.get("/audit-log/{entity_type}/{entity_id}", response_model=list[AuditLogResponse])
+def get_audit_log(
+    entity_type: str,
+    entity_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get change history for a lead, deal, or task."""
+    logs = (
+        db.query(CRMAuditLog)
+        .filter(CRMAuditLog.entity_type == entity_type, CRMAuditLog.entity_id == entity_id)
+        .order_by(desc(CRMAuditLog.changed_at))
+        .limit(50)
+        .all()
+    )
+    user_ids = list({l.changed_by for l in logs})
+    users_map = {}
+    if user_ids:
+        users = db.query(User).filter(User.id.in_(user_ids)).all()
+        users_map = {u.id: u.full_name for u in users}
+
+    return [
+        AuditLogResponse(
+            id=l.id, entity_type=l.entity_type, entity_id=l.entity_id,
+            field_name=l.field_name, old_value=l.old_value, new_value=l.new_value,
+            changed_by=l.changed_by, changed_by_name=users_map.get(l.changed_by),
+            changed_at=l.changed_at,
+        )
+        for l in logs
+    ]
+
+
+# ========== WORKFLOW RULES ==========
+
+@router.get("/workflow-rules", response_model=list[WorkflowRuleResponse])
+def list_workflow_rules(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return db.query(CRMWorkflowRule).order_by(desc(CRMWorkflowRule.created_at)).all()
+
+
+@router.post("/workflow-rules", response_model=WorkflowRuleResponse)
+def create_workflow_rule(
+    rule: WorkflowRuleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    db_rule = CRMWorkflowRule(**rule.model_dump(), created_by=current_user.id)
+    db.add(db_rule)
+    db.commit()
+    db.refresh(db_rule)
+    return db_rule
+
+
+@router.patch("/workflow-rules/{rule_id}", response_model=WorkflowRuleResponse)
+def update_workflow_rule(
+    rule_id: int,
+    rule_update: WorkflowRuleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rule = db.query(CRMWorkflowRule).filter(CRMWorkflowRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Workflow rule not found")
+    for field, value in rule_update.model_dump(exclude_unset=True).items():
+        setattr(rule, field, value)
+    rule.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(rule)
+    return rule
+
+
+@router.delete("/workflow-rules/{rule_id}")
+def delete_workflow_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rule = db.query(CRMWorkflowRule).filter(CRMWorkflowRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Workflow rule not found")
+    db.delete(rule)
+    db.commit()
+    return {"detail": "Rule deleted"}

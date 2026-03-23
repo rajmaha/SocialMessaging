@@ -208,6 +208,98 @@ export const pmsApi = {
   updateMemberHours: (memberId: number, hoursPerDay: number) =>
     api.patch(`/api/pms/members/${memberId}/hours`, null, { params: { hours_per_day: hoursPerDay } }),
   getAuditTrail: (params?: any) => api.get('/api/pms/audit-trail', { params }),
+
+  // Checklists
+  listChecklists: (taskId: number) => api.get(`/api/pms/tasks/${taskId}/checklists`),
+  createChecklist: (taskId: number, data: any) => api.post(`/api/pms/tasks/${taskId}/checklists`, data),
+  updateChecklist: (id: number, data: any) => api.put(`/api/pms/checklists/${id}`, data),
+  deleteChecklist: (id: number) => api.delete(`/api/pms/checklists/${id}`),
+
+  // Activity Feed
+  getProjectActivity: (projectId: number, params?: any) => api.get(`/api/pms/projects/${projectId}/activity`, { params }),
+
+  // Sprints
+  listSprints: (projectId: number) => api.get(`/api/pms/projects/${projectId}/sprints`),
+  createSprint: (projectId: number, data: any) => api.post(`/api/pms/projects/${projectId}/sprints`, data),
+  updateSprint: (id: number, data: any) => api.put(`/api/pms/sprints/${id}`, data),
+  deleteSprint: (id: number) => api.delete(`/api/pms/sprints/${id}`),
+  getSprintBurndown: (id: number) => api.get(`/api/pms/sprints/${id}/burndown`),
+
+  // Recurring Tasks
+  listRecurringTasks: (projectId: number) => api.get(`/api/pms/projects/${projectId}/recurring-tasks`),
+  createRecurringTask: (projectId: number, data: any) => api.post(`/api/pms/projects/${projectId}/recurring-tasks`, data),
+  updateRecurringTask: (id: number, data: any) => api.put(`/api/pms/recurring-tasks/${id}`, data),
+  deleteRecurringTask: (id: number) => api.delete(`/api/pms/recurring-tasks/${id}`),
+
+  // Watchers
+  listWatchers: (taskId: number) => api.get(`/api/pms/tasks/${taskId}/watchers`),
+  addWatcher: (taskId: number, data: any) => api.post(`/api/pms/tasks/${taskId}/watchers`, data),
+  removeWatcher: (taskId: number, userId: number) => api.delete(`/api/pms/tasks/${taskId}/watchers/${userId}`),
+
+  // Custom Fields
+  listCustomFields: (projectId: number) => api.get(`/api/pms/projects/${projectId}/custom-fields`),
+  createCustomField: (projectId: number, data: any) => api.post(`/api/pms/projects/${projectId}/custom-fields`, data),
+  updateCustomField: (id: number, data: any) => api.put(`/api/pms/custom-fields/${id}`, data),
+  deleteCustomField: (id: number) => api.delete(`/api/pms/custom-fields/${id}`),
+  getCustomValues: (taskId: number) => api.get(`/api/pms/tasks/${taskId}/custom-values`),
+  setCustomValues: (taskId: number, data: any) => api.put(`/api/pms/tasks/${taskId}/custom-values`, data),
+
+  // Task Templates
+  listTaskTemplates: () => api.get('/api/pms/task-templates'),
+  createTaskTemplate: (data: any) => api.post('/api/pms/task-templates', data),
+  getTaskTemplate: (id: number) => api.get(`/api/pms/task-templates/${id}`),
+  updateTaskTemplate: (id: number, data: any) => api.put(`/api/pms/task-templates/${id}`, data),
+  deleteTaskTemplate: (id: number) => api.delete(`/api/pms/task-templates/${id}`),
+  addTemplateItem: (templateId: number, data: any) => api.post(`/api/pms/task-templates/${templateId}/items`, data),
+  updateTemplateItem: (id: number, data: any) => api.put(`/api/pms/template-items/${id}`, data),
+  deleteTemplateItem: (id: number) => api.delete(`/api/pms/template-items/${id}`),
+  applyTaskTemplate: (projectId: number, templateId: number) => api.post(`/api/pms/projects/${projectId}/apply-template/${templateId}`),
+
+  // Task Duplication
+  duplicateTask: (id: number) => api.post(`/api/pms/tasks/${id}/duplicate`),
+
+  // Bulk Operations
+  bulkAction: (data: any) => api.post('/api/pms/tasks/bulk-action', data),
+
+  // File Versioning
+  getAttachmentVersions: (id: number) => api.get(`/api/pms/attachments/${id}/versions`),
+
+  // Favorites
+  listFavorites: () => api.get('/api/pms/favorites'),
+  toggleFavorite: (data: any) => api.post('/api/pms/favorites', data),
+  removeFavorite: (id: number) => api.delete(`/api/pms/favorites/${id}`),
+
+  // Export
+  exportProject: (projectId: number, format: string = 'csv') =>
+    api.get(`/api/pms/projects/${projectId}/export`, { params: { format }, responseType: 'blob' }),
+  exportMyTasks: (format: string = 'csv') =>
+    api.get('/api/pms/my-tasks/export', { params: { format }, responseType: 'blob' }),
+
+  // Project Templates
+  listProjectTemplates: () => api.get('/api/pms/project-templates'),
+  createProjectTemplate: (data: any) => api.post('/api/pms/project-templates', data),
+  getProjectTemplate: (id: number) => api.get(`/api/pms/project-templates/${id}`),
+  updateProjectTemplate: (id: number, data: any) => api.put(`/api/pms/project-templates/${id}`, data),
+  deleteProjectTemplate: (id: number) => api.delete(`/api/pms/project-templates/${id}`),
+  addProjectTemplateMilestone: (templateId: number, data: any) => api.post(`/api/pms/project-templates/${templateId}/milestones`, data),
+  addProjectTemplateTask: (templateId: number, data: any) => api.post(`/api/pms/project-templates/${templateId}/tasks`, data),
+  createProjectFromTemplate: (templateId: number, params: any) =>
+    api.post(`/api/pms/projects/from-template/${templateId}`, null, { params }),
+
+  // Automations
+  listAutomations: (projectId: number) => api.get(`/api/pms/projects/${projectId}/automations`),
+  createAutomation: (projectId: number, data: any) => api.post(`/api/pms/projects/${projectId}/automations`, data),
+  updateAutomation: (id: number, data: any) => api.put(`/api/pms/automations/${id}`, data),
+  deleteAutomation: (id: number) => api.delete(`/api/pms/automations/${id}`),
+
+  // Conversation Links
+  listTaskLinks: (taskId: number) => api.get(`/api/pms/tasks/${taskId}/links`),
+  addTaskLink: (taskId: number, data: any) => api.post(`/api/pms/tasks/${taskId}/links`, data),
+  removeTaskLink: (taskId: number, conversationId: number) => api.delete(`/api/pms/tasks/${taskId}/links/${conversationId}`),
+
+  // Milestone Dependencies
+  setMilestoneDependency: (milestoneId: number, dependsOnId: number | null) =>
+    api.put(`/api/pms/milestones/${milestoneId}/dependency`, null, { params: { depends_on_id: dependsOnId } }),
 };
 
 // ─── Roles API ───────────────────────────────────────────────────────────────

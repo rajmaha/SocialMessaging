@@ -87,6 +87,7 @@ class PMSTaskCreate(BaseModel):
     estimated_hours: float = 0
     ticket_id: Optional[int] = None
     crm_deal_id: Optional[int] = None
+    sprint_id: Optional[int] = None
 
 class PMSTaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -98,6 +99,7 @@ class PMSTaskUpdate(BaseModel):
     due_date: Optional[date] = None
     estimated_hours: Optional[float] = None
     position: Optional[int] = None
+    sprint_id: Optional[int] = None
 
 class PMSTaskLabelOut(BaseModel):
     id: int
@@ -247,3 +249,173 @@ class PMSLabelDefOut(BaseModel):
     created_by: Optional[int]
     created_at: datetime
     class Config: from_attributes = True
+
+
+# ── Checklist ────────────────────────────────────────────
+class PMSChecklistCreate(BaseModel):
+    text: str
+
+class PMSChecklistUpdate(BaseModel):
+    text: Optional[str] = None
+    is_checked: Optional[bool] = None
+    position: Optional[int] = None
+
+
+# ── Sprint ───────────────────────────────────────────────
+class PMSSprintCreate(BaseModel):
+    name: str
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    goal: Optional[str] = None
+    status: str = "planning"
+
+class PMSSprintUpdate(BaseModel):
+    name: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    goal: Optional[str] = None
+    status: Optional[str] = None
+
+
+# ── Recurring Task ───────────────────────────────────────
+class PMSRecurringTaskCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    assignee_id: Optional[int] = None
+    priority: str = "medium"
+    milestone_id: Optional[int] = None
+    sprint_id: Optional[int] = None
+    estimated_hours: float = 0
+    recurrence_type: str  # daily, weekly, biweekly, monthly
+    recurrence_day: Optional[int] = None
+    next_run_date: date
+
+class PMSRecurringTaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    assignee_id: Optional[int] = None
+    priority: Optional[str] = None
+    milestone_id: Optional[int] = None
+    sprint_id: Optional[int] = None
+    estimated_hours: Optional[float] = None
+    recurrence_type: Optional[str] = None
+    recurrence_day: Optional[int] = None
+    next_run_date: Optional[date] = None
+    is_active: Optional[bool] = None
+
+
+# ── Watcher ──────────────────────────────────────────────
+class PMSWatcherAdd(BaseModel):
+    user_id: int
+    watch_type: str = "watcher"
+
+
+# ── Custom Fields ────────────────────────────────────────
+class PMSCustomFieldDefCreate(BaseModel):
+    name: str
+    field_type: str  # text, number, date, select, checkbox
+    options: Optional[str] = None
+    required: bool = False
+    position: int = 0
+
+class PMSCustomFieldDefUpdate(BaseModel):
+    name: Optional[str] = None
+    field_type: Optional[str] = None
+    options: Optional[str] = None
+    required: Optional[bool] = None
+    position: Optional[int] = None
+
+class PMSCustomFieldValueSet(BaseModel):
+    field_def_id: int
+    value: Optional[str] = None
+
+
+# ── Task Templates ───────────────────────────────────────
+class PMSTaskTemplateCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class PMSTaskTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class PMSTemplateItemCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    priority: str = "medium"
+    estimated_hours: float = 0
+    parent_index: Optional[int] = None
+    position: int = 0
+
+class PMSTemplateItemUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[str] = None
+    estimated_hours: Optional[float] = None
+    parent_index: Optional[int] = None
+    position: Optional[int] = None
+
+
+# ── Favorites ────────────────────────────────────────────
+class PMSFavoriteToggle(BaseModel):
+    project_id: Optional[int] = None
+    task_id: Optional[int] = None
+
+
+# ── Bulk Operations ──────────────────────────────────────
+class PMSBulkAction(BaseModel):
+    task_ids: List[int]
+    action: str  # assign, move_stage, set_priority, delete, set_milestone, set_sprint
+    params: Optional[dict] = {}
+
+
+# ── Project Templates ────────────────────────────────────
+class PMSProjectTemplateCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class PMSProjectTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class PMSProjectTemplateMilestoneCreate(BaseModel):
+    name: str
+    offset_days: int = 0
+    color: str = "#f59e0b"
+
+class PMSProjectTemplateTaskCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    priority: str = "medium"
+    estimated_hours: float = 0
+    milestone_index: Optional[int] = None
+    position: int = 0
+    parent_index: Optional[int] = None
+
+
+# ── Automations ──────────────────────────────────────────
+class PMSAutomationCreate(BaseModel):
+    name: str
+    trigger_type: str
+    trigger_config: Optional[str] = None
+    action_type: str
+    action_config: Optional[str] = None
+    is_active: bool = True
+
+class PMSAutomationUpdate(BaseModel):
+    name: Optional[str] = None
+    trigger_type: Optional[str] = None
+    trigger_config: Optional[str] = None
+    action_type: Optional[str] = None
+    action_config: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ── Conversation Links ───────────────────────────────────
+class PMSConversationLinkCreate(BaseModel):
+    conversation_id: int
+
+
+# ── Milestone Update (add depends_on_id) ─────────────────
+class PMSMilestoneUpdateV2(PMSMilestoneUpdate):
+    depends_on_id: Optional[int] = None

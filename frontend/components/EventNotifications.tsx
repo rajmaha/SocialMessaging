@@ -41,12 +41,32 @@ export function EventNotifications() {
       addNotification(event)
     })
 
+    // PMS events
+    const unsubPmsAssigned = subscribe('pms_task_assigned', (event) => { addNotification(event) })
+    const unsubPmsTransitioned = subscribe('pms_task_transitioned', (event) => { addNotification(event) })
+    const unsubPmsComment = subscribe('pms_comment_added', (event) => { addNotification(event) })
+    const unsubPmsOverdue = subscribe('pms_task_overdue', (event) => { addNotification(event) })
+    const unsubPmsEscalation = subscribe('pms_escalation', (event) => { addNotification(event) })
+    const unsubPmsUpdated = subscribe('pms_task_updated', (event) => { addNotification(event) })
+
+    // CRM task events
+    const unsubCrmOverdue = subscribe('crm_task_overdue', (event) => { addNotification(event) })
+    const unsubCrmDueSoon = subscribe('crm_task_due_soon', (event) => { addNotification(event) })
+
     return () => {
       unsubscribeSent()
       unsubscribeReceived()
       unsubscribeEmailSent()
       unsubscribeEmailReceived()
       unsubscribeAssigned()
+      unsubPmsAssigned()
+      unsubPmsTransitioned()
+      unsubPmsComment()
+      unsubPmsOverdue()
+      unsubPmsEscalation()
+      unsubPmsUpdated()
+      unsubCrmOverdue()
+      unsubCrmDueSoon()
     }
   }, [subscribe])
 
@@ -128,6 +148,62 @@ export function EventNotifications() {
           borderColor: 'border-orange-400',
           textColor: 'text-orange-800',
           titleColor: 'text-orange-900',
+        }
+      case 'pms_task_assigned':
+        return {
+          title: 'Task Assigned',
+          description: `${d.assigned_by || ''} assigned "${d.task_title || ''}" to you`,
+          icon: '📋', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-200',
+          textColor: 'text-indigo-800', titleColor: 'text-indigo-900',
+        }
+      case 'pms_task_transitioned':
+        return {
+          title: 'Task Stage Changed',
+          description: `"${d.task_title || ''}" moved to ${(d.to_stage || '').replace('_', ' ')}`,
+          icon: '🔀', bgColor: 'bg-purple-50', borderColor: 'border-purple-200',
+          textColor: 'text-purple-800', titleColor: 'text-purple-900',
+        }
+      case 'pms_comment_added':
+        return {
+          title: 'New Comment',
+          description: `${d.comment_by || ''} commented on "${d.task_title || ''}"`,
+          icon: '💬', bgColor: 'bg-cyan-50', borderColor: 'border-cyan-200',
+          textColor: 'text-cyan-800', titleColor: 'text-cyan-900',
+        }
+      case 'pms_task_overdue':
+        return {
+          title: 'Task Overdue',
+          description: `"${d.task_title || ''}" is past due`,
+          icon: '⏰', bgColor: 'bg-red-50', borderColor: 'border-red-200',
+          textColor: 'text-red-800', titleColor: 'text-red-900',
+        }
+      case 'pms_escalation':
+        return {
+          title: 'Escalation',
+          description: d.message || `Task "${d.task_title || ''}" escalated`,
+          icon: '🚨', bgColor: 'bg-orange-50', borderColor: 'border-orange-300',
+          textColor: 'text-orange-800', titleColor: 'text-orange-900',
+        }
+      case 'pms_task_updated':
+        return {
+          title: 'Task Updated',
+          description: `"${d.task_title || ''}" was updated`,
+          icon: '✏️', bgColor: 'bg-gray-50', borderColor: 'border-gray-200',
+          textColor: 'text-gray-800', titleColor: 'text-gray-900',
+        }
+      case 'crm_task_overdue':
+        return {
+          title: 'CRM Task Overdue',
+          description: `"${d.task_title || ''}" is past due`,
+          icon: '⏰', bgColor: 'bg-red-50', borderColor: 'border-red-300',
+          textColor: 'text-red-800', titleColor: 'text-red-900',
+        }
+      case 'crm_task_due_soon':
+        return {
+          title: 'CRM Task Due Soon',
+          description: `"${d.task_title || ''}" is due within 1 hour`,
+          icon: '⏳', bgColor: 'bg-amber-50', borderColor: 'border-amber-300',
+          textColor: 'text-amber-800', titleColor: 'text-amber-900',
         }
       default:
         return {

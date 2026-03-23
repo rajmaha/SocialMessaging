@@ -4,6 +4,7 @@ import axios from "axios";
 import { useRouter } from "next/navigation";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import { useCurrencySymbol } from "@/lib/branding-context";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 
@@ -35,6 +36,7 @@ const ACTIVITY_ICONS: Record<string, string> = {
 };
 
 export default function TeamFeedPage() {
+  const cs = useCurrencySymbol();
   const [data, setData] = useState<TeamFeedData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +105,7 @@ export default function TeamFeedPage() {
             <div className="text-xs mt-1 opacity-70">Total Open Leads</div>
           </div>
           <div className="p-4 rounded-xl border bg-green-50 text-green-700 border-green-100">
-            <div className="text-2xl font-bold">${stats.total_pipeline_value.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{cs}{stats.total_pipeline_value.toLocaleString()}</div>
             <div className="text-xs mt-1 opacity-70">Pipeline Value</div>
           </div>
           <div className="p-4 rounded-xl border bg-purple-50 text-purple-700 border-purple-100">

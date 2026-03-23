@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import { useCurrencySymbol } from "@/lib/branding-context";
 import ClickablePhone from '@/components/ClickablePhone';
 import ClickableEmail from '@/components/ClickableEmail';
 
@@ -13,6 +14,12 @@ const STATUS_COLORS: Record<string, string> = {
   qualified: "bg-green-100 text-green-800",
   lost: "bg-red-100 text-red-800",
   converted: "bg-purple-100 text-purple-800",
+};
+
+const QUAL_COLORS: Record<string, string> = {
+  cold: "bg-blue-100 text-blue-700",
+  warm: "bg-orange-100 text-orange-700",
+  hot: "bg-red-100 text-red-700",
 };
 
 const TASK_STATUS_COLORS: Record<string, string> = {
@@ -30,6 +37,7 @@ interface LeadDetailPanelProps {
 
 export default function LeadDetailPanel({ leadId, onClose, onDeleted }: LeadDetailPanelProps) {
   const token = getAuthToken();
+  const cs = useCurrencySymbol();
   const [lead, setLead] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +48,9 @@ export default function LeadDetailPanel({ leadId, onClose, onDeleted }: LeadDeta
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [mergeLoading, setMergeLoading] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"details" | "deals" | "tasks" | "activity">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "deals" | "tasks" | "activity" | "history">("details");
+  const [duplicates, setDuplicates] = useState<any[]>([]);
+  const [auditLog, setAuditLog] = useState<any[]>([]);
 
   const fetchLead = async () => {
     setLoading(true);
@@ -57,8 +67,27 @@ export default function LeadDetailPanel({ leadId, onClose, onDeleted }: LeadDeta
     }
   };
 
+  const fetchDuplicates = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/crm/leads/duplicates/${leadId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDuplicates(res.data || []);
+    } catch { setDuplicates([]); }
+  };
+
+  const fetchAuditLog = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/crm/audit-log/lead/${leadId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAuditLog(res.data || []);
+    } catch { setAuditLog([]); }
+  };
+
   useEffect(() => {
     fetchLead();
+    fetchDuplicates();
     setActiveTab("details");
   }, [leadId]);
 
@@ -157,6 +186,7 @@ export default function LeadDetailPanel({ leadId, onClose, onDeleted }: LeadDeta
     { key: "deals" as const, label: `Deals (${lead.deals?.length || 0})` },
     { key: "tasks" as const, label: `Tasks (${lead.tasks?.length || 0})` },
     { key: "activity" as const, label: `Activity (${lead.activities?.length || 0})` },
+    { key: "history" as const, label: "History" },
   ];
 
   return (
@@ -226,8 +256,13 @@ export default function LeadDetailPanel({ leadId, onClose, onDeleted }: LeadDeta
                 ))}
               </select>
               <span className="text-xs text-gray-500">Score: {lead.score}</span>
+              {lead.qualification && (
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${QUAL_COLORS[lead.qualification] || "bg-gray-100 text-gray-600"}`}>
+                  {lead.qualification}
+                </span>
+              )}
               {lead.estimated_value && (
-                <span className="text-xs text-gray-500">${lead.estimated_value.toLocaleString()}</span>
+                <span className="text-xs text-gray-500">{cs}{lead.estimated_value.toLocaleString()}</span>
               )}
             </div>
           </div>
@@ -238,7 +273,7 @@ export default function LeadDetailPanel({ leadId, onClose, onDeleted }: LeadDeta
           {tabs.map(tab => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => { setActiveTab(tab.key); if (tab.key === "history") fetchAuditLog(); }}
               className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${
                 activeTab === tab.key
                   ? "border-blue-600 text-blue-600 bg-blue-50/50"
@@ -282,6 +317,30 @@ export default function LeadDetailPanel({ leadId, onClose, onDeleted }: LeadDeta
                 </div>
               </div>
             )}
+
+            {/* Possible Duplicates */}
+            {duplicates.length > 0 && (
+              <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <h3 className="text-sm font-semibold text-yellow-800 mb-2">Possible Duplicates ({duplicates.length})</h3>
+                <div className="space-y-2">
+                  {duplicates.map((dup: any) => (
+                    <div key={dup.id} className="flex justify-between items-center text-sm bg-white rounded px-3 py-2 border border-yellow-100">
+                      <div>
+                        <span className="font-medium text-gray-900">{dup.first_name} {dup.last_name || ""}</span>
+                        <span className="text-gray-500 ml-2">{dup.email || dup.phone || ""}</span>
+                        <span className="text-xs text-yellow-600 ml-2">({(dup.match_reasons || []).join(", ")})</span>
+                      </div>
+                      <button
+                        onClick={() => { setMergeTargetId(String(dup.id)); setShowMergeModal(true); }}
+                        className="text-xs text-orange-600 hover:underline"
+                      >
+                        Merge
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -293,7 +352,7 @@ export default function LeadDetailPanel({ leadId, onClose, onDeleted }: LeadDeta
                   <div>
                     <p className="font-medium text-sm text-gray-900">{d.name}</p>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      {d.stage} &middot; ${(d.amount || 0).toLocaleString()}
+                      {d.stage} &middot; {cs}{(d.amount || 0).toLocaleString()}
                       {d.probability != null && ` &middot; ${d.probability}%`}
                     </p>
                   </div>
@@ -362,6 +421,33 @@ export default function LeadDetailPanel({ leadId, onClose, onDeleted }: LeadDeta
               ))
             ) : (
               <div className="text-center py-8 text-gray-400 text-sm">No activities yet.</div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "history" && (
+          <div className="space-y-3">
+            {auditLog.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 text-sm">No change history yet.</div>
+            ) : (
+              auditLog.map((log: any) => (
+                <div key={log.id} className="border-b border-gray-100 pb-3 last:border-0">
+                  <div className="flex justify-between items-start gap-2">
+                    <div>
+                      <span className="text-sm font-medium text-gray-800">{log.field_name}</span>
+                      <span className="text-xs text-gray-500 ml-2">
+                        {log.old_value || "—"} → {log.new_value || "—"}
+                      </span>
+                    </div>
+                    <span className="text-xs text-gray-400 shrink-0">
+                      {new Date(log.changed_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    by {log.changed_by_name || `User #${log.changed_by}`}
+                  </p>
+                </div>
+              ))
             )}
           </div>
         )}

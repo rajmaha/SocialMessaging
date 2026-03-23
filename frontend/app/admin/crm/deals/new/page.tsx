@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import { useBranding } from "@/lib/branding-context";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 
@@ -21,6 +22,7 @@ function NewDealPageContent() {
   const router = useRouter();
   const params = useSearchParams();
   const token = getAuthToken();
+  const { branding } = useBranding();
 
   const [form, setForm] = useState<any>({
     lead_id: params?.get("lead_id") || "",
@@ -30,6 +32,7 @@ function NewDealPageContent() {
     amount: "",
     probability: 50,
     expected_close_date: "",
+    currency: branding?.currency || "USD",
   });
   const [leads, setLeads] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +56,7 @@ function NewDealPageContent() {
     try {
       await axios.post(
         `${API_URL}/crm/deals`,
-        { ...form, amount: form.amount ? parseFloat(form.amount) : undefined, probability: parseInt(form.probability) },
+        { ...form, amount: form.amount ? parseFloat(form.amount) : undefined, probability: parseInt(form.probability), currency: form.currency },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       router.push("/admin/crm/deals");
@@ -108,8 +111,15 @@ function NewDealPageContent() {
                   </select>
                 </div>
                 <div>
-                  <label className={labelClass}>Amount ($)</label>
-                  <input name="amount" type="number" min={0} value={form.amount} onChange={handleChange} className={inputClass} placeholder="0" />
+                  <label className={labelClass}>Amount</label>
+                  <div className="flex gap-2">
+                    <select name="currency" value={form.currency} onChange={handleChange} className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white w-24">
+                      {["USD", "EUR", "GBP", "AED", "SAR", "INR", "AUD", "CAD"].map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <input name="amount" type="number" min={0} value={form.amount} onChange={handleChange} className={inputClass + " flex-1"} placeholder="0" />
+                  </div>
                 </div>
               </div>
 

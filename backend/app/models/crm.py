@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean, Enum, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean, Enum, JSON, Index
 from sqlalchemy.orm import relationship
 from app.database import Base
 from datetime import datetime
@@ -83,6 +83,7 @@ class Lead(Base):
     
     # Lead scoring
     score = Column(Integer, default=0)
+    qualification = Column(String, default="cold")  # cold / warm / hot
     
     # Lead value
     estimated_value = Column(Float)
@@ -127,6 +128,7 @@ class Deal(Base):
     stage = Column(Enum(DealStage, values_callable=lambda x: [e.value for e in x], native_enum=True), default=DealStage.PROSPECT)
     amount = Column(Float)
     probability = Column(Integer, default=50)  # 0-100%
+    currency = Column(String(3), default="USD")
     
     # Timeline
     expected_close_date = Column(DateTime)
@@ -207,3 +209,37 @@ class LeadNote(Base):
 
     lead = relationship("Lead", back_populates="notes")
     user = relationship("User", foreign_keys=[created_by])
+
+
+class CRMAuditLog(Base):
+    __tablename__ = "crm_audit_log"
+
+    id = Column(Integer, primary_key=True)
+    entity_type = Column(String, nullable=False)  # lead, deal, task
+    entity_id = Column(Integer, nullable=False)
+    field_name = Column(String, nullable=False)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    changed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changed_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[changed_by])
+
+    __table_args__ = (
+        Index("idx_crm_audit_entity", "entity_type", "entity_id"),
+    )
+
+
+class CRMWorkflowRule(Base):
+    __tablename__ = "crm_workflow_rules"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    trigger_type = Column(String, nullable=False)  # deal_stage_change, lead_status_change, task_overdue
+    conditions = Column(JSON, default={})
+    action_type = Column(String, nullable=False)  # create_task, change_status, send_notification
+    action_config = Column(JSON, default={})
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

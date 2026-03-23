@@ -4,6 +4,7 @@ import axios from "axios";
 import { useRouter } from "next/navigation";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import { useCurrencySymbol } from "@/lib/branding-context";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 
@@ -72,9 +73,15 @@ const STAGE_COLORS: Record<string, string> = {
 };
 
 export default function MyDayPage() {
+  const cs = useCurrencySymbol();
   const [data, setData] = useState<MyDayData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [kpis, setKpis] = useState<{
+    conversionRate?: { leads_total: number; leads_converted: number; rate_pct: number };
+    pipelineVelocity?: { avg_days: number; count: number };
+    tasksSummary?: { due_today: number; overdue: number; completed_today: number; open_total: number };
+  }>({});
   const router = useRouter();
 
   const user = authAPI.getUser();
@@ -82,7 +89,20 @@ export default function MyDayPage() {
 
   useEffect(() => {
     fetchMyDay();
+    fetchKpis();
   }, []);
+
+  const fetchKpis = async () => {
+    const headers = { Authorization: `Bearer ${token}` };
+    try {
+      const [cr, pv, ts] = await Promise.all([
+        axios.get(`${API_URL}/crm/reports/conversion-rate?days=30`, { headers }),
+        axios.get(`${API_URL}/crm/reports/pipeline-velocity?days=30`, { headers }),
+        axios.get(`${API_URL}/crm/reports/tasks-summary`, { headers }),
+      ]);
+      setKpis({ conversionRate: cr.data, pipelineVelocity: pv.data, tasksSummary: ts.data });
+    } catch { /* KPIs are optional */ }
+  };
 
   const fetchMyDay = async () => {
     setLoading(true);
@@ -136,9 +156,43 @@ export default function MyDayPage() {
         {/* Stat Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <StatCard label="Open Leads" value={stats.open_leads_count} color="blue" />
-          <StatCard label="Pipeline Value" value={`$${stats.pipeline_value.toLocaleString()}`} color="green" />
+          <StatCard label="Pipeline Value" value={`${cs}${stats.pipeline_value.toLocaleString()}`} color="green" />
           <StatCard label="Tasks Done Today" value={stats.tasks_completed_today} color="purple" />
           <StatCard label="Active Conversations" value={stats.conversations_active} color="orange" />
+        </div>
+
+        {/* KPI Widgets */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          {kpis.conversionRate && (
+            <div className="bg-white rounded-lg shadow p-4 border-l-4 border-emerald-500">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Conversion Rate</p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">{kpis.conversionRate.rate_pct}%</p>
+              <p className="text-xs text-gray-400">{kpis.conversionRate.leads_converted}/{kpis.conversionRate.leads_total} leads (30d)</p>
+            </div>
+          )}
+          {kpis.pipelineVelocity && (
+            <div className="bg-white rounded-lg shadow p-4 border-l-4 border-indigo-500">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Pipeline Velocity</p>
+              <p className="text-2xl font-bold text-indigo-700 mt-1">{kpis.pipelineVelocity.avg_days}d</p>
+              <p className="text-xs text-gray-400">avg days to close ({kpis.pipelineVelocity.count} deals)</p>
+            </div>
+          )}
+          {kpis.tasksSummary && (
+            <div className="bg-white rounded-lg shadow p-4 border-l-4 border-amber-500">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Tasks Due Today</p>
+              <p className="text-2xl font-bold text-amber-700 mt-1">{kpis.tasksSummary.due_today}</p>
+              {kpis.tasksSummary.overdue > 0 && (
+                <p className="text-xs text-red-500 font-medium">{kpis.tasksSummary.overdue} overdue</p>
+              )}
+            </div>
+          )}
+          {kpis.tasksSummary && (
+            <div className="bg-white rounded-lg shadow p-4 border-l-4 border-cyan-500">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Open Tasks</p>
+              <p className="text-2xl font-bold text-cyan-700 mt-1">{kpis.tasksSummary.open_total}</p>
+              <p className="text-xs text-gray-400">{kpis.tasksSummary.completed_today} done today</p>
+            </div>
+          )}
         </div>
 
         {/* Two-column layout */}
@@ -225,7 +279,7 @@ export default function MyDayPage() {
                       <span className={`text-xs px-1.5 py-0.5 rounded ${STAGE_COLORS[deal.stage] || "bg-gray-100"}`}>
                         {deal.stage}
                       </span>
-                      {deal.amount && <span className="text-xs text-gray-500">${deal.amount.toLocaleString()}</span>}
+                      {deal.amount && <span className="text-xs text-gray-500">{cs}{deal.amount.toLocaleString()}</span>}
                       {deal.expected_close_date && (
                         <span className="text-xs text-gray-400">
                           Closes: {new Date(deal.expected_close_date).toLocaleDateString()}

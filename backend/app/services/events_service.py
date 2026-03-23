@@ -129,7 +129,22 @@ class EventTypes:
     REMINDER_DUE = "reminder_due"
     # CRM events
     CRM_LEAD_ASSIGNED = "crm_lead_assigned"
+    CRM_LEAD_CREATED = "crm_lead_created"
+    CRM_LEAD_UPDATED = "crm_lead_updated"
+    CRM_LEAD_DELETED = "crm_lead_deleted"
+    CRM_DEAL_CREATED = "crm_deal_created"
+    CRM_DEAL_UPDATED = "crm_deal_updated"
+    CRM_DEAL_DELETED = "crm_deal_deleted"
     CRM_DEAL_STAGE_CHANGED = "crm_deal_stage_changed"
+    CRM_TASK_UPDATED = "crm_task_updated"
     CRM_TASK_OVERDUE = "crm_task_overdue"
+    CRM_TASK_DUE_SOON = "crm_task_due_soon"
     # Visitors events
     VISITOR_CHECKIN = "visitor_checkin"
+    # PMS events
+    PMS_TASK_ASSIGNED = "pms_task_assigned"
+    PMS_TASK_TRANSITIONED = "pms_task_transitioned"
+    PMS_COMMENT_ADDED = "pms_comment_added"
+    PMS_TASK_OVERDUE = "pms_task_overdue"
+    PMS_ESCALATION = "pms_escalation"
+    PMS_TASK_UPDATED = "pms_task_updated"

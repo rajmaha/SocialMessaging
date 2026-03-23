@@ -61,6 +61,25 @@ export default function NewLeadPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<any[]>([]);
+  const dupTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const checkDuplicates = (email?: string, phone?: string, name?: string) => {
+    if (dupTimerRef.current) clearTimeout(dupTimerRef.current);
+    dupTimerRef.current = setTimeout(async () => {
+      const params = new URLSearchParams();
+      if (email) params.set("email", email);
+      if (phone) params.set("phone", phone);
+      if (name) params.set("name", name);
+      if (!params.toString()) { setDuplicateWarning([]); return; }
+      try {
+        const res = await axios.get(`${API_URL}/crm/leads/check-duplicate?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setDuplicateWarning(res.data || []);
+      } catch { setDuplicateWarning([]); }
+    }, 500);
+  };
 
   useEffect(() => {
     api.get('/crm/organizations?limit=200').then(r => setOrgs(r.data))
@@ -104,7 +123,11 @@ export default function NewLeadPage() {
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const updated = { ...form, [e.target.name]: e.target.value };
+    setForm(updated);
+    if (["email", "phone", "first_name"].includes(e.target.name)) {
+      checkDuplicates(updated.email, updated.phone, updated.first_name);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -145,6 +168,20 @@ export default function NewLeadPage() {
           <div className="bg-white rounded-lg shadow p-6">
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
+            )}
+            {duplicateWarning.length > 0 && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+                <p className="font-medium text-yellow-800">Possible duplicates found ({duplicateWarning.length}):</p>
+                <ul className="mt-1 space-y-1">
+                  {duplicateWarning.map((d: any) => (
+                    <li key={d.id} className="text-yellow-700">
+                      <a href={`/admin/crm/leads/${d.id}`} className="hover:underline" target="_blank">
+                        {d.first_name} {d.last_name || ""} {d.email ? `(${d.email})` : ""} {d.company ? `- ${d.company}` : ""}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

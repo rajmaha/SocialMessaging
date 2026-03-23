@@ -26,6 +26,9 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
   const [filter, setFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkAction, setBulkAction] = useState('');
+  const [dragTaskId, setDragTaskId] = useState<number | null>(null);
 
   /* ── FilterBar state ───────────────────────────────────────────── */
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -131,6 +134,11 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide sticky top-0">
             <tr>
+              <th className="px-2 py-2 w-8">
+                <input type="checkbox" className="rounded border-gray-300"
+                  checked={selectedIds.size > 0 && selectedIds.size === sorted.length}
+                  onChange={e => setSelectedIds(e.target.checked ? new Set(sorted.map((t: any) => t.id)) : new Set())} />
+              </th>
               <th className="text-left px-4 py-2 font-semibold">Task</th>
               <th className="text-left px-4 py-2 font-semibold cursor-pointer hover:text-indigo-600 select-none" onClick={() => toggleSort('stage')}>
                 Stage
@@ -153,7 +161,32 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
               const isOverdue = t.due_date && new Date(t.due_date) < new Date() && t.stage !== 'completed';
               const isDueSoon = !isOverdue && t.due_date && ((new Date(t.due_date).getTime() - new Date().getTime()) / 86400000) <= 2 && t.stage !== 'completed';
               return (
-              <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+              <tr key={t.id}
+                draggable
+                onDragStart={() => setDragTaskId(t.id)}
+                onDragOver={e => e.preventDefault()}
+                onDrop={async () => {
+                  if (dragTaskId && dragTaskId !== t.id) {
+                    const dragIdx = sorted.findIndex((x: any) => x.id === dragTaskId);
+                    const dropIdx = sorted.findIndex((x: any) => x.id === t.id);
+                    if (dragIdx >= 0 && dropIdx >= 0) {
+                      await pmsApi.updateTask(dragTaskId, { position: dropIdx });
+                      onReload();
+                    }
+                  }
+                  setDragTaskId(null);
+                }}
+                onDragEnd={() => setDragTaskId(null)}
+                className={`hover:bg-gray-50 transition-colors cursor-grab active:cursor-grabbing ${selectedIds.has(t.id) ? 'bg-indigo-50' : ''} ${dragTaskId === t.id ? 'opacity-40' : ''}`}>
+                <td className="px-2 py-2.5 w-8">
+                  <input type="checkbox" className="rounded border-gray-300"
+                    checked={selectedIds.has(t.id)}
+                    onChange={e => {
+                      const next = new Set(selectedIds);
+                      e.target.checked ? next.add(t.id) : next.delete(t.id);
+                      setSelectedIds(next);
+                    }} />
+                </td>
                 <td className="px-4 py-2.5 font-medium text-gray-800">
                   <div>{t.title}
                   {t.subtask_count > 0 && <span className="ml-1 text-xs text-gray-400 font-normal">+{t.subtask_count} sub</span>}</div>
@@ -189,6 +222,39 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
           </tbody>
         </table>
       </div>
+
+      {/* Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-indigo-600 text-white rounded-xl shadow-xl px-5 py-3 flex items-center gap-3 z-40">
+          <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          <select value={bulkAction} onChange={e => setBulkAction(e.target.value)}
+            className="text-sm bg-indigo-700 text-white rounded px-2 py-1 border border-indigo-500">
+            <option value="">Choose action...</option>
+            <option value="assign">Assign</option>
+            <option value="move_stage">Move Stage</option>
+            <option value="set_priority">Set Priority</option>
+            <option value="set_milestone">Set Milestone</option>
+            <option value="delete">Delete</option>
+          </select>
+          <button onClick={async () => {
+            if (!bulkAction) return;
+            let params: any = {};
+            if (bulkAction === 'assign') { const id = prompt('Assignee user ID:'); if (!id) return; params = { assignee_id: Number(id) }; }
+            else if (bulkAction === 'move_stage') { const s = prompt('Stage (development/qa/pm_review/client_review/approved/completed):'); if (!s) return; params = { to_stage: s }; }
+            else if (bulkAction === 'set_priority') { const p = prompt('Priority (low/medium/high/urgent):'); if (!p) return; params = { priority: p }; }
+            else if (bulkAction === 'set_milestone') { const m = prompt('Milestone ID:'); if (!m) return; params = { milestone_id: Number(m) }; }
+            else if (bulkAction === 'delete') { if (!confirm('Delete selected tasks?')) return; }
+            await pmsApi.bulkAction({ task_ids: Array.from(selectedIds), action: bulkAction, params });
+            setSelectedIds(new Set());
+            setBulkAction('');
+            onReload();
+          }} disabled={!bulkAction}
+            className="text-sm bg-white text-indigo-700 px-3 py-1 rounded font-medium disabled:opacity-50">
+            Apply
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="text-sm text-indigo-200 hover:text-white">Cancel</button>
+        </div>
+      )}
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

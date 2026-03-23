@@ -31,6 +31,7 @@ class BrandingUpdate(BaseModel):
     privacy_url: Optional[str] = None
     terms_url: Optional[str] = None
     timezone: Optional[str] = None
+    currency: Optional[str] = None
     admin_email: Optional[str] = None
     contact_phone: Optional[str] = None
     allowed_file_types: Optional[List[str]] = None
@@ -84,6 +85,7 @@ def get_branding_public(db: Session = Depends(get_db)):
             "privacy_url": branding_obj.privacy_url,
             "terms_url": branding_obj.terms_url,
             "timezone": branding_obj.timezone,
+            "currency": branding_obj.currency or "USD",
             "admin_email": branding_obj.admin_email,
             "allowed_file_types": branding_obj.allowed_file_types,
             "max_file_size_mb": branding_obj.max_file_size_mb or 10,
@@ -127,6 +129,7 @@ def get_branding_admin(
             "privacy_url": branding.privacy_url,
             "terms_url": branding.terms_url,
             "timezone": branding.timezone,
+            "currency": branding.currency or "USD",
             "admin_email": branding.admin_email,
             "allowed_file_types": branding.allowed_file_types,
             "max_file_size_mb": branding.max_file_size_mb or 10,

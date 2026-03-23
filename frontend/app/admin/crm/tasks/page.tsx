@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import { useEvents } from "@/lib/events-context";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 
@@ -39,12 +40,19 @@ function isOverdue(dateStr?: string, status?: string) {
 
 export default function TasksPage() {
   const user = authAPI.getUser();
+  const { subscribe } = useEvents();
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("open");
   const token = getAuthToken();
 
   useEffect(() => { fetchTasks(); }, [filter]);
+
+  // Real-time task updates
+  useEffect(() => {
+    const unsub = subscribe("crm_task_updated", () => fetchTasks());
+    return () => { unsub(); };
+  }, [subscribe]);
 
   const fetchTasks = async () => {
     setLoading(true);

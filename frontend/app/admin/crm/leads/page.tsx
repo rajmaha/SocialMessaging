@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import { useEvents } from "@/lib/events-context";
+import { useCurrencySymbol } from "@/lib/branding-context";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 import LeadDetailPanel from "@/components/LeadDetailPanel";
@@ -19,11 +21,18 @@ interface Lead {
   status: string;
   source: string;
   score: number;
+  qualification?: string;
   estimated_value?: number;
   created_at: string;
   updated_at: string;
   tags?: { id: number; name: string; color?: string }[];
 }
+
+const QUAL_COLORS: Record<string, string> = {
+  cold: "bg-blue-100 text-blue-700",
+  warm: "bg-orange-100 text-orange-700",
+  hot: "bg-red-100 text-red-700",
+};
 
 interface Tag {
   id: number;
@@ -83,6 +92,8 @@ const FILTERS = ["all", "new", "contacted", "qualified", "lost", "converted"];
 
 export default function LeadListPage() {
   const user = authAPI.getUser();
+  const { subscribe } = useEvents();
+  const cs = useCurrencySymbol();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -93,6 +104,10 @@ export default function LeadListPage() {
   const [bulkAction, setBulkAction] = useState("");
   const [bulkLoading, setBulkLoading] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importResult, setImportResult] = useState<{ imported: number; errors: any[]; total_rows: number } | null>(null);
+  const [importing, setImporting] = useState(false);
   const token = getAuthToken();
 
   useEffect(() => {
@@ -100,6 +115,14 @@ export default function LeadListPage() {
   }, []);
 
   useEffect(() => { fetchLeads(); }, [filter, search, tagFilter]);
+
+  // Real-time events
+  useEffect(() => {
+    const unsub1 = subscribe("crm_lead_created", () => fetchLeads());
+    const unsub2 = subscribe("crm_lead_updated", () => fetchLeads());
+    const unsub3 = subscribe("crm_lead_deleted", () => fetchLeads());
+    return () => { unsub1(); unsub2(); unsub3(); };
+  }, [subscribe]);
 
   const fetchTags = async () => {
     try {
@@ -199,6 +222,25 @@ export default function LeadListPage() {
     }
   };
 
+  const handleImport = async () => {
+    if (!importFile) return;
+    setImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", importFile);
+      const res = await axios.post(`${API_URL}/crm/leads/import`, formData, {
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
+      });
+      setImportResult(res.data);
+      fetchLeads();
+      fetchTags();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="ml-0 md:ml-60 pt-14 min-h-screen bg-gray-50 pb-16 md:pb-0">
       <MainHeader user={user!} />
@@ -213,12 +255,20 @@ export default function LeadListPage() {
                 <h1 className="text-2xl font-semibold text-gray-900">Leads</h1>
                 <p className="text-sm text-gray-500 mt-0.5">{leads.length} total</p>
               </div>
-              <a
-                href="/admin/crm/leads/new"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-              >
-                + New Lead
-              </a>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setShowImport(true); setImportResult(null); setImportFile(null); }}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium border border-gray-300"
+                >
+                  Import CSV
+                </button>
+                <a
+                  href="/admin/crm/leads/new"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                >
+                  + New Lead
+                </a>
+              </div>
             </div>
 
             <div className="flex gap-3 mb-4">
@@ -395,9 +445,18 @@ export default function LeadListPage() {
                               : <span className="text-gray-300">\u2014</span>}
                           </div>
                         </td>
-                        <td className="px-4 py-3 font-medium text-gray-700">{lead.score}</td>
+                        <td className="px-4 py-3 font-medium text-gray-700">
+                          <div className="flex items-center gap-1.5">
+                            {lead.score}
+                            {lead.qualification && (
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${QUAL_COLORS[lead.qualification] || "bg-gray-100 text-gray-600"}`}>
+                                {lead.qualification}
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-gray-700">
-                          {lead.estimated_value ? `$${lead.estimated_value.toLocaleString()}` : "\u2014"}
+                          {lead.estimated_value ? `${cs}${lead.estimated_value.toLocaleString()}` : "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-gray-500">
                           {SOURCE_ICONS[lead.source] || "\uD83D\uDCCC"} {SOURCE_LABELS[lead.source] || lead.source}
@@ -439,6 +498,49 @@ export default function LeadListPage() {
           </div>
         )}
       </div>
+
+      {/* CSV Import Modal */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Import Leads from CSV</h2>
+              <button onClick={() => setShowImport(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              CSV should have headers: <code className="bg-gray-100 px-1 rounded text-xs">first_name, last_name, email, phone, company, position, source, status, tags</code>
+            </p>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={(e) => { setImportFile(e.target.files?.[0] || null); setImportResult(null); }}
+              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 mb-4"
+            />
+            {importResult && (
+              <div className={`mb-4 p-3 rounded-lg text-sm ${importResult.errors.length > 0 ? "bg-yellow-50 border border-yellow-200" : "bg-green-50 border border-green-200"}`}>
+                <p className="font-medium">{importResult.imported} of {importResult.total_rows} leads imported successfully.</p>
+                {importResult.errors.length > 0 && (
+                  <div className="mt-2 max-h-32 overflow-y-auto text-xs text-red-600">
+                    {importResult.errors.map((e, i) => (
+                      <p key={i}>Row {e.row}: {e.error}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowImport(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button
+                onClick={handleImport}
+                disabled={!importFile || importing}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50"
+              >
+                {importing ? "Importing..." : "Import"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

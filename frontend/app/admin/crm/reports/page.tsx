@@ -3,11 +3,13 @@ import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { authAPI } from '@/lib/auth'
 import { API_URL } from '@/lib/config'
+import { useCurrencySymbol } from '@/lib/branding-context'
 import MainHeader from '@/components/MainHeader'
 import AdminNav from '@/components/AdminNav'
 
 export default function ReportsPage() {
   const user = authAPI.getUser()
+  const cs = useCurrencySymbol()
   const [tab, setTab] = useState<'agents' | 'aging' | 'revenue' | 'export'>('agents')
   const [agentData, setAgentData] = useState<any[]>([])
   const [agingData, setAgingData] = useState<any[]>([])
@@ -92,8 +94,8 @@ export default function ReportsPage() {
                       {a.win_rate}%
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right font-semibold">${a.total_revenue.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right text-gray-600">${a.avg_deal_value.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-semibold">{cs}{a.total_revenue.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right text-gray-600">{cs}{a.avg_deal_value.toLocaleString()}</td>
                 </tr>
               ))}
               {agentData.length === 0 && (
@@ -156,8 +158,8 @@ export default function ReportsPage() {
           <div className="mt-2 grid gap-2 text-xs text-center text-gray-500" style={{ gridTemplateColumns: `repeat(${revenueData.length}, 1fr)` }}>
             {revenueData.map(r => (
               <div key={r.month}>
-                <p className="text-green-600">${(r.actual / 1000).toFixed(1)}k</p>
-                <p className="text-indigo-400">${(r.forecasted / 1000).toFixed(1)}k</p>
+                <p className="text-green-600">{cs}{(r.actual / 1000).toFixed(1)}k</p>
+                <p className="text-indigo-400">{cs}{(r.forecasted / 1000).toFixed(1)}k</p>
               </div>
             ))}
           </div>

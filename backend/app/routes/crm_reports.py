@@ -132,3 +132,87 @@ def export_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+# ========== PHASE 5: KPI ENDPOINTS ==========
+
+@router.get("/conversion-rate")
+def conversion_rate(
+    days: int = Query(30),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    since = datetime.utcnow() - timedelta(days=days)
+    total = db.query(func.count(Lead.id)).filter(Lead.created_at >= since).scalar() or 0
+    converted = db.query(func.count(Lead.id)).filter(
+        Lead.created_at >= since, Lead.status == "converted"
+    ).scalar() or 0
+    return {
+        "leads_total": total,
+        "leads_converted": converted,
+        "rate_pct": round(converted / total * 100, 1) if total else 0,
+    }
+
+
+@router.get("/pipeline-velocity")
+def pipeline_velocity(
+    days: int = Query(30),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.crm import Deal as D
+    since = datetime.utcnow() - timedelta(days=days)
+    closed_deals = db.query(D).filter(D.closed_at >= since, D.closed_at.isnot(None)).all()
+    if not closed_deals:
+        return {"avg_days": 0, "count": 0}
+    durations = [(d.closed_at - d.created_at).days for d in closed_deals]
+    return {
+        "avg_days": round(sum(durations) / len(durations), 1),
+        "count": len(closed_deals),
+    }
+
+
+@router.get("/revenue-trend")
+def revenue_trend(
+    days: int = Query(90),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.crm import Deal as D
+    since = datetime.utcnow() - timedelta(days=days)
+    won_deals = db.query(D).filter(D.stage == "won", D.closed_at >= since).order_by(D.closed_at).all()
+    weeks = {}
+    for d in won_deals:
+        week_start = d.closed_at - timedelta(days=d.closed_at.weekday())
+        key = week_start.strftime("%Y-%m-%d")
+        if key not in weeks:
+            weeks[key] = {"week_start": key, "revenue": 0, "deal_count": 0}
+        weeks[key]["revenue"] += d.amount or 0
+        weeks[key]["deal_count"] += 1
+    return sorted(weeks.values(), key=lambda x: x["week_start"])
+
+
+@router.get("/tasks-summary")
+def tasks_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+    return {
+        "due_today": db.query(Task).filter(
+            Task.due_date >= today_start, Task.due_date < today_end,
+            Task.status.in_(["open", "in_progress"]),
+        ).count(),
+        "overdue": db.query(Task).filter(
+            Task.due_date < now, Task.due_date.isnot(None),
+            Task.status.in_(["open", "in_progress"]),
+        ).count(),
+        "completed_today": db.query(Task).filter(
+            Task.completed_at >= today_start, Task.status == "completed",
+        ).count(),
+        "open_total": db.query(Task).filter(
+            Task.status.in_(["open", "in_progress"]),
+        ).count(),
+    }

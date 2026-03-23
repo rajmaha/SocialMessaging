@@ -4,6 +4,8 @@ from sqlalchemy import func as sqlfunc
 from typing import List, Optional
 from datetime import date, datetime, timedelta
 import os, shutil
+import csv, io
+from fastapi.responses import StreamingResponse
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_page, require_permission
@@ -12,7 +14,12 @@ from app.models.pms import (
     PMSProject, PMSProjectMember, PMSMilestone, PMSTask,
     PMSTaskDependency, PMSTaskComment, PMSTaskTimeLog,
     PMSTaskAttachment, PMSTaskLabel, PMSWorkflowHistory, PMSAlert,
-    PMSLabelDefinition, PMSAuditLog
+    PMSLabelDefinition, PMSAuditLog,
+    PMSTaskChecklist, PMSSprint, PMSRecurringTask,
+    PMSTaskWatcher, PMSCustomFieldDef, PMSCustomFieldValue,
+    PMSTaskTemplate, PMSTemplateItem, PMSFavorite,
+    PMSProjectTemplate, PMSProjectTemplateMilestone, PMSProjectTemplateTask,
+    PMSAutomation, PMSTaskConversationLink
 )
 from app.schemas.pms import *
 
@@ -78,6 +85,9 @@ def _enrich_task(task: PMSTask, db: Session) -> dict:
     d["labels"] = [{"id": l.id, "name": l.name, "color": l.color} for l in task.labels]
     d["subtask_count"] = db.query(PMSTask).filter_by(parent_task_id=task.id).count()
     d["efficiency"] = _task_efficiency(task)
+    d["watcher_names"] = [w.user.full_name for w in task.watchers if w.user]
+    d["checklist_total"] = db.query(PMSTaskChecklist).filter_by(task_id=task.id).count()
+    d["checklist_done"] = db.query(PMSTaskChecklist).filter_by(task_id=task.id, is_checked=True).count()
     return d
 
 def _fire_alert(db: Session, task: PMSTask, alert_type: str, message: str):
@@ -87,6 +97,10 @@ def _fire_alert(db: Session, task: PMSTask, alert_type: str, message: str):
     pm_members = db.query(PMSProjectMember).filter_by(project_id=task.project_id, role="pm").all()
     for pm in pm_members:
         recipients.add(pm.user_id)
+    # Also notify watchers
+    watchers = db.query(PMSTaskWatcher).filter_by(task_id=task.id).all()
+    for w in watchers:
+        recipients.add(w.user_id)
     for uid in recipients:
         db.add(PMSAlert(task_id=task.id, project_id=task.project_id, type=alert_type, message=message, notified_user_id=uid))
     db.commit()
@@ -137,6 +151,35 @@ def _pm_project_ids(db: Session, user: User) -> list:
 def _require_pm_or_admin(db: Session, user: User):
     if not _is_pm(db, user):
         raise HTTPException(403, "PM or admin role required")
+
+import asyncio
+import threading
+
+def _broadcast_pms_event(event_type: str, data: dict, user_ids: list, db: Session):
+    """Fire-and-forget PMS event broadcast to specified users. Works from both sync and async contexts."""
+    from app.services.events_service import events_service
+    tz = events_service.get_timezone(db)
+    event = events_service.create_event(event_type, data, db, tz)
+
+    async def _send():
+        for uid in user_ids:
+            try:
+                await events_service.broadcast_to_user(uid, event)
+            except Exception:
+                pass
+
+    # Try to schedule on running loop (async context)
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_send())
+        return
+    except RuntimeError:
+        pass
+
+    # Sync context: run in a new thread with its own loop
+    def _run():
+        asyncio.run(_send())
+    threading.Thread(target=_run, daemon=True).start()
 
 # ── Projects ──────────────────────────────────────────────
 
@@ -275,7 +318,7 @@ def create_milestone(project_id: int, data: PMSMilestoneCreate, db: Session = De
     return ms
 
 @router.put("/milestones/{milestone_id}")
-def update_milestone(milestone_id: int, data: PMSMilestoneUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_milestone(milestone_id: int, data: PMSMilestoneUpdateV2, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     ms = db.query(PMSMilestone).filter_by(id=milestone_id).first()
     if not ms:
         raise HTTPException(404)
@@ -353,6 +396,12 @@ def update_task(task_id: int, data: PMSTaskUpdate, db: Session = Depends(get_db)
         _audit_log(db, task.project_id, "assignee_change", current_user.id,
                    {"task_title": task.title, "from": old_assignee_name, "to": new_assignee.full_name if new_assignee else None}, task.id)
         db.commit()
+        _broadcast_pms_event("pms_task_assigned", {"task_id": task.id, "task_title": task.title, "assigned_by": current_user.full_name, "project_name": task.project.name}, [data.assignee_id], db)
+    # Check automations: if this task is completed and has a parent, check all_subtasks_complete on parent
+    if task.stage == "completed" and task.parent_task_id:
+        parent = db.query(PMSTask).filter_by(id=task.parent_task_id).first()
+        if parent:
+            _evaluate_automations(db, parent, "all_subtasks_complete", {})
     return _enrich_task(task, db)
 
 @router.delete("/tasks/{task_id}")
@@ -388,6 +437,17 @@ def transition_task(task_id: int, data: PMSTransitionRequest, db: Session = Depe
     _audit_log(db, task.project_id, "stage_change", current_user.id,
                {"task_title": task.title, "from": wh.from_stage, "to": data.to_stage, "note": data.note}, task.id)
     db.commit()
+    # Broadcast transition event
+    notify_ids = set()
+    if task.assignee_id:
+        notify_ids.add(task.assignee_id)
+    pm_ids = [m.user_id for m in db.query(PMSProjectMember).filter_by(project_id=task.project_id, role="pm").all()]
+    notify_ids.update(pm_ids)
+    watcher_ids = [w.user_id for w in db.query(PMSTaskWatcher).filter_by(task_id=task.id).all()]
+    notify_ids.update(watcher_ids)
+    notify_ids.discard(current_user.id)
+    _broadcast_pms_event("pms_task_transitioned", {"task_id": task.id, "task_title": task.title, "from_stage": old_stage, "to_stage": data.to_stage, "moved_by": current_user.full_name}, list(notify_ids), db)
+    _evaluate_automations(db, task, "stage_change", {"from_stage": old_stage, "to_stage": data.to_stage})
     return {"ok": True, "stage": task.stage}
 
 @router.get("/tasks/{task_id}/history")
@@ -451,6 +511,8 @@ def create_comment(task_id: int, data: PMSCommentCreate, db: Session = Depends(g
     db.add(c)
     db.commit()
     db.refresh(c)
+    if task.assignee_id and task.assignee_id != current_user.id:
+        _broadcast_pms_event("pms_comment_added", {"task_id": task.id, "task_title": task.title, "comment_by": current_user.full_name, "content_preview": data.content[:80]}, [task.assignee_id], db)
     return {"id": c.id, "task_id": c.task_id, "user_id": c.user_id,
             "user_name": current_user.full_name, "content": c.content, "created_at": c.created_at}
 
@@ -525,8 +587,16 @@ async def upload_attachment(task_id: int, file: UploadFile = File(...), db: Sess
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
     size = os.path.getsize(dest)
-    att = PMSTaskAttachment(task_id=task_id, file_path=dest, file_name=file.filename, file_size=size, uploaded_by=current_user.id)
+    # Check for existing file with same name (versioning)
+    existing = db.query(PMSTaskAttachment).filter_by(task_id=task_id, file_name=file.filename, replaced_by=None).first()
+    version = 1
+    if existing:
+        version = (existing.version or 1) + 1
+    att = PMSTaskAttachment(task_id=task_id, file_path=dest, file_name=file.filename, file_size=size, uploaded_by=current_user.id, version=version)
     db.add(att)
+    db.flush()
+    if existing:
+        existing.replaced_by = att.id
     db.commit()
     db.refresh(att)
     return {"id": att.id, "file_name": att.file_name, "file_size": att.file_size}
@@ -1096,6 +1166,12 @@ def get_reports(
         "project_efficiency": project_efficiency,
         "project_comparison": project_comparison,
         "team_velocity": team_velocity,
+        "time_variance": [
+            {"task_id": t.id, "title": t.title, "estimated": t.estimated_hours, "actual": t.actual_hours,
+             "variance_pct": round(((t.actual_hours - t.estimated_hours) / t.estimated_hours) * 100, 1) if t.estimated_hours else 0,
+             "over_budget": t.actual_hours > t.estimated_hours}
+            for t in tasks if t.estimated_hours and t.estimated_hours > 0
+        ],
     }
 
 
@@ -1458,3 +1534,889 @@ def get_audit_trail(
             "action_types": ["stage_change", "assignee_change", "member_added", "member_removed", "milestone_change"],
         },
     }
+
+
+# ── Checklists ───────────────────────────────────────────
+
+@router.get("/tasks/{task_id}/checklists")
+def list_checklists(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    items = db.query(PMSTaskChecklist).filter_by(task_id=task_id).order_by(PMSTaskChecklist.position).all()
+    return [{"id": i.id, "task_id": i.task_id, "text": i.text, "is_checked": i.is_checked, "position": i.position} for i in items]
+
+@router.post("/tasks/{task_id}/checklists")
+def create_checklist_item(task_id: int, data: PMSChecklistCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    pos = db.query(PMSTaskChecklist).filter_by(task_id=task_id).count()
+    item = PMSTaskChecklist(task_id=task_id, text=data.text, position=pos)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return {"id": item.id, "task_id": item.task_id, "text": item.text, "is_checked": item.is_checked, "position": item.position}
+
+@router.put("/checklists/{item_id}")
+def update_checklist_item(item_id: int, data: PMSChecklistUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(PMSTaskChecklist).filter_by(id=item_id).first()
+    if not item:
+        raise HTTPException(404)
+    task = db.query(PMSTask).filter_by(id=item.task_id).first()
+    _require_member(db, task.project_id, current_user)
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(item, k, v)
+    db.commit()
+    db.refresh(item)
+    return {"id": item.id, "task_id": item.task_id, "text": item.text, "is_checked": item.is_checked, "position": item.position}
+
+@router.delete("/checklists/{item_id}")
+def delete_checklist_item(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(PMSTaskChecklist).filter_by(id=item_id).first()
+    if not item:
+        raise HTTPException(404)
+    task = db.query(PMSTask).filter_by(id=item.task_id).first()
+    _require_member(db, task.project_id, current_user)
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
+
+# ── Activity Feed ────────────────────────────────────────
+
+@router.get("/projects/{project_id}/activity")
+def get_project_activity(project_id: int, limit: int = 50, offset: int = 0, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    items = []
+    # Audit logs
+    for log in db.query(PMSAuditLog).filter_by(project_id=project_id).all():
+        items.append({"type": "audit", "action": log.action_type, "actor_name": log.actor.full_name if log.actor else None,
+                       "task_id": log.task_id, "details": _json.loads(log.details) if log.details else {}, "created_at": log.created_at})
+    # Comments
+    task_ids = [t.id for t in db.query(PMSTask.id).filter_by(project_id=project_id).all()]
+    if task_ids:
+        for c in db.query(PMSTaskComment).filter(PMSTaskComment.task_id.in_(task_ids)).all():
+            items.append({"type": "comment", "action": "comment_added", "actor_name": c.user.full_name if c.user else None,
+                           "task_id": c.task_id, "details": {"content": c.content[:120]}, "created_at": c.created_at})
+        # Workflow history
+        for wh in db.query(PMSWorkflowHistory).filter(PMSWorkflowHistory.task_id.in_(task_ids)).all():
+            items.append({"type": "transition", "action": "stage_change", "actor_name": wh.actor.full_name if wh.actor else None,
+                           "task_id": wh.task_id, "details": {"from": wh.from_stage, "to": wh.to_stage, "note": wh.note}, "created_at": wh.created_at})
+    items.sort(key=lambda x: x["created_at"] or datetime.min, reverse=True)
+    return items[offset:offset + limit]
+
+
+# ── Sprints ──────────────────────────────────────────────
+
+@router.get("/projects/{project_id}/sprints")
+def list_sprints(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    sprints = db.query(PMSSprint).filter_by(project_id=project_id).order_by(PMSSprint.start_date.desc()).all()
+    return [{"id": s.id, "project_id": s.project_id, "name": s.name, "start_date": s.start_date,
+             "end_date": s.end_date, "goal": s.goal, "status": s.status, "created_at": s.created_at} for s in sprints]
+
+@router.post("/projects/{project_id}/sprints")
+def create_sprint(project_id: int, data: PMSSprintCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    m = _require_member(db, project_id, current_user)
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms", "edit"):
+        raise HTTPException(403, "PM or edit permission required")
+    sprint = PMSSprint(project_id=project_id, **data.dict())
+    db.add(sprint)
+    db.commit()
+    db.refresh(sprint)
+    _audit_log(db, project_id, "sprint_created", current_user.id, {"sprint_name": sprint.name})
+    db.commit()
+    return {"id": sprint.id, "project_id": sprint.project_id, "name": sprint.name, "start_date": sprint.start_date,
+            "end_date": sprint.end_date, "goal": sprint.goal, "status": sprint.status, "created_at": sprint.created_at}
+
+@router.put("/sprints/{sprint_id}")
+def update_sprint(sprint_id: int, data: PMSSprintUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sprint = db.query(PMSSprint).filter_by(id=sprint_id).first()
+    if not sprint:
+        raise HTTPException(404)
+    m = _require_member(db, sprint.project_id, current_user)
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms", "edit"):
+        raise HTTPException(403)
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(sprint, k, v)
+    db.commit()
+    db.refresh(sprint)
+    return {"id": sprint.id, "project_id": sprint.project_id, "name": sprint.name, "start_date": sprint.start_date,
+            "end_date": sprint.end_date, "goal": sprint.goal, "status": sprint.status}
+
+@router.delete("/sprints/{sprint_id}")
+def delete_sprint(sprint_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sprint = db.query(PMSSprint).filter_by(id=sprint_id).first()
+    if not sprint:
+        raise HTTPException(404)
+    m = _require_member(db, sprint.project_id, current_user)
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms", "delete"):
+        raise HTTPException(403)
+    db.delete(sprint)
+    db.commit()
+    return {"ok": True}
+
+@router.get("/sprints/{sprint_id}/burndown")
+def get_sprint_burndown(sprint_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sprint = db.query(PMSSprint).filter_by(id=sprint_id).first()
+    if not sprint:
+        raise HTTPException(404)
+    _require_member(db, sprint.project_id, current_user)
+    tasks = db.query(PMSTask).filter_by(project_id=sprint.project_id, sprint_id=sprint_id).all()
+    total = len(tasks)
+    if not sprint.start_date or not sprint.end_date:
+        return {"total": total, "burndown": []}
+    burndown = []
+    current = sprint.start_date
+    while current <= min(sprint.end_date, date.today()):
+        remaining = sum(1 for t in tasks if not (t.stage == "completed" and t.updated_at and t.updated_at.date() <= current))
+        burndown.append({"date": str(current), "remaining": remaining})
+        current += timedelta(days=1)
+    days_total = (sprint.end_date - sprint.start_date).days or 1
+    ideal = [{"date": str(sprint.start_date + timedelta(days=i)), "ideal": round(total - (total * i / days_total), 1)} for i in range(days_total + 1)]
+    return {"total": total, "burndown": burndown, "ideal": ideal}
+
+
+# ── Recurring Tasks ──────────────────────────────────────
+
+@router.get("/projects/{project_id}/recurring-tasks")
+def list_recurring_tasks(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    items = db.query(PMSRecurringTask).filter_by(project_id=project_id).order_by(PMSRecurringTask.created_at.desc()).all()
+    return [{"id": r.id, "project_id": r.project_id, "title": r.title, "description": r.description,
+             "assignee_id": r.assignee_id, "priority": r.priority, "recurrence_type": r.recurrence_type,
+             "recurrence_day": r.recurrence_day, "next_run_date": r.next_run_date, "is_active": r.is_active,
+             "estimated_hours": r.estimated_hours, "created_at": r.created_at} for r in items]
+
+@router.post("/projects/{project_id}/recurring-tasks")
+def create_recurring_task(project_id: int, data: PMSRecurringTaskCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    rt = PMSRecurringTask(project_id=project_id, created_by=current_user.id, **data.dict())
+    db.add(rt)
+    db.commit()
+    db.refresh(rt)
+    return {"id": rt.id, "title": rt.title, "recurrence_type": rt.recurrence_type, "next_run_date": rt.next_run_date, "is_active": rt.is_active}
+
+@router.put("/recurring-tasks/{rt_id}")
+def update_recurring_task(rt_id: int, data: PMSRecurringTaskUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    rt = db.query(PMSRecurringTask).filter_by(id=rt_id).first()
+    if not rt:
+        raise HTTPException(404)
+    _require_member(db, rt.project_id, current_user)
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(rt, k, v)
+    db.commit()
+    db.refresh(rt)
+    return {"id": rt.id, "title": rt.title, "recurrence_type": rt.recurrence_type, "next_run_date": rt.next_run_date, "is_active": rt.is_active}
+
+@router.delete("/recurring-tasks/{rt_id}")
+def delete_recurring_task(rt_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    rt = db.query(PMSRecurringTask).filter_by(id=rt_id).first()
+    if not rt:
+        raise HTTPException(404)
+    _require_member(db, rt.project_id, current_user)
+    db.delete(rt)
+    db.commit()
+    return {"ok": True}
+
+
+# ── Watchers ─────────────────────────────────────────────
+
+@router.get("/tasks/{task_id}/watchers")
+def list_watchers(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    watchers = db.query(PMSTaskWatcher).filter_by(task_id=task_id).all()
+    return [{"id": w.id, "task_id": w.task_id, "user_id": w.user_id, "user_name": w.user.full_name if w.user else None, "watch_type": w.watch_type} for w in watchers]
+
+@router.post("/tasks/{task_id}/watchers")
+def add_watcher(task_id: int, data: PMSWatcherAdd, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    existing = db.query(PMSTaskWatcher).filter_by(task_id=task_id, user_id=data.user_id).first()
+    if existing:
+        return {"id": existing.id, "already_exists": True}
+    w = PMSTaskWatcher(task_id=task_id, user_id=data.user_id, watch_type=data.watch_type)
+    db.add(w)
+    db.commit()
+    db.refresh(w)
+    return {"id": w.id, "task_id": w.task_id, "user_id": w.user_id, "watch_type": w.watch_type}
+
+@router.delete("/tasks/{task_id}/watchers/{user_id}")
+def remove_watcher(task_id: int, user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    w = db.query(PMSTaskWatcher).filter_by(task_id=task_id, user_id=user_id).first()
+    if not w:
+        raise HTTPException(404)
+    db.delete(w)
+    db.commit()
+    return {"ok": True}
+
+
+# ── Custom Fields ────────────────────────────────────────
+
+@router.get("/projects/{project_id}/custom-fields")
+def list_custom_fields(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    fields = db.query(PMSCustomFieldDef).filter_by(project_id=project_id).order_by(PMSCustomFieldDef.position).all()
+    return [{"id": f.id, "project_id": f.project_id, "name": f.name, "field_type": f.field_type,
+             "options": f.options, "required": f.required, "position": f.position} for f in fields]
+
+@router.post("/projects/{project_id}/custom-fields")
+def create_custom_field(project_id: int, data: PMSCustomFieldDefCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    m = _require_member(db, project_id, current_user)
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms", "edit"):
+        raise HTTPException(403)
+    f = PMSCustomFieldDef(project_id=project_id, **data.dict())
+    db.add(f)
+    db.commit()
+    db.refresh(f)
+    return {"id": f.id, "name": f.name, "field_type": f.field_type, "options": f.options, "required": f.required, "position": f.position}
+
+@router.put("/custom-fields/{field_id}")
+def update_custom_field(field_id: int, data: PMSCustomFieldDefUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    f = db.query(PMSCustomFieldDef).filter_by(id=field_id).first()
+    if not f:
+        raise HTTPException(404)
+    m = _require_member(db, f.project_id, current_user)
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms", "edit"):
+        raise HTTPException(403)
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(f, k, v)
+    db.commit()
+    return {"id": f.id, "name": f.name, "field_type": f.field_type, "options": f.options, "required": f.required, "position": f.position}
+
+@router.delete("/custom-fields/{field_id}")
+def delete_custom_field(field_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    f = db.query(PMSCustomFieldDef).filter_by(id=field_id).first()
+    if not f:
+        raise HTTPException(404)
+    m = _require_member(db, f.project_id, current_user)
+    if m.role not in ("pm",) and not _has_permission(current_user, db, "pms", "delete"):
+        raise HTTPException(403)
+    db.delete(f)
+    db.commit()
+    return {"ok": True}
+
+@router.get("/tasks/{task_id}/custom-values")
+def get_custom_values(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    values = db.query(PMSCustomFieldValue).filter_by(task_id=task_id).all()
+    return [{"id": v.id, "field_def_id": v.field_def_id, "value": v.value} for v in values]
+
+@router.put("/tasks/{task_id}/custom-values")
+def set_custom_values(task_id: int, data: List[PMSCustomFieldValueSet], db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    for item in data:
+        existing = db.query(PMSCustomFieldValue).filter_by(task_id=task_id, field_def_id=item.field_def_id).first()
+        if existing:
+            existing.value = item.value
+        else:
+            db.add(PMSCustomFieldValue(task_id=task_id, field_def_id=item.field_def_id, value=item.value))
+    db.commit()
+    return {"ok": True}
+
+
+# ── Task Templates ───────────────────────────────────────
+
+@router.get("/task-templates")
+def list_task_templates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    templates = db.query(PMSTaskTemplate).order_by(PMSTaskTemplate.created_at.desc()).all()
+    return [{"id": t.id, "name": t.name, "description": t.description, "item_count": len(t.items), "created_at": t.created_at} for t in templates]
+
+@router.post("/task-templates")
+def create_task_template(data: PMSTaskTemplateCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    t = PMSTaskTemplate(name=data.name, description=data.description, created_by=current_user.id)
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return {"id": t.id, "name": t.name, "description": t.description}
+
+@router.get("/task-templates/{template_id}")
+def get_task_template(template_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    t = db.query(PMSTaskTemplate).filter_by(id=template_id).first()
+    if not t:
+        raise HTTPException(404)
+    items = [{"id": i.id, "title": i.title, "description": i.description, "priority": i.priority,
+              "estimated_hours": i.estimated_hours, "parent_index": i.parent_index, "position": i.position} for i in t.items]
+    return {"id": t.id, "name": t.name, "description": t.description, "items": items}
+
+@router.put("/task-templates/{template_id}")
+def update_task_template(template_id: int, data: PMSTaskTemplateUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    t = db.query(PMSTaskTemplate).filter_by(id=template_id).first()
+    if not t:
+        raise HTTPException(404)
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(t, k, v)
+    db.commit()
+    return {"id": t.id, "name": t.name, "description": t.description}
+
+@router.delete("/task-templates/{template_id}")
+def delete_task_template(template_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    t = db.query(PMSTaskTemplate).filter_by(id=template_id).first()
+    if not t:
+        raise HTTPException(404)
+    db.delete(t)
+    db.commit()
+    return {"ok": True}
+
+@router.post("/task-templates/{template_id}/items")
+def add_template_item(template_id: int, data: PMSTemplateItemCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    t = db.query(PMSTaskTemplate).filter_by(id=template_id).first()
+    if not t:
+        raise HTTPException(404)
+    item = PMSTemplateItem(template_id=template_id, **data.dict())
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return {"id": item.id, "title": item.title, "position": item.position}
+
+@router.put("/template-items/{item_id}")
+def update_template_item(item_id: int, data: PMSTemplateItemUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(PMSTemplateItem).filter_by(id=item_id).first()
+    if not item:
+        raise HTTPException(404)
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(item, k, v)
+    db.commit()
+    return {"id": item.id, "title": item.title}
+
+@router.delete("/template-items/{item_id}")
+def delete_template_item(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(PMSTemplateItem).filter_by(id=item_id).first()
+    if not item:
+        raise HTTPException(404)
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
+@router.post("/projects/{project_id}/apply-template/{template_id}")
+def apply_task_template(project_id: int, template_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    template = db.query(PMSTaskTemplate).filter_by(id=template_id).first()
+    if not template:
+        raise HTTPException(404)
+    items = sorted(template.items, key=lambda i: i.position)
+    count = db.query(PMSTask).filter_by(project_id=project_id).count()
+    id_map = {}
+    for idx, item in enumerate(items):
+        parent_id = id_map.get(item.parent_index) if item.parent_index is not None else None
+        task = PMSTask(project_id=project_id, title=item.title, description=item.description,
+                       priority=item.priority, estimated_hours=item.estimated_hours,
+                       parent_task_id=parent_id, position=count + idx)
+        db.add(task)
+        db.flush()
+        id_map[idx] = task.id
+        db.add(PMSWorkflowHistory(task_id=task.id, from_stage=None, to_stage="development", moved_by=current_user.id, note=f"Created from template '{template.name}'"))
+    db.commit()
+    _audit_log(db, project_id, "template_applied", current_user.id, {"template_name": template.name, "tasks_created": len(items)})
+    db.commit()
+    return {"ok": True, "tasks_created": len(items)}
+
+
+# ── Task Duplication ─────────────────────────────────────
+
+@router.post("/tasks/{task_id}/duplicate")
+def duplicate_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    count = db.query(PMSTask).filter_by(project_id=task.project_id).count()
+    new_task = PMSTask(
+        project_id=task.project_id, milestone_id=task.milestone_id, sprint_id=task.sprint_id,
+        title=f"Copy of {task.title}", description=task.description, priority=task.priority,
+        assignee_id=task.assignee_id, start_date=task.start_date, due_date=task.due_date,
+        estimated_hours=task.estimated_hours, position=count,
+    )
+    db.add(new_task)
+    db.flush()
+    db.add(PMSWorkflowHistory(task_id=new_task.id, from_stage=None, to_stage="development", moved_by=current_user.id, note="Duplicated"))
+    # Copy labels
+    for label in task.labels:
+        db.add(PMSTaskLabel(task_id=new_task.id, name=label.name, color=label.color, label_definition_id=label.label_definition_id))
+    # Copy checklists
+    for cl in db.query(PMSTaskChecklist).filter_by(task_id=task_id).all():
+        db.add(PMSTaskChecklist(task_id=new_task.id, text=cl.text, is_checked=False, position=cl.position))
+    # Copy subtasks
+    for sub in db.query(PMSTask).filter_by(parent_task_id=task_id).all():
+        sub_count = db.query(PMSTask).filter_by(project_id=task.project_id).count()
+        new_sub = PMSTask(
+            project_id=task.project_id, parent_task_id=new_task.id,
+            title=f"Copy of {sub.title}", description=sub.description, priority=sub.priority,
+            estimated_hours=sub.estimated_hours, position=sub_count,
+        )
+        db.add(new_sub)
+        db.flush()
+        db.add(PMSWorkflowHistory(task_id=new_sub.id, from_stage=None, to_stage="development", moved_by=current_user.id, note="Duplicated"))
+    db.commit()
+    db.refresh(new_task)
+    return _enrich_task(new_task, db)
+
+
+# ── Bulk Operations ──────────────────────────────────────
+
+@router.post("/tasks/bulk-action")
+def bulk_task_action(data: PMSBulkAction, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    tasks = db.query(PMSTask).filter(PMSTask.id.in_(data.task_ids)).all()
+    if not tasks:
+        raise HTTPException(404, "No tasks found")
+    # Verify membership in all affected projects
+    project_ids = set(t.project_id for t in tasks)
+    for pid in project_ids:
+        _require_member(db, pid, current_user)
+    affected = 0
+    params = data.params or {}
+    for task in tasks:
+        if data.action == "assign":
+            task.assignee_id = params.get("assignee_id")
+            affected += 1
+        elif data.action == "move_stage":
+            to_stage = params.get("to_stage")
+            allowed = WORKFLOW_TRANSITIONS.get(task.stage, {}).get(to_stage)
+            if allowed:
+                old = task.stage
+                task.stage = to_stage
+                db.add(PMSWorkflowHistory(task_id=task.id, from_stage=old, to_stage=to_stage, moved_by=current_user.id, note="Bulk action"))
+                affected += 1
+        elif data.action == "set_priority":
+            task.priority = params.get("priority", task.priority)
+            affected += 1
+        elif data.action == "delete":
+            db.delete(task)
+            affected += 1
+        elif data.action == "set_milestone":
+            task.milestone_id = params.get("milestone_id")
+            affected += 1
+        elif data.action == "set_sprint":
+            task.sprint_id = params.get("sprint_id")
+            affected += 1
+    db.commit()
+    return {"ok": True, "affected": affected}
+
+
+# ── File Versioning ──────────────────────────────────────
+
+@router.get("/attachments/{att_id}/versions")
+def get_attachment_versions(att_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    att = db.query(PMSTaskAttachment).filter_by(id=att_id).first()
+    if not att:
+        raise HTTPException(404)
+    task = db.query(PMSTask).filter_by(id=att.task_id).first()
+    _require_member(db, task.project_id, current_user)
+    # Find all versions of this file
+    versions = db.query(PMSTaskAttachment).filter_by(task_id=att.task_id, file_name=att.file_name).order_by(PMSTaskAttachment.version.desc()).all()
+    return [{"id": v.id, "file_name": v.file_name, "file_size": v.file_size, "version": v.version, "created_at": v.created_at} for v in versions]
+
+
+# ── Favorites ────────────────────────────────────────────
+
+@router.get("/favorites")
+def list_favorites(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    favs = db.query(PMSFavorite).filter_by(user_id=current_user.id).order_by(PMSFavorite.created_at.desc()).all()
+    result = []
+    for f in favs:
+        item = {"id": f.id, "project_id": f.project_id, "task_id": f.task_id}
+        if f.project_id:
+            p = db.query(PMSProject).filter_by(id=f.project_id).first()
+            if p:
+                item["project_name"] = p.name
+                item["project_color"] = p.color
+        if f.task_id:
+            t = db.query(PMSTask).filter_by(id=f.task_id).first()
+            if t:
+                item["task_title"] = t.title
+                item["task_stage"] = t.stage
+        result.append(item)
+    return result
+
+@router.post("/favorites")
+def toggle_favorite(data: PMSFavoriteToggle, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    q = db.query(PMSFavorite).filter_by(user_id=current_user.id)
+    if data.project_id:
+        q = q.filter_by(project_id=data.project_id, task_id=None)
+    elif data.task_id:
+        q = q.filter_by(task_id=data.task_id, project_id=None)
+    else:
+        raise HTTPException(400, "project_id or task_id required")
+    existing = q.first()
+    if existing:
+        db.delete(existing)
+        db.commit()
+        return {"ok": True, "favorited": False}
+    fav = PMSFavorite(user_id=current_user.id, project_id=data.project_id, task_id=data.task_id)
+    db.add(fav)
+    db.commit()
+    return {"ok": True, "favorited": True}
+
+@router.delete("/favorites/{fav_id}")
+def remove_favorite(fav_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    fav = db.query(PMSFavorite).filter_by(id=fav_id, user_id=current_user.id).first()
+    if not fav:
+        raise HTTPException(404)
+    db.delete(fav)
+    db.commit()
+    return {"ok": True}
+
+
+# ── Export ────────────────────────────────────────────────
+
+def _generate_pdf_table(title: str, headers: list, rows: list) -> bytes:
+    """Generate a PDF with a table using reportlab."""
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=30, bottomMargin=30)
+    styles = getSampleStyleSheet()
+    elements = []
+    elements.append(Paragraph(title, styles['Title']))
+    elements.append(Spacer(1, 12))
+    # Truncate long strings for PDF
+    def trunc(v, n=40):
+        s = str(v) if v is not None else ""
+        return s[:n] + "..." if len(s) > n else s
+    table_data = [headers] + [[trunc(c) for c in row] for row in rows]
+    t = Table(table_data, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#6366f1')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    elements.append(t)
+    doc.build(elements)
+    buf.seek(0)
+    return buf.getvalue()
+
+@router.get("/projects/{project_id}/export")
+def export_project_tasks(project_id: int, format: str = "csv", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    project = db.query(PMSProject).filter_by(id=project_id).first()
+    tasks = db.query(PMSTask).filter_by(project_id=project_id).order_by(PMSTask.position).all()
+    headers = ["ID", "Title", "Stage", "Priority", "Assignee", "Due Date", "Est. Hours", "Actual Hours", "Milestone", "Sprint"]
+    rows = []
+    for t in tasks:
+        rows.append([t.id, t.title, t.stage, t.priority,
+                     t.assignee.full_name if t.assignee else "",
+                     t.due_date or "", t.estimated_hours, t.actual_hours,
+                     t.milestone.name if t.milestone else "",
+                     t.sprint.name if t.sprint else ""])
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow(row)
+        output.seek(0)
+        return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
+                                 headers={"Content-Disposition": f"attachment; filename=project_{project_id}_tasks.csv"})
+    elif format == "pdf":
+        pdf_bytes = _generate_pdf_table(f"Project: {project.name if project else project_id}", headers, rows)
+        return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf",
+                                 headers={"Content-Disposition": f"attachment; filename=project_{project_id}_tasks.pdf"})
+    raise HTTPException(400, "Unsupported format. Use 'csv' or 'pdf'.")
+
+@router.get("/my-tasks/export")
+def export_my_tasks(format: str = "csv", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    tasks = db.query(PMSTask).filter_by(assignee_id=current_user.id).filter(PMSTask.stage.notin_(["completed"])).order_by(PMSTask.due_date).all()
+    headers = ["ID", "Title", "Project", "Stage", "Priority", "Due Date", "Est. Hours", "Actual Hours"]
+    rows = []
+    for t in tasks:
+        rows.append([t.id, t.title, t.project.name if t.project else "", t.stage, t.priority, t.due_date or "", t.estimated_hours, t.actual_hours])
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow(row)
+        output.seek(0)
+        return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
+                                 headers={"Content-Disposition": "attachment; filename=my_tasks.csv"})
+    elif format == "pdf":
+        pdf_bytes = _generate_pdf_table(f"My Tasks — {current_user.full_name}", headers, rows)
+        return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf",
+                                 headers={"Content-Disposition": "attachment; filename=my_tasks.pdf"})
+    raise HTTPException(400, "Unsupported format. Use 'csv' or 'pdf'.")
+
+
+# ── Project Templates ────────────────────────────────────
+
+@router.get("/project-templates")
+def list_project_templates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    templates = db.query(PMSProjectTemplate).order_by(PMSProjectTemplate.created_at.desc()).all()
+    return [{"id": t.id, "name": t.name, "description": t.description,
+             "milestone_count": len(t.milestones), "task_count": len(t.tasks), "created_at": t.created_at} for t in templates]
+
+@router.post("/project-templates")
+def create_project_template(data: PMSProjectTemplateCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not _is_admin(current_user):
+        raise HTTPException(403, "Admin only")
+    t = PMSProjectTemplate(name=data.name, description=data.description, created_by=current_user.id)
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return {"id": t.id, "name": t.name}
+
+@router.get("/project-templates/{template_id}")
+def get_project_template(template_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    t = db.query(PMSProjectTemplate).filter_by(id=template_id).first()
+    if not t:
+        raise HTTPException(404)
+    milestones = [{"id": m.id, "name": m.name, "offset_days": m.offset_days, "color": m.color} for m in t.milestones]
+    tasks = [{"id": tk.id, "title": tk.title, "description": tk.description, "priority": tk.priority,
+              "estimated_hours": tk.estimated_hours, "milestone_index": tk.milestone_index, "position": tk.position, "parent_index": tk.parent_index} for tk in t.tasks]
+    return {"id": t.id, "name": t.name, "description": t.description, "milestones": milestones, "tasks": tasks}
+
+@router.put("/project-templates/{template_id}")
+def update_project_template(template_id: int, data: PMSProjectTemplateUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not _is_admin(current_user):
+        raise HTTPException(403)
+    t = db.query(PMSProjectTemplate).filter_by(id=template_id).first()
+    if not t:
+        raise HTTPException(404)
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(t, k, v)
+    db.commit()
+    return {"id": t.id, "name": t.name}
+
+@router.delete("/project-templates/{template_id}")
+def delete_project_template(template_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not _is_admin(current_user):
+        raise HTTPException(403)
+    t = db.query(PMSProjectTemplate).filter_by(id=template_id).first()
+    if not t:
+        raise HTTPException(404)
+    db.delete(t)
+    db.commit()
+    return {"ok": True}
+
+@router.post("/project-templates/{template_id}/milestones")
+def add_project_template_milestone(template_id: int, data: PMSProjectTemplateMilestoneCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    t = db.query(PMSProjectTemplate).filter_by(id=template_id).first()
+    if not t:
+        raise HTTPException(404)
+    m = PMSProjectTemplateMilestone(template_id=template_id, **data.dict())
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return {"id": m.id, "name": m.name, "offset_days": m.offset_days, "color": m.color}
+
+@router.post("/project-templates/{template_id}/tasks")
+def add_project_template_task(template_id: int, data: PMSProjectTemplateTaskCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    t = db.query(PMSProjectTemplate).filter_by(id=template_id).first()
+    if not t:
+        raise HTTPException(404)
+    tk = PMSProjectTemplateTask(template_id=template_id, **data.dict())
+    db.add(tk)
+    db.commit()
+    db.refresh(tk)
+    return {"id": tk.id, "title": tk.title}
+
+@router.post("/projects/from-template/{template_id}")
+def create_project_from_template(template_id: int, name: str = "New Project", start_date: Optional[date] = None, color: str = "#6366f1",
+                                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    template = db.query(PMSProjectTemplate).filter_by(id=template_id).first()
+    if not template:
+        raise HTTPException(404)
+    s_date = start_date or date.today()
+    project = PMSProject(name=name, color=color, status="planning", start_date=s_date, owner_id=current_user.id)
+    db.add(project)
+    db.flush()
+    # Add creator as PM member
+    db.add(PMSProjectMember(project_id=project.id, user_id=current_user.id, role="pm", added_by=current_user.id))
+    # Create milestones
+    ms_map = {}
+    for idx, tm in enumerate(sorted(template.milestones, key=lambda m: m.offset_days)):
+        ms = PMSMilestone(project_id=project.id, name=tm.name, due_date=s_date + timedelta(days=tm.offset_days), color=tm.color)
+        db.add(ms)
+        db.flush()
+        ms_map[idx] = ms.id
+    # Create tasks
+    task_map = {}
+    for idx, tt in enumerate(sorted(template.tasks, key=lambda t: t.position)):
+        milestone_id = ms_map.get(tt.milestone_index) if tt.milestone_index is not None else None
+        parent_id = task_map.get(tt.parent_index) if tt.parent_index is not None else None
+        task = PMSTask(project_id=project.id, title=tt.title, description=tt.description, priority=tt.priority,
+                       estimated_hours=tt.estimated_hours, milestone_id=milestone_id, parent_task_id=parent_id, position=idx)
+        db.add(task)
+        db.flush()
+        task_map[idx] = task.id
+        db.add(PMSWorkflowHistory(task_id=task.id, from_stage=None, to_stage="development", moved_by=current_user.id, note=f"From template '{template.name}'"))
+    db.commit()
+    return {"ok": True, "project_id": project.id, "milestones_created": len(ms_map), "tasks_created": len(task_map)}
+
+
+# ── Automations ──────────────────────────────────────────
+
+@router.get("/projects/{project_id}/automations")
+def list_automations(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    autos = db.query(PMSAutomation).filter_by(project_id=project_id).order_by(PMSAutomation.created_at.desc()).all()
+    return [{"id": a.id, "name": a.name, "trigger_type": a.trigger_type, "trigger_config": a.trigger_config,
+             "action_type": a.action_type, "action_config": a.action_config, "is_active": a.is_active} for a in autos]
+
+@router.post("/projects/{project_id}/automations")
+def create_automation(project_id: int, data: PMSAutomationCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    m = _require_member(db, project_id, current_user)
+    if m.role not in ("pm",) and not _is_admin(current_user):
+        raise HTTPException(403)
+    a = PMSAutomation(project_id=project_id, **data.dict())
+    db.add(a)
+    db.commit()
+    db.refresh(a)
+    return {"id": a.id, "name": a.name, "trigger_type": a.trigger_type, "action_type": a.action_type, "is_active": a.is_active}
+
+@router.put("/automations/{auto_id}")
+def update_automation(auto_id: int, data: PMSAutomationUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    a = db.query(PMSAutomation).filter_by(id=auto_id).first()
+    if not a:
+        raise HTTPException(404)
+    m = _require_member(db, a.project_id, current_user)
+    if m.role not in ("pm",) and not _is_admin(current_user):
+        raise HTTPException(403)
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(a, k, v)
+    db.commit()
+    return {"id": a.id, "name": a.name, "is_active": a.is_active}
+
+@router.delete("/automations/{auto_id}")
+def delete_automation(auto_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    a = db.query(PMSAutomation).filter_by(id=auto_id).first()
+    if not a:
+        raise HTTPException(404)
+    m = _require_member(db, a.project_id, current_user)
+    if m.role not in ("pm",) and not _is_admin(current_user):
+        raise HTTPException(403)
+    db.delete(a)
+    db.commit()
+    return {"ok": True}
+
+
+def _evaluate_automations(db: Session, task: PMSTask, trigger_type: str, context: dict = {}):
+    """Check and execute matching automations for a task."""
+    autos = db.query(PMSAutomation).filter_by(project_id=task.project_id, trigger_type=trigger_type, is_active=True).all()
+    for auto in autos:
+        trigger_cfg = _json.loads(auto.trigger_config) if auto.trigger_config else {}
+        action_cfg = _json.loads(auto.action_config) if auto.action_config else {}
+        # Check trigger conditions
+        if trigger_type == "stage_change":
+            if trigger_cfg.get("from_stage") and trigger_cfg["from_stage"] != context.get("from_stage"):
+                continue
+            if trigger_cfg.get("to_stage") and trigger_cfg["to_stage"] != context.get("to_stage"):
+                continue
+        elif trigger_type == "all_subtasks_complete":
+            incomplete = db.query(PMSTask).filter_by(parent_task_id=task.id).filter(PMSTask.stage != "completed").count()
+            if incomplete > 0:
+                continue
+        # Execute action
+        if auto.action_type == "set_stage":
+            new_stage = action_cfg.get("stage")
+            if new_stage and new_stage != task.stage:
+                old = task.stage
+                task.stage = new_stage
+                db.add(PMSWorkflowHistory(task_id=task.id, from_stage=old, to_stage=new_stage, moved_by=None, note=f"Automation: {auto.name}"))
+        elif auto.action_type == "assign":
+            task.assignee_id = action_cfg.get("user_id")
+        elif auto.action_type == "notify":
+            notify_user_id = action_cfg.get("user_id")
+            if notify_user_id:
+                _fire_alert(db, task, "automation", f"Automation '{auto.name}': {action_cfg.get('message', 'Triggered')}")
+    db.commit()
+
+
+# ── Conversation Links ───────────────────────────────────
+
+@router.get("/tasks/{task_id}/links")
+def list_task_links(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    from app.models.conversation import Conversation
+    links = db.query(PMSTaskConversationLink).filter_by(task_id=task_id).all()
+    result = []
+    for link in links:
+        conv = db.query(Conversation).filter_by(id=link.conversation_id).first()
+        result.append({"id": link.id, "conversation_id": link.conversation_id,
+                        "contact_name": conv.contact_name if conv else None,
+                        "platform": conv.platform if conv else None,
+                        "created_at": link.created_at})
+    return result
+
+@router.post("/tasks/{task_id}/links")
+def add_task_link(task_id: int, data: PMSConversationLinkCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    existing = db.query(PMSTaskConversationLink).filter_by(task_id=task_id, conversation_id=data.conversation_id).first()
+    if existing:
+        return {"id": existing.id, "already_exists": True}
+    link = PMSTaskConversationLink(task_id=task_id, conversation_id=data.conversation_id, linked_by=current_user.id)
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+    return {"id": link.id, "task_id": link.task_id, "conversation_id": link.conversation_id}
+
+@router.delete("/tasks/{task_id}/links/{conversation_id}")
+def remove_task_link(task_id: int, conversation_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    link = db.query(PMSTaskConversationLink).filter_by(task_id=task_id, conversation_id=conversation_id).first()
+    if not link:
+        raise HTTPException(404)
+    db.delete(link)
+    db.commit()
+    return {"ok": True}
+
+
+# ── Milestone Dependencies ───────────────────────────────
+
+@router.put("/milestones/{milestone_id}/dependency")
+def set_milestone_dependency(milestone_id: int, depends_on_id: Optional[int] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    ms = db.query(PMSMilestone).filter_by(id=milestone_id).first()
+    if not ms:
+        raise HTTPException(404)
+    _require_member(db, ms.project_id, current_user)
+    if depends_on_id:
+        dep = db.query(PMSMilestone).filter_by(id=depends_on_id).first()
+        if not dep or dep.project_id != ms.project_id:
+            raise HTTPException(400, "Invalid dependency")
+        if depends_on_id == milestone_id:
+            raise HTTPException(400, "Cannot depend on self")
+        # Check circular deps
+        check_id = depends_on_id
+        visited = {milestone_id}
+        while check_id:
+            if check_id in visited:
+                raise HTTPException(400, "Circular dependency detected")
+            visited.add(check_id)
+            parent = db.query(PMSMilestone).filter_by(id=check_id).first()
+            check_id = parent.depends_on_id if parent else None
+    ms.depends_on_id = depends_on_id
+    db.commit()
+    return {"ok": True, "depends_on_id": ms.depends_on_id}

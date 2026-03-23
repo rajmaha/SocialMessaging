@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import axios from "axios";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import { useCurrencySymbol } from "@/lib/branding-context";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 
@@ -29,6 +30,7 @@ const STAGES = ["prospect", "qualified", "proposal", "negotiation", "close", "wo
 
 export default function DealDetailPage() {
   const user = authAPI.getUser();
+  const cs = useCurrencySymbol();
   const { id } = useParams();
   const router = useRouter();
   const token = getAuthToken();
@@ -136,7 +138,7 @@ export default function DealDetailPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
                 <div className="text-center p-4 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-500 mb-1">Amount</p>
-                  <p className="text-2xl font-bold text-gray-900">${(deal.amount || 0).toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-gray-900">{cs}{(deal.amount || 0).toLocaleString()}</p>
                 </div>
                 <div className="text-center p-4 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-500 mb-1">Probability</p>
@@ -144,7 +146,7 @@ export default function DealDetailPage() {
                 </div>
                 <div className="text-center p-4 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-500 mb-1">Expected Value</p>
-                  <p className="text-2xl font-bold text-green-700">${expectedValue.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-green-700">{cs}{expectedValue.toLocaleString()}</p>
                 </div>
               </div>
 

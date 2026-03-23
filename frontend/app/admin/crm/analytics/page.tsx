@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import { useCurrencySymbol } from "@/lib/branding-context";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 import { api } from "@/lib/api";
@@ -37,6 +38,7 @@ const STATUS_COLORS: Record<string, string> = {
 export default function AnalyticsPage() {
   const user = authAPI.getUser();
   const token = getAuthToken();
+  const cs = useCurrencySymbol();
   const [pipeline, setPipeline] = useState<any>(null);
   const [sources, setSources] = useState<any>(null);
   const [topLeads, setTopLeads] = useState<any[]>([]);
@@ -99,7 +101,7 @@ export default function AnalyticsPage() {
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{stage}</p>
                 <p className="text-2xl font-bold text-gray-900">{pipeline[stage].count}</p>
                 <p className="text-sm text-gray-600 mt-1">
-                  ${pipeline[stage].total_amount.toLocaleString()}
+                  {cs}{pipeline[stage].total_amount.toLocaleString()}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {pipeline[stage].avg_probability.toFixed(0)}% avg
@@ -159,7 +161,7 @@ export default function AnalyticsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-700">
-                      {l.estimated_value ? `$${Number(l.estimated_value).toLocaleString()}` : "—"}
+                      {l.estimated_value ? `${cs}${Number(l.estimated_value).toLocaleString()}` : "—"}
                     </td>
                   </tr>
                 ))}
@@ -197,7 +199,7 @@ export default function AnalyticsPage() {
           <h2 className="text-lg font-semibold mb-4">Win / Loss (90 days)</h2>
           {winLoss ? (
             <div className="space-y-3">
-              <div className="flex justify-between text-sm"><span className="text-green-600 font-medium">Won</span><span>{winLoss.won_count} deals · ${winLoss.total_won_revenue.toLocaleString()}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-green-600 font-medium">Won</span><span>{winLoss.won_count} deals · {cs}{winLoss.total_won_revenue.toLocaleString()}</span></div>
               <div className="w-full bg-gray-100 rounded-full h-3">
                 <div className="bg-green-500 h-3 rounded-full" style={{ width: `${winLoss.win_rate}%` }} />
               </div>
@@ -205,7 +207,7 @@ export default function AnalyticsPage() {
               <div className="w-full bg-gray-100 rounded-full h-3">
                 <div className="bg-red-400 h-3 rounded-full" style={{ width: `${winLoss.loss_rate}%` }} />
               </div>
-              <p className="text-xs text-gray-400 mt-2">Win rate: {winLoss.win_rate}% · Avg won deal: ${winLoss.avg_won_value.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-2">Win rate: {winLoss.win_rate}% · Avg won deal: {cs}{winLoss.avg_won_value.toLocaleString()}</p>
             </div>
           ) : <p className="text-gray-400 text-sm">No closed deals yet.</p>}
         </div>

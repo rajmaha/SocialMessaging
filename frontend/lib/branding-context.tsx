@@ -21,6 +21,7 @@ interface BrandingSettings {
   privacy_url: string | null
   terms_url: string | null
   timezone: string
+  currency: string
 }
 
 interface BrandingContextType {
@@ -106,6 +107,7 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
     privacy_url: null,
     terms_url: null,
     timezone: 'UTC',
+    currency: 'USD',
   })
 
   useEffect(() => {
@@ -131,4 +133,22 @@ export function useBranding() {
     throw new Error('useBranding must be used within BrandingProvider')
   }
   return context
+}
+
+// ── Currency helpers ──
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', EUR: '€', GBP: '£', AED: 'د.إ', SAR: '﷼', INR: '₹',
+  AUD: 'A$', CAD: 'C$', NPR: '₨', JPY: '¥', CNY: '¥', KRW: '₩',
+  BDT: '৳', LKR: 'Rs', PKR: '₨', MYR: 'RM', SGD: 'S$', THB: '฿',
+}
+
+export function getCurrencySymbol(code?: string): string {
+  return CURRENCY_SYMBOLS[code || 'USD'] || code || '$'
+}
+
+/** Hook that returns the branding currency symbol. */
+export function useCurrencySymbol(): string {
+  const { branding } = useBranding()
+  return getCurrencySymbol(branding?.currency)
 }
