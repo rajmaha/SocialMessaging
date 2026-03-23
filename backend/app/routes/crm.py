@@ -84,6 +84,11 @@ def create_lead(
         db.add(new_org)
         db.flush()
         data["organization_id"] = new_org.id
+    # If existing organization selected, fill company name from it
+    elif data.get("organization_id") and not data.get("company"):
+        org = db.query(Organization).filter(Organization.id == data["organization_id"]).first()
+        if org:
+            data["company"] = org.organization_name
     db_lead = Lead(**data)
     db.add(db_lead)
     db.commit()
@@ -99,7 +104,8 @@ def create_lead(
     )
     db.add(activity)
     db.commit()
-    
+    db.refresh(db_lead)
+
     return db_lead
 
 
@@ -268,6 +274,11 @@ def update_lead(
         db.add(new_org)
         db.flush()
         update_data["organization_id"] = new_org.id
+    # If existing organization selected, fill company name from it
+    elif update_data.get("organization_id") and not update_data.get("company"):
+        org = db.query(Organization).filter(Organization.id == update_data["organization_id"]).first()
+        if org:
+            update_data["company"] = org.organization_name
     for field, value in update_data.items():
         setattr(lead, field, value)
     

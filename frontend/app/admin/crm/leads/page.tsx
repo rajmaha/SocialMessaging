@@ -21,6 +21,7 @@ interface Lead {
   score: number;
   estimated_value?: number;
   created_at: string;
+  updated_at: string;
   tags?: { id: number; name: string; color?: string }[];
 }
 
@@ -349,7 +350,7 @@ export default function LeadListPage() {
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                       </th>
-                      {["Name", "Email", "Company", "Status", "Tags", "Score", "Value", "Source", "Actions"].map((h) => (
+                      {["Name", "Email", "Company", "Status", "Tags", "Score", "Value", "Source", "Created", "Last Updated", "Actions"].map((h) => (
                         <th key={h} className="px-4 py-3 text-left font-medium text-gray-600">{h}</th>
                       ))}
                     </tr>
@@ -400,6 +401,12 @@ export default function LeadListPage() {
                         </td>
                         <td className="px-4 py-3 text-gray-500">
                           {SOURCE_ICONS[lead.source] || "\uD83D\uDCCC"} {SOURCE_LABELS[lead.source] || lead.source}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
+                          {new Date(lead.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
+                          {new Date(lead.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                         </td>
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex gap-3 text-sm">

@@ -80,7 +80,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                 });
             }
         }
-    }, [user])
+    }, [user?.user_id, user?.role])
 
     const eventsCtx = useEvents()
 
@@ -109,7 +109,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
             } catch {}
         }
         fetchBadges()
-    }, [user])
+    }, [user?.user_id])
 
     // Refresh badge counts on SSE events
     useEffect(() => {
@@ -132,7 +132,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
         const unsub2 = evts.subscribe('new_message', refresh)
         const unsub3 = evts.subscribe('conversation_assigned', refresh)
         return () => { unsub1(); unsub2(); unsub3() }
-    }, [eventsCtx, user])
+    }, [eventsCtx, user?.user_id])
 
     // Unseen shared reminders badge count
     const [unseenCount, setUnseenCount] = useState(0)

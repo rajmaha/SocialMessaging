@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -35,6 +35,16 @@ export default function NewLeadPage() {
   const token = getAuthToken();
 
   const [orgs, setOrgs] = useState<{id: number, organization_name: string}[]>([])
+  const [availableTags, setAvailableTags] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState("")
+  const [orgQuery, setOrgQuery] = useState("")
+  const [showOrgDropdown, setShowOrgDropdown] = useState(false)
+  const [orgHighlight, setOrgHighlight] = useState(-1)
+  const orgRef = useRef<HTMLDivElement>(null)
+  const [sourceQuery, setSourceQuery] = useState("Other")
+  const [showSourceDropdown, setShowSourceDropdown] = useState(false)
+  const [sourceHighlight, setSourceHighlight] = useState(-1)
+  const sourceRef = useRef<HTMLDivElement>(null)
   const [form, setForm] = useState({
     first_name: "",
     last_name: "",
@@ -47,11 +57,51 @@ export default function NewLeadPage() {
     remarks: "",
     source: "other",
     organization_id: null as number | null,
+    tags: [] as string[],
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { api.get('/crm/organizations?limit=200').then(r => setOrgs(r.data)) }, [])
+  useEffect(() => {
+    api.get('/crm/organizations?limit=200').then(r => setOrgs(r.data))
+    api.get('/crm/tags').then(r => setAvailableTags(r.data)).catch(() => {})
+  }, [])
+
+  // Close dropdowns on click outside
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (orgRef.current && !orgRef.current.contains(e.target as Node)) {
+        setShowOrgDropdown(false)
+      }
+      if (sourceRef.current && !sourceRef.current.contains(e.target as Node)) {
+        setShowSourceDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const filteredOrgs = orgQuery.trim()
+    ? orgs.filter(o => o.organization_name.toLowerCase().includes(orgQuery.toLowerCase()))
+    : orgs
+
+  const filteredSources = sourceQuery.trim()
+    ? SOURCES.filter(s => s.label.toLowerCase().includes(sourceQuery.toLowerCase()))
+    : SOURCES
+
+  const selectSource = (s: {value: string, label: string}) => {
+    setForm(f => ({...f, source: s.value}));
+    setSourceQuery(s.label);
+    setShowSourceDropdown(false);
+    setSourceHighlight(-1);
+  }
+
+  const selectOrg = (o: {id: number, organization_name: string}) => {
+    setForm(f => ({...f, organization_id: o.id, company: ''}));
+    setOrgQuery(o.organization_name);
+    setShowOrgDropdown(false);
+    setOrgHighlight(-1);
+  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -67,7 +117,12 @@ export default function NewLeadPage() {
       });
       router.push("/admin/crm/leads");
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to create lead");
+      const detail = err.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        setError(detail.map((d: any) => d.msg || JSON.stringify(d)).join(", "));
+      } else {
+        setError(detail || "Failed to create lead");
+      }
     } finally {
       setLoading(false);
     }
@@ -114,26 +169,74 @@ export default function NewLeadPage() {
                 </div>
               </div>
 
-              <div>
-                <label className={labelClass}>Organization (existing)</label>
-                <select value={form.organization_id || ''} onChange={e => {
-                  const orgId = e.target.value ? parseInt(e.target.value) : null;
-                  setForm((f: any) => ({...f, organization_id: orgId, company: orgId ? '' : f.company}));
-                }} className={inputClass}>
-                  <option value="">— New organization —</option>
-                  {orgs.map(o => <option key={o.id} value={o.id}>{o.organization_name}</option>)}
-                </select>
+              <div ref={orgRef} className="relative">
+                <label className={labelClass}>Organization / Company</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={orgQuery}
+                    onChange={e => {
+                      setOrgQuery(e.target.value);
+                      setForm(f => ({...f, organization_id: null, company: e.target.value}));
+                      setShowOrgDropdown(true);
+                      setOrgHighlight(-1);
+                    }}
+                    onFocus={() => { setShowOrgDropdown(true); setOrgHighlight(-1); }}
+                    onKeyDown={e => {
+                      if (!showOrgDropdown || form.organization_id) return;
+                      const list = filteredOrgs;
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setOrgHighlight(prev => (prev < list.length - 1 ? prev + 1 : 0));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setOrgHighlight(prev => (prev > 0 ? prev - 1 : list.length - 1));
+                      } else if (e.key === 'Enter' && orgHighlight >= 0 && orgHighlight < list.length) {
+                        e.preventDefault();
+                        selectOrg(list[orgHighlight]);
+                      } else if (e.key === 'Escape') {
+                        setShowOrgDropdown(false);
+                        setOrgHighlight(-1);
+                      }
+                    }}
+                    placeholder="Type to search existing or enter new organization"
+                    className={inputClass}
+                    autoComplete="off"
+                  />
+                  {form.organization_id && (
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">Existing</span>
+                      <button type="button" onClick={() => {
+                        setForm(f => ({...f, organization_id: null, company: orgQuery}));
+                      }} className="text-gray-400 hover:text-gray-600 text-sm">&times;</button>
+                    </span>
+                  )}
+                </div>
+                {showOrgDropdown && filteredOrgs.length > 0 && !form.organization_id && (
+                  <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {filteredOrgs.map((o, idx) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => selectOrg(o)}
+                        onMouseEnter={() => setOrgHighlight(idx)}
+                        className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                          idx === orgHighlight ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        {o.organization_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {orgQuery.trim() && !form.organization_id && (
+                  <p className="text-xs text-gray-400 mt-1">New organization &ldquo;{orgQuery.trim()}&rdquo; will be created</p>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Company {!form.organization_id ? '(new organization)' : ''}</label>
-                  <input name="company" value={form.organization_id ? (orgs.find(o => o.id === form.organization_id)?.organization_name || '') : form.company} onChange={handleChange} disabled={!!form.organization_id} className={inputClass + (form.organization_id ? ' bg-gray-100 text-gray-500' : '')} />
-                </div>
-                <div>
-                  <label className={labelClass}>Position</label>
-                  <input name="position" value={form.position} onChange={handleChange} className={inputClass} />
-                </div>
+              <div>
+                <label className={labelClass}>Position</label>
+                <input name="position" value={form.position} onChange={handleChange} className={inputClass} />
               </div>
 
               <div>
@@ -146,19 +249,113 @@ export default function NewLeadPage() {
                   <label className={labelClass}>Inquiry For</label>
                   <input name="inquiry_for" value={form.inquiry_for} onChange={handleChange} className={inputClass} />
                 </div>
-                <div>
+                <div ref={sourceRef} className="relative">
                   <label className={labelClass}>Source</label>
-                  <select name="source" value={form.source} onChange={handleChange} className={inputClass}>
-                    {SOURCES.map((s) => (
-                      <option key={s.value} value={s.value}>{s.label}</option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    value={sourceQuery}
+                    onChange={e => {
+                      setSourceQuery(e.target.value);
+                      setShowSourceDropdown(true);
+                      setSourceHighlight(-1);
+                      // If typed text exactly matches a source label, select it
+                      const match = SOURCES.find(s => s.label.toLowerCase() === e.target.value.toLowerCase());
+                      if (match) {
+                        setForm(f => ({...f, source: match.value}));
+                      }
+                    }}
+                    onFocus={() => { setShowSourceDropdown(true); setSourceHighlight(-1); }}
+                    onKeyDown={e => {
+                      if (!showSourceDropdown) return;
+                      const list = filteredSources;
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setSourceHighlight(prev => (prev < list.length - 1 ? prev + 1 : 0));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setSourceHighlight(prev => (prev > 0 ? prev - 1 : list.length - 1));
+                      } else if (e.key === 'Enter' && sourceHighlight >= 0 && sourceHighlight < list.length) {
+                        e.preventDefault();
+                        selectSource(list[sourceHighlight]);
+                      } else if (e.key === 'Escape') {
+                        setShowSourceDropdown(false);
+                        setSourceHighlight(-1);
+                      }
+                    }}
+                    onBlur={() => {
+                      // On blur, if text doesn't match any source, reset to current selection
+                      setTimeout(() => {
+                        const match = SOURCES.find(s => s.label.toLowerCase() === sourceQuery.toLowerCase());
+                        if (!match) {
+                          const current = SOURCES.find(s => s.value === form.source);
+                          setSourceQuery(current?.label || 'Other');
+                        }
+                      }, 200);
+                    }}
+                    placeholder="Search source..."
+                    className={inputClass}
+                    autoComplete="off"
+                  />
+                  {showSourceDropdown && filteredSources.length > 0 && (
+                    <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {filteredSources.map((s, idx) => (
+                        <button
+                          key={s.value}
+                          type="button"
+                          onClick={() => selectSource(s)}
+                          onMouseEnter={() => setSourceHighlight(idx)}
+                          className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                            idx === sourceHighlight ? 'bg-blue-50 text-blue-700' : form.source === s.value ? 'bg-gray-50 font-medium' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div>
                 <label className={labelClass}>Remarks</label>
                 <textarea name="remarks" value={form.remarks} onChange={(e: any) => setForm({...form, remarks: e.target.value})} rows={3} className={inputClass + " resize-none"} />
+              </div>
+
+              <div>
+                <label className={labelClass}>Tags</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {form.tags.map((tag) => (
+                    <span key={tag} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      {tag}
+                      <button type="button" onClick={() => setForm({...form, tags: form.tags.filter(t => t !== tag)})} className="text-blue-500 hover:text-blue-700 ml-0.5">&times;</button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={e => setTagInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && tagInput.trim()) {
+                        e.preventDefault();
+                        const tag = tagInput.trim();
+                        if (!form.tags.includes(tag)) {
+                          setForm({...form, tags: [...form.tags, tag]});
+                        }
+                        setTagInput("");
+                      }
+                    }}
+                    placeholder="Type a tag and press Enter"
+                    className={inputClass}
+                    list="tag-suggestions"
+                  />
+                  <datalist id="tag-suggestions">
+                    {availableTags.filter(t => !form.tags.includes(t)).map(t => (
+                      <option key={t} value={t} />
+                    ))}
+                  </datalist>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">

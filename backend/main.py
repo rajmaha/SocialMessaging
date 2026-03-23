@@ -1572,6 +1572,42 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS inquiry_for VARCHAR"))
         conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS remarks TEXT"))
 
+        # Remove unique constraint on leads.email — multiple leads can share the same email
+        conn.execute(text("""
+            ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_email_key
+        """))
+
+        # Rename all CRM PostgreSQL enum values from UPPERCASE to lowercase
+        # so they match the Python enum .value strings
+        _enum_renames = {
+            'leadstatus': {
+                'NEW': 'new', 'CONTACTED': 'contacted', 'QUALIFIED': 'qualified',
+                'LOST': 'lost', 'CONVERTED': 'converted',
+            },
+            'leadsource': {
+                'CONVERSATION': 'conversation', 'EMAIL': 'email', 'WEBSITE': 'website',
+                'REFERRAL': 'referral', 'OTHER': 'other',
+            },
+            'dealstage': {
+                'PROSPECT': 'prospect', 'QUALIFIED': 'qualified', 'PROPOSAL': 'proposal',
+                'NEGOTIATION': 'negotiation', 'CLOSE': 'close', 'WON': 'won', 'LOST': 'lost',
+            },
+            'taskstatus': {
+                'OPEN': 'open', 'IN_PROGRESS': 'in_progress', 'COMPLETED': 'completed',
+                'CANCELLED': 'cancelled',
+            },
+            'activitytype': {
+                'CALL': 'call', 'EMAIL': 'email', 'MEETING': 'meeting', 'MESSAGE': 'message',
+                'NOTE': 'note', 'TASK_CREATED': 'task_created', 'DEAL_STAGE_CHANGE': 'deal_stage_change',
+            },
+        }
+        for enum_type, mappings in _enum_renames.items():
+            for old_val, new_val in mappings.items():
+                try:
+                    conn.execute(text(f"ALTER TYPE {enum_type} RENAME VALUE '{old_val}' TO '{new_val}'"))
+                except Exception:
+                    pass  # already renamed or doesn't exist
+
         # visitor_pass_cards table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS visitor_pass_cards (

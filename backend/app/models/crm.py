@@ -68,7 +68,7 @@ class Lead(Base):
     # Basic info
     first_name = Column(String, nullable=False)
     last_name = Column(String)
-    email = Column(String, unique=True)
+    email = Column(String)
     phone = Column(String)
     company = Column(String)
     position = Column(String)
@@ -77,8 +77,8 @@ class Lead(Base):
     remarks = Column(Text)
 
     # Lead management
-    status = Column(Enum(LeadStatus), default=LeadStatus.NEW)
-    source = Column(Enum(LeadSource), default=LeadSource.OTHER)
+    status = Column(Enum(LeadStatus, values_callable=lambda x: [e.value for e in x], native_enum=True), default=LeadStatus.NEW)
+    source = Column(Enum(LeadSource, values_callable=lambda x: [e.value for e in x], native_enum=True), default=LeadSource.OTHER)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     # Lead scoring
@@ -124,7 +124,7 @@ class Deal(Base):
     description = Column(Text)
     
     # Deal tracking
-    stage = Column(Enum(DealStage), default=DealStage.PROSPECT)
+    stage = Column(Enum(DealStage, values_callable=lambda x: [e.value for e in x], native_enum=True), default=DealStage.PROSPECT)
     amount = Column(Float)
     probability = Column(Integer, default=50)  # 0-100%
     
@@ -153,7 +153,7 @@ class Task(Base):
     
     title = Column(String, nullable=False)
     description = Column(Text)
-    status = Column(Enum(TaskStatus), default=TaskStatus.OPEN)
+    status = Column(Enum(TaskStatus, values_callable=lambda x: [e.value for e in x], native_enum=True), default=TaskStatus.OPEN)
     
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
     due_date = Column(DateTime)
@@ -174,7 +174,7 @@ class Activity(Base):
     id = Column(Integer, primary_key=True)
     
     lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
-    type = Column(Enum(ActivityType), nullable=False)
+    type = Column(Enum(ActivityType, values_callable=lambda x: [e.value for e in x], native_enum=True), nullable=False)
     
     title = Column(String, nullable=False)
     description = Column(Text)
