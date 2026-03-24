@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Phone, PhoneOff, Mic, MicOff, Pause, Play, X } from 'lucide-react'
+import {
+  Phone, PhoneOff, Mic, MicOff, Pause, Play, X,
+  PhoneForwarded, Users, ArrowLeft, Loader2,
+} from 'lucide-react'
 import { useSoftphone } from '@/lib/softphone-context'
 
 const DIAL_KEYS = [
@@ -16,15 +19,22 @@ function formatTime(s: number) {
   return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 }
 
+type ActivePanel = 'none' | 'forward' | 'conference'
+
 export default function Softphone() {
   const {
     status, callState, callerNumber, remoteDisplayName,
     isOpen, dialNumber,
-    dial, answer, hangup, toggleMute, toggleHold, close, setDialNumber,
+    dial, answer, hangup, toggleMute, toggleHold, transfer, startConference,
+    close, setDialNumber,
     callSeconds, isMuted, isOnHold,
   } = useSoftphone()
 
   const [inputNumber, setInputNumber] = useState('')
+  const [activePanel, setActivePanel] = useState<ActivePanel>('none')
+  const [targetExt, setTargetExt] = useState('')
+  const [panelBusy, setPanelBusy] = useState(false)
+  const [panelMsg, setPanelMsg] = useState<string | null>(null)
 
   // When context sets dialNumber (click-to-call from ticket table), populate input
   useEffect(() => {
@@ -33,6 +43,15 @@ export default function Softphone() {
       setDialNumber(null)
     }
   }, [dialNumber, setDialNumber])
+
+  // Reset panel when call ends
+  useEffect(() => {
+    if (callState === 'idle') {
+      setActivePanel('none')
+      setTargetExt('')
+      setPanelMsg(null)
+    }
+  }, [callState])
 
   if (!isOpen) return null
 
@@ -47,6 +66,36 @@ export default function Softphone() {
     status === 'unauthorized' ? 'Not authorized' :
     status === 'no_extension' ? 'No extension assigned' :
     status === 'error' ? 'Registration failed' : 'Loading…'
+
+  async function handleForward() {
+    if (!targetExt.trim()) return
+    setPanelBusy(true)
+    setPanelMsg(null)
+    const ok = await transfer(targetExt.trim())
+    setPanelBusy(false)
+    if (ok) {
+      setPanelMsg('Call transferred')
+      setTimeout(() => { setActivePanel('none'); setPanelMsg(null) }, 1500)
+    } else {
+      setPanelMsg('Transfer failed')
+    }
+  }
+
+  async function handleConference() {
+    if (!targetExt.trim()) return
+    setPanelBusy(true)
+    setPanelMsg(null)
+    const ok = await startConference(targetExt.trim())
+    setPanelBusy(false)
+    if (ok) {
+      setPanelMsg(`Calling ${targetExt} into conference…`)
+      setTimeout(() => { setActivePanel('none'); setPanelMsg(null) }, 2000)
+    } else {
+      setPanelMsg('Conference failed')
+    }
+  }
+
+  const isCallActive = callState === 'active' || callState === 'on_hold' || callState === 'ringing_out'
 
   return (
     <div className="fixed bottom-6 right-6 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200 z-50 overflow-hidden flex flex-col">
@@ -96,7 +145,7 @@ export default function Softphone() {
         )}
 
         {/* Active / outbound ringing */}
-        {(callState === 'active' || callState === 'on_hold' || callState === 'ringing_out') && (
+        {isCallActive && activePanel === 'none' && (
           <div className="flex flex-col items-center gap-4 py-2">
             <div className="text-center">
               <p className="text-xs text-gray-400 uppercase tracking-wide">
@@ -110,7 +159,9 @@ export default function Softphone() {
                 <p className="text-sm font-mono text-gray-500 mt-1">{formatTime(callSeconds)}</p>
               )}
             </div>
-            <div className="flex gap-4">
+
+            {/* Row 1: Mute, Hold, Hang up */}
+            <div className="flex gap-3">
               <button
                 onClick={toggleMute}
                 title={isMuted ? 'Unmute' : 'Mute'}
@@ -137,6 +188,96 @@ export default function Softphone() {
                 <PhoneOff className="w-5 h-5" />
               </button>
             </div>
+
+            {/* Row 2: Forward & Conference */}
+            {(callState === 'active' || callState === 'on_hold') && (
+              <div className="flex gap-3 mt-1">
+                <button
+                  onClick={() => { setActivePanel('forward'); setTargetExt(''); setPanelMsg(null) }}
+                  title="Forward / Transfer"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 text-sm font-medium transition"
+                >
+                  <PhoneForwarded className="w-4 h-4" />
+                  Forward
+                </button>
+                <button
+                  onClick={() => { setActivePanel('conference'); setTargetExt(''); setPanelMsg(null) }}
+                  title="Conference / Group call"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 text-sm font-medium transition"
+                >
+                  <Users className="w-4 h-4" />
+                  Conference
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Forward panel — enter target extension */}
+        {isCallActive && activePanel === 'forward' && (
+          <div className="flex flex-col items-center gap-3 py-2">
+            <button
+              onClick={() => { setActivePanel('none'); setPanelMsg(null) }}
+              className="self-start flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+            >
+              <ArrowLeft className="w-3 h-3" /> Back
+            </button>
+            <PhoneForwarded className="w-8 h-8 text-blue-500" />
+            <p className="text-sm font-medium text-gray-700">Transfer call to:</p>
+            <input
+              type="tel"
+              value={targetExt}
+              onChange={e => setTargetExt(e.target.value)}
+              placeholder="Extension (e.g. 9002)"
+              autoFocus
+              className="w-full text-center text-lg font-semibold border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              onKeyDown={e => { if (e.key === 'Enter') handleForward() }}
+            />
+            {panelMsg && (
+              <p className={`text-xs ${panelMsg.includes('failed') ? 'text-red-500' : 'text-green-600'}`}>{panelMsg}</p>
+            )}
+            <button
+              onClick={handleForward}
+              disabled={!targetExt.trim() || panelBusy}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              {panelBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <PhoneForwarded className="w-4 h-4" />}
+              Transfer
+            </button>
+          </div>
+        )}
+
+        {/* Conference panel — enter target extension */}
+        {isCallActive && activePanel === 'conference' && (
+          <div className="flex flex-col items-center gap-3 py-2">
+            <button
+              onClick={() => { setActivePanel('none'); setPanelMsg(null) }}
+              className="self-start flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+            >
+              <ArrowLeft className="w-3 h-3" /> Back
+            </button>
+            <Users className="w-8 h-8 text-purple-500" />
+            <p className="text-sm font-medium text-gray-700">Add to conference:</p>
+            <input
+              type="tel"
+              value={targetExt}
+              onChange={e => setTargetExt(e.target.value)}
+              placeholder="Extension (e.g. 9002)"
+              autoFocus
+              className="w-full text-center text-lg font-semibold border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
+              onKeyDown={e => { if (e.key === 'Enter') handleConference() }}
+            />
+            {panelMsg && (
+              <p className={`text-xs ${panelMsg.includes('failed') ? 'text-red-500' : 'text-green-600'}`}>{panelMsg}</p>
+            )}
+            <button
+              onClick={handleConference}
+              disabled={!targetExt.trim() || panelBusy}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-purple-500 text-white text-sm font-medium hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              {panelBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+              Start Conference
+            </button>
           </div>
         )}
 

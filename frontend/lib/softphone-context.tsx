@@ -39,6 +39,8 @@ interface SoftphoneContextType {
   hangup: () => void
   toggleMute: () => void
   toggleHold: () => void
+  transfer: (targetExtension: string) => Promise<boolean>
+  startConference: (targetExtension: string) => Promise<boolean>
   close: () => void
   setDialNumber: (n: string | null) => void
 
@@ -63,6 +65,8 @@ const SoftphoneContext = createContext<SoftphoneContextType>({
   hangup: () => {},
   toggleMute: () => {},
   toggleHold: () => {},
+  transfer: async () => false,
+  startConference: async () => false,
   close: () => {},
   setDialNumber: () => {},
   callSeconds: 0,
@@ -91,6 +95,9 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   // Cache UserAgent constructor from dynamic import so dial() can use makeURI without require()
   const UserAgentClassRef = useRef<any>(null)
+  // Ringtone refs (Web Audio API oscillator-based ring)
+  const ringCtxRef = useRef<AudioContext | null>(null)
+  const ringIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // ── Call timer ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -102,6 +109,47 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
       if (callState === 'idle') setCallSeconds(0)
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [callState])
+
+  // ── Ringtone (Web Audio API oscillator — US phone ring pattern) ──────────
+  useEffect(() => {
+    if (callState !== 'ringing_in') {
+      // Stop ringtone
+      if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null }
+      if (ringCtxRef.current) { ringCtxRef.current.close().catch(() => {}); ringCtxRef.current = null }
+      return
+    }
+    // Start ringtone: 2-second ring, 4-second cycle (ring 2s, silence 2s)
+    const ctx = new AudioContext()
+    ringCtxRef.current = ctx
+
+    function playBurst() {
+      if (ctx.state === 'closed') return
+      // Two-tone oscillator (440Hz + 480Hz) = US ring cadence
+      const osc1 = ctx.createOscillator()
+      const osc2 = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc1.frequency.value = 440
+      osc2.frequency.value = 480
+      gain.gain.value = 0.15
+      osc1.connect(gain)
+      osc2.connect(gain)
+      gain.connect(ctx.destination)
+      const now = ctx.currentTime
+      osc1.start(now)
+      osc2.start(now)
+      osc1.stop(now + 2)
+      osc2.stop(now + 2)
+    }
+
+    playBurst() // immediate first ring
+    ringIntervalRef.current = setInterval(playBurst, 4000)
+
+    return () => {
+      if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null }
+      ctx.close().catch(() => {})
+      ringCtxRef.current = null
+    }
   }, [callState])
 
   // ── Credential fetch + SIP.js bootstrap ─────────────────────────────────
@@ -314,6 +362,49 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     }
   }, [isOnHold])
 
+  // ── Blind transfer (SIP REFER via session.refer()) ───────────────────────
+  const transfer = useCallback(async (targetExtension: string): Promise<boolean> => {
+    const session = sessionRef.current
+    const ua = uaRef.current
+    if (!session || !ua) return false
+    try {
+      const UA = UserAgentClassRef.current
+      if (!UA) return false
+      const targetUri = UA.makeURI(`sip:${targetExtension}@${ua.configuration.uri.host}`)
+      if (!targetUri) return false
+      // SIP.js v0.21: session.refer(targetURI) sends a REFER for blind transfer
+      await session.refer(targetUri)
+      resetCall()
+      return true
+    } catch (err) {
+      console.error('[Softphone] transfer error', err)
+      return false
+    }
+  }, [])
+
+  // ── Conference call (AMI-based — adds another party via backend) ────────
+  const startConference = useCallback(async (targetExtension: string): Promise<boolean> => {
+    if (!myExtension) return false
+    try {
+      const token = getAuthToken()
+      const res = await fetch(`${API_URL}/calls/conference`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          current_extension: myExtension,
+          target_extension: targetExtension,
+        }),
+      })
+      return res.ok
+    } catch (err) {
+      console.error('[Softphone] conference error', err)
+      return false
+    }
+  }, [myExtension])
+
   const close = useCallback(() => {
     setIsOpen(false)
     setDialNumber(null)
@@ -323,7 +414,8 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     <SoftphoneContext.Provider value={{
       status, callState, callerNumber, remoteDisplayName,
       isOpen, dialNumber,
-      dial, answer, hangup, toggleMute, toggleHold, close, setDialNumber,
+      dial, answer, hangup, toggleMute, toggleHold, transfer, startConference,
+      close, setDialNumber,
       callSeconds, isMuted, isOnHold, myExtension,
     }}>
       {children}

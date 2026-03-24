@@ -474,14 +474,121 @@ def stream_tts_audio(filename: str):
     """
     from app.services.tts_service import TTS_CACHE_DIR
     import os
-    
+
     # Ensure filename doesn't contain directory traversal sequences
     safe_filename = os.path.basename(filename)
     audio_path = os.path.join(TTS_CACHE_DIR, safe_filename)
-    
+
     if not os.path.exists(audio_path):
         raise HTTPException(status_code=404, detail="TTS audio file not found")
-        
+
     from fastapi.responses import FileResponse
     return FileResponse(audio_path, media_type="audio/mpeg" if audio_path.endswith(".mp3") else "audio/wav")
+
+
+# ── Call Transfer (AMI Redirect) ───────────────────────────────────────────
+
+class TransferRequest(BaseModel):
+    target_extension: str
+
+@router.post("/transfer")
+def transfer_call(
+    request: TransferRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Blind-transfer the agent's current call to another extension via AMI Redirect.
+    The agent's channel is redirected to the target extension in from-internal context.
+    """
+    from app.models.agent_extension import AgentExtension
+    ext = db.query(AgentExtension).filter(AgentExtension.agent_id == current_user.id).first()
+    if not ext or not ext.extension:
+        raise HTTPException(status_code=400, detail="Agent has no PBX extension configured.")
+
+    from app.services.ami_service import get_ami_client
+    client = get_ami_client(db)
+    if not client:
+        raise HTTPException(status_code=503, detail="AMI not configured.")
+
+    # AMI Redirect — moves the agent's active channel to the target extension
+    action_id = f"xfer-{int(__import__('time').time() * 1000)}"
+    cmd = (
+        f"Action: Redirect\r\n"
+        f"ActionID: {action_id}\r\n"
+        f"Channel: PJSIP/{ext.extension}\r\n"
+        f"Context: from-internal\r\n"
+        f"Exten: {request.target_extension}\r\n"
+        f"Priority: 1\r\n"
+        f"\r\n"
+    )
+    client._send(cmd)
+    response = client._read_response()
+    client.logoff()
+
+    if "Success" in response:
+        return {"status": "success", "message": f"Call transferred to {request.target_extension}"}
+    else:
+        raise HTTPException(status_code=500, detail=f"Transfer failed: {response.strip()}")
+
+
+# ── Conference Call (AMI-based — bridge parties into ConfBridge) ────────────
+
+class ConferenceRequest(BaseModel):
+    current_extension: str
+    target_extension: str
+
+@router.post("/conference")
+def conference_call(
+    request: ConferenceRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Start a 3-way conference by moving the agent's current call into an Asterisk
+    ConfBridge room and then dialling the target extension into the same room.
+    """
+    from app.services.ami_service import get_ami_client
+    import time
+
+    client = get_ami_client(db)
+    if not client:
+        raise HTTPException(status_code=503, detail="AMI not configured.")
+
+    # Use agent's extension as a unique conference room number
+    conf_room = request.current_extension
+
+    # 1. Redirect the agent's current channel into the ConfBridge room
+    action_id1 = f"conf-redir-{int(time.time() * 1000)}"
+    cmd1 = (
+        f"Action: Redirect\r\n"
+        f"ActionID: {action_id1}\r\n"
+        f"Channel: PJSIP/{request.current_extension}\r\n"
+        f"Context: from-internal\r\n"
+        f"Exten: {conf_room}\r\n"
+        f"Priority: 1\r\n"
+        f"Application: ConfBridge\r\n"
+        f"Data: {conf_room}\r\n"
+        f"\r\n"
+    )
+    client._send(cmd1)
+    client._read_response()
+
+    # 2. Originate a call to the target extension and put them in the same ConfBridge
+    action_id2 = f"conf-invite-{int(time.time() * 1000)}"
+    client.originate(
+        channel=f"PJSIP/{request.target_extension}",
+        application="ConfBridge",
+        app_data=conf_room,
+        callerid=f"Conference <{request.current_extension}>",
+        timeout=30000,
+        action_id=action_id2,
+    )
+    client.logoff()
+
+    return {
+        "status": "success",
+        "conference_room": conf_room,
+        "message": f"Conference started — calling {request.target_extension} into room {conf_room}",
+    }
 
