@@ -1,5 +1,9 @@
 import { useEvents } from '@/lib/events-context'
 import { formatDateWithTimezone } from '@/lib/date-utils'
+import { getPlatformBadgeColor } from '@/lib/platform-colors'
+
+// UUID pattern to detect and hide raw webchat session IDs
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 interface Conversation {
   id: number
@@ -41,16 +45,6 @@ export default function ConversationList({
 }: ConversationListProps) {
   const { timezone } = useEvents()
   const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-  const getPlatformBadgeColor = (platform: string) => {
-    const colors: { [key: string]: string } = {
-      whatsapp: 'bg-green-500',
-      facebook: 'bg-blue-600',
-      viber: 'bg-purple-600',
-      linkedin: 'bg-blue-700',
-      webchat: 'bg-teal-500',
-    }
-    return colors[platform.toLowerCase()] || 'bg-gray-500'
-  }
 
   if (loading) {
     return (
@@ -79,10 +73,9 @@ export default function ConversationList({
   // Sort: unassigned+unread first → active webchat → other platforms → offline webchat
   const sorted = [...domainFiltered].sort((a, b) => {
     const rank = (c: Conversation) => {
-      if (!c.assigned_to && c.unread_count > 0) return 4           // unassigned & unread — top priority
-      if (c.platform === 'webchat' && activeConvIds.has(c.id)) return 3  // active webchat online
-      if (c.platform !== 'webchat') return 2                        // other platforms
-      if (c.platform === 'webchat' && activeConvIds.has(c.id)) return 1  // (covered above)
+      if (!c.assigned_to && c.unread_count > 0) return 3           // unassigned & unread — top priority
+      if (c.platform === 'webchat' && activeConvIds.has(c.id)) return 2  // active webchat online
+      if (c.platform !== 'webchat') return 1                        // other platforms
       return 0                                                       // offline webchat
     }
     if (rank(b) !== rank(a)) return rank(b) - rank(a)
@@ -108,22 +101,34 @@ export default function ConversationList({
         >
           <div className="flex justify-between items-start mb-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="relative">
-                <div
-                  className={`w-3 h-3 rounded-full ${
-                    conversation.platform === 'webchat' && !activeConvIds.has(conversation.id)
-                      ? 'bg-gray-300'
-                      : getPlatformBadgeColor(conversation.platform)
-                  }`}
-                />
+              {/* Avatar or platform dot */}
+              <div className="relative flex-shrink-0">
+                {conversation.contact_avatar ? (
+                  <img
+                    src={conversation.contact_avatar}
+                    alt=""
+                    className="w-8 h-8 rounded-full object-cover"
+                  />
+                ) : (
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
+                      conversation.platform === 'webchat' && !activeConvIds.has(conversation.id)
+                        ? 'bg-gray-300'
+                        : getPlatformBadgeColor(conversation.platform)
+                    }`}
+                  >
+                    {(conversation.contact_name || '?').charAt(0).toUpperCase()}
+                  </div>
+                )}
                 {conversation.platform === 'webchat' && activeConvIds.has(conversation.id) && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-400 border border-white" />
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-400 border-2 border-white" />
                 )}
               </div>
               <span className="font-semibold text-gray-800">
                 {conversation.contact_name}
               </span>
-              {conversation.contact_id && conversation.contact_id !== conversation.contact_name && (
+              {/* Show contact_id only if it's meaningful (not a UUID, not same as name) */}
+              {conversation.contact_id && conversation.contact_id !== conversation.contact_name && !UUID_REGEX.test(conversation.contact_id) && (
                 <span className="text-[11px] text-gray-400 font-normal truncate max-w-[140px]" title={conversation.contact_id}>
                   {conversation.contact_id}
                 </span>

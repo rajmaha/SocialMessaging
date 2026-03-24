@@ -74,6 +74,7 @@ def get_conversations(
     assigned_to: Optional[str] = None,
     platform_account_id: Optional[int] = None,
     widget_domain_id: Optional[int] = None,
+    search: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """Get all conversations for a user, optionally filtered by platform, status, and/or assigned agent.
@@ -88,8 +89,12 @@ def get_conversations(
         )
     )
 
+    # Exclude email conversations unless explicitly filtered to email platform
+    # (email has its own dedicated tab)
     if platform:
         query = query.filter(Conversation.platform == platform.lower())
+    else:
+        query = query.filter(Conversation.platform != "email")
     if status:
         query = query.filter(Conversation.status == status.lower())
     if assigned_to == 'none':
@@ -99,6 +104,16 @@ def get_conversations(
             query = query.filter(Conversation.assigned_to == int(assigned_to))
         except ValueError:
             pass
+
+    # Search by contact name or contact_id
+    if search:
+        search_term = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                Conversation.contact_name.ilike(search_term),
+                Conversation.contact_id.ilike(search_term),
+            )
+        )
 
     # Scope to agent's permitted platform accounts
     agent_account_rows = db.query(AgentAccount.platform_account_id).filter(

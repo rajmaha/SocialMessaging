@@ -21,6 +21,7 @@ function playNotificationSound() {
   } catch { }
 }
 import axios from 'axios'
+import { FiSearch } from 'react-icons/fi'
 import { authAPI, getAuthToken, type User } from '@/lib/auth'
 import MainHeader from '@/components/MainHeader'
 import ConversationList from '@/components/ConversationList'
@@ -64,7 +65,7 @@ function DashboardPage() {
   const [loading, setLoading] = useState(false)
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState<'messaging' | 'email'>(
-    (searchParams.get('tab') as 'messaging' | 'email') || 'email'
+    (searchParams.get('tab') as 'messaging' | 'email') || 'messaging'
   )
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([])
   const [activeConvIds, setActiveConvIds] = useState<Set<number>>(new Set())
@@ -77,6 +78,8 @@ function DashboardPage() {
   const [widgetDomains, setWidgetDomains] = useState<any[]>([])
   const [domainFilter, setDomainFilter] = useState<string>('')
   const [badgeCounts, setBadgeCounts] = useState<{ unassigned: number; pending: number }>({ unassigned: 0, pending: 0 })
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchRef = useRef('')
   const userRef = useRef<User | null>(null)
   const platformRef = useRef<string>('all')
   const statusFilterRef = useRef<string>('all')
@@ -150,6 +153,7 @@ function DashboardPage() {
       if (unassOnly) params.assigned_to = 'none'
       else if (myOnly) params.assigned_to = userId
       if (acctId) params.platform_account_id = acctId
+      if (searchRef.current.trim()) params.search = searchRef.current.trim()
       const response = await axios.get(`${API_URL}/conversations/`, { params })
       setConversations(response.data)
       // Refresh badge counts alongside
@@ -170,6 +174,15 @@ function DashboardPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
+
+  // Debounced search: re-fetch conversations 400ms after user stops typing
+  useEffect(() => {
+    searchRef.current = searchQuery
+    const timer = setTimeout(() => {
+      if (user) fetchConversations(user.user_id)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchQuery]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep refs in sync with state for use inside event callbacks
   useEffect(() => { selectedConvRef.current = selectedConversation }, [selectedConversation])
@@ -269,6 +282,8 @@ function DashboardPage() {
 
   const handleDomainFilter = (value: string) => {
     setDomainFilter(value)
+    // Refetch conversations to apply domain filter on the server side
+    if (user) fetchConversations(user.user_id)
   }
 
   if (!user) {
@@ -318,6 +333,19 @@ function DashboardPage() {
           <main className="flex h-full bg-white">
             {/* Sidebar */}
             <div className={`${mobileShowChat ? 'hidden' : 'flex'} md:flex w-full md:w-80 flex-col border-r border-gray-200`}>
+              {/* Search bar */}
+              <div className="px-3 pt-3 pb-1">
+                <div className="relative">
+                  <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                  <input
+                    type="text"
+                    placeholder="Search conversations..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                  />
+                </div>
+              </div>
               <PlatformFilter
                 selectedPlatform={selectedPlatform}
                 onPlatformChange={handlePlatformChange}
@@ -328,21 +356,21 @@ function DashboardPage() {
                 <div className="flex overflow-x-auto gap-2 pb-2 -mx-3 px-3 md:mx-0 md:px-0 md:flex-wrap pt-2">
                   <button
                     onClick={() => { if (mineOnly || unassignedOnly) { setMineOnly(false); mineOnlyRef.current = false; setUnassignedOnly(false); unassignedOnlyRef.current = false; if (user) fetchConversations(user.user_id, undefined, undefined, false, false) } }}
-                    className={`flex-1 text-xs py-1.5 rounded font-semibold transition ${!mineOnly && !unassignedOnly ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    className={`flex-shrink-0 md:flex-1 text-xs py-1.5 px-3 md:px-0 rounded font-semibold transition whitespace-nowrap ${!mineOnly && !unassignedOnly ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`}
                   >
                     All agents
                   </button>
                   <button
                     onClick={handleMineToggle}
-                    className={`flex-1 text-xs py-1.5 rounded font-semibold transition ${mineOnly ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    className={`flex-shrink-0 md:flex-1 text-xs py-1.5 px-3 md:px-0 rounded font-semibold transition whitespace-nowrap ${mineOnly ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                     style={mineOnly ? { backgroundColor: 'var(--button-primary)' } : {}}
                   >
                     Mine
                   </button>
                   <button
                     onClick={handleUnassignedToggle}
-                    className={`flex-1 text-xs py-1.5 rounded font-semibold transition flex items-center justify-center gap-1 ${unassignedOnly ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    className={`flex-shrink-0 md:flex-1 text-xs py-1.5 px-3 md:px-0 rounded font-semibold transition whitespace-nowrap flex items-center justify-center gap-1 ${unassignedOnly ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`}
                   >
                     Unassigned

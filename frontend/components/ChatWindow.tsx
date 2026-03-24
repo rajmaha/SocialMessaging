@@ -11,6 +11,7 @@ import CrmSidebar from './CrmSidebar';
 import ClickablePhone from '@/components/ClickablePhone';
 import ClickableEmail from '@/components/ClickableEmail';
 import QuickTicketModal from './QuickTicketModal'
+import { getPlatformTagColor } from '@/lib/platform-colors'
 
 interface Message {
   id: number
@@ -426,9 +427,16 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
         fetchMessages(conversation.id)
       }
       onRefresh()
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending message:', error)
-      alert('Failed to send message')
+      const detail = error?.response?.data?.detail
+      if (error?.code === 'ERR_NETWORK' || !error?.response) {
+        alert('Network error — please check your connection and try again')
+      } else if (error?.response?.status >= 500) {
+        alert('Server error — please try again later')
+      } else {
+        alert(detail || 'Failed to send message')
+      }
     } finally {
       setSending(false)
     }
@@ -447,17 +455,7 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
     )
   }
 
-  const getPlatformColor = (platform: string) => {
-    const colors: { [key: string]: string } = {
-      whatsapp: 'bg-green-100 text-green-800',
-      facebook: 'bg-blue-100 text-blue-800',
-      viber: 'bg-purple-100 text-purple-800',
-      linkedin: 'bg-blue-100 text-blue-800',
-      webchat: 'bg-teal-100 text-teal-800',
-      email: 'bg-orange-100 text-orange-800',
-    }
-    return colors[platform.toLowerCase()] || 'bg-gray-100 text-gray-800'
-  }
+  const getPlatformColor = (platform: string) => getPlatformTagColor(platform)
 
   const statusColors: Record<string, string> = {
     open: 'bg-blue-100 text-blue-700 border-blue-200',

@@ -35,8 +35,8 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
     const brandingCtx = useBranding()
     const branding = brandingCtx?.branding
 
-    // Use prop if provided, otherwise fallback to searchParams
-    const activeTab = propActiveTab || searchParams.get('tab') || 'email'
+    // Use prop if provided, otherwise fallback to searchParams (default to messaging)
+    const activeTab = propActiveTab || searchParams.get('tab') || 'messaging'
 
     const isMessagingActive = pathname === '/dashboard' && activeTab === 'messaging'
     const isEmailActive = (pathname === '/dashboard' && activeTab === 'email') || pathname.startsWith('/email')
@@ -286,7 +286,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                             <FiMessageSquare size={15} />
                             Messaging
                             {unassignedMsgCount > 0 && (
-                                <span className="bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                                <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
                                     {unassignedMsgCount > 99 ? '99+' : unassignedMsgCount}
                                 </span>
                             )}
