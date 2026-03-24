@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import MainHeader from "@/components/MainHeader";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { useRouter } from 'next/navigation';
-import { Phone, Clock, PhoneCall, Headphones } from 'lucide-react';
+import { Phone, Clock, PhoneCall, Headphones, PhoneIncoming, PhoneOutgoing, PhoneMissed } from 'lucide-react';
 import TicketForm from "@/components/TicketForm";
 import TicketHistory from "@/components/TicketHistory";
 import { API_URL } from '@/lib/config';
@@ -42,6 +42,7 @@ export default function Workspace() {
     const [simulateNumber, setSimulateNumber] = useState('');
     const [filterType, setFilterType] = useState<'all' | 'forwarded'>('all');
     const [quickTicketOpen, setQuickTicketOpen] = useState(false)
+    const [recentCalls, setRecentCalls] = useState<any[]>([])
 
     useEffect(() => {
         setIsMounted(true);
@@ -52,6 +53,7 @@ export default function Workspace() {
             fetchStats();
             fetchAppType();
             fetchMyTickets();
+            fetchRecentCalls();
         } else {
             router.push('/login');
         }
@@ -66,6 +68,23 @@ export default function Workspace() {
             if (res.ok) {
                 const data = await res.json();
                 setMyTickets(data);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const fetchRecentCalls = async () => {
+        try {
+            const token = getAuthToken();
+            const today = new Date().toISOString().slice(0, 10);
+            const res = await fetch(
+                `${API_URL}/calls/recordings?date_from=${today}&limit=10`,
+                { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            if (res.ok) {
+                const data = await res.json();
+                setRecentCalls(data.results || []);
             }
         } catch (e) {
             console.error(e);
@@ -387,61 +406,138 @@ export default function Workspace() {
                                 onFollowUpClick={(id) => setParentTicketId(id)}
                             />
                         ) : (
-                            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col items-center justify-center p-8 h-full min-h-[400px] gap-6">
-                              {/* Status indicator */}
-                              <div className="flex flex-col items-center gap-3">
-                                <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                                  softphoneStatus === 'registered' ? 'bg-green-100' :
-                                  softphoneStatus === 'registering' ? 'bg-yellow-100' :
-                                  softphoneStatus === 'unauthorized' || softphoneStatus === 'no_extension' ? 'bg-gray-100' :
-                                  'bg-red-100'
-                                }`}>
-                                  <Phone className={`w-8 h-8 ${
-                                    softphoneStatus === 'registered' ? 'text-green-600' :
-                                    softphoneStatus === 'registering' ? 'text-yellow-600 animate-pulse' :
-                                    softphoneStatus === 'unauthorized' || softphoneStatus === 'no_extension' ? 'text-gray-400' :
-                                    'text-red-500'
-                                  }`} />
-                                </div>
-                                <div className="text-center">
-                                  <p className="font-semibold text-gray-800">
-                                    {softphoneStatus === 'registered' ? 'Softphone Ready' :
-                                     softphoneStatus === 'registering' ? 'Connecting…' :
-                                     softphoneStatus === 'unauthorized' ? 'Dial Not Available' :
-                                     softphoneStatus === 'no_extension' ? 'No Extension Assigned' :
-                                     softphoneStatus === 'error' ? 'Connection Failed' : 'Loading…'}
-                                  </p>
-                                  {/* Agent name + extension badge */}
-                                  {softphoneStatus === 'registered' && (
-                                    <div className="mt-2 flex flex-col items-center gap-1">
+                            <div className="flex flex-col h-full gap-3">
+                              {/* Softphone status card (compact) */}
+                              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col items-center p-5 gap-3">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                                    softphoneStatus === 'registered' ? 'bg-green-100' :
+                                    softphoneStatus === 'registering' ? 'bg-yellow-100' :
+                                    softphoneStatus === 'unauthorized' || softphoneStatus === 'no_extension' ? 'bg-gray-100' :
+                                    'bg-red-100'
+                                  }`}>
+                                    <Phone className={`w-5 h-5 ${
+                                      softphoneStatus === 'registered' ? 'text-green-600' :
+                                      softphoneStatus === 'registering' ? 'text-yellow-600 animate-pulse' :
+                                      softphoneStatus === 'unauthorized' || softphoneStatus === 'no_extension' ? 'text-gray-400' :
+                                      'text-red-500'
+                                    }`} />
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-gray-800 text-sm">
+                                      {softphoneStatus === 'registered' ? 'Softphone Ready' :
+                                       softphoneStatus === 'registering' ? 'Connecting…' :
+                                       softphoneStatus === 'unauthorized' ? 'Dial Not Available' :
+                                       softphoneStatus === 'no_extension' ? 'No Extension Assigned' :
+                                       softphoneStatus === 'error' ? 'Connection Failed' : 'Loading…'}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-0.5">
                                       {user?.full_name && (
-                                        <p className="text-sm font-medium text-gray-700">{user.full_name}</p>
+                                        <span className="text-xs text-gray-500">{user.full_name}</span>
                                       )}
                                       {myExtension && (
-                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
-                                          <Phone className="w-3 h-3" /> Ext {myExtension}
+                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">
+                                          <Phone className="w-2.5 h-2.5" /> {myExtension}
                                         </span>
                                       )}
                                     </div>
+                                  </div>
+                                  {softphoneStatus === 'registered' && !softphoneOpen && (
+                                    <button
+                                      onClick={() => softphoneDial('')}
+                                      className="ml-auto px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-medium text-xs hover:bg-indigo-700 transition flex items-center gap-1.5"
+                                    >
+                                      <Phone className="w-3 h-3" /> Dial
+                                    </button>
                                   )}
-                                  <p className="text-sm text-gray-400 mt-1">
-                                    {softphoneStatus === 'registered' ? 'Ready to make and receive calls' :
-                                     softphoneStatus === 'unauthorized' ? 'Contact your admin to enable dialling' :
-                                     softphoneStatus === 'no_extension' ? 'Ask admin to assign a SIP extension' :
-                                     softphoneStatus === 'error' ? 'FreePBX SSL certificate may be invalid or unreachable — check browser console' : ''}
-                                  </p>
                                 </div>
                               </div>
 
-                              {/* Open softphone button — only when registered and not already open */}
-                              {softphoneStatus === 'registered' && !softphoneOpen && (
-                                <button
-                                  onClick={() => softphoneDial('')}
-                                  className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium text-sm hover:bg-indigo-700 transition flex items-center gap-2"
-                                >
-                                  <Phone className="w-4 h-4" /> Open Dial Pad
-                                </button>
-                              )}
+                              {/* Today's Recent Calls */}
+                              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 flex flex-col overflow-hidden">
+                                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Clock className="w-4 h-4 text-gray-400" />
+                                    <h3 className="text-sm font-semibold text-gray-700">Today&apos;s Calls</h3>
+                                  </div>
+                                  <span className="text-xs text-gray-400 font-medium">{recentCalls.length} call{recentCalls.length !== 1 ? 's' : ''}</span>
+                                </div>
+                                <div className="flex-1 overflow-y-auto">
+                                  {recentCalls.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                                      <PhoneCall className="w-8 h-8 mb-2 opacity-40" />
+                                      <p className="text-sm">No calls today</p>
+                                    </div>
+                                  ) : (
+                                    <div className="divide-y divide-gray-50">
+                                      {recentCalls.map((call: any) => {
+                                        const isInbound = call.direction === 'inbound'
+                                        const isMissed = call.disposition === 'NO ANSWER' || call.disposition === 'BUSY' || call.disposition === 'FAILED'
+                                        const dur = call.duration_seconds || 0
+                                        const durStr = dur > 0
+                                          ? `${Math.floor(dur / 60)}m ${dur % 60}s`
+                                          : isMissed ? 'Missed' : '0s'
+                                        const time = call.created_at
+                                          ? new Date(call.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                          : ''
+
+                                        return (
+                                          <div
+                                            key={call.id}
+                                            className="px-4 py-2.5 hover:bg-gray-50 transition cursor-pointer flex items-center gap-3"
+                                            onClick={() => {
+                                              if (call.phone_number) {
+                                                softphoneDial(call.phone_number)
+                                              }
+                                            }}
+                                            title={`Click to call ${call.phone_number}`}
+                                          >
+                                            {/* Direction icon */}
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                              isMissed ? 'bg-red-50' : isInbound ? 'bg-blue-50' : 'bg-green-50'
+                                            }`}>
+                                              {isMissed ? (
+                                                <PhoneMissed className="w-3.5 h-3.5 text-red-500" />
+                                              ) : isInbound ? (
+                                                <PhoneIncoming className="w-3.5 h-3.5 text-blue-500" />
+                                              ) : (
+                                                <PhoneOutgoing className="w-3.5 h-3.5 text-green-600" />
+                                              )}
+                                            </div>
+
+                                            {/* Call info */}
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-1.5">
+                                                <span className="text-sm font-medium text-gray-800 truncate">
+                                                  {call.customer_name || call.phone_number || 'Unknown'}
+                                                </span>
+                                              </div>
+                                              <div className="flex items-center gap-2 mt-0.5">
+                                                {call.customer_name && call.phone_number && (
+                                                  <span className="text-[11px] text-gray-400">{call.phone_number}</span>
+                                                )}
+                                                {call.ticket_number && (
+                                                  <span className="text-[10px] font-medium text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                                                    {call.ticket_number}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            {/* Time + duration */}
+                                            <div className="text-right flex-shrink-0">
+                                              <p className="text-xs text-gray-500">{time}</p>
+                                              <p className={`text-[11px] font-medium ${isMissed ? 'text-red-500' : 'text-gray-400'}`}>
+                                                {durStr}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                         )}
                     </div>
