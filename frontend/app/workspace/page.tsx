@@ -478,10 +478,7 @@ export default function Workspace() {
                                     ] as const).map(tab => {
                                       const count = tab.key === 'all' ? recentCalls.length
                                         : tab.key === 'missed' ? recentCalls.filter(c => c.disposition === 'NO ANSWER' || c.disposition === 'BUSY' || c.disposition === 'FAILED').length
-                                        : recentCalls.filter(c => {
-                                            const isMissed = c.disposition === 'NO ANSWER' || c.disposition === 'BUSY' || c.disposition === 'FAILED'
-                                            return !isMissed && c.direction === tab.key
-                                          }).length
+                                        : recentCalls.filter(c => c.direction === tab.key).length
                                       return (
                                         <button
                                           key={tab.key}
@@ -505,8 +502,8 @@ export default function Workspace() {
                                       const isMissed = call.disposition === 'NO ANSWER' || call.disposition === 'BUSY' || call.disposition === 'FAILED'
                                       if (callTab === 'all') return true
                                       if (callTab === 'missed') return isMissed
-                                      if (callTab === 'inbound') return !isMissed && call.direction === 'inbound'
-                                      if (callTab === 'outbound') return !isMissed && call.direction === 'outbound'
+                                      if (callTab === 'inbound') return call.direction === 'inbound'
+                                      if (callTab === 'outbound') return call.direction === 'outbound'
                                       return true
                                     })
                                     if (filtered.length === 0) return (
@@ -528,10 +525,17 @@ export default function Workspace() {
                                         const durStr = dur > 0
                                           ? `${Math.floor(dur / 60)}m ${dur % 60}s`
                                           : isMissed ? 'Missed' : '0s'
-                                        // Format time using app timezone utility (handles naive UTC datetimes)
-                                        const time = call.created_at
-                                          ? formatDateWithTimezone(call.created_at, tz, { hour: 'numeric', minute: '2-digit', hour12: true })
-                                          : ''
+                                        // Format time-only with proper timezone handling
+                                        let time = ''
+                                        if (call.created_at) {
+                                          // Normalize naive UTC datetimes (same logic as date-utils.ts)
+                                          const raw = call.created_at
+                                          const normalized = raw && !raw.endsWith('Z') && !raw.includes('+') && !raw.includes('-', 10)
+                                            ? raw + 'Z' : raw
+                                          time = new Intl.DateTimeFormat('en-US', {
+                                            hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz,
+                                          }).format(new Date(normalized))
+                                        }
 
                                         return (
                                           <div
