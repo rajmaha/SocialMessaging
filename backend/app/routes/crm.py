@@ -26,6 +26,7 @@ from app.schemas.crm import (
     ImportResult,
 )
 from app.dependencies import get_current_user, require_admin_feature, require_page
+from app.models.role import Role
 from app.services.crm_scoring import apply_score
 from app.services.events_service import events_service, EventTypes
 from app.services.crm_workflow import evaluate_rules
@@ -36,6 +37,17 @@ require_crm = require_admin_feature("feature_manage_crm")
 
 
 # ========== HELPERS ==========
+
+
+def _has_crm_view(user, db: Session) -> bool:
+    """Check if user's role grants CRM view permission (admins always True)."""
+    if user.role == "admin":
+        return True
+    role = db.query(Role).filter(Role.slug == user.role).first()
+    if not role:
+        return False
+    return "view" in (role.permissions or {}).get("crm", [])
+
 
 def _broadcast(event):
     """Fire-and-forget broadcast to all connected users."""
@@ -231,8 +243,8 @@ def list_leads(
 ):
     """List leads with optional filtering."""
     query = db.query(Lead)
-    # Assignment-based visibility: agents see only their assigned leads
-    if current_user.role != "admin":
+    # Role-based visibility: users with CRM view see all; others see only assigned
+    if not _has_crm_view(current_user, db):
         query = query.filter(Lead.assigned_to == current_user.id)
     if status:
         query = query.filter(Lead.status == status)
@@ -576,7 +588,8 @@ def list_deals(
 ):
     """List deals with optional filtering."""
     query = db.query(Deal)
-    if current_user.role != "admin":
+    # Role-based visibility: users with CRM view see all; others see only assigned
+    if not _has_crm_view(current_user, db):
         query = query.filter(Deal.assigned_to == current_user.id)
     if stage:
         query = query.filter(Deal.stage == stage)
@@ -731,7 +744,8 @@ def list_tasks(
 ):
     """List tasks with optional filtering."""
     query = db.query(Task)
-    if current_user.role != "admin":
+    # Role-based visibility: users with CRM view see all; others see only assigned
+    if not _has_crm_view(current_user, db):
         query = query.filter(Task.assigned_to == current_user.id)
     if status:
         query = query.filter(Task.status == status)
