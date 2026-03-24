@@ -702,6 +702,21 @@ class FreePBXService:
                 timeout=15,
             )
 
+            # Step 0: Remove certman_mapping for this extension to prevent
+            # conflict between dtls_auto_generate_cert and explicit dtls_cert_file.
+            # FreePBX Certificate Manager adds dtls_cert_file when a mapping exists,
+            # which conflicts with our custom_post dtls_auto_generate_cert=yes.
+            certman_sql = f"DELETE FROM certman_mapping WHERE id='{extension}';"
+            pjsip_cert_sql = (
+                f"DELETE FROM pjsip WHERE id='{extension}' "
+                f"AND keyword IN ('dtls_cert_file','dtls_private_key','dtls_rekey');"
+            )
+            stdin, stdout, stderr = client.exec_command(
+                f'mysql asterisk -e "{certman_sql} {pjsip_cert_sql}"', timeout=10
+            )
+            stdout.channel.recv_exit_status()
+            logger.info("SSH: cleared certman_mapping and explicit DTLS cert refs for %s", extension)
+
             # Step 1: Write WebRTC settings to sip table
             mysql_cmd = f'mysql asterisk -e "{sip_sql}"'
             stdin, stdout, stderr = client.exec_command(mysql_cmd, timeout=15)
