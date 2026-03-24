@@ -10,6 +10,8 @@ import TicketHistory from "@/components/TicketHistory";
 import { API_URL } from '@/lib/config';
 import QuickTicketModal from '@/components/QuickTicketModal'
 import { useSoftphone } from '@/lib/softphone-context'
+import { useEvents } from '@/lib/events-context'
+import { formatDateWithTimezone } from '@/lib/date-utils'
 
 export default function Workspace() {
     const [user, setUser] = useState<any>(null);
@@ -32,6 +34,8 @@ export default function Workspace() {
     // It is now a union of the real softphone caller (when inbound call is answered)
     // and the manual simulate-call button (unchanged behavior)
     const { callerNumber: softphoneCallerNumber, isOpen: softphoneOpen, status: softphoneStatus, dial: softphoneDial, myExtension } = useSoftphone()
+    const { timezone: serverTimezone } = useEvents()
+    const tz = serverTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
     const [manualActiveNumber, setManualActiveNumber] = useState<string | null>(null)
     const activeNumber = softphoneCallerNumber || manualActiveNumber
     const setActiveNumber = (n: string | null) => setManualActiveNumber(n)
@@ -43,6 +47,7 @@ export default function Workspace() {
     const [filterType, setFilterType] = useState<'all' | 'forwarded'>('all');
     const [quickTicketOpen, setQuickTicketOpen] = useState(false)
     const [recentCalls, setRecentCalls] = useState<any[]>([])
+    const [callTab, setCallTab] = useState<'all' | 'inbound' | 'outbound' | 'missed'>('all')
 
     useEffect(() => {
         setIsMounted(true);
@@ -455,30 +460,77 @@ export default function Workspace() {
 
                               {/* Today's Recent Calls */}
                               <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 flex flex-col overflow-hidden">
-                                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <Clock className="w-4 h-4 text-gray-400" />
-                                    <h3 className="text-sm font-semibold text-gray-700">Today&apos;s Calls</h3>
-                                  </div>
-                                  <span className="text-xs text-gray-400 font-medium">{recentCalls.length} call{recentCalls.length !== 1 ? 's' : ''}</span>
-                                </div>
-                                <div className="flex-1 overflow-y-auto">
-                                  {recentCalls.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-                                      <PhoneCall className="w-8 h-8 mb-2 opacity-40" />
-                                      <p className="text-sm">No calls today</p>
+                                {/* Header + Tabs */}
+                                <div className="border-b border-gray-100">
+                                  <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Clock className="w-4 h-4 text-gray-400" />
+                                      <h3 className="text-sm font-semibold text-gray-700">Today&apos;s Calls</h3>
                                     </div>
-                                  ) : (
+                                    <span className="text-xs text-gray-400 font-medium">{recentCalls.length} total</span>
+                                  </div>
+                                  <div className="flex px-3 gap-1">
+                                    {([
+                                      { key: 'all', label: 'All' },
+                                      { key: 'inbound', label: 'Incoming' },
+                                      { key: 'outbound', label: 'Outgoing' },
+                                      { key: 'missed', label: 'Missed' },
+                                    ] as const).map(tab => {
+                                      const count = tab.key === 'all' ? recentCalls.length
+                                        : tab.key === 'missed' ? recentCalls.filter(c => c.disposition === 'NO ANSWER' || c.disposition === 'BUSY' || c.disposition === 'FAILED').length
+                                        : recentCalls.filter(c => {
+                                            const isMissed = c.disposition === 'NO ANSWER' || c.disposition === 'BUSY' || c.disposition === 'FAILED'
+                                            return !isMissed && c.direction === tab.key
+                                          }).length
+                                      return (
+                                        <button
+                                          key={tab.key}
+                                          onClick={() => setCallTab(tab.key)}
+                                          className={`px-2.5 py-1.5 text-xs font-medium rounded-t-lg transition ${
+                                            callTab === tab.key
+                                              ? 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-600'
+                                              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                          }`}
+                                        >
+                                          {tab.label}{count > 0 ? ` (${count})` : ''}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto">
+                                  {(() => {
+                                    const filtered = recentCalls.filter(call => {
+                                      const isMissed = call.disposition === 'NO ANSWER' || call.disposition === 'BUSY' || call.disposition === 'FAILED'
+                                      if (callTab === 'all') return true
+                                      if (callTab === 'missed') return isMissed
+                                      if (callTab === 'inbound') return !isMissed && call.direction === 'inbound'
+                                      if (callTab === 'outbound') return !isMissed && call.direction === 'outbound'
+                                      return true
+                                    })
+                                    if (filtered.length === 0) return (
+                                      <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                                        <PhoneCall className="w-8 h-8 mb-2 opacity-40" />
+                                        <p className="text-sm">
+                                          {callTab === 'all' ? 'No calls today' :
+                                           callTab === 'missed' ? 'No missed calls' :
+                                           callTab === 'inbound' ? 'No incoming calls' : 'No outgoing calls'}
+                                        </p>
+                                      </div>
+                                    )
+                                    return (
                                     <div className="divide-y divide-gray-50">
-                                      {recentCalls.map((call: any) => {
+                                      {filtered.map((call: any) => {
                                         const isInbound = call.direction === 'inbound'
                                         const isMissed = call.disposition === 'NO ANSWER' || call.disposition === 'BUSY' || call.disposition === 'FAILED'
                                         const dur = call.duration_seconds || 0
                                         const durStr = dur > 0
                                           ? `${Math.floor(dur / 60)}m ${dur % 60}s`
                                           : isMissed ? 'Missed' : '0s'
+                                        // Format time using app timezone utility (handles naive UTC datetimes)
                                         const time = call.created_at
-                                          ? new Date(call.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                          ? formatDateWithTimezone(call.created_at, tz, { hour: 'numeric', minute: '2-digit', hour12: true })
                                           : ''
 
                                         return (
@@ -535,7 +587,8 @@ export default function Workspace() {
                                         )
                                       })}
                                     </div>
-                                  )}
+                                    )
+                                  })()}
                                 </div>
                               </div>
                             </div>
