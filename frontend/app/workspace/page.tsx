@@ -10,8 +10,6 @@ import TicketHistory from "@/components/TicketHistory";
 import { API_URL } from '@/lib/config';
 import QuickTicketModal from '@/components/QuickTicketModal'
 import { useSoftphone } from '@/lib/softphone-context'
-import { useEvents } from '@/lib/events-context'
-import { formatDateWithTimezone } from '@/lib/date-utils'
 
 export default function Workspace() {
     const [user, setUser] = useState<any>(null);
@@ -34,8 +32,6 @@ export default function Workspace() {
     // It is now a union of the real softphone caller (when inbound call is answered)
     // and the manual simulate-call button (unchanged behavior)
     const { callerNumber: softphoneCallerNumber, isOpen: softphoneOpen, status: softphoneStatus, dial: softphoneDial, myExtension } = useSoftphone()
-    const { timezone: serverTimezone } = useEvents()
-    const tz = serverTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
     const [manualActiveNumber, setManualActiveNumber] = useState<string | null>(null)
     const activeNumber = softphoneCallerNumber || manualActiveNumber
     const setActiveNumber = (n: string | null) => setManualActiveNumber(n)
@@ -525,16 +521,15 @@ export default function Workspace() {
                                         const durStr = dur > 0
                                           ? `${Math.floor(dur / 60)}m ${dur % 60}s`
                                           : isMissed ? 'Missed' : '0s'
-                                        // Format time-only with proper timezone handling
+                                        // Format time-only — treat naive timestamps as local time (not UTC)
                                         let time = ''
                                         if (call.created_at) {
-                                          // Normalize naive UTC datetimes (same logic as date-utils.ts)
-                                          const raw = call.created_at
-                                          const normalized = raw && !raw.endsWith('Z') && !raw.includes('+') && !raw.includes('-', 10)
-                                            ? raw + 'Z' : raw
-                                          time = new Intl.DateTimeFormat('en-US', {
-                                            hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz,
-                                          }).format(new Date(normalized))
+                                          // The DB stores local server time as naive datetime.
+                                          // Do NOT append 'Z' or apply timezone offset — just parse as-is.
+                                          const d = new Date(call.created_at)
+                                          time = d.toLocaleTimeString('en-US', {
+                                            hour: 'numeric', minute: '2-digit', hour12: true,
+                                          })
                                         }
 
                                         return (
