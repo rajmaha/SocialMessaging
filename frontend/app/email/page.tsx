@@ -328,6 +328,10 @@ export default function EmailPage() {
   // --- Mobile Layout ---
   const [showMobileSidebar, setShowMobileSidebar] = useState(false)
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list')
+  const [isEmbedded, setIsEmbedded] = useState(false)
+  useEffect(() => {
+    if (window.self !== window.top) setIsEmbedded(true)
+  }, [])
 
   // --- Email Rules ---
   const [rules, setRules] = useState<{ id: number; name: string; is_active: boolean; match_all: boolean; conditions: { field: string; op: string; value: string }[]; actions: { type: string; value?: string }[] }[]>([])
@@ -385,10 +389,10 @@ export default function EmailPage() {
     // Show new toast
     setToast({ message, type })
 
-    // Auto-dismiss after 1 second
+    // Auto-dismiss after 4 seconds
     const timer = setTimeout(() => {
       setToast(null)
-    }, 1000)
+    }, 4000)
 
     setToastTimer(timer)
   }
@@ -452,10 +456,6 @@ export default function EmailPage() {
 
 
   useEffect(() => {
-    // Ensure test user is set up
-    if (!getAuthToken()) {
-      localStorage.setItem('user', JSON.stringify({ user_id: 2, email: 'test@example.com' }))
-    }
     setEmailOffset(0)
     setHasMore(false)
     if (currentFolder === 'scheduled') {
@@ -2254,7 +2254,7 @@ export default function EmailPage() {
   }
 
   return (
-    <div className="h-screen bg-gray-100 flex flex-col pb-16 md:pb-0">
+    <div className={`h-screen bg-gray-100 flex flex-col ${isEmbedded ? 'pb-0' : 'pb-16'} md:pb-0`}>
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white font-semibold z-50 animate-fade-in ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'

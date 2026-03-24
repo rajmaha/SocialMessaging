@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { FiMessageSquare, FiMail, FiMoreHorizontal, FiX,
          FiHeadphones, FiGrid, FiSettings, FiUser } from 'react-icons/fi'
@@ -11,8 +11,14 @@ export default function MobileBottomNav() {
   const searchParams = useSearchParams()
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // Hide on login/register/widget pages
-  if (pathname.startsWith('/login') || pathname.startsWith('/register') ||
+  // Detect if rendered inside an iframe (e.g. /email embedded in /dashboard)
+  const [isIframe, setIsIframe] = useState(false)
+  useEffect(() => {
+    if (window.self !== window.top) setIsIframe(true)
+  }, [])
+
+  // Hide on login/register/widget pages or when inside an iframe
+  if (isIframe || pathname.startsWith('/login') || pathname.startsWith('/register') ||
       pathname.startsWith('/widget') || pathname.startsWith('/reset')) {
     return null
   }
