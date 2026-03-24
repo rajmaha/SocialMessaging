@@ -53,7 +53,14 @@ function NewTaskPageContent() {
     setLoading(true);
     setError(null);
     try {
-      await axios.post(`${API_URL}/crm/tasks`, form, {
+      const payload = {
+        ...form,
+        lead_id: form.lead_id ? Number(form.lead_id) : undefined,
+        deal_id: form.deal_id ? Number(form.deal_id) : null,
+        due_date: form.due_date || null,
+        description: form.description || null,
+      };
+      await axios.post(`${API_URL}/crm/tasks`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
       router.push("/admin/crm/tasks");

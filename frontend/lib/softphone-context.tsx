@@ -208,7 +208,10 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
               // Inbound call
               sessionRef.current = session
               const remoteId = session.remoteIdentity?.uri?.user || 'Unknown'
-              const displayName = session.remoteIdentity?.displayName || null
+              const rawName = session.remoteIdentity?.displayName || null
+              // Ignore display names that are just the PBX/trunk system name or match the extension
+              const displayName = rawName && rawName !== remoteId && !/^(UCM|GXW|GRP|GXP|DP|WP|GS)\d/i.test(rawName)
+                ? rawName : null
               setCallerNumber(remoteId)
               setRemoteDisplayName(displayName)
               setCallState('ringing_in')
