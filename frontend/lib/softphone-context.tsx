@@ -209,6 +209,12 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
               sessionRef.current = session
               const remoteId = session.remoteIdentity?.uri?.user || 'Unknown'
               const rawName = session.remoteIdentity?.displayName || null
+              console.log('[Softphone] Incoming SIP identity:', JSON.stringify({
+                uri_user: remoteId,
+                displayName: rawName,
+                uri_full: session.remoteIdentity?.uri?.toString(),
+                fromHeader: session.request?.getHeader?.('From'),
+              }))
               // Ignore display names that are just the PBX/trunk system name or match the extension
               const displayName = rawName && rawName !== remoteId && !/^(UCM|GXW|GRP|GXP|DP|WP|GS)\d/i.test(rawName)
                 ? rawName : null
