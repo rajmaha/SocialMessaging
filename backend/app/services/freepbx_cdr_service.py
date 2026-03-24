@@ -419,18 +419,6 @@ class FreePBXCDRService:
                 # Determine direction and phone number
                 src = cdr.get("src", "")
                 dst = cdr.get("dst", "")
-                # If src is an internal extension, this is outbound
-                if src in ext_to_user:
-                    direction = "outbound"
-                    phone_number = dst
-                    agent_id = ext_to_user.get(src)
-                    agent_name = ext_to_name.get(src, "")
-                else:
-                    direction = "inbound"
-                    phone_number = src
-                    agent_id = ext_to_user.get(dst)
-                    agent_name = ext_to_name.get(dst, "")
-
                 duration = int(cdr.get("billsec", cdr.get("duration", 0)))
                 recording_file = cdr.get("recordingfile", "")
 
@@ -441,46 +429,99 @@ class FreePBXCDRService:
                 except Exception:
                     call_dt = datetime.utcnow()
 
-                # Attempt to link to an Organization
-                organization_id = None
-                if phone_number:
-                    clean_phone = "".join(filter(str.isdigit, phone_number))
-                    search_term = [phone_number]
-                    if clean_phone and clean_phone != phone_number:
-                        search_term.append(clean_phone)
+                # Build list of records to create for this CDR.
+                # Internal-to-internal calls produce TWO records:
+                #   outbound for the caller + inbound for the receiver.
+                # External calls produce one record as before.
+                records_to_add = []
+                src_is_internal = src in ext_to_user
+                dst_is_internal = dst in ext_to_user
 
-                    for term in search_term:
-                        org_contact = db.query(OrganizationContact).filter(
-                            cast(OrganizationContact.phone_no, String).ilike(f"%{term}%")
+                if src_is_internal and dst_is_internal:
+                    # Internal-to-internal: create record for both parties
+                    records_to_add.append({
+                        "direction": "outbound",
+                        "phone_number": dst,
+                        "agent_id": ext_to_user.get(src),
+                        "agent_name": ext_to_name.get(src, ""),
+                        "pbx_call_id": pbx_call_id,
+                    })
+                    records_to_add.append({
+                        "direction": "inbound",
+                        "phone_number": src,
+                        "agent_id": ext_to_user.get(dst),
+                        "agent_name": ext_to_name.get(dst, ""),
+                        "pbx_call_id": f"{pbx_call_id}-rcv",  # unique ID for receiver record
+                    })
+                elif src_is_internal:
+                    # Outbound to external number
+                    records_to_add.append({
+                        "direction": "outbound",
+                        "phone_number": dst,
+                        "agent_id": ext_to_user.get(src),
+                        "agent_name": ext_to_name.get(src, ""),
+                        "pbx_call_id": pbx_call_id,
+                    })
+                else:
+                    # Inbound from external number
+                    records_to_add.append({
+                        "direction": "inbound",
+                        "phone_number": src,
+                        "agent_id": ext_to_user.get(dst),
+                        "agent_name": ext_to_name.get(dst, ""),
+                        "pbx_call_id": pbx_call_id,
+                    })
+
+                for rec_data in records_to_add:
+                    # Skip if this specific record already exists (handles -rcv suffix)
+                    if rec_data["pbx_call_id"] != pbx_call_id:
+                        dup = db.query(CallRecording).filter(
+                            CallRecording.pbx_call_id == rec_data["pbx_call_id"]
                         ).first()
+                        if dup:
+                            continue
 
-                        if org_contact and org_contact.organization_id:
-                            organization_id = org_contact.organization_id
-                            break
+                    # Attempt to link to an Organization
+                    organization_id = None
+                    phone_number = rec_data["phone_number"]
+                    if phone_number:
+                        clean_phone = "".join(filter(str.isdigit, phone_number))
+                        search_term = [phone_number]
+                        if clean_phone and clean_phone != phone_number:
+                            search_term.append(clean_phone)
 
-                        org = db.query(Organization).filter(
-                            cast(Organization.contact_numbers, String).ilike(f"%{term}%")
-                        ).first()
-                        
-                        if org:
-                            organization_id = org.id
-                            break
+                        for term in search_term:
+                            org_contact = db.query(OrganizationContact).filter(
+                                cast(OrganizationContact.phone_no, String).ilike(f"%{term}%")
+                            ).first()
 
-                record = CallRecording(
-                    agent_id=agent_id,
-                    agent_name=agent_name,
-                    phone_number=phone_number or "unknown",
-                    direction=direction,
-                    duration_seconds=duration,
-                    recording_file=recording_file or None,
-                    recording_url=None,  # served via /calls/recordings/{id}/stream
-                    pbx_call_id=pbx_call_id,
-                    disposition=disposition,
-                    created_at=call_dt,
-                    organization_id=organization_id,
-                )
-                db.add(record)
-                inserted += 1
+                            if org_contact and org_contact.organization_id:
+                                organization_id = org_contact.organization_id
+                                break
+
+                            org = db.query(Organization).filter(
+                                cast(Organization.contact_numbers, String).ilike(f"%{term}%")
+                            ).first()
+
+                            if org:
+                                organization_id = org.id
+                                break
+
+                    record = CallRecording(
+                        agent_id=rec_data["agent_id"],
+                        agent_name=rec_data["agent_name"],
+                        phone_number=phone_number or "unknown",
+                        direction=rec_data["direction"],
+                        duration_seconds=duration,
+                        recording_file=recording_file or None,
+                        recording_url=None,  # served via /calls/recordings/{id}/stream
+                        pbx_call_id=rec_data["pbx_call_id"],
+                        disposition=disposition,
+                        created_at=call_dt,
+                        organization_id=organization_id,
+                    )
+                    db.add(record)
+                    inserted += 1
 
             except Exception as e:
                 logger.error("Error processing CDR record: %s — %s", cdr, e)
