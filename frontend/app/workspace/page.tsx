@@ -80,7 +80,7 @@ export default function Workspace() {
             const token = getAuthToken();
             const today = new Date().toISOString().slice(0, 10);
             const res = await fetch(
-                `${API_URL}/calls/recordings?date_from=${today}&limit=10`,
+                `${API_URL}/calls/recordings?date_from=${today}&limit=25`,
                 { headers: { 'Authorization': `Bearer ${token}` } }
             );
             if (res.ok) {
@@ -524,12 +524,15 @@ export default function Workspace() {
                                         // Format time-only — treat naive timestamps as local time (not UTC)
                                         let time = ''
                                         if (call.created_at) {
-                                          // The DB stores local server time as naive datetime.
-                                          // Do NOT append 'Z' or apply timezone offset — just parse as-is.
+                                          // Backend returns timezone-aware ISO (e.g. "16:07:48+05:45").
+                                          // new Date() correctly converts to UTC, then toLocaleTimeString
+                                          // converts to the browser's local timezone for display.
                                           const d = new Date(call.created_at)
-                                          time = d.toLocaleTimeString('en-US', {
-                                            hour: 'numeric', minute: '2-digit', hour12: true,
-                                          })
+                                          if (!isNaN(d.getTime())) {
+                                            time = d.toLocaleTimeString('en-US', {
+                                              hour: 'numeric', minute: '2-digit', hour12: true,
+                                            })
+                                          }
                                         }
 
                                         return (

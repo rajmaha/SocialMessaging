@@ -2001,6 +2001,58 @@ except Exception as _mig_err:
     import logging as _log
     _log.getLogger(__name__).warning("Inline migration skipped: %s", _mig_err)
 
+def _fix_call_recording_timestamps():
+    """
+    One-time fix: CDR sync previously stored FreePBX local time (Nepal +05:45)
+    as UTC. Subtract the offset to correct existing records.
+    Uses a flag row to run only once.
+    """
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            # Check if already fixed
+            result = conn.execute(text(
+                "SELECT 1 FROM call_recordings WHERE pbx_call_id = '__tz_fix_done__' LIMIT 1"
+            )).fetchone()
+            if result:
+                return  # Already fixed
+
+            # Get branding timezone offset
+            row = conn.execute(text("SELECT timezone FROM branding_settings LIMIT 1")).fetchone()
+            tz_name = row[0] if row else None
+            if not tz_name:
+                return
+
+            from zoneinfo import ZoneInfo
+            from datetime import datetime, timezone
+            now = datetime.now(ZoneInfo(tz_name))
+            offset = now.utcoffset()
+            if not offset:
+                return
+
+            # Subtract the offset from all existing records to correct UTC
+            offset_str = f"{int(offset.total_seconds())} seconds"
+            conn.execute(text(
+                f"UPDATE call_recordings SET created_at = created_at - INTERVAL '{offset_str}' "
+                f"WHERE pbx_call_id IS NOT NULL AND pbx_call_id != '__tz_fix_done__'"
+            ))
+
+            # Insert flag so this doesn't run again
+            conn.execute(text(
+                "INSERT INTO call_recordings (phone_number, direction, duration_seconds, pbx_call_id, disposition) "
+                "VALUES ('__system__', 'inbound', 0, '__tz_fix_done__', 'SYSTEM')"
+            ))
+            conn.commit()
+            logger.info("✅ Fixed call_recording timestamps (subtracted %s from existing records)", offset_str)
+    except Exception as e:
+        logger.warning("Timestamp fix skipped: %s", e)
+
+try:
+    _fix_call_recording_timestamps()
+except Exception:
+    pass
+
+
 def _backfill_call_records_for_tickets():
     """
     One-time backfill: ensure every origin ticket (no parent_ticket_id)

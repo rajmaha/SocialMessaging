@@ -397,6 +397,21 @@ class FreePBXCDRService:
         except Exception as ex:
             logger.warning("Could not build extension map: %s", ex)
 
+        # Resolve FreePBX timezone — CDR calldates are in PBX local time.
+        # Use the app's branding timezone setting; fall back to UTC.
+        pbx_tz = None
+        try:
+            from zoneinfo import ZoneInfo
+            from app.models.branding import BrandingSettings
+            branding = db.query(BrandingSettings).first()
+            if branding and branding.timezone:
+                pbx_tz = ZoneInfo(branding.timezone)
+        except Exception:
+            pass
+        if pbx_tz is None:
+            from datetime import timezone as tz_mod
+            pbx_tz = tz_mod.utc
+
         inserted = 0
         for cdr in cdrs:
             try:
@@ -422,12 +437,16 @@ class FreePBXCDRService:
                 duration = int(cdr.get("billsec", cdr.get("duration", 0)))
                 recording_file = cdr.get("recordingfile", "")
 
-                # Parse call date
+                # Parse call date — FreePBX stores in its local timezone.
+                # Tag with the app's configured timezone so PostgreSQL
+                # stores the correct UTC value (server runs in UTC).
                 calldate_str = cdr.get("calldate", "")
                 try:
                     call_dt = datetime.strptime(calldate_str[:19], "%Y-%m-%d %H:%M:%S")
+                    call_dt = call_dt.replace(tzinfo=pbx_tz)
                 except Exception:
-                    call_dt = datetime.utcnow()
+                    from datetime import timezone as tz_mod
+                    call_dt = datetime.now(tz_mod.utc)
 
                 # Build list of records to create for this CDR.
                 # Internal-to-internal calls produce TWO records:
