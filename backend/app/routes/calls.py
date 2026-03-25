@@ -312,20 +312,38 @@ def log_missed_call(
     current_user: User = Depends(get_current_user),
 ):
     """Log a missed/rejected inbound call from the softphone."""
-    missed = CallRecording(
-        agent_id=current_user.id,
-        agent_name=getattr(current_user, 'display_name', None)
-                   or getattr(current_user, 'full_name', None)
-                   or current_user.email,
-        phone_number=req.phone_number,
-        direction="inbound",
-        disposition="NO ANSWER",
-        duration_seconds=0,
-    )
-    db.add(missed)
-    db.commit()
-    db.refresh(missed)
-    return _enrich(missed, db)
+    try:
+        missed = CallRecording(
+            agent_id=current_user.id,
+            agent_name=getattr(current_user, 'display_name', None)
+                       or getattr(current_user, 'full_name', None)
+                       or current_user.email,
+            phone_number=req.phone_number,
+            direction="inbound",
+            disposition="NO ANSWER",
+            duration_seconds=0,
+        )
+        db.add(missed)
+        db.commit()
+        db.refresh(missed)
+        return _enrich(missed, db)
+    except Exception as e:
+        db.rollback()
+        print(f"[log-missed] Error logging missed call: {e}")
+        # Return a minimal response so the frontend doesn't see a 500
+        return {
+            "id": None,
+            "phone_number": req.phone_number,
+            "direction": "inbound",
+            "disposition": "NO ANSWER",
+            "duration_seconds": 0,
+            "agent_name": "Unknown",
+            "created_at": None,
+            "has_audio": False,
+            "ticket_number": None,
+            "ticket_id": None,
+            "customer_name": None,
+        }
 
 
 class OriginateRequest(BaseModel):
@@ -573,8 +591,13 @@ def conference_call(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Start a 3-way conference by moving the agent's current call into an Asterisk
-    ConfBridge room and then dialling the target extension into the same room.
+    Start a 3-way conference by moving both the agent's channel AND the connected
+    caller channel into an Asterisk ConfBridge room, then dialling the target
+    extension into the same room.
+
+    Uses AMI Redirect with Channel + ExtraChannel so both legs of the existing
+    bridge are moved atomically into the ConfBridge. This prevents audio leaking
+    between parties outside the conference.
     """
     from app.services.ami_service import get_ami_client
     import time
@@ -583,26 +606,95 @@ def conference_call(
     if not client:
         raise HTTPException(status_code=503, detail="AMI not configured.")
 
-    # Use agent's extension as a unique conference room number
-    conf_room = request.current_extension
+    # Use agent's extension + timestamp as a unique conference room number
+    conf_room = f"{request.current_extension}{int(time.time()) % 10000}"
 
-    # 1. Redirect the agent's current channel into the ConfBridge room
+    # 1. Find the agent's active channel and its bridged peer via AMI
+    #    so we can redirect BOTH legs into ConfBridge
+    agent_channel = None
+    peer_channel = None
+    try:
+        # Get active channels for the agent's extension
+        action_id_status = f"conf-status-{int(time.time() * 1000)}"
+        cmd_status = (
+            f"Action: Command\r\n"
+            f"ActionID: {action_id_status}\r\n"
+            f"Command: core show channel concise\r\n"
+            f"\r\n"
+        )
+        client._send(cmd_status)
+        status_resp = client._read_response()
+
+        # Parse channels — find PJSIP/{extension} channels
+        for line in status_resp.split('\n'):
+            line = line.strip()
+            if f"PJSIP/{request.current_extension}-" in line:
+                parts = line.split('!')
+                if parts:
+                    agent_channel = parts[0]
+                    break
+
+        # If we found the agent channel, find its bridge peer
+        if agent_channel:
+            action_id_bridge = f"conf-bridge-{int(time.time() * 1000)}"
+            cmd_bridge = (
+                f"Action: Command\r\n"
+                f"ActionID: {action_id_bridge}\r\n"
+                f"Command: core show channel {agent_channel}\r\n"
+                f"\r\n"
+            )
+            client._send(cmd_bridge)
+            bridge_resp = client._read_response()
+            # Look for "Bridged to:" or the bridged channel in output
+            for line in bridge_resp.split('\n'):
+                if 'BridgedChannel' in line or 'Bridged' in line:
+                    # Extract channel name after the colon
+                    parts = line.split(':', 1)
+                    if len(parts) > 1:
+                        ch = parts[1].strip()
+                        if ch and ch != '<none>' and ch != '(None)':
+                            peer_channel = ch
+                            break
+    except Exception as e:
+        print(f"[Conference] Channel lookup warning: {e}")
+
+    # 2. Redirect both the agent channel and the bridged peer into ConfBridge
+    #    Using ExtraChannel ensures both legs move atomically into the conference.
     action_id1 = f"conf-redir-{int(time.time() * 1000)}"
-    cmd1 = (
-        f"Action: Redirect\r\n"
-        f"ActionID: {action_id1}\r\n"
-        f"Channel: PJSIP/{request.current_extension}\r\n"
-        f"Context: from-internal\r\n"
-        f"Exten: {conf_room}\r\n"
-        f"Priority: 1\r\n"
-        f"Application: ConfBridge\r\n"
-        f"Data: {conf_room}\r\n"
-        f"\r\n"
-    )
+    if agent_channel and peer_channel:
+        # Move both legs into ConfBridge simultaneously
+        cmd1 = (
+            f"Action: Redirect\r\n"
+            f"ActionID: {action_id1}\r\n"
+            f"Channel: {agent_channel}\r\n"
+            f"ExtraChannel: {peer_channel}\r\n"
+            f"Context: from-internal\r\n"
+            f"Exten: {conf_room}\r\n"
+            f"Priority: 1\r\n"
+            f"ExtraContext: from-internal\r\n"
+            f"ExtraExten: {conf_room}\r\n"
+            f"ExtraPriority: 1\r\n"
+            f"\r\n"
+        )
+    else:
+        # Fallback: redirect just the agent channel
+        cmd1 = (
+            f"Action: Redirect\r\n"
+            f"ActionID: {action_id1}\r\n"
+            f"Channel: PJSIP/{request.current_extension}\r\n"
+            f"Context: from-internal\r\n"
+            f"Exten: {conf_room}\r\n"
+            f"Priority: 1\r\n"
+            f"\r\n"
+        )
     client._send(cmd1)
     client._read_response()
 
-    # 2. Originate a call to the target extension and put them in the same ConfBridge
+    # Small delay to let the redirect complete before originating the third party
+    import time as _time
+    _time.sleep(0.5)
+
+    # 3. Originate a call to the target extension and put them in the same ConfBridge
     action_id2 = f"conf-invite-{int(time.time() * 1000)}"
     client.originate(
         channel=f"PJSIP/{request.target_extension}",

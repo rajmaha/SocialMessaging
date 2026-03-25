@@ -51,6 +51,12 @@ interface SoftphoneContextType {
 
   // Registered identity
   myExtension: string | null
+
+  // Increments on every call end (answered or missed) — lets workspace refresh call list
+  callEndCounter: number
+
+  // Re-open the popup (for resuming active call control)
+  open: () => void
 }
 
 const SoftphoneContext = createContext<SoftphoneContextType>({
@@ -73,6 +79,8 @@ const SoftphoneContext = createContext<SoftphoneContextType>({
   isMuted: false,
   isOnHold: false,
   myExtension: null,
+  callEndCounter: 0,
+  open: () => {},
 })
 
 export function SoftphoneProvider({ children }: { children: ReactNode }) {
@@ -86,6 +94,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
   const [isOnHold, setIsOnHold] = useState(false)
   const [callSeconds, setCallSeconds] = useState(0)
   const [myExtension, setMyExtension] = useState<string | null>(null)
+  const [callEndCounter, setCallEndCounter] = useState(0)
 
   // SIP.js refs — stored as any to avoid type import issues at module load time
   // SIP.js is dynamically imported so it is not bundled until needed
@@ -111,12 +120,18 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [callState])
 
+  // ── Ringtone helpers ─────────────────────────────────────────────────────
+  // Extracted so answer/hangup can stop the ringtone immediately (synchronously)
+  // without waiting for the useEffect cleanup which may race with scheduled oscillators.
+  function stopRingtone() {
+    if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null }
+    if (ringCtxRef.current) { ringCtxRef.current.close().catch(() => {}); ringCtxRef.current = null }
+  }
+
   // ── Ringtone (Web Audio API oscillator — US phone ring pattern) ──────────
   useEffect(() => {
     if (callState !== 'ringing_in') {
-      // Stop ringtone
-      if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null }
-      if (ringCtxRef.current) { ringCtxRef.current.close().catch(() => {}); ringCtxRef.current = null }
+      stopRingtone()
       return
     }
     // Start ringtone: 2-second ring, 4-second cycle (ring 2s, silence 2s)
@@ -145,11 +160,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     playBurst() // immediate first ring
     ringIntervalRef.current = setInterval(playBurst, 4000)
 
-    return () => {
-      if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null }
-      ctx.close().catch(() => {})
-      ringCtxRef.current = null
-    }
+    return () => stopRingtone()
   }, [callState])
 
   // ── Credential fetch + SIP.js bootstrap ─────────────────────────────────
@@ -178,8 +189,9 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
         // Dynamically import SIP.js — only loaded for authorised agents
         const { UserAgent, Registerer, Inviter, SessionState } = await import('sip.js')
         if (destroyed) return
-        // Cache UserAgent so dial() can call makeURI without a second dynamic import
+        // Cache UserAgent and SessionState so dial()/hangup() don't need re-import
         UserAgentClassRef.current = UserAgent
+        SessionStateRef.current = SessionState
 
         const uri = UserAgent.makeURI(`sip:${creds.extension}@${creds.realm}`)
         if (!uri) { setStatus('error'); return }
@@ -211,13 +223,15 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
               // ── Extract caller extension from SIP headers ──
               // Grandstream UCM PBXes often put the device name (e.g. "UCM6204") in the
               // From header's user part. The real calling extension is usually in
-              // P-Asserted-Identity or Remote-Party-ID headers.
+              // P-Asserted-Identity, Remote-Party-ID, or Diversion headers.
               let remoteId = session.remoteIdentity?.uri?.user || 'Unknown'
               const rawName = session.remoteIdentity?.displayName || null
 
-              // Try P-Asserted-Identity first, then Remote-Party-ID
+              // Try P-Asserted-Identity first, then Remote-Party-ID, then Diversion
               const pai = session.request?.getHeader?.('P-Asserted-Identity')
               const rpid = session.request?.getHeader?.('Remote-Party-ID')
+              const diversion = session.request?.getHeader?.('Diversion')
+              const fromHeader = session.request?.getHeader?.('From')
               const extractSipUser = (header: string | undefined) => {
                 if (!header) return null
                 const m = header.match(/sip:([^@>]+)@/)
@@ -225,23 +239,34 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
               }
               const paiUser = extractSipUser(pai)
               const rpidUser = extractSipUser(rpid)
+              const diversionUser = extractSipUser(diversion)
 
-              // If remoteId looks like a PBX device name, prefer PAI/RPID extension
-              const isPbxName = /^(UCM|GXW|GRP|GXP|DP|WP|GS)\d/i.test(remoteId)
-              if (isPbxName && (paiUser || rpidUser)) {
-                remoteId = paiUser || rpidUser || remoteId
+              // Pattern to detect PBX device names (not real caller extensions)
+              const pbxNamePattern = /^(UCM|GXW|GRP|GXP|DP|WP|GS|FXS|FXO|HT|GDS|TRUNK)\d/i
+
+              // If remoteId looks like a PBX device name, prefer PAI/RPID/Diversion extension
+              const isPbxName = pbxNamePattern.test(remoteId)
+              if (isPbxName) {
+                // Try headers in priority order
+                const resolved = paiUser || rpidUser || diversionUser
+                if (resolved && !pbxNamePattern.test(resolved)) {
+                  remoteId = resolved
+                } else if (rawName && /^\d{3,}$/.test(rawName)) {
+                  // Display name is a numeric extension — use it as caller ID
+                  remoteId = rawName
+                }
               }
 
               console.log('[Softphone] Incoming SIP identity:', JSON.stringify({
                 uri_user: session.remoteIdentity?.uri?.user,
                 displayName: rawName,
                 resolvedCaller: remoteId,
-                pai, rpid,
-                fromHeader: session.request?.getHeader?.('From'),
+                pai, rpid, diversion,
+                fromHeader,
               }))
 
               // Ignore display names that are just the PBX/trunk system name or match the extension
-              const displayName = rawName && rawName !== remoteId && !/^(UCM|GXW|GRP|GXP|DP|WP|GS)\d/i.test(rawName)
+              const displayName = rawName && rawName !== remoteId && !pbxNamePattern.test(rawName)
                 ? rawName : null
               setCallerNumber(remoteId)
               setRemoteDisplayName(displayName)
@@ -324,6 +349,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     setIsOnHold(false)
     sessionRef.current = null
     if (audioRef.current) { audioRef.current.srcObject = null as any }
+    setCallEndCounter(c => c + 1)
   }
 
   function attachAudio(session: any) {
@@ -379,31 +405,77 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
   const answer = useCallback(async () => {
     const session = sessionRef.current
     if (!session) return
-    await session.accept()
-    attachAudio(session)
-    setCallState('active')
+    // Stop ringtone immediately on click — don't wait for state change
+    stopRingtone()
+    try {
+      await session.accept()
+      attachAudio(session)
+      setCallState('active')
+    } catch (err) {
+      console.error('[Softphone] answer error', err)
+      // If accept fails, try to clean up
+      resetCall()
+    }
     // Trigger workspace TicketForm — callerNumber is already set from onInvite
   }, [])
 
+  // Cache SessionState from SIP.js so hangup doesn't need a dynamic import each time
+  const SessionStateRef = useRef<any>(null)
+
   const hangup = useCallback(async () => {
     const session = sessionRef.current
+    // Stop ringtone immediately on click
+    stopRingtone()
     if (!session) { resetCall(); setIsOpen(false); return }
+    let terminated = false
     try {
-      const { SessionState: SS } = await import('sip.js')
+      // Use cached SessionState, or import if not yet cached
+      let SS = SessionStateRef.current
+      if (!SS) {
+        const sip = await import('sip.js')
+        SS = sip.SessionState
+        SessionStateRef.current = SS
+      }
       if (session.state === SS.Established) {
         session.bye()
-      } else if (typeof session.reject === 'function') {
-        // Incoming call not yet answered — reject (sends 486 Busy)
-        await session.reject()
-      } else if (typeof session.cancel === 'function') {
-        // Outgoing call not yet established — cancel
-        await session.cancel()
+      } else if (session.state === SS.Initial || session.state === SS.Establishing) {
+        // SIP.js Invitation (incoming) uses .reject(), Inviter (outgoing) uses .cancel()
+        // Try both with individual error handling — some SIP.js versions differ
+        let rejected = false
+        if (typeof session.reject === 'function') {
+          try { await session.reject(); rejected = true } catch (e) {
+            console.warn('[Softphone] session.reject() failed, trying alternatives', e)
+          }
+        }
+        if (!rejected && typeof session.cancel === 'function') {
+          try { await session.cancel(); rejected = true } catch (e) {
+            console.warn('[Softphone] session.cancel() failed', e)
+          }
+        }
+        // If neither worked, force dispose
+        if (!rejected) {
+          try { if (typeof session.dispose === 'function') session.dispose() } catch {}
+          terminated = true
+        }
+      } else if (session.state === SS.Terminated) {
+        terminated = true
       }
     } catch (err) {
       console.error('[Softphone] hangup error', err)
+      terminated = true
     }
-    // Don't call resetCall() here — the stateChange listener will handle it
-    // when session transitions to Terminated. This avoids double-reset.
+    // If session is already terminated or we couldn't cleanly end it, reset immediately
+    if (terminated) {
+      resetCall()
+    } else {
+      // Force-reset after a short delay if stateChange listener doesn't fire
+      setTimeout(() => {
+        if (sessionRef.current === session) {
+          console.warn('[Softphone] Force-resetting call after hangup timeout')
+          resetCall()
+        }
+      }, 2000)
+    }
     setIsOpen(false)
   }, [])
 
@@ -482,13 +554,17 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     setDialNumber(null)
   }, [])
 
+  const open = useCallback(() => {
+    setIsOpen(true)
+  }, [])
+
   return (
     <SoftphoneContext.Provider value={{
       status, callState, callerNumber, remoteDisplayName,
       isOpen, dialNumber,
       dial, answer, hangup, toggleMute, toggleHold, transfer, startConference,
-      close, setDialNumber,
-      callSeconds, isMuted, isOnHold, myExtension,
+      close, open, setDialNumber,
+      callSeconds, isMuted, isOnHold, myExtension, callEndCounter,
     }}>
       {children}
     </SoftphoneContext.Provider>

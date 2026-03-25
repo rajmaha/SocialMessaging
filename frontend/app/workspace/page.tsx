@@ -31,7 +31,7 @@ export default function Workspace() {
     // activeNumber drives TicketForm and TicketHistory sidebar
     // It is now a union of the real softphone caller (when inbound call is answered)
     // and the manual simulate-call button (unchanged behavior)
-    const { callerNumber: softphoneCallerNumber, isOpen: softphoneOpen, status: softphoneStatus, dial: softphoneDial, myExtension } = useSoftphone()
+    const { callerNumber: softphoneCallerNumber, isOpen: softphoneOpen, status: softphoneStatus, dial: softphoneDial, myExtension, callEndCounter, callState: softphoneCallState, open: softphoneOpen_ } = useSoftphone()
     const [manualActiveNumber, setManualActiveNumber] = useState<string | null>(null)
     const activeNumber = softphoneCallerNumber || manualActiveNumber
     const setActiveNumber = (n: string | null) => setManualActiveNumber(n)
@@ -59,6 +59,13 @@ export default function Workspace() {
             router.push('/login');
         }
     }, [reloadHistory]);
+
+    // Refresh call list when a call ends (including missed/rejected calls)
+    useEffect(() => {
+        if (callEndCounter > 0) {
+            fetchRecentCalls();
+        }
+    }, [callEndCounter]);
 
     const fetchMyTickets = async () => {
         try {
@@ -398,8 +405,8 @@ export default function Workspace() {
                 </div>
 
                 {/* Right Column: Ticket History Sidebar (Or Softphone Placeholder) */}
-                <div className="w-full lg:w-96 flex flex-col bg-gray-50">
-                    <div className="flex-1">
+                <div className="w-full lg:w-96 flex flex-col bg-gray-50 lg:sticky lg:top-14 lg:max-h-[calc(100vh-3.5rem-1.5rem)] shrink-0">
+                    <div className="flex-1 flex flex-col min-h-0">
                         {activeNumber ? (
                             <TicketHistory
                                 activeNumber={activeNumber}
@@ -407,9 +414,9 @@ export default function Workspace() {
                                 onFollowUpClick={(id) => setParentTicketId(id)}
                             />
                         ) : (
-                            <div className="flex flex-col h-full gap-3">
-                              {/* Softphone status card (compact) */}
-                              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col items-center p-5 gap-3">
+                            <div className="flex flex-col h-full gap-3 min-h-0">
+                              {/* Softphone status card (compact) — never scrolls */}
+                              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col items-center p-5 gap-3 shrink-0">
                                 <div className="flex items-center gap-3">
                                   <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                                     softphoneStatus === 'registered' ? 'bg-green-100' :
@@ -443,7 +450,7 @@ export default function Workspace() {
                                       )}
                                     </div>
                                   </div>
-                                  {softphoneStatus === 'registered' && !softphoneOpen && (
+                                  {softphoneStatus === 'registered' && !softphoneOpen && softphoneCallState === 'idle' && (
                                     <button
                                       onClick={() => softphoneDial('')}
                                       className="ml-auto px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-medium text-xs hover:bg-indigo-700 transition flex items-center gap-1.5"
@@ -451,13 +458,21 @@ export default function Workspace() {
                                       <Phone className="w-3 h-3" /> Dial
                                     </button>
                                   )}
+                                  {softphoneCallState !== 'idle' && !softphoneOpen && (
+                                    <button
+                                      onClick={softphoneOpen_}
+                                      className="ml-auto px-3 py-1.5 bg-red-500 text-white rounded-lg font-medium text-xs hover:bg-red-600 transition flex items-center gap-1.5 animate-pulse"
+                                    >
+                                      <PhoneCall className="w-3 h-3" /> Resume Call
+                                    </button>
+                                  )}
                                 </div>
                               </div>
 
                               {/* Today's Recent Calls */}
-                              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 flex flex-col overflow-hidden">
-                                {/* Header + Tabs */}
-                                <div className="border-b border-gray-100">
+                              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 flex flex-col overflow-hidden min-h-0 lg:max-h-[calc(100vh-3.5rem-1.5rem-70px)]">
+                                {/* Header + Tabs — sticky, never scrolls */}
+                                <div className="border-b border-gray-100 shrink-0">
                                   <div className="px-4 pt-3 pb-2 flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                       <Clock className="w-4 h-4 text-gray-400" />

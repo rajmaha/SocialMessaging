@@ -26,7 +26,7 @@ export default function Softphone() {
     status, callState, callerNumber, remoteDisplayName,
     isOpen, dialNumber,
     dial, answer, hangup, toggleMute, toggleHold, transfer, startConference,
-    close, setDialNumber,
+    close, open, setDialNumber,
     callSeconds, isMuted, isOnHold,
   } = useSoftphone()
 
@@ -52,6 +52,29 @@ export default function Softphone() {
       setPanelMsg(null)
     }
   }, [callState])
+
+  const hasActiveCall = callState !== 'idle'
+
+  // When popup is closed but call is active, show a mini floating indicator to reopen
+  if (!isOpen && hasActiveCall) {
+    return (
+      <button
+        onClick={open}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 bg-red-500 text-white rounded-full shadow-2xl hover:bg-red-600 transition animate-pulse cursor-pointer"
+        title="Click to reopen call controls"
+      >
+        <Phone className="w-5 h-5" />
+        <span className="text-sm font-medium">
+          {callState === 'ringing_in' ? 'Incoming Call' :
+           callState === 'ringing_out' ? 'Calling…' :
+           callState === 'on_hold' ? 'On Hold' : 'Active Call'}
+        </span>
+        {callState === 'active' && (
+          <span className="text-xs font-mono opacity-80">{formatTime(callSeconds)}</span>
+        )}
+      </button>
+    )
+  }
 
   if (!isOpen) return null
 
