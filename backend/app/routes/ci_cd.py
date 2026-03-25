@@ -178,8 +178,14 @@ def trigger_deploy(repo_id: int, db: Session = Depends(get_db), _=Depends(get_ad
             from datetime import datetime
             try:
                 dep.git_output = ci_cd_service.git_pull_or_clone(repo, srv)
+                inner_db.commit()  # commit git stage so polling can see progress
+
                 ci_cd_service.run_scripts(repo, dep, inner_db, srv)
+                inner_db.commit()  # commit script logs so polling can see progress
+
                 ci_cd_service.run_migrations(repo, dep, inner_db, srv)
+                inner_db.commit()  # commit migration logs so polling can see progress
+
                 dep.status = "success"
             except Exception as exc:
                 logger.error("CICD manual deploy repo %d failed: %s", repo_id, exc)

@@ -54,6 +54,8 @@ export default function ApiServersPage() {
   const [credForm, setCredForm] = useState({ user_id: '', username: '', password: '' });
   const [testingCredId, setTestingCredId] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<{ credId: number; type: 'success' | 'error'; text: string } | null>(null);
+  const [editingCredId, setEditingCredId] = useState<number | null>(null);
+  const [editCredForm, setEditCredForm] = useState({ username: '', password: '' });
   const [serverCredCounts, setServerCredCounts] = useState<Record<number, number>>({});
 
   // Spec & Endpoints state (per-server)
@@ -184,6 +186,41 @@ export default function ApiServersPage() {
       }
     } finally {
       setTestingCredId(null);
+    }
+  };
+
+  const handleEditCredential = (cred: any) => {
+    setEditingCredId(cred.id);
+    setEditCredForm({ username: cred.username, password: '' });
+  };
+
+  const handleSaveCredential = async (credId: number) => {
+    const payload: any = {};
+    if (editCredForm.username) payload.username = editCredForm.username;
+    if (editCredForm.password) payload.password = editCredForm.password;
+    try {
+      await apiServersApi.updateCredential(credId, payload);
+      setEditingCredId(null);
+      if (expandedId) {
+        const res = await apiServersApi.listCredentials(expandedId);
+        setCredentials(res.data);
+      }
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Failed to update credential');
+    }
+  };
+
+  const handleDeleteCredential = async (credId: number) => {
+    if (!confirm('Delete this credential?')) return;
+    try {
+      await apiServersApi.deleteCredential(credId);
+      if (expandedId) {
+        const res = await apiServersApi.listCredentials(expandedId);
+        setCredentials(res.data);
+      }
+      load(); // refresh counts
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Failed to delete credential');
     }
   };
 
@@ -458,30 +495,74 @@ export default function ApiServersPage() {
                     ) : (
                       <div className="space-y-1.5 mb-3">
                         {credentials.map((cred: any) => (
-                          <div key={cred.id} className="flex items-center gap-2 text-sm bg-gray-50 rounded-lg px-3 py-2">
-                            <span className="text-gray-700 font-medium">{cred.username}</span>
-                            {cred.user_name && (
-                              <span className="text-xs text-gray-400">({cred.user_name})</span>
-                            )}
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cred.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                              {cred.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                            {(server.auth_type === 'api_key_plus_token' || server.auth_type === 'bearer') && (
-                              <button
-                                onClick={() => handleTestCredential(cred.id)}
-                                disabled={testingCredId === cred.id}
-                                className="text-xs text-indigo-600 hover:text-indigo-800 px-2 py-1 border border-indigo-200 rounded-md hover:bg-indigo-50 transition-colors disabled:opacity-50 ml-auto"
-                              >
-                                {testingCredId === cred.id ? 'Testing...' : 'Test'}
-                              </button>
-                            )}
-                            {!(server.auth_type === 'api_key_plus_token' || server.auth_type === 'bearer') && (
-                              <span className="ml-auto" />
-                            )}
-                            {testResult?.credId === cred.id && (
-                              <span className={`text-xs ${testResult!.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                                {testResult!.text}
-                              </span>
+                          <div key={cred.id} className="bg-gray-50 rounded-lg px-3 py-2">
+                            {editingCredId === cred.id ? (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs text-gray-400">{cred.user_name}</span>
+                                <input
+                                  className="border rounded-md px-2 py-1 text-sm flex-1 min-w-[100px]"
+                                  placeholder="Username"
+                                  value={editCredForm.username}
+                                  onChange={e => setEditCredForm({ ...editCredForm, username: e.target.value })}
+                                />
+                                <input
+                                  type="password"
+                                  className="border rounded-md px-2 py-1 text-sm flex-1 min-w-[100px]"
+                                  placeholder="New password (leave blank to keep)"
+                                  value={editCredForm.password}
+                                  onChange={e => setEditCredForm({ ...editCredForm, password: e.target.value })}
+                                />
+                                <button
+                                  onClick={() => handleSaveCredential(cred.id)}
+                                  className="text-xs text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded-md"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => setEditingCredId(null)}
+                                  className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="text-gray-700 font-medium">{cred.username}</span>
+                                {cred.user_name && (
+                                  <span className="text-xs text-gray-400">({cred.user_name})</span>
+                                )}
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cred.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                  {cred.is_active ? 'Active' : 'Inactive'}
+                                </span>
+                                <span className="ml-auto flex items-center gap-1.5">
+                                  {(server.auth_type === 'api_key_plus_token' || server.auth_type === 'bearer') && (
+                                    <button
+                                      onClick={() => handleTestCredential(cred.id)}
+                                      disabled={testingCredId === cred.id}
+                                      className="text-xs text-indigo-600 hover:text-indigo-800 px-2 py-1 border border-indigo-200 rounded-md hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                                    >
+                                      {testingCredId === cred.id ? 'Testing...' : 'Test'}
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleEditCredential(cred)}
+                                    className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 border border-blue-200 rounded-md hover:bg-blue-50 transition-colors"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteCredential(cred.id)}
+                                    className="text-xs text-red-500 hover:text-red-700 px-2 py-1 border border-red-200 rounded-md hover:bg-red-50 transition-colors"
+                                  >
+                                    Delete
+                                  </button>
+                                  {testResult?.credId === cred.id && (
+                                    <span className={`text-xs ${testResult!.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                                      {testResult!.text}
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
                             )}
                           </div>
                         ))}

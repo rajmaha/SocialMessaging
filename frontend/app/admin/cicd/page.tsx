@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import MainHeader from '@/components/MainHeader'
 import AdminNav from '@/components/AdminNav'
@@ -44,6 +44,16 @@ interface CPSite {
   user: string
 }
 
+interface DeployToast {
+  id: number
+  repoName: string
+  deploymentId: number
+  status: 'running' | 'success' | 'failed'
+  step: string
+  steps: string[]
+  startedAt: number
+}
+
 const emptyRepoForm = {
   name: '',
   repo_url: '',
@@ -69,6 +79,21 @@ function statusBadge(repo: CICDRepo) {
   return <span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">Deployed</span>
 }
 
+function formatDuration(ms: number) {
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s`
+  return `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
+function ElapsedTimer({ startedAt }: { startedAt: number }) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+  return <span>Elapsed: {formatDuration(Date.now() - startedAt)}</span>
+}
+
 export default function CICDPage() {
   const router = useRouter()
   const [user] = useState(() => authAPI.getUser())
@@ -91,6 +116,17 @@ export default function CICDPage() {
   const [cpSites, setCpSites] = useState<CPSite[]>([])
   const [loadingSites, setLoadingSites] = useState(false)
   const [showSitePicker, setShowSitePicker] = useState(false)
+
+  // Deploy toasts
+  const [deployToasts, setDeployToasts] = useState<DeployToast[]>([])
+  const pollTimers = useRef<Record<number, ReturnType<typeof setInterval>>>({})
+
+  // Cleanup poll timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(pollTimers.current).forEach(clearInterval)
+    }
+  }, [])
 
   const fetchServers = useCallback(async () => {
     setLoadingServers(true)
@@ -240,18 +276,86 @@ export default function CICDPage() {
     else flash('error', 'Delete failed.')
   }
 
+  function removeDeployToast(deploymentId: number) {
+    setDeployToasts(t => t.filter(x => x.deploymentId !== deploymentId))
+    if (pollTimers.current[deploymentId]) {
+      clearInterval(pollTimers.current[deploymentId])
+      delete pollTimers.current[deploymentId]
+    }
+  }
+
+  function deriveDeployStep(data: { status: string; git_output?: string | null; error?: string | null; script_logs?: unknown[]; migration_logs?: unknown[] }): { step: string; steps: string[] } {
+    const steps: string[] = []
+    steps.push('Starting deployment…')
+    if (data.git_output) steps.push('Git pull completed')
+    if (data.script_logs && (data.script_logs as unknown[]).length > 0) steps.push(`Ran ${(data.script_logs as unknown[]).length} script(s)`)
+    if (data.migration_logs && (data.migration_logs as unknown[]).length > 0) steps.push(`Ran ${(data.migration_logs as unknown[]).length} migration(s)`)
+    if (data.status === 'success') steps.push('Deployment succeeded!')
+    if (data.status === 'failed') steps.push(`Failed: ${data.error?.slice(0, 100) || 'Unknown error'}`)
+
+    const step = steps[steps.length - 1]
+    return { step, steps }
+  }
+
+  async function pollDeployment(repoId: number, deploymentId: number) {
+    try {
+      const res = await fetch(`${API_URL}/cicd/repos/${repoId}/deployments/${deploymentId}`, {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      const { step, steps } = deriveDeployStep(data)
+
+      setDeployToasts(prev => prev.map(t =>
+        t.deploymentId === deploymentId
+          ? { ...t, status: data.status, step, steps }
+          : t
+      ))
+
+      if (data.status === 'success' || data.status === 'failed') {
+        // Stop polling
+        if (pollTimers.current[deploymentId]) {
+          clearInterval(pollTimers.current[deploymentId])
+          delete pollTimers.current[deploymentId]
+        }
+        setDeploying(d => ({ ...d, [repoId]: false }))
+        fetchRepos()
+        // Auto-remove toast after 8s
+        setTimeout(() => removeDeployToast(deploymentId), 8000)
+      }
+    } catch {
+      // Silently retry on next interval
+    }
+  }
+
   async function deployNow(id: number) {
+    const repo = repos.find(r => r.id === id)
     setDeploying(d => ({ ...d, [id]: true }))
     try {
       const res = await fetch(`${API_URL}/cicd/repos/${id}/deploy`, { method: 'POST', headers: authHeaders() })
       if (res.ok) {
         const data = await res.json()
-        flash('success', `Deployment #${data.deployment_id} started.`)
-        fetchRepos()
+        const depId = data.deployment_id
+
+        // Add progressive toast
+        setDeployToasts(prev => [...prev, {
+          id: Date.now(),
+          repoName: repo?.name || `Repo #${id}`,
+          deploymentId: depId,
+          status: 'running',
+          step: 'Starting deployment…',
+          steps: ['Starting deployment…'],
+          startedAt: Date.now(),
+        }])
+
+        // Poll every 2s for status updates
+        pollTimers.current[depId] = setInterval(() => pollDeployment(id, depId), 2000)
       } else {
         flash('error', 'Failed to trigger deploy.')
+        setDeploying(d => ({ ...d, [id]: false }))
       }
-    } finally {
+    } catch {
+      flash('error', 'Failed to trigger deploy.')
       setDeploying(d => ({ ...d, [id]: false }))
     }
   }
@@ -362,6 +466,64 @@ export default function CICDPage() {
         </div>
       </main>
 
+      {/* ── Deploy Progress Toasts ──────────────────────────────────────────── */}
+      {deployToasts.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-3 max-w-sm">
+          {deployToasts.map(toast => (
+            <div key={toast.deploymentId}
+              className={`rounded-2xl shadow-2xl border p-4 transition-all animate-in slide-in-from-right duration-300 ${
+                toast.status === 'success' ? 'bg-green-50 border-green-200' :
+                toast.status === 'failed' ? 'bg-red-50 border-red-200' :
+                'bg-white border-gray-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-gray-800">{toast.repoName}</span>
+                  <span className="text-xs text-gray-400">#{toast.deploymentId}</span>
+                </div>
+                <button onClick={() => removeDeployToast(toast.deploymentId)}
+                  className="text-gray-300 hover:text-gray-500 text-lg leading-none">&times;</button>
+              </div>
+
+              {/* Step progress */}
+              <div className="space-y-1.5">
+                {toast.steps.map((s, i) => {
+                  const isLast = i === toast.steps.length - 1
+                  const isFailed = toast.status === 'failed' && isLast
+                  const isSuccess = toast.status === 'success' && isLast
+                  return (
+                    <div key={i} className="flex items-start gap-2 text-xs">
+                      {isFailed ? (
+                        <span className="text-red-500 mt-0.5 shrink-0">&#10007;</span>
+                      ) : isSuccess ? (
+                        <span className="text-green-600 mt-0.5 shrink-0">&#10003;</span>
+                      ) : isLast && toast.status === 'running' ? (
+                        <span className="mt-0.5 shrink-0">
+                          <span className="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        </span>
+                      ) : (
+                        <span className="text-green-600 mt-0.5 shrink-0">&#10003;</span>
+                      )}
+                      <span className={`${isFailed ? 'text-red-700 font-medium' : isSuccess ? 'text-green-700 font-medium' : isLast && toast.status === 'running' ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
+                        {s}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Elapsed time */}
+              <div className="mt-2 text-[10px] text-gray-400">
+                {toast.status === 'running'
+                  ? <ElapsedTimer startedAt={toast.startedAt} />
+                  : `Completed in ${formatDuration(Date.now() - toast.startedAt)}`}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ── Add / Edit Repo Modal ──────────────────────────────────────────── */}
       {showRepoModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -414,7 +576,7 @@ export default function CICDPage() {
                   >
                     <option value="">— Local (same machine as this app) —</option>
                     {servers.map(s => (
-                      <option key={s.id} value={s.id}>
+                      <option key={s.id} value={String(s.id)}>
                         {s.name}
                       </option>
                     ))}

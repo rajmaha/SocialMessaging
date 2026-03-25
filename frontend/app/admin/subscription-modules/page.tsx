@@ -3,12 +3,13 @@
 import { useState, useEffect } from 'react'
 import AdminNav from '@/components/AdminNav'
 import MainHeader from '@/components/MainHeader'
-import { Plus, Search, Layers, Edit2, Trash2, X } from 'lucide-react'
+import { Plus, Search, Layers, Edit2, Trash2, X, ChevronDown, Settings } from 'lucide-react'
 import axios from 'axios'
 import { useAuth, getAuthToken } from '@/lib/auth'
 import { hasModuleAccess } from '@/lib/permissions'
 import { useRouter } from 'next/navigation'
-import { API_URL } from '@/lib/config';
+import { API_URL } from '@/lib/config'
+import { subscriptionSettingsApi, formsApi } from '@/lib/api'
 
 interface SubscriptionModule {
     id: number
@@ -28,6 +29,14 @@ export default function SubscriptionModulesPage() {
     const [currentModule, setCurrentModule] = useState<Partial<SubscriptionModule> | null>(null)
     const [saving, setSaving] = useState(false)
 
+    // Post-create form settings
+    const [settingsOpen, setSettingsOpen] = useState(false)
+    const [forms, setForms] = useState<any[]>([])
+    const [formFields, setFormFields] = useState<any[]>([])
+    const [settings, setSettings] = useState<any>({ post_create_form_slug: '', post_create_field_map: [] })
+    const [savingSettings, setSavingSettings] = useState(false)
+    const [settingsMessage, setSettingsMessage] = useState('')
+
     useEffect(() => {
         // Enforce permission
         if (user && user.role !== 'admin' && !hasModuleAccess('subscriptions')) {
@@ -35,6 +44,8 @@ export default function SubscriptionModulesPage() {
             return
         }
         fetchModules()
+        fetchSettings()
+        fetchForms()
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
@@ -110,6 +121,69 @@ export default function SubscriptionModulesPage() {
         }
     }
 
+    // --- Post-create form settings ---
+    const fetchSettings = async () => {
+        try {
+            const res = await subscriptionSettingsApi.get()
+            setSettings(res.data)
+            if (res.data.post_create_form_slug) {
+                await loadFormFields(res.data.post_create_form_slug)
+            }
+        } catch (e) { console.error('Failed to load settings', e) }
+    }
+
+    const fetchForms = async () => {
+        try {
+            const res = await formsApi.list()
+            setForms(res.data.filter((f: any) => f.is_published && f.storage_type !== 'local'))
+        } catch (e) { console.error('Failed to load forms', e) }
+    }
+
+    const loadFormFields = async (slug: string) => {
+        try {
+            const allForms = forms.length ? forms : (await formsApi.list()).data
+            const form = allForms.find((f: any) => f.slug === slug)
+            if (form) {
+                const res = await formsApi.listFields(form.id)
+                setFormFields(res.data)
+            }
+        } catch (e) { console.error('Failed to load form fields', e) }
+    }
+
+    const handleFormChange = async (slug: string) => {
+        setSettings({ ...settings, post_create_form_slug: slug, post_create_field_map: [] })
+        setFormFields([])
+        if (slug) await loadFormFields(slug)
+    }
+
+    const handleFieldMapChange = (formKey: string, sourceKey: string) => {
+        const map = [...(settings.post_create_field_map || [])]
+        const idx = map.findIndex((m: any) => m.form_key === formKey)
+        if (idx >= 0) {
+            map[idx].source_key = sourceKey
+        } else {
+            map.push({ form_key: formKey, source_key: sourceKey })
+        }
+        setSettings({ ...settings, post_create_field_map: map })
+    }
+
+    const handleSaveSettings = async () => {
+        setSavingSettings(true)
+        setSettingsMessage('')
+        try {
+            await subscriptionSettingsApi.update({
+                post_create_form_slug: settings.post_create_form_slug || null,
+                post_create_field_map: settings.post_create_field_map || [],
+            })
+            setSettingsMessage('Settings saved')
+            setTimeout(() => setSettingsMessage(''), 3000)
+        } catch (e: any) {
+            setSettingsMessage('Failed to save settings')
+        } finally {
+            setSavingSettings(false)
+        }
+    }
+
     const filteredModules = modules.filter(m =>
         m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (m.description && m.description.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -150,6 +224,100 @@ export default function SubscriptionModulesPage() {
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </div>
+                        </div>
+
+                        {/* Post-Create Form Settings */}
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-6">
+                            <button
+                                onClick={() => setSettingsOpen(!settingsOpen)}
+                                className="w-full flex items-center justify-between px-6 py-4 text-left"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Settings className="w-4 h-4 text-gray-500" />
+                                    <span className="font-semibold text-gray-900 text-sm">Post-Create Form Settings</span>
+                                    {settings.post_create_form_slug && (
+                                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Active</span>
+                                    )}
+                                </div>
+                                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${settingsOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {settingsOpen && (
+                                <div className="px-6 pb-5 border-t border-gray-100 pt-4 space-y-4">
+                                    <p className="text-xs text-gray-500">Automatically submit a form to a remote API after a subscription is created.</p>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Form</label>
+                                        <select
+                                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+                                            value={settings.post_create_form_slug || ''}
+                                            onChange={(e) => handleFormChange(e.target.value)}
+                                        >
+                                            <option value="">— None —</option>
+                                            {forms.map((f: any) => (
+                                                <option key={f.slug} value={f.slug}>{f.title} ({f.slug})</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {formFields.length > 0 && (
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Field Mapping</label>
+                                            <div className="space-y-2">
+                                                {formFields.map((field: any) => {
+                                                    const currentMap = (settings.post_create_field_map || []).find((m: any) => m.form_key === field.field_key)
+                                                    return (
+                                                        <div key={field.field_key} className="flex items-center gap-3">
+                                                            <span className="text-sm text-gray-700 w-1/3 truncate">{field.field_label}</span>
+                                                            <span className="text-gray-400">→</span>
+                                                            <select
+                                                                className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white"
+                                                                value={currentMap?.source_key || ''}
+                                                                onChange={(e) => handleFieldMapChange(field.field_key, e.target.value)}
+                                                            >
+                                                                <option value="">— Skip —</option>
+                                                                <optgroup label="Subscription">
+                                                                    <option value="subscription.subscribed_product">Product</option>
+                                                                    <option value="subscription.system_url">System URL</option>
+                                                                    <option value="subscription.modules">Modules</option>
+                                                                    <option value="subscription.subscribed_on_date">Subscribed On</option>
+                                                                    <option value="subscription.billed_from_date">Billed From</option>
+                                                                    <option value="subscription.expire_date">Expire Date</option>
+                                                                    <option value="subscription.status">Status</option>
+                                                                    <option value="subscription.company_logo_url">Logo URL</option>
+                                                                </optgroup>
+                                                                <optgroup label="Organization">
+                                                                    <option value="organization.organization_name">Name</option>
+                                                                    <option value="organization.email">Email</option>
+                                                                    <option value="organization.domain_name">Domain</option>
+                                                                    <option value="organization.pan_no">PAN No</option>
+                                                                    <option value="organization.address">Address</option>
+                                                                    <option value="organization.contact_numbers">Contact Numbers</option>
+                                                                </optgroup>
+                                                            </select>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="flex items-center gap-3 pt-2">
+                                        <button
+                                            onClick={handleSaveSettings}
+                                            disabled={savingSettings}
+                                            className="bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
+                                        >
+                                            {savingSettings ? 'Saving...' : 'Save Settings'}
+                                        </button>
+                                        {settingsMessage && (
+                                            <span className={`text-sm ${settingsMessage.includes('Failed') ? 'text-red-600' : 'text-green-600'}`}>
+                                                {settingsMessage}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Modules Table */}

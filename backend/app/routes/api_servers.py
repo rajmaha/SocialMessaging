@@ -161,6 +161,41 @@ def list_user_credentials(
     return result
 
 
+@router.put("/credentials/{cred_id}")
+def admin_update_credential(
+    cred_id: int,
+    data: UserApiCredentialUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manage_forms),
+):
+    cred = db.query(UserApiCredential).filter(UserApiCredential.id == cred_id).first()
+    if not cred:
+        raise HTTPException(status_code=404, detail="Credential not found")
+    update_data = data.model_dump(exclude_unset=True)
+    for key, val in update_data.items():
+        setattr(cred, key, val)
+    # Reset token so next request triggers fresh login
+    cred.token = None
+    cred.is_active = False
+    db.commit()
+    db.refresh(cred)
+    return cred
+
+
+@router.delete("/credentials/{cred_id}")
+def admin_delete_credential(
+    cred_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manage_forms),
+):
+    cred = db.query(UserApiCredential).filter(UserApiCredential.id == cred_id).first()
+    if not cred:
+        raise HTTPException(status_code=404, detail="Credential not found")
+    db.delete(cred)
+    db.commit()
+    return {"message": "Credential deleted"}
+
+
 @router.post("/credentials/{cred_id}/test")
 async def admin_test_credential(
     cred_id: int,
@@ -176,6 +211,10 @@ async def admin_test_credential(
     try:
         token = await api_login(db, server, cred)
         return {"message": "Login successful", "token": token}
+    except HTTPException:
+        cred.is_active = False
+        db.commit()
+        raise
     except Exception as e:
         cred.is_active = False
         db.commit()
@@ -272,6 +311,13 @@ async def upload_spec(
     if not parsed_endpoints:
         raise HTTPException(400, "No endpoints found in the spec file")
 
+    # Deduplicate parsed endpoints (last occurrence wins for same path+method)
+    seen = {}
+    for ep in parsed_endpoints:
+        key = (ep["path"], ep["method"])
+        seen[key] = ep
+    parsed_endpoints = list(seen.values())
+
     # Upsert endpoints
     created_or_updated = []
     for ep in parsed_endpoints:
@@ -296,6 +342,7 @@ async def upload_spec(
                 source_type=ep["source_type"],
             )
             db.add(new_ep)
+            db.flush()
             created_or_updated.append(new_ep)
 
     server.spec_file_name = file.filename
@@ -500,6 +547,10 @@ async def login_to_api_server(
     try:
         token = await api_login(db, server, cred)
         return {"message": "Login successful", "token": token}
+    except HTTPException:
+        cred.is_active = False
+        db.commit()
+        raise
     except Exception as e:
         cred.is_active = False
         db.commit()

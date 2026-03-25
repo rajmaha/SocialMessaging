@@ -161,3 +161,16 @@ class SubscriptionModuleResponse(SubscriptionModuleBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SubscriptionSettingsUpdate(BaseModel):
+    post_create_form_slug: Optional[str] = None
+    post_create_field_map: Optional[List[dict]] = None
+
+
+class SubscriptionSettingsResponse(BaseModel):
+    id: int
+    post_create_form_slug: Optional[str] = None
+    post_create_field_map: Optional[List[dict]] = None
+    updated_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)

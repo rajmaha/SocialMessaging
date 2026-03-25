@@ -84,14 +84,13 @@ const nextConfig = {
       { source: '/kb/:path*',                  destination: `${backendUrl}/kb/:path*` },
       { source: '/campaigns/:path*',           destination: `${backendUrl}/campaigns/:path*` },
       { source: '/email-templates/:path*',     destination: `${backendUrl}/email-templates/:path*` },
-      { source: '/forms/:path*',               destination: `${backendUrl}/forms/:path*` },
     ];
 
-    // /admin/:path* MUST be in fallback so Next.js dynamic admin pages
-    // (/admin/visitors/[id], /admin/organizations/[id], etc.) are served
-    // by Next.js rather than proxied to the backend.
+    // Paths that share a prefix with Next.js dynamic pages MUST be in fallback
+    // so the Next.js page renders first; only unmatched requests proxy to backend.
     const fallback = [
       { source: '/admin/:path*', destination: `${backendUrl}/admin/:path*` },
+      { source: '/forms/:path*', destination: `${backendUrl}/forms/:path*` },
     ];
 
     return { afterFiles, fallback };

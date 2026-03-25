@@ -1637,6 +1637,17 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE api_servers ADD COLUMN IF NOT EXISTS spec_file_name VARCHAR"))
         conn.execute(text("ALTER TABLE form_fields ADD COLUMN IF NOT EXISTS is_auto_generated BOOLEAN DEFAULT FALSE"))
         conn.execute(text("ALTER TABLE form_fields ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT TRUE"))
+        conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS require_otp BOOLEAN DEFAULT FALSE"))
+
+        # Subscription settings (single-row config for post-create form)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS subscription_settings (
+                id INTEGER PRIMARY KEY,
+                post_create_form_slug VARCHAR,
+                post_create_field_map JSON,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
 
         # CRM Lead Notes table
         conn.execute(text("""

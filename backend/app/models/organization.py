@@ -89,6 +89,15 @@ class SubscriptionModule(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SubscriptionSettings(Base):
+    __tablename__ = "subscription_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_create_form_slug = Column(String, nullable=True)
+    post_create_field_map = Column(JSON, nullable=True)  # [{"form_key": "x", "source_key": "subscription.y"}]
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # New tables for product/business features
 class PricingPlan(Base):
     __tablename__ = "pricing_plans"

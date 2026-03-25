@@ -9,19 +9,23 @@ import uuid
 import re
 
 from app.database import get_db
-from app.models.organization import Organization, OrganizationContact, Subscription, SubscriptionModule
+from app.models.organization import Organization, OrganizationContact, Subscription, SubscriptionModule, SubscriptionSettings
 from app.models.cloudpanel_server import CloudPanelServer
 from app.models.cloudpanel_site import CloudPanelSite
 from app.schemas.organization import (
     OrganizationCreate, OrganizationUpdate, OrganizationResponse,
     ContactCreate, ContactUpdate, ContactResponse,
     SubscriptionCreate, SubscriptionUpdate, SubscriptionResponse,
-    SubscriptionModuleCreate, SubscriptionModuleUpdate, SubscriptionModuleResponse
+    SubscriptionModuleCreate, SubscriptionModuleUpdate, SubscriptionModuleResponse,
+    SubscriptionSettingsUpdate, SubscriptionSettingsResponse,
 )
 from app.schemas.cloudpanel import CloudPanelSiteCreate
 from app.services.cloudpanel_service import CloudPanelService
 from app.dependencies import get_current_user, require_module, require_admin_feature
 from app.models.user import User
+from app.models.form import Form as FormModel, FormField
+from app.models.api_server import ApiServer, UserApiCredential
+from app.services.api_proxy import api_request, api_login
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
 
@@ -92,6 +96,41 @@ def delete_subscription_module(
     db.delete(db_module)
     db.commit()
     return {"status": "success", "message": "Subscription module deleted"}
+
+
+# Subscription Settings (single-row config)
+@router.get("/subscription-settings", response_model=SubscriptionSettingsResponse)
+def get_subscription_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_subs),
+):
+    settings = db.query(SubscriptionSettings).first()
+    if not settings:
+        settings = SubscriptionSettings(id=1)
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return settings
+
+
+@router.put("/subscription-settings", response_model=SubscriptionSettingsResponse)
+def update_subscription_settings(
+    data: SubscriptionSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_subs),
+):
+    settings = db.query(SubscriptionSettings).first()
+    if not settings:
+        settings = SubscriptionSettings(id=1)
+        db.add(settings)
+        db.commit()
+    update_data = data.model_dump(exclude_unset=True)
+    for key, val in update_data.items():
+        setattr(settings, key, val)
+    db.commit()
+    db.refresh(settings)
+    return settings
+
 
 # Organization CRUD
 @router.post("/", response_model=OrganizationResponse)
@@ -268,6 +307,30 @@ def create_subscription(
     db.refresh(db_sub)
     return db_sub
 
+
+def _build_form_payload(field_map: list, subscription: Subscription, organization: Organization) -> dict:
+    """Build form submission data from field mapping config."""
+    sources = {}
+    for col in subscription.__table__.columns:
+        val = getattr(subscription, col.name)
+        if hasattr(val, 'isoformat'):
+            val = val.isoformat()
+        sources[f"subscription.{col.name}"] = val
+    for col in organization.__table__.columns:
+        val = getattr(organization, col.name)
+        if hasattr(val, 'isoformat'):
+            val = val.isoformat()
+        sources[f"organization.{col.name}"] = val
+
+    payload = {}
+    for mapping in field_map:
+        form_key = mapping.get("form_key")
+        source_key = mapping.get("source_key")
+        if form_key and source_key:
+            payload[form_key] = sources.get(source_key)
+    return payload
+
+
 @router.post("/{org_id}/subscriptions/deploy-and-create")
 async def deploy_and_create_subscription(
     org_id: int,
@@ -379,6 +442,40 @@ async def deploy_and_create_subscription(
                     db.commit()
 
                 yield f"data: {json.dumps({'step': 'subscription_created', 'status': 'success', 'subscription_id': db_sub.id})}\n\n"
+
+                # Auto-submit post-create form if configured
+                try:
+                    settings = db.query(SubscriptionSettings).first()
+                    if settings and settings.post_create_form_slug and settings.post_create_field_map:
+                        form_obj = db.query(FormModel).filter(
+                            FormModel.slug == settings.post_create_form_slug,
+                            FormModel.is_published == True,
+                        ).first()
+                        if form_obj and form_obj.api_create_method and form_obj.api_server_id:
+                            org = db.query(Organization).filter(Organization.id == org_id).first()
+                            form_data = _build_form_payload(settings.post_create_field_map, db_sub, org)
+
+                            # Inject hidden fields
+                            from app.routes.forms import _inject_hidden_fields
+                            form_data = _inject_hidden_fields(db, form_obj, form_data, current_user)
+
+                            server_api = db.query(ApiServer).filter(ApiServer.id == form_obj.api_server_id).first()
+                            cred = db.query(UserApiCredential).filter(
+                                UserApiCredential.user_id == current_user.id,
+                                UserApiCredential.api_server_id == server_api.id,
+                            ).first()
+                            if server_api and cred:
+                                import asyncio
+                                loop = asyncio.get_event_loop()
+                                result = loop.run_until_complete(
+                                    api_request(db, server_api, cred, form_obj.api_create_method, body=form_data)
+                                )
+                                yield f"data: {json.dumps({'step': 'form_submitted', 'status': 'success', 'message': 'Form submitted to remote API'})}\n\n"
+                except Exception as form_err:
+                    import logging
+                    logging.getLogger(__name__).warning(f"Post-create form submission failed: {form_err}")
+                    yield f"data: {json.dumps({'step': 'form_submit_failed', 'status': 'warning', 'message': str(form_err)})}\n\n"
+
         except Exception as e:
             yield f"data: {json.dumps({'step': 'error', 'status': 'error', 'message': str(e)})}\n\n"
         finally:

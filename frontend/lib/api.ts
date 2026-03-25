@@ -331,6 +331,8 @@ export const apiServersApi = {
   delete: (id: number) => api.delete(`/admin/api-servers/${id}`),
   listCredentials: (id: number) => api.get(`/admin/api-servers/${id}/credentials`),
   createCredential: (id: number, data: any) => api.post(`/admin/api-servers/${id}/credentials`, data),
+  updateCredential: (credId: number, data: any) => api.put(`/admin/api-servers/credentials/${credId}`, data),
+  deleteCredential: (credId: number) => api.delete(`/admin/api-servers/credentials/${credId}`),
   testCredential: (credId: number) => api.post(`/admin/api-servers/credentials/${credId}/test`),
   getAccess: (id: number) => api.get(`/admin/api-servers/${id}/access`),
   updateAccess: (id: number, data: any) => api.put(`/admin/api-servers/${id}/access`, data),
@@ -378,6 +380,12 @@ export const formsApi = {
   getPublicForm: (slug: string) => api.get(`/forms/${slug}`),
   submitForm: (slug: string, data: any) => api.post(`/forms/${slug}/submit`, data),
   submitFormAuthenticated: (slug: string, data: any) => api.post(`/forms/${slug}/submit/authenticated`, data),
+}
+
+// --- Subscription Settings ---
+export const subscriptionSettingsApi = {
+  get: () => api.get('/organizations/subscription-settings'),
+  update: (data: any) => api.put('/organizations/subscription-settings', data),
 }
 
 // --- Menus ---

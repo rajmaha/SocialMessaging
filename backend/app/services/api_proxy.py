@@ -95,18 +95,25 @@ async def api_login(
     """Authenticate with the remote API and cache the token."""
     url = f"{server.base_url.rstrip('/')}{server.login_endpoint}"
 
-    if server.request_content_type == "formdata":
-        request_kwargs = {"data": {
-            server.login_username_field: credential.username,
-            server.login_password_field: credential.password,
-        }}
+    login_body = {
+        server.login_username_field: credential.username,
+        server.login_password_field: credential.password,
+    }
+
+    if server.request_content_type in ("formdata", "form"):
+        request_kwargs = {"data": login_body}
     else:
-        request_kwargs = {"json": {
-            server.login_username_field: credential.username,
-            server.login_password_field: credential.password,
-        }}
+        request_kwargs = {"json": login_body}
 
     headers = _build_headers(server)
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(
+        f"api_login: POST {url} content_type={server.request_content_type} "
+        f"fields=[{server.login_username_field}, {server.login_password_field}] "
+        f"username={credential.username!r} password_set={bool(credential.password)}"
+    )
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(url, headers=headers, **request_kwargs)
@@ -131,9 +138,14 @@ async def api_login(
             "remote_error": True, "message": err_msg, "status": 401
         })
 
-    token = _resolve_json_path(body, server.token_response_path or "data.token")
+    token_path = (server.token_response_path or "data.token").strip()
+    token = _resolve_json_path(body, token_path)
     if not token:
-        raise ValueError(f"Could not extract token from response using path '{server.token_response_path}'")
+        available_keys = list(body.keys()) if isinstance(body, dict) else []
+        raise ValueError(
+            f"Could not extract token from response using path '{token_path}'. "
+            f"Available top-level keys: {available_keys}"
+        )
 
     credential.token = token
     credential.is_active = True
@@ -193,7 +205,7 @@ async def api_request(
 
     request_kwargs: Dict[str, Any] = {}
     if body:
-        if server.request_content_type == "formdata":
+        if server.request_content_type in ("formdata", "form"):
             request_kwargs["data"] = body
         else:
             request_kwargs["json"] = body
