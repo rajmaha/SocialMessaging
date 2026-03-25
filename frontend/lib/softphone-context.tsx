@@ -207,14 +207,39 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
             onInvite(session: any) {
               // Inbound call
               sessionRef.current = session
-              const remoteId = session.remoteIdentity?.uri?.user || 'Unknown'
+
+              // ── Extract caller extension from SIP headers ──
+              // Grandstream UCM PBXes often put the device name (e.g. "UCM6204") in the
+              // From header's user part. The real calling extension is usually in
+              // P-Asserted-Identity or Remote-Party-ID headers.
+              let remoteId = session.remoteIdentity?.uri?.user || 'Unknown'
               const rawName = session.remoteIdentity?.displayName || null
+
+              // Try P-Asserted-Identity first, then Remote-Party-ID
+              const pai = session.request?.getHeader?.('P-Asserted-Identity')
+              const rpid = session.request?.getHeader?.('Remote-Party-ID')
+              const extractSipUser = (header: string | undefined) => {
+                if (!header) return null
+                const m = header.match(/sip:([^@>]+)@/)
+                return m ? m[1] : null
+              }
+              const paiUser = extractSipUser(pai)
+              const rpidUser = extractSipUser(rpid)
+
+              // If remoteId looks like a PBX device name, prefer PAI/RPID extension
+              const isPbxName = /^(UCM|GXW|GRP|GXP|DP|WP|GS)\d/i.test(remoteId)
+              if (isPbxName && (paiUser || rpidUser)) {
+                remoteId = paiUser || rpidUser || remoteId
+              }
+
               console.log('[Softphone] Incoming SIP identity:', JSON.stringify({
-                uri_user: remoteId,
+                uri_user: session.remoteIdentity?.uri?.user,
                 displayName: rawName,
-                uri_full: session.remoteIdentity?.uri?.toString(),
+                resolvedCaller: remoteId,
+                pai, rpid,
                 fromHeader: session.request?.getHeader?.('From'),
               }))
+
               // Ignore display names that are just the PBX/trunk system name or match the extension
               const displayName = rawName && rawName !== remoteId && !/^(UCM|GXW|GRP|GXP|DP|WP|GS)\d/i.test(rawName)
                 ? rawName : null
@@ -223,8 +248,18 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
               setCallState('ringing_in')
               setIsOpen(true)
 
+              // Track whether the call was answered (for missed call logging)
+              let wasAnswered = false
+
               session.stateChange.addListener((state: any) => {
+                if (state === SessionState.Established) {
+                  wasAnswered = true
+                }
                 if (state === SessionState.Terminated) {
+                  // Log missed/rejected calls to backend
+                  if (!wasAnswered) {
+                    logMissedCall(remoteId)
+                  }
                   resetCall()
                 }
               })
@@ -262,6 +297,23 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only on mount — credentials fetched once per session
+
+  // ── Log missed/rejected call to backend ──────────────────────────────────
+  async function logMissedCall(phoneNumber: string) {
+    try {
+      const token = getAuthToken()
+      await fetch(`${API_URL}/calls/log-missed`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ phone_number: phoneNumber }),
+      })
+    } catch (err) {
+      console.error('[Softphone] Failed to log missed call', err)
+    }
+  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function resetCall() {
@@ -333,14 +385,25 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     // Trigger workspace TicketForm — callerNumber is already set from onInvite
   }, [])
 
-  const hangup = useCallback(() => {
+  const hangup = useCallback(async () => {
     const session = sessionRef.current
-    if (!session) return
+    if (!session) { resetCall(); setIsOpen(false); return }
     try {
-      if (session.state === 'Established') session.bye()
-      else session.reject?.() || session.cancel?.()
-    } catch {}
-    resetCall()
+      const { SessionState: SS } = await import('sip.js')
+      if (session.state === SS.Established) {
+        session.bye()
+      } else if (typeof session.reject === 'function') {
+        // Incoming call not yet answered — reject (sends 486 Busy)
+        await session.reject()
+      } else if (typeof session.cancel === 'function') {
+        // Outgoing call not yet established — cancel
+        await session.cancel()
+      }
+    } catch (err) {
+      console.error('[Softphone] hangup error', err)
+    }
+    // Don't call resetCall() here — the stateChange listener will handle it
+    // when session transitions to Terminated. This avoids double-reset.
     setIsOpen(false)
   }, [])
 

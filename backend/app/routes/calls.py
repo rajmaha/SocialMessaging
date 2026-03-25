@@ -300,6 +300,34 @@ def create_call_recording_log(
 
 from pydantic import BaseModel
 
+
+class MissedCallRequest(BaseModel):
+    phone_number: str
+
+
+@router.post("/log-missed")
+def log_missed_call(
+    req: MissedCallRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Log a missed/rejected inbound call from the softphone."""
+    missed = CallRecording(
+        agent_id=current_user.id,
+        agent_name=getattr(current_user, 'display_name', None)
+                   or getattr(current_user, 'full_name', None)
+                   or current_user.email,
+        phone_number=req.phone_number,
+        direction="inbound",
+        disposition="NO ANSWER",
+        duration_seconds=0,
+    )
+    db.add(missed)
+    db.commit()
+    db.refresh(missed)
+    return _enrich(missed, db)
+
+
 class OriginateRequest(BaseModel):
     phone_number: str
 
