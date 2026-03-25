@@ -66,6 +66,9 @@ class Subscription(Base):
     billed_from_date = Column(Date, nullable=True)
     expire_date = Column(Date, nullable=True)
 
+    # CloudPanel site link (optional — set when subscription is linked to a deployed site)
+    cloudpanel_site_id = Column(Integer, ForeignKey("cloudpanel_sites.id"), nullable=True)
+
     # Stripe integration fields
     stripe_customer_id = Column(String, nullable=True)
     stripe_subscription_id = Column(String, nullable=True)

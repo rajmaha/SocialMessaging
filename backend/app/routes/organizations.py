@@ -339,6 +339,16 @@ async def deploy_and_create_subscription(
     modules: str = Form("[]"),  # JSON array string
     system_url: str = Form(""),
     template_name: str = Form("default_site"),
+    php_version: str = Form("8.2"),
+    vhost_template: str = Form("Generic"),
+    db_name: str = Form(""),
+    db_user: str = Form(""),
+    db_password: str = Form(""),
+    ssl_mode: str = Form("auto"),
+    is_wildcard: str = Form("false"),
+    custom_ssl_cert: str = Form(""),
+    custom_ssl_key: str = Form(""),
+    custom_ssl_chain: str = Form(""),
     subscribed_on_date: str = Form(""),
     billed_from_date: str = Form(""),
     expire_date: str = Form(""),
@@ -388,7 +398,17 @@ async def deploy_and_create_subscription(
     # Build CloudPanel site create data
     site_data = CloudPanelSiteCreate(
         domainName=domain,
+        phpVersion=php_version,
+        vhostTemplate=vhost_template,
         templateName=template_name,
+        dbName=db_name or None,
+        dbUser=db_user or None,
+        dbPassword=db_password or None,
+        issue_ssl=ssl_mode == "auto",
+        is_wildcard_ssl=ssl_mode == "auto" and is_wildcard.lower() == "true",
+        custom_ssl_cert=custom_ssl_cert or None if ssl_mode == "custom" else None,
+        custom_ssl_key=custom_ssl_key or None if ssl_mode == "custom" else None,
+        custom_ssl_chain=custom_ssl_chain or None if ssl_mode == "custom" else None,
         company_logo_local_path=logo_temp_path,
     )
 
@@ -415,12 +435,13 @@ async def deploy_and_create_subscription(
                 db.add(site_record)
                 db.commit()
 
-                # Create subscription record
+                # Create subscription record linked to the deployed site
                 db_sub = Subscription(
                     organization_id=org_id,
                     subscribed_product=subscribed_product or None,
                     modules=modules_list,
                     system_url=system_url or None,
+                    cloudpanel_site_id=site_record.id,
                     subscribed_on_date=subscribed_on_date or None,
                     billed_from_date=billed_from_date or None,
                     expire_date=expire_date or None,

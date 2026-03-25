@@ -191,15 +191,23 @@ def deploy_site_stream(
 @router.get("/sites", response_model=List[CloudPanelSiteResponse])
 def list_all_sites(
     server_id: Optional[int] = None,
+    unlinked: bool = False,
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_cloudpanel)
 ):
-    """List all deployed sites, optionally filtered by server."""
+    """List all deployed sites, optionally filtered by server.
+    If unlinked=true, only return sites not yet linked to any subscription."""
     query = db.query(CloudPanelSite, CloudPanelServer.name, CloudPanelServer.host).join(
         CloudPanelServer, CloudPanelSite.server_id == CloudPanelServer.id
     )
     if server_id:
         query = query.filter(CloudPanelSite.server_id == server_id)
+    if unlinked:
+        from app.models.organization import Subscription
+        linked_ids = db.query(Subscription.cloudpanel_site_id).filter(
+            Subscription.cloudpanel_site_id.isnot(None)
+        ).subquery()
+        query = query.filter(~CloudPanelSite.id.in_(linked_ids))
     rows = query.order_by(CloudPanelSite.created_at.desc()).all()
 
     results = []

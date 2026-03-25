@@ -41,6 +41,7 @@ class SubscriptionBase(BaseModel):
     subscribed_on_date: Optional[date] = None
     billed_from_date: Optional[date] = None
     expire_date: Optional[date] = None
+    cloudpanel_site_id: Optional[int] = None
 
     # Stripe information
     stripe_customer_id: Optional[str] = None

@@ -523,6 +523,8 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS source VARCHAR NOT NULL DEFAULT 'call'"))
         # Subscription company logo
         conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS company_logo_url VARCHAR"))
+        # Link subscription to a CloudPanel deployed site
+        conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS cloudpanel_site_id INTEGER REFERENCES cloudpanel_sites(id)"))
         # Individuals table (created by SQLAlchemy create_all, but belt-and-suspenders)
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS individuals (

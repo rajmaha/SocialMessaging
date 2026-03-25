@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, CreditCard, Globe, Trash2, Edit2, X, CheckCircle2, Upload, Image, Server, FileCode } from 'lucide-react'
+import { Plus, CreditCard, Globe, Trash2, Edit2, X, CheckCircle2, Upload, Image, Server, FileCode, Database, Shield, Link } from 'lucide-react'
 import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
 import { API_URL } from '@/lib/config';
@@ -33,6 +33,15 @@ interface CloudPanelServer {
 interface SiteTemplate {
     name: string
     has_files: boolean
+}
+
+interface CloudPanelSiteRecord {
+    id: number
+    domain_name: string
+    server_name: string | null
+    php_version: string | null
+    template_name: string | null
+    created_at: string
 }
 
 interface DeployStep {
@@ -71,6 +80,19 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
     const [templates, setTemplates] = useState<SiteTemplate[]>([])
     const [selectedServerId, setSelectedServerId] = useState('')
     const [selectedTemplate, setSelectedTemplate] = useState('default_site')
+    const [selectedPhpVersion, setSelectedPhpVersion] = useState('8.2')
+    const [vhostTemplate, setVhostTemplate] = useState('Generic')
+    const [dbName, setDbName] = useState('')
+    const [dbUser, setDbUser] = useState('')
+    const [dbPassword, setDbPassword] = useState('')
+    const [sslMode, setSslMode] = useState('auto')
+    const [isWildcard, setIsWildcard] = useState(false)
+    const [customCert, setCustomCert] = useState('')
+    const [customKey, setCustomKey] = useState('')
+    const [customChain, setCustomChain] = useState('')
+    const [deployMode, setDeployMode] = useState<'new' | 'existing'>('new')
+    const [deployedSites, setDeployedSites] = useState<CloudPanelSiteRecord[]>([])
+    const [selectedSiteId, setSelectedSiteId] = useState('')
     const [deploying, setDeploying] = useState(false)
     const [deploySteps, setDeploySteps] = useState<DeployStep[]>([])
     const [deployError, setDeployError] = useState('')
@@ -79,6 +101,7 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
         fetchSubscriptions()
         fetchAvailableModules()
         fetchServersAndTemplates()
+        fetchDeployedSites()
     }, [organizationId])
 
     const fetchAvailableModules = async () => {
@@ -125,12 +148,36 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
         }
     }
 
+    const fetchDeployedSites = async () => {
+        try {
+            const token = getAuthToken()
+            const res = await axios.get(`${API_URL}/cloudpanel/sites?unlinked=true`, {
+                headers: { Authorization: `Bearer ${token}` }
+            })
+            setDeployedSites(res.data)
+        } catch (error) {
+            console.error('Error fetching deployed sites:', error)
+        }
+    }
+
     const handleOpenModal = (sub: Subscription | null = null) => {
         setLogoFile(null)
         setDeploySteps([])
         setDeployError('')
         setSelectedServerId('')
         setSelectedTemplate('default_site')
+        setSelectedPhpVersion('8.2')
+        setVhostTemplate('Generic')
+        setDbName('')
+        setDbUser('')
+        setDbPassword('')
+        setSslMode('auto')
+        setIsWildcard(false)
+        setCustomCert('')
+        setCustomKey('')
+        setCustomChain('')
+        setDeployMode('new')
+        setSelectedSiteId('')
         if (sub) {
             setCurrentSub({ ...sub })
             setLogoPreview(sub.company_logo_url ? `${API_URL}${sub.company_logo_url}` : null)
@@ -184,6 +231,47 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                 return
             }
 
+            // For new subscriptions with "Link Existing Site" mode
+            if (deployMode === 'existing') {
+                if (!selectedSiteId) {
+                    alert('Please select a deployed site to link.')
+                    setSaving(false)
+                    return
+                }
+
+                const selectedSite = deployedSites.find(s => s.id === parseInt(selectedSiteId))
+                const payload = {
+                    ...currentSub,
+                    organization_id: organizationId,
+                    cloudpanel_site_id: parseInt(selectedSiteId),
+                    system_url: currentSub.system_url || (selectedSite ? `https://${selectedSite.domain_name}` : ''),
+                }
+                await axios.post(`${API_URL}/organizations/${organizationId}/subscriptions`, payload, {
+                    headers: { Authorization: authHeader }
+                })
+
+                // Upload company logo if provided
+                // We need the subscription id — refetch subscriptions to find it
+                if (logoFile) {
+                    const subsRes = await axios.get(`${API_URL}/organizations/${organizationId}/subscriptions`, {
+                        headers: { Authorization: authHeader }
+                    })
+                    const latestSub = subsRes.data[subsRes.data.length - 1]
+                    if (latestSub) {
+                        const logoData = new FormData()
+                        logoData.append('file', logoFile)
+                        await axios.post(`${API_URL}/organizations/subscriptions/${latestSub.id}/company-logo`, logoData, {
+                            headers: { Authorization: authHeader, 'Content-Type': 'multipart/form-data' }
+                        })
+                    }
+                }
+
+                setIsModalOpen(false)
+                fetchSubscriptions()
+                setSaving(false)
+                return
+            }
+
             // For new subscriptions: deploy site first, then create subscription
             if (!selectedServerId) {
                 alert('Please select a server for deployment.')
@@ -207,6 +295,18 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
             formData.append('modules', JSON.stringify(currentSub.modules || []))
             formData.append('system_url', currentSub.system_url || '')
             formData.append('template_name', selectedTemplate)
+            formData.append('php_version', selectedPhpVersion)
+            formData.append('vhost_template', vhostTemplate)
+            formData.append('db_name', dbName)
+            formData.append('db_user', dbUser)
+            formData.append('db_password', dbPassword)
+            formData.append('ssl_mode', sslMode)
+            formData.append('is_wildcard', isWildcard ? 'true' : 'false')
+            if (sslMode === 'custom') {
+                formData.append('custom_ssl_cert', customCert)
+                formData.append('custom_ssl_key', customKey)
+                formData.append('custom_ssl_chain', customChain)
+            }
             formData.append('subscribed_on_date', currentSub.subscribed_on_date || '')
             formData.append('billed_from_date', currentSub.billed_from_date || '')
             formData.append('expire_date', currentSub.expire_date || '')
@@ -545,8 +645,68 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                                 </div>
                             </div>
 
-                            {/* Server dropdown — only for new subscriptions */}
+                            {/* Deploy Mode Toggle — only for new subscriptions */}
                             {!currentSub.id && (
+                                <div className="flex items-center gap-4 border-t border-gray-100 pt-3">
+                                    <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">Site Setup</label>
+                                    <div className="flex-1 flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setDeployMode('new')}
+                                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm border transition-all ${deployMode === 'new'
+                                                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-medium'
+                                                : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                                            }`}
+                                        >
+                                            <Server className="w-4 h-4" />
+                                            Deploy New Site
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setDeployMode('existing')}
+                                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm border transition-all ${deployMode === 'existing'
+                                                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-medium'
+                                                : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                                            }`}
+                                        >
+                                            <Link className="w-4 h-4" />
+                                            Link Existing Site
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Existing Site Picker — only for "existing" mode */}
+                            {!currentSub.id && deployMode === 'existing' && (
+                                <div className="flex items-center gap-4">
+                                    <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1">
+                                        <Globe className="w-3.5 h-3.5" />
+                                        Deployed Site *
+                                    </label>
+                                    <select
+                                        required
+                                        className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        value={selectedSiteId}
+                                        onChange={(e) => {
+                                            setSelectedSiteId(e.target.value)
+                                            const site = deployedSites.find(s => s.id === parseInt(e.target.value))
+                                            if (site) {
+                                                setCurrentSub(prev => ({ ...prev!, system_url: `https://${site.domain_name}` }))
+                                            }
+                                        }}
+                                    >
+                                        <option value="">-- Select a Deployed Site --</option>
+                                        {deployedSites.map(site => (
+                                            <option key={site.id} value={site.id}>
+                                                {site.domain_name}{site.server_name ? ` (${site.server_name})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Server dropdown — only for new subscriptions deploying new site */}
+                            {!currentSub.id && deployMode === 'new' && (
                                 <div className="flex items-center gap-4">
                                     <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1">
                                         <Server className="w-3.5 h-3.5" />
@@ -567,6 +727,38 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                                 </div>
                             )}
 
+                            {/* PHP Version & VHost Template — only for new site deploy */}
+                            {!currentSub.id && deployMode === 'new' && (
+                                <div className="flex items-center gap-4">
+                                    <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">
+                                        PHP Version
+                                    </label>
+                                    <div className="flex-1 grid grid-cols-2 gap-3">
+                                        <select
+                                            disabled={isReadOnly}
+                                            className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                            value={selectedPhpVersion}
+                                            onChange={(e) => setSelectedPhpVersion(e.target.value)}
+                                        >
+                                            <option value="7.4">7.4</option>
+                                            <option value="8.1">8.1</option>
+                                            <option value="8.2">8.2</option>
+                                            <option value="8.3">8.3</option>
+                                        </select>
+                                        <div>
+                                            <input
+                                                disabled={isReadOnly}
+                                                type="text"
+                                                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                                placeholder="VHost Template"
+                                                value={vhostTemplate}
+                                                onChange={(e) => setVhostTemplate(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* System URL */}
                             <div className="flex items-start gap-4">
                                 <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider pt-2.5">System URL *</label>
@@ -580,14 +772,14 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                                         value={currentSub.system_url || ''}
                                         onChange={(e) => setCurrentSub({ ...currentSub, system_url: e.target.value })}
                                     />
-                                    {!currentSub.id && (
+                                    {!currentSub.id && deployMode === 'new' && (
                                         <p className="text-[10px] text-gray-400 mt-1">The domain/subdomain from this URL will be used to deploy the site.</p>
                                     )}
                                 </div>
                             </div>
 
-                            {/* Site Template dropdown — only for new subscriptions */}
-                            {!currentSub.id && (
+                            {/* Site Template dropdown — only for new site deploy */}
+                            {!currentSub.id && deployMode === 'new' && (
                                 <div className="flex items-center gap-4">
                                     <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1">
                                         <FileCode className="w-3.5 h-3.5" />
@@ -605,6 +797,123 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                                             </option>
                                         )) : <option value="default_site">default_site (System default)</option>}
                                     </select>
+                                </div>
+                            )}
+
+                            {/* Database Options — only for new site deploy */}
+                            {!currentSub.id && deployMode === 'new' && (
+                                <div className="border-t border-gray-100 pt-3 space-y-3">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-gray-700 uppercase tracking-wider">
+                                        <Database className="w-3.5 h-3.5" />
+                                        Database Options
+                                        <span className="text-[10px] font-normal normal-case text-gray-400">(leave blank to auto-generate)</span>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">DB Name</label>
+                                        <input
+                                            disabled={isReadOnly}
+                                            type="text"
+                                            className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                            placeholder="Auto-generated if empty"
+                                            value={dbName}
+                                            onChange={(e) => setDbName(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">DB User</label>
+                                        <div className="flex-1 grid grid-cols-2 gap-3">
+                                            <input
+                                                disabled={isReadOnly}
+                                                type="text"
+                                                className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                                placeholder="Auto"
+                                                value={dbUser}
+                                                onChange={(e) => setDbUser(e.target.value)}
+                                            />
+                                            <input
+                                                disabled={isReadOnly}
+                                                type="password"
+                                                className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                                placeholder="DB Password (auto)"
+                                                value={dbPassword}
+                                                onChange={(e) => setDbPassword(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* SSL Options — only for new site deploy */}
+                            {!currentSub.id && deployMode === 'new' && (
+                                <div className="border-t border-gray-100 pt-3 space-y-3">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-gray-700 uppercase tracking-wider">
+                                        <Shield className="w-3.5 h-3.5" />
+                                        SSL Details
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">SSL Mode</label>
+                                        <select
+                                            disabled={isReadOnly}
+                                            className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                            value={sslMode}
+                                            onChange={(e) => setSslMode(e.target.value)}
+                                        >
+                                            <option value="none">No SSL</option>
+                                            <option value="auto">Let&apos;s Encrypt (Auto-issue)</option>
+                                            <option value="custom">Custom/Purchased SSL</option>
+                                        </select>
+                                    </div>
+                                    {sslMode === 'auto' && (
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-36 flex-shrink-0" />
+                                            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    disabled={isReadOnly}
+                                                    checked={isWildcard}
+                                                    onChange={(e) => setIsWildcard(e.target.checked)}
+                                                    className="rounded border-gray-300"
+                                                />
+                                                Wildcard SSL (*.domain)
+                                            </label>
+                                        </div>
+                                    )}
+                                    {sslMode === 'custom' && (
+                                        <>
+                                            <div className="flex items-start gap-4">
+                                                <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider pt-2.5">Certificate</label>
+                                                <textarea
+                                                    required
+                                                    disabled={isReadOnly}
+                                                    className="flex-1 px-4 py-2 text-sm font-mono border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none h-20 disabled:bg-gray-50 disabled:text-gray-500"
+                                                    placeholder="-----BEGIN CERTIFICATE-----..."
+                                                    value={customCert}
+                                                    onChange={(e) => setCustomCert(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="flex items-start gap-4">
+                                                <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider pt-2.5">Private Key</label>
+                                                <textarea
+                                                    required
+                                                    disabled={isReadOnly}
+                                                    className="flex-1 px-4 py-2 text-sm font-mono border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none h-20 disabled:bg-gray-50 disabled:text-gray-500"
+                                                    placeholder="-----BEGIN PRIVATE KEY-----..."
+                                                    value={customKey}
+                                                    onChange={(e) => setCustomKey(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="flex items-start gap-4">
+                                                <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider pt-2.5">Chain (Optional)</label>
+                                                <textarea
+                                                    disabled={isReadOnly}
+                                                    className="flex-1 px-4 py-2 text-sm font-mono border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none h-20 disabled:bg-gray-50 disabled:text-gray-500"
+                                                    placeholder="-----BEGIN CERTIFICATE-----..."
+                                                    value={customChain}
+                                                    onChange={(e) => setCustomChain(e.target.value)}
+                                                />
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             )}
 
@@ -707,7 +1016,7 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                                         className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-50 inline-flex items-center gap-2"
                                     >
                                         {saving && <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                                        {saving ? (currentSub.id ? 'Saving...' : 'Deploying...') : 'Activate Subscription'}
+                                        {saving ? (currentSub.id ? 'Saving...' : (deployMode === 'new' ? 'Deploying...' : 'Linking...')) : 'Activate Subscription'}
                                     </button>
                                 )}
                             </div>
