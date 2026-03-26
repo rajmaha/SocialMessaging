@@ -11,7 +11,7 @@ from sqlalchemy import func as sql_func
 
 from app.models.conversation import Conversation
 from app.models.ticket import Ticket, TicketStatus
-from app.models.crm import Deal, DealStage, CRMTask, TaskStatus
+from app.models.crm import Deal, DealStage, Task as CRMTask, TaskStatus
 from app.models.pms import PMSTask
 from app.models.email import Email
 from app.models.message import Message
