@@ -45,7 +45,7 @@ export default function TeamStandupsTab({ selectedDate }: TeamStandupsTabProps) 
     fetchStandups()
   }, [selectedDate])
 
-  const myStandup = standups.find(s => s.user_id === currentUser?.id)
+  const myStandup = standups.find(s => s.user_id === currentUser?.user_id)
   const isToday = selectedDate === new Date().toISOString().split('T')[0]
 
   const handleDelete = async (id: number) => {
@@ -115,7 +115,7 @@ export default function TeamStandupsTab({ selectedDate }: TeamStandupsTabProps) 
                     </span>
                   </div>
                 </div>
-                {s.user_id === currentUser?.id && isToday && (
+                {s.user_id === currentUser?.user_id && isToday && (
                   <button
                     onClick={() => handleDelete(s.id)}
                     className="text-gray-400 hover:text-red-500 text-sm"
