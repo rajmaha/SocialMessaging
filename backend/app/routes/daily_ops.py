@@ -56,12 +56,12 @@ def _standup_to_response(entry: StandupEntry) -> dict:
 
 @router.get("/standups", response_model=List[StandupResponse])
 async def get_standups(
-    date: Optional[date] = Query(None, description="Filter by date (YYYY-MM-DD). Defaults to today."),
+    query_date: Optional[date] = Query(None, alias="date", description="Filter by date (YYYY-MM-DD). Defaults to today."),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("daily_ops", "view_standups")),
 ):
     """Get all team standups for a given date."""
-    target_date = date or datetime.utcnow().date()
+    target_date = query_date or datetime.utcnow().date()
     entries = db.query(StandupEntry).filter(
         StandupEntry.date == target_date
     ).order_by(StandupEntry.created_at.asc()).all()
@@ -169,12 +169,12 @@ async def delete_standup(
 
 @router.get("/planner", response_model=PlannerResponse)
 def get_planner(
-    date: Optional[date] = Query(None, description="Filter by date (YYYY-MM-DD). Defaults to today."),
+    query_date: Optional[date] = Query(None, alias="date", description="Filter by date (YYYY-MM-DD). Defaults to today."),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("daily_ops", "view_planner")),
 ):
     """Get personal planner: manual items + auto-pulled assigned items."""
-    target_date = date or datetime.utcnow().date()
+    target_date = query_date or datetime.utcnow().date()
 
     manual_items = db.query(DailyPlannerItem).filter(
         DailyPlannerItem.user_id == current_user.id,

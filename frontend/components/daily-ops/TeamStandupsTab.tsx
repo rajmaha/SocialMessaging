@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { dailyOpsApi } from '@/lib/api'
+import { dailyOpsApi, api } from '@/lib/api'
 import { authAPI } from '@/lib/auth'
+import { useEvents } from '@/lib/events-context'
 import StandupForm from './StandupForm'
 
 interface Standup {
@@ -17,17 +18,26 @@ interface Standup {
   created_at: string
 }
 
+interface TeamUser {
+  id: number
+  full_name?: string
+  display_name?: string
+  email: string
+}
+
 interface TeamStandupsTabProps {
   selectedDate: string
 }
 
 export default function TeamStandupsTab({ selectedDate }: TeamStandupsTabProps) {
   const [standups, setStandups] = useState<Standup[]>([])
+  const [allUsers, setAllUsers] = useState<TeamUser[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editStandup, setEditStandup] = useState<Standup | null>(null)
 
   const currentUser = authAPI.getUser()
+  const { subscribe } = useEvents()
 
   const fetchStandups = async () => {
     try {
@@ -40,13 +50,41 @@ export default function TeamStandupsTab({ selectedDate }: TeamStandupsTabProps) 
     }
   }
 
+  // Fetch all users to show "not yet posted" indicator
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await api.get('/admin/users')
+        setAllUsers(res.data || [])
+      } catch {
+        // Non-admin users may not have access — silently ignore
+      }
+    }
+    fetchUsers()
+  }, [])
+
   useEffect(() => {
     setLoading(true)
     fetchStandups()
   }, [selectedDate])
 
+  // SSE: listen for real-time standup updates from teammates
+  useEffect(() => {
+    const unsub1 = subscribe('standup_posted', () => {
+      fetchStandups()
+    })
+    const unsub2 = subscribe('standup_deleted', () => {
+      fetchStandups()
+    })
+    return () => { unsub1(); unsub2() }
+  }, [subscribe, selectedDate])
+
   const myStandup = standups.find(s => s.user_id === currentUser?.user_id)
   const isToday = selectedDate === new Date().toISOString().split('T')[0]
+
+  // Compute who hasn't posted yet
+  const postedUserIds = new Set(standups.map(s => s.user_id))
+  const notPosted = allUsers.filter(u => !postedUserIds.has(u.id))
 
   const handleDelete = async (id: number) => {
     if (!confirm('Delete your standup?')) return
@@ -144,6 +182,15 @@ export default function TeamStandupsTab({ selectedDate }: TeamStandupsTabProps) 
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Not Yet Posted Indicator */}
+      {notPosted.length > 0 && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-3">
+          <p className="text-sm text-amber-700 dark:text-amber-300">
+            Not yet posted: {notPosted.map(u => u.display_name || u.full_name || u.email).join(', ')}
+          </p>
         </div>
       )}
 
