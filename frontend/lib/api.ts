@@ -405,3 +405,29 @@ export const menuApi = {
   getPublic: () => api.get('/menu'),
   getAll: () => api.get('/menu/all'),
 }
+
+// ── Daily Ops ──────────────────────────────────────────────────────────────
+
+export const dailyOpsApi = {
+  // Standups
+  getStandups: (date?: string) => api.get('/daily-ops/standups', { params: { date } }),
+  createStandup: (data: { yesterday: string; today: string; blockers?: string }) =>
+    api.post('/daily-ops/standups', data),
+  updateStandup: (id: number, data: { yesterday?: string; today?: string; blockers?: string }) =>
+    api.patch(`/daily-ops/standups/${id}`, data),
+  deleteStandup: (id: number) => api.delete(`/daily-ops/standups/${id}`),
+
+  // Planner
+  getPlanner: (date?: string) => api.get('/daily-ops/planner', { params: { date } }),
+  createPlannerItem: (data: { title: string; date: string }) =>
+    api.post('/daily-ops/planner', data),
+  updatePlannerItem: (id: number, data: { title?: string; is_completed?: boolean; sort_order?: number }) =>
+    api.patch(`/daily-ops/planner/${id}`, data),
+  deletePlannerItem: (id: number) => api.delete(`/daily-ops/planner/${id}`),
+
+  // Command Center
+  getCommandCenter: () => api.get('/daily-ops/command-center'),
+  getCommandCenterConfig: () => api.get('/daily-ops/command-center/config'),
+  updateCommandCenterConfig: (data: { metrics: any[] }) =>
+    api.put('/daily-ops/command-center/config', data),
+}
