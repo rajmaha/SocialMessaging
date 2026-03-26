@@ -80,6 +80,10 @@ class EventsService:
         for socket in disconnected_sockets:
             self.disconnect(socket)
     
+    def get_connected_user_count(self) -> int:
+        """Return number of distinct users with active connections"""
+        return len(self.active_connections)
+
     @staticmethod
     def create_event(event_type: str, data: dict, db: Session = None, timezone: str = "UTC") -> dict:
         """Create a standardized event object with timezone support"""
@@ -148,3 +152,6 @@ class EventTypes:
     PMS_TASK_OVERDUE = "pms_task_overdue"
     PMS_ESCALATION = "pms_escalation"
     PMS_TASK_UPDATED = "pms_task_updated"
+    # Daily Ops events
+    STANDUP_POSTED = "standup_posted"
+    STANDUP_DELETED = "standup_deleted"
