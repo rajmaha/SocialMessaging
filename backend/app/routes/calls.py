@@ -105,6 +105,7 @@ def get_call_recordings(
     limit: int = 50,
     # Filters
     agent_id: Optional[int] = Query(None, description="Filter by agent ID"),
+    my_only: Optional[bool] = Query(None, description="Force filter to current user's calls only"),
     phone: Optional[str] = Query(None, description="Search by customer phone number"),
     direction: Optional[str] = Query(None, description="inbound or outbound"),
     date_from: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
@@ -119,12 +120,14 @@ def get_call_recordings(
 ):
     """
     Retrieve call recordings with full search/filter support.
-    Agents see only their own calls. Admins see all.
+    Agents see only their own calls. Admins see all (unless my_only=true).
     """
     query = db.query(CallRecording)
 
-    # Role-based scoping
-    if not current_user.role == "admin":
+    # Role-based scoping — my_only forces current-user filter regardless of role
+    if my_only:
+        query = query.filter(CallRecording.agent_id == current_user.id)
+    elif not current_user.role == "admin":
         query = query.filter(CallRecording.agent_id == current_user.id)
     elif agent_id is not None:
         query = query.filter(CallRecording.agent_id == agent_id)

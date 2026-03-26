@@ -87,7 +87,7 @@ export default function Workspace() {
             const token = getAuthToken();
             const today = new Date().toISOString().slice(0, 10);
             const res = await fetch(
-                `${API_URL}/calls/recordings?date_from=${today}&limit=25`,
+                `${API_URL}/calls/recordings?date_from=${today}&limit=25&my_only=true`,
                 { headers: { 'Authorization': `Bearer ${token}` } }
             );
             if (res.ok) {
