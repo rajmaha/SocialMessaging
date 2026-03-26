@@ -52,6 +52,9 @@ MODULE_REGISTRY = {
     "reminders":      {"label": "Reminder Calls",     "actions": ["view", "add", "edit", "delete"]},
     "notifications":  {"label": "Notifications",      "actions": ["view", "add", "edit", "delete"]},
     "individuals":    {"label": "Individuals",        "actions": ["view", "add", "edit", "delete"]},
+
+    # Daily Ops
+    "daily_ops":      {"label": "Daily Ops",           "actions": ["view_planner", "view_standups", "view_command_center", "manage_command_center"]},
 }
 
 
