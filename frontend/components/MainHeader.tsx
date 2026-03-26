@@ -3,7 +3,7 @@
 import React, { Suspense } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { FiMessageSquare, FiMail, FiBarChart2, FiGrid, FiHeadphones, FiCheckSquare, FiSun } from 'react-icons/fi'
+import { FiMessageSquare, FiMail, FiBarChart2, FiGrid, FiHeadphones, FiCheckSquare, FiSun, FiActivity } from 'react-icons/fi'
 import ProfileDropdown from '@/components/ProfileDropdown'
 import TodosSidebar from '@/components/TodosSidebar'
 import { useBranding } from '@/lib/branding-context'
@@ -44,6 +44,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
     const isReportsActive = pathname === '/admin/reports'
     const isWorkspaceActive = pathname === '/workspace'
     const isRemindersActive = pathname === '/reminders'
+    const isDailyOpsActive = pathname === '/daily-ops'
     const isMyDayActive = pathname?.startsWith('/admin/crm/dashboard')
 
     const [canAccessEmail, setCanAccessEmail] = useState(true)
@@ -321,6 +322,18 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                                 {unseenCount > 99 ? '99+' : unseenCount}
                             </span>
                         )}
+                    </Link>
+
+                    <Link
+                        href="/daily-ops"
+                        className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isDailyOpsActive
+                            ? 'text-white shadow-sm'
+                            : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                        style={isDailyOpsActive ? { backgroundColor: 'var(--primary-color)' } : {}}
+                    >
+                        <FiActivity size={15} />
+                        Daily Ops
                     </Link>
 
                     <Link

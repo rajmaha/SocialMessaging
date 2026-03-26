@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { FiMessageSquare, FiMail, FiMoreHorizontal, FiX,
-         FiHeadphones, FiGrid, FiSettings, FiUser } from 'react-icons/fi'
+         FiHeadphones, FiGrid, FiSettings, FiUser, FiActivity } from 'react-icons/fi'
 
 export default function MobileBottomNav() {
   const pathname = usePathname()
@@ -30,6 +30,7 @@ export default function MobileBottomNav() {
   ]
 
   const drawerItems = [
+    { label: 'Daily Ops', icon: FiActivity, href: '/daily-ops' },
     { label: 'Admin', icon: FiGrid, href: '/admin' },
     { label: 'Settings', icon: FiSettings, href: '/settings' },
     { label: 'Profile', icon: FiUser, href: '/settings?tab=profile' },
