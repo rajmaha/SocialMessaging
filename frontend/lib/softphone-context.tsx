@@ -481,13 +481,21 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
 
   const toggleMute = useCallback(() => {
     const session = sessionRef.current
-    if (!session) return
+    if (!session) { console.warn('[Softphone] toggleMute: no active session'); return }
     const pc = session.sessionDescriptionHandler?.peerConnection
-    if (!pc) return
+    if (!pc) { console.warn('[Softphone] toggleMute: no peerConnection available'); return }
     const newMuted = !isMuted
+    let trackCount = 0
     pc.getSenders().forEach((s: any) => {
-      if (s.track?.kind === 'audio') s.track.enabled = !newMuted
+      if (s.track?.kind === 'audio') {
+        s.track.enabled = !newMuted
+        trackCount++
+      }
     })
+    console.log(`[Softphone] toggleMute: ${newMuted ? 'MUTED' : 'UNMUTED'} (${trackCount} audio track(s))`)
+    if (trackCount === 0) {
+      console.warn('[Softphone] toggleMute: no audio tracks found on senders — mute may not work')
+    }
     setIsMuted(newMuted)
   }, [isMuted])
 

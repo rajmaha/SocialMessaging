@@ -599,8 +599,9 @@ def conference_call(
     extension into the same room.
 
     Uses AMI Redirect with Channel + ExtraChannel so both legs of the existing
-    bridge are moved atomically into the ConfBridge. This prevents audio leaking
-    between parties outside the conference.
+    bridge are moved atomically into the ConfBridge. The channels are redirected
+    to a dynamically-created 'confbridge-dynamic' dialplan context (created via
+    AMI 'dialplan add extension') that routes into ConfBridge({room}).
     """
     from app.services.ami_service import get_ami_client
     import time
@@ -612,57 +613,62 @@ def conference_call(
     # Use agent's extension + timestamp as a unique conference room number
     conf_room = f"{request.current_extension}{int(time.time()) % 10000}"
 
-    # 1. Find the agent's active channel and its bridged peer via AMI
-    #    so we can redirect BOTH legs into ConfBridge
+    # ── Step 1: Create dynamic ConfBridge dialplan entries via AMI ─────
+    # This creates an in-memory dialplan context so Redirect can send
+    # channels into ConfBridge without pre-configured contexts on the PBX.
+    try:
+        client.command(
+            f"dialplan add extension {conf_room},1,Answer() into confbridge-dynamic replace"
+        )
+        client.command(
+            f"dialplan add extension {conf_room},2,ConfBridge({conf_room}) into confbridge-dynamic replace"
+        )
+        client.command(
+            f"dialplan add extension {conf_room},3,Hangup() into confbridge-dynamic replace"
+        )
+        print(f"[Conference] Created confbridge-dynamic dialplan for room {conf_room}")
+    except Exception as e:
+        print(f"[Conference] dialplan add warning (non-fatal): {e}")
+
+    # ── Step 2: Find agent's active channel and bridged peer ──────────
+    # Use 'core show channels concise' to list all channels with bridge IDs.
+    # Channels sharing the same bridge ID are in the same call.
     agent_channel = None
     peer_channel = None
     try:
-        # Get active channels for the agent's extension
-        action_id_status = f"conf-status-{int(time.time() * 1000)}"
-        cmd_status = (
-            f"Action: Command\r\n"
-            f"ActionID: {action_id_status}\r\n"
-            f"Command: core show channel concise\r\n"
-            f"\r\n"
-        )
-        client._send(cmd_status)
-        status_resp = client._read_response()
+        channels_output = client.command("core show channels concise")
 
-        # Parse channels — find PJSIP/{extension} channels
-        for line in status_resp.split('\n'):
+        # Parse: each line is channel!context!ext!pri!state!app!data!acct!bridgeid
+        channel_bridges: dict = {}
+        for line in channels_output.split('\n'):
             line = line.strip()
-            if f"PJSIP/{request.current_extension}-" in line:
-                parts = line.split('!')
-                if parts:
-                    agent_channel = parts[0]
+            if '!' not in line:
+                continue
+            parts = line.split('!')
+            if len(parts) < 2:
+                continue
+            ch_name = parts[0].strip()
+            # Bridge ID is the last field (field index 8+ depending on version)
+            bridge_id = parts[-1].strip() if parts[-1].strip() else None
+            if ch_name:
+                channel_bridges[ch_name] = bridge_id
+                if f"PJSIP/{request.current_extension}-" in ch_name and not agent_channel:
+                    agent_channel = ch_name
+
+        # Find peer channel by matching bridge ID
+        if agent_channel and channel_bridges.get(agent_channel):
+            agent_bridge_id = channel_bridges[agent_channel]
+            for ch, bid in channel_bridges.items():
+                if ch != agent_channel and bid == agent_bridge_id and bid:
+                    peer_channel = ch
                     break
 
-        # If we found the agent channel, find its bridge peer
-        if agent_channel:
-            action_id_bridge = f"conf-bridge-{int(time.time() * 1000)}"
-            cmd_bridge = (
-                f"Action: Command\r\n"
-                f"ActionID: {action_id_bridge}\r\n"
-                f"Command: core show channel {agent_channel}\r\n"
-                f"\r\n"
-            )
-            client._send(cmd_bridge)
-            bridge_resp = client._read_response()
-            # Look for "Bridged to:" or the bridged channel in output
-            for line in bridge_resp.split('\n'):
-                if 'BridgedChannel' in line or 'Bridged' in line:
-                    # Extract channel name after the colon
-                    parts = line.split(':', 1)
-                    if len(parts) > 1:
-                        ch = parts[1].strip()
-                        if ch and ch != '<none>' and ch != '(None)':
-                            peer_channel = ch
-                            break
+        print(f"[Conference] agent_channel={agent_channel}, peer_channel={peer_channel}")
     except Exception as e:
         print(f"[Conference] Channel lookup warning: {e}")
 
-    # 2. Redirect both the agent channel and the bridged peer into ConfBridge
-    #    Using ExtraChannel ensures both legs move atomically into the conference.
+    # ── Step 3: Redirect both legs into confbridge-dynamic context ────
+    # Using ExtraChannel ensures both legs move atomically into the conference.
     action_id1 = f"conf-redir-{int(time.time() * 1000)}"
     if agent_channel and peer_channel:
         # Move both legs into ConfBridge simultaneously
@@ -671,33 +677,45 @@ def conference_call(
             f"ActionID: {action_id1}\r\n"
             f"Channel: {agent_channel}\r\n"
             f"ExtraChannel: {peer_channel}\r\n"
-            f"Context: from-internal\r\n"
+            f"Context: confbridge-dynamic\r\n"
             f"Exten: {conf_room}\r\n"
             f"Priority: 1\r\n"
-            f"ExtraContext: from-internal\r\n"
+            f"ExtraContext: confbridge-dynamic\r\n"
             f"ExtraExten: {conf_room}\r\n"
             f"ExtraPriority: 1\r\n"
             f"\r\n"
         )
+    elif agent_channel:
+        # Only found agent channel — redirect just that leg
+        cmd1 = (
+            f"Action: Redirect\r\n"
+            f"ActionID: {action_id1}\r\n"
+            f"Channel: {agent_channel}\r\n"
+            f"Context: confbridge-dynamic\r\n"
+            f"Exten: {conf_room}\r\n"
+            f"Priority: 1\r\n"
+            f"\r\n"
+        )
     else:
-        # Fallback: redirect just the agent channel
+        # Fallback: use device name (less reliable but may work)
         cmd1 = (
             f"Action: Redirect\r\n"
             f"ActionID: {action_id1}\r\n"
             f"Channel: PJSIP/{request.current_extension}\r\n"
-            f"Context: from-internal\r\n"
+            f"Context: confbridge-dynamic\r\n"
             f"Exten: {conf_room}\r\n"
             f"Priority: 1\r\n"
             f"\r\n"
         )
     client._send(cmd1)
-    client._read_response()
+    redirect_resp = client._read_response()
+    print(f"[Conference] Redirect response: {redirect_resp.strip()}")
 
     # Small delay to let the redirect complete before originating the third party
     import time as _time
     _time.sleep(0.5)
 
-    # 3. Originate a call to the target extension and put them in the same ConfBridge
+    # ── Step 4: Originate call to target extension into same ConfBridge ─
     action_id2 = f"conf-invite-{int(time.time() * 1000)}"
     client.originate(
         channel=f"PJSIP/{request.target_extension}",
