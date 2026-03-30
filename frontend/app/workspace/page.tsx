@@ -171,23 +171,11 @@ export default function Workspace() {
         setCallerContext(null);
     };
 
-    const initiateCall = async (phone: string) => {
-        try {
-            const token = getAuthToken();
-            const response = await fetch(`${API_URL}/calls/originate`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ phone_number: phone })
-            });
-            if (!response.ok) {
-                console.error("Failed to initiate call");
-            }
-        } catch (e) {
-            console.error("Error initiating call:", e);
-        }
+    const initiateCall = (phone: string) => {
+        // Use the softphone's direct SIP.js dial instead of the AMI originate endpoint.
+        // AMI originate creates a two-leg call (rings the agent first, then bridges),
+        // which adds significant connection delay. The softphone sends a direct SIP INVITE.
+        softphoneDial(phone);
     };
 
     if (!isMounted) return null;

@@ -7,6 +7,7 @@ import TicketHistory from "@/components/TicketHistory";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { ArrowLeft, Save, Phone } from 'lucide-react';
 import { API_URL } from '@/lib/config';
+import { useSoftphone } from '@/lib/softphone-context';
 
 export default function TicketFollowUpWrapper({ params }: { params: { ticket_number: string } }) {
     return (
@@ -21,6 +22,7 @@ function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const user = authAPI.getUser();
+    const { dial: softphoneDial } = useSoftphone();
 
     // Navigate back to the correct origin page:
     // - workspace inbox passes ?from=workspace → force a fresh push so myTickets refreshes
@@ -102,23 +104,11 @@ function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
         }
     };
 
-    const initiateCall = async (phone: string) => {
-        try {
-            const token = getAuthToken();
-            const response = await fetch(`${API_URL}/calls/originate`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ phone_number: phone })
-            });
-            if (!response.ok) {
-                console.error("Failed to initiate call");
-            }
-        } catch (e) {
-            console.error("Error initiating call:", e);
-        }
+    const initiateCall = (phone: string) => {
+        // Use the softphone's direct SIP.js dial instead of the AMI originate endpoint.
+        // AMI originate creates a two-leg call (rings the agent first, then bridges),
+        // which adds significant connection delay. The softphone sends a direct SIP INVITE.
+        softphoneDial(phone);
     };
 
     if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;

@@ -244,10 +244,18 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
               // Pattern to detect PBX device names (not real caller extensions)
               const pbxNamePattern = /^(UCM|GXW|GRP|GXP|DP|WP|GS|FXS|FXO|HT|GDS|TRUNK)\d/i
 
-              // If remoteId looks like a PBX device name, prefer PAI/RPID/Diversion extension
-              const isPbxName = pbxNamePattern.test(remoteId)
-              if (isPbxName) {
-                // Try headers in priority order
+              // Forwarded/transferred call: Diversion header is present — the From
+              // header is the forwarding extension, not the original caller.
+              // Use PAI (original caller) and note the forwarding extension.
+              const isForwarded = !!diversion
+              if (isForwarded) {
+                // PAI has the original external caller; RPID is a fallback
+                const originalCaller = paiUser || rpidUser
+                if (originalCaller && !pbxNamePattern.test(originalCaller)) {
+                  remoteId = originalCaller
+                }
+              } else if (pbxNamePattern.test(remoteId)) {
+                // PBX device name in From — resolve the real caller from headers
                 const resolved = paiUser || rpidUser || diversionUser
                 if (resolved && !pbxNamePattern.test(resolved)) {
                   remoteId = resolved
@@ -255,6 +263,9 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
                   // Display name is a numeric extension — use it as caller ID
                   remoteId = rawName
                 }
+              } else if (paiUser && paiUser !== remoteId && !pbxNamePattern.test(paiUser)) {
+                // PAI differs from From — PAI is typically the original caller
+                remoteId = paiUser
               }
 
               console.log('[Softphone] Incoming SIP identity:', JSON.stringify({
