@@ -456,7 +456,9 @@ export default function AdminTicketViewer() {
                         <TicketHistory
                             activeNumber={selectedTicket.phone_number}
                             reloadKey={0}
-                            onFollowUpClick={() => {}}
+                            onFollowUpClick={(_ticketId, ticketNumber) => {
+                                router.push(`/workspace/tickets/${ticketNumber}`);
+                            }}
                             ticketId={selectedTicket.id}
                         />
                     </div>

@@ -10,7 +10,7 @@ export default function TicketHistory({
 }: {
     activeNumber: string;
     reloadKey: number;
-    onFollowUpClick: (ticketId: number) => void;
+    onFollowUpClick: (ticketId: number, ticketNumber: string) => void;
     ticketId?: number;
 }) {
     const [history, setHistory] = useState<any[]>([]);
@@ -172,7 +172,7 @@ export default function TicketHistory({
                                     )}
 
                                     <button
-                                        onClick={() => onFollowUpClick(ticket.id)}
+                                        onClick={() => onFollowUpClick(ticket.id, ticket.ticket_number)}
                                         className="w-full text-center text-xs text-indigo-600 font-bold tracking-wide py-2 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors border border-indigo-100"
                                     >
                                         START FOLLOW-UP THREAD ↳

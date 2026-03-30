@@ -57,7 +57,7 @@ const nextConfig = {
       { source: '/calls/:path*',               destination: `${backendUrl}/calls/:path*` },
       { source: '/extensions/:path*',          destination: `${backendUrl}/extensions/:path*` },
       { source: '/agent-workspace/:path*',     destination: `${backendUrl}/agent-workspace/:path*` },
-      { source: '/workspace/:path*',           destination: `${backendUrl}/workspace/:path*` },
+      // Moved /workspace to fallback — it has dynamic Next.js pages under it
       { source: '/reminders/:path*',           destination: `${backendUrl}/reminders/:path*` },
       { source: '/notifications/:path*',       destination: `${backendUrl}/notifications/:path*` },
       { source: '/tickets/:path*',             destination: `${backendUrl}/tickets/:path*` },
@@ -91,6 +91,7 @@ const nextConfig = {
     const fallback = [
       { source: '/admin/:path*', destination: `${backendUrl}/admin/:path*` },
       { source: '/forms/:path*', destination: `${backendUrl}/forms/:path*` },
+      { source: '/workspace/:path*', destination: `${backendUrl}/workspace/:path*` },
     ];
 
     return { afterFiles, fallback };
