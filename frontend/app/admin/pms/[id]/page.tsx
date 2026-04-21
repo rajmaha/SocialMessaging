@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { pmsApi } from '@/lib/api';
 import { authAPI } from '@/lib/auth';
@@ -25,6 +25,8 @@ export default function ProjectDetailPage() {
   const [showCreateTask, setShowCreateTask] = useState(false);
   const emptyTaskForm = { title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' };
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
+  const [createFiles, setCreateFiles] = useState<File[]>([]);
+  const createFileRef = useRef<HTMLInputElement>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -33,15 +35,20 @@ export default function ProjectDetailPage() {
     setCreating(true);
     setCreateError('');
     try {
-      await pmsApi.createTask(projectId, {
+      const res = await pmsApi.createTask(projectId, {
         ...taskForm,
         milestone_id: taskForm.milestone_id ? Number(taskForm.milestone_id) : null,
         assignee_id: taskForm.assignee_id ? Number(taskForm.assignee_id) : null,
         estimated_hours: taskForm.estimated_hours ? Number(taskForm.estimated_hours) : 0,
       });
+      if (createFiles.length > 0) {
+        const taskId = res.data.id;
+        await Promise.all(createFiles.map(f => pmsApi.uploadAttachment(taskId, f)));
+      }
       await reload();
       setShowCreateTask(false);
       setTaskForm(emptyTaskForm);
+      setCreateFiles([]);
     } catch (err: any) {
       setCreateError(err?.response?.data?.detail || 'Failed to create task. Please try again.');
     } finally {
@@ -120,10 +127,32 @@ export default function ProjectDetailPage() {
               <input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 placeholder="Estimated hours" min="0" step="0.5"
                 value={taskForm.estimated_hours} onChange={e => setTaskForm({ ...taskForm, estimated_hours: e.target.value })} />
+              {/* References */}
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">References (optional)</label>
+                <div
+                  onClick={() => createFileRef.current?.click()}
+                  className="border border-dashed border-gray-300 rounded-lg px-3 py-3 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors">
+                  <p className="text-xs text-gray-400">Click to attach files</p>
+                </div>
+                <input ref={createFileRef} type="file" multiple className="hidden"
+                  onChange={e => setCreateFiles(prev => [...prev, ...Array.from(e.target.files || [])])} />
+                {createFiles.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {createFiles.map((f, i) => (
+                      <li key={i} className="flex items-center justify-between text-xs bg-gray-50 rounded px-2 py-1">
+                        <span className="truncate text-gray-700">{f.name}</span>
+                        <button onClick={() => setCreateFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="ml-2 text-gray-400 hover:text-red-500 flex-none">✕</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
             {createError && <p className="mt-3 text-sm text-red-600">{createError}</p>}
             <div className="flex gap-3 mt-5">
-              <button onClick={() => { setShowCreateTask(false); setTaskForm(emptyTaskForm); setCreateError(''); }}
+              <button onClick={() => { setShowCreateTask(false); setTaskForm(emptyTaskForm); setCreateFiles([]); setCreateError(''); }}
                 className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
               <button onClick={handleCreateTask} disabled={!taskForm.title.trim() || creating}
                 className="flex-1 bg-indigo-600 text-white rounded-lg px-3 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">

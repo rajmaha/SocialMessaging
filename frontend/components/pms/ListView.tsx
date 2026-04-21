@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { pmsApi } from '@/lib/api';
 import FilterBar, { FilterState, defaultFilters } from './FilterBar';
 import TaskDrawer from './TaskDrawer';
@@ -28,6 +28,8 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
   const [showCreate, setShowCreate] = useState(false);
   const [drawerTaskId, setDrawerTaskId] = useState<number | null>(null);
   const [form, setForm] = useState({ title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+  const [createFiles, setCreateFiles] = useState<File[]>([]);
+  const createFileRef = useRef<HTMLInputElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkAction, setBulkAction] = useState('');
   const [dragTaskId, setDragTaskId] = useState<number | null>(null);
@@ -99,15 +101,20 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
   const sortIcon = (col: string) => sortBy === col ? (sortDir === 'asc' ? ' \u2191' : ' \u2193') : '';
 
   const handleCreate = async () => {
-    await pmsApi.createTask(projectId, {
+    const res = await pmsApi.createTask(projectId, {
       ...form,
       milestone_id: form.milestone_id ? Number(form.milestone_id) : null,
       assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
       estimated_hours: form.estimated_hours ? Number(form.estimated_hours) : 0,
     });
+    if (createFiles.length > 0) {
+      const taskId = res.data.id;
+      await Promise.all(createFiles.map(f => pmsApi.uploadAttachment(taskId, f)));
+    }
     onReload();
     setShowCreate(false);
     setForm({ title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+    setCreateFiles([]);
   };
 
   return (
@@ -304,9 +311,30 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
                     value={form.estimated_hours} onChange={e => setForm({...form, estimated_hours: e.target.value})} />
                 </div>
               </div>
+              {/* References */}
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">References (optional)</label>
+                <div onClick={() => createFileRef.current?.click()}
+                  className="border border-dashed border-gray-300 rounded-lg px-3 py-3 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors">
+                  <p className="text-xs text-gray-400">Click to attach files</p>
+                </div>
+                <input ref={createFileRef} type="file" multiple className="hidden"
+                  onChange={e => setCreateFiles(prev => [...prev, ...Array.from(e.target.files || [])])} />
+                {createFiles.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {createFiles.map((f, i) => (
+                      <li key={i} className="flex items-center justify-between text-xs bg-gray-50 rounded px-2 py-1">
+                        <span className="truncate text-gray-700">{f.name}</span>
+                        <button onClick={() => setCreateFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="ml-2 text-gray-400 hover:text-red-500 flex-none">✕</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
             <div className="flex gap-3 mt-5">
-              <button onClick={() => setShowCreate(false)} className="flex-1 border rounded-lg px-4 py-2 text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={() => { setShowCreate(false); setCreateFiles([]); }} className="flex-1 border rounded-lg px-4 py-2 text-sm hover:bg-gray-50">Cancel</button>
               <button onClick={handleCreate} disabled={!form.title}
                 className="flex-1 bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-50 hover:bg-indigo-700">Create Task</button>
             </div>
