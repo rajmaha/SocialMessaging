@@ -62,11 +62,13 @@ export default function MyTasksPage() {
 
   // Create task modal
   const [showCreateTask, setShowCreateTask] = useState(false);
-  const [taskForm, setTaskForm] = useState({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+  const emptyTaskForm = { title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' };
+  const [taskForm, setTaskForm] = useState(emptyTaskForm);
   const [createProjectId, setCreateProjectId] = useState('');
   const [createMembers, setCreateMembers] = useState<any[]>([]);
   const [createMilestones, setCreateMilestones] = useState<any[]>([]);
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
 
   const handleProjectSelect = async (pid: string) => {
     setCreateProjectId(pid);
@@ -83,6 +85,7 @@ export default function MyTasksPage() {
   const handleCreateTask = async () => {
     if (!taskForm.title.trim() || !createProjectId) return;
     setCreating(true);
+    setCreateError('');
     try {
       await pmsApi.createTask(Number(createProjectId), {
         ...taskForm,
@@ -92,10 +95,12 @@ export default function MyTasksPage() {
       });
       fetchTasks();
       setShowCreateTask(false);
-      setTaskForm({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+      setTaskForm(emptyTaskForm);
       setCreateProjectId('');
       setCreateMembers([]);
       setCreateMilestones([]);
+    } catch (err: any) {
+      setCreateError(err?.response?.data?.detail || 'Failed to create task. Please try again.');
     } finally {
       setCreating(false);
     }
@@ -282,7 +287,7 @@ export default function MyTasksPage() {
         {/* Create Task Modal */}
         {showCreateTask && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 w-96 shadow-xl">
+            <div className="bg-white rounded-xl p-6 w-[480px] shadow-xl max-h-[90vh] overflow-y-auto">
               <h3 className="font-semibold text-gray-900 mb-4">New Task</h3>
               <div className="space-y-3">
                 <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
@@ -292,6 +297,9 @@ export default function MyTasksPage() {
                 </select>
                 <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   placeholder="Task title *" value={taskForm.title} onChange={e => setTaskForm({ ...taskForm, title: e.target.value })} />
+                <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  placeholder="Description" rows={3}
+                  value={taskForm.description} onChange={e => setTaskForm({ ...taskForm, description: e.target.value })} />
                 <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
                   value={taskForm.priority} onChange={e => setTaskForm({ ...taskForm, priority: e.target.value })}>
                   <option value="low">Low</option>
@@ -315,8 +323,9 @@ export default function MyTasksPage() {
                   placeholder="Estimated hours" min="0" step="0.5"
                   value={taskForm.estimated_hours} onChange={e => setTaskForm({ ...taskForm, estimated_hours: e.target.value })} />
               </div>
+              {createError && <p className="mt-3 text-sm text-red-600">{createError}</p>}
               <div className="flex gap-3 mt-5">
-                <button onClick={() => { setShowCreateTask(false); setTaskForm({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' }); setCreateProjectId(''); setCreateMembers([]); setCreateMilestones([]); }}
+                <button onClick={() => { setShowCreateTask(false); setTaskForm(emptyTaskForm); setCreateProjectId(''); setCreateMembers([]); setCreateMilestones([]); setCreateError(''); }}
                   className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
                 <button onClick={handleCreateTask} disabled={!taskForm.title.trim() || !createProjectId || creating}
                   className="flex-1 bg-indigo-600 text-white rounded-lg px-3 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">

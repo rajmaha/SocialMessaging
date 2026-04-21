@@ -614,6 +614,39 @@ def delete_attachment(att_id: int, db: Session = Depends(get_db), current_user: 
     db.commit()
     return {"ok": True}
 
+@router.get("/tasks/{task_id}/attachments")
+def list_attachments(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    atts = db.query(PMSTaskAttachment).filter_by(task_id=task_id, replaced_by=None).order_by(PMSTaskAttachment.created_at.desc()).all()
+    result = []
+    for a in atts:
+        uploader = db.query(User).filter_by(id=a.uploaded_by).first()
+        result.append({
+            "id": a.id,
+            "file_name": a.file_name,
+            "file_size": a.file_size,
+            "version": a.version,
+            "uploaded_by": a.uploaded_by,
+            "uploaded_by_name": uploader.full_name if uploader else None,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        })
+    return result
+
+@router.get("/attachments/{att_id}/download")
+def download_attachment(att_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from fastapi.responses import FileResponse
+    att = db.query(PMSTaskAttachment).filter_by(id=att_id).first()
+    if not att:
+        raise HTTPException(404)
+    task = db.query(PMSTask).filter_by(id=att.task_id).first()
+    _require_member(db, task.project_id, current_user)
+    if not os.path.exists(att.file_path):
+        raise HTTPException(404, "File not found on disk")
+    return FileResponse(att.file_path, filename=att.file_name, media_type="application/octet-stream")
+
 # ── Alerts ────────────────────────────────────────────────
 
 @router.get("/alerts")

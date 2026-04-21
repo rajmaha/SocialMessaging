@@ -166,6 +166,7 @@ export const pmsApi = {
   deleteTimeLog: (id: number) => api.delete(`/api/pms/timelogs/${id}`),
 
   // Attachments
+  listAttachments: (taskId: number) => api.get(`/api/pms/tasks/${taskId}/attachments`),
   uploadAttachment: (taskId: number, file: File) => {
     const form = new FormData();
     form.append('file', file);
@@ -174,6 +175,10 @@ export const pmsApi = {
     });
   },
   deleteAttachment: (id: number) => api.delete(`/api/pms/attachments/${id}`),
+  getAttachmentDownloadUrl: (attId: number) => {
+    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    return `${base}/api/pms/attachments/${attId}/download`;
+  },
 
   // Alerts
   listAlerts: () => api.get('/api/pms/alerts'),

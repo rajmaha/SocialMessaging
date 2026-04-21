@@ -126,6 +126,7 @@ const sidebarGroups = [
         items: [
             { href: '/admin/pms', label: 'Dashboard', icon: '📊', pageKey: 'pms' },
             { href: '/admin/pms/my-tasks', label: 'My Tasks', icon: '✅', pageKey: 'pms' },
+            { href: '/admin/pms/projects', label: 'Projects', icon: '📁', pageKey: 'pms' },
             { href: '/admin/pms/approval-queue', label: 'Approval Queue', icon: '👁️', pageKey: 'pms', pmOnly: true },
             { href: '/admin/pms/team-workload', label: 'Team Workload', icon: '👥', pageKey: 'pms', pmOnly: true },
             { href: '/admin/pms/capacity', label: 'Capacity Planning', icon: '📐', pageKey: 'pms', pmOnly: true },

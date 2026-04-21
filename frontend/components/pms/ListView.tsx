@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { pmsApi } from '@/lib/api';
 import FilterBar, { FilterState, defaultFilters } from './FilterBar';
+import TaskDrawer from './TaskDrawer';
 
 const PRIORITY_COLORS: Record<string, string> = {
   low: 'text-gray-400', medium: 'text-yellow-500', high: 'text-orange-500', urgent: 'text-red-500',
@@ -25,7 +26,8 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
 }) {
   const [filter, setFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+  const [drawerTaskId, setDrawerTaskId] = useState<number | null>(null);
+  const [form, setForm] = useState({ title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkAction, setBulkAction] = useState('');
   const [dragTaskId, setDragTaskId] = useState<number | null>(null);
@@ -105,7 +107,7 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
     });
     onReload();
     setShowCreate(false);
-    setForm({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+    setForm({ title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
   };
 
   return (
@@ -188,8 +190,10 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
                     }} />
                 </td>
                 <td className="px-4 py-2.5 font-medium text-gray-800">
-                  <div>{t.title}
-                  {t.subtask_count > 0 && <span className="ml-1 text-xs text-gray-400 font-normal">+{t.subtask_count} sub</span>}</div>
+                  <button onClick={() => setDrawerTaskId(t.id)} className="text-left hover:text-indigo-600 transition-colors">
+                    {t.title}
+                    {t.subtask_count > 0 && <span className="ml-1 text-xs text-gray-400 font-normal">+{t.subtask_count} sub</span>}
+                  </button>
                   {t.labels?.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
                       {t.labels.map((l: any) => (
@@ -262,7 +266,9 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
             <h2 className="text-lg font-semibold mb-4">New Task</h2>
             <div className="space-y-3">
               <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Task title *"
-                value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
+                value={form.title} onChange={e => setForm({...form, title: e.target.value})} autoFocus />
+              <textarea className="w-full border rounded-lg px-3 py-2 text-sm resize-none" placeholder="Description" rows={3}
+                value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-gray-500 block mb-1">Priority</label>
@@ -306,6 +312,14 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
             </div>
           </div>
         </div>
+      )}
+
+      {drawerTaskId && (
+        <TaskDrawer
+          taskId={drawerTaskId}
+          onClose={() => setDrawerTaskId(null)}
+          onReload={onReload}
+        />
       )}
     </div>
   );
