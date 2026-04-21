@@ -22,6 +22,27 @@ export default function ProjectDetailPage() {
   const [milestones, setMilestones] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('Gantt');
   const [loading, setLoading] = useState(true);
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [taskForm, setTaskForm] = useState({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+  const [creating, setCreating] = useState(false);
+
+  const handleCreateTask = async () => {
+    if (!taskForm.title.trim()) return;
+    setCreating(true);
+    try {
+      await pmsApi.createTask(projectId, {
+        ...taskForm,
+        milestone_id: taskForm.milestone_id ? Number(taskForm.milestone_id) : null,
+        assignee_id: taskForm.assignee_id ? Number(taskForm.assignee_id) : null,
+        estimated_hours: taskForm.estimated_hours ? Number(taskForm.estimated_hours) : 0,
+      });
+      await reload();
+      setShowCreateTask(false);
+      setTaskForm({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const reload = async () => {
     const [pRes, tRes, mRes] = await Promise.all([
@@ -55,7 +76,54 @@ export default function ProjectDetailPage() {
         <div className="w-3 h-3 rounded-full flex-none" style={{ background: project?.color }} />
         <h1 className="text-lg font-semibold text-gray-900">{project?.name}</h1>
         <span className="text-xs text-gray-400 capitalize">{project?.status?.replace('_', ' ')}</span>
+        <button onClick={() => setShowCreateTask(true)}
+          className="ml-auto bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700">
+          + Create Task
+        </button>
       </div>
+
+      {/* Create Task Modal */}
+      {showCreateTask && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-96 shadow-xl">
+            <h3 className="font-semibold text-gray-900 mb-4">New Task</h3>
+            <div className="space-y-3">
+              <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Task title *" value={taskForm.title} onChange={e => setTaskForm({ ...taskForm, title: e.target.value })} autoFocus />
+              <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                value={taskForm.priority} onChange={e => setTaskForm({ ...taskForm, priority: e.target.value })}>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+              <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                value={taskForm.milestone_id} onChange={e => setTaskForm({ ...taskForm, milestone_id: e.target.value })}>
+                <option value="">No milestone</option>
+                {milestones.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                value={taskForm.assignee_id} onChange={e => setTaskForm({ ...taskForm, assignee_id: e.target.value })}>
+                <option value="">Unassigned</option>
+                {(project?.members || []).map((m: any) => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
+              </select>
+              <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                value={taskForm.due_date} onChange={e => setTaskForm({ ...taskForm, due_date: e.target.value })} />
+              <input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="Estimated hours" min="0" step="0.5"
+                value={taskForm.estimated_hours} onChange={e => setTaskForm({ ...taskForm, estimated_hours: e.target.value })} />
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => { setShowCreateTask(false); setTaskForm({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' }); }}
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button onClick={handleCreateTask} disabled={!taskForm.title.trim() || creating}
+                className="flex-1 bg-indigo-600 text-white rounded-lg px-3 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                {creating ? 'Creating…' : 'Create Task'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Tabs */}
       <div className="border-b border-gray-200 bg-white px-6">
         <div className="flex gap-1">

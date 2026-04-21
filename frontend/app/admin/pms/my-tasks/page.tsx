@@ -60,6 +60,47 @@ export default function MyTasksPage() {
   const [dueFrom, setDueFrom] = useState('');
   const [dueTo, setDueTo] = useState('');
 
+  // Create task modal
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [taskForm, setTaskForm] = useState({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+  const [createProjectId, setCreateProjectId] = useState('');
+  const [createMembers, setCreateMembers] = useState<any[]>([]);
+  const [createMilestones, setCreateMilestones] = useState<any[]>([]);
+  const [creating, setCreating] = useState(false);
+
+  const handleProjectSelect = async (pid: string) => {
+    setCreateProjectId(pid);
+    setTaskForm(f => ({ ...f, assignee_id: '', milestone_id: '' }));
+    if (!pid) { setCreateMembers([]); setCreateMilestones([]); return; }
+    const [pRes, mRes] = await Promise.all([
+      pmsApi.getProject(Number(pid)),
+      pmsApi.listMilestones(Number(pid)),
+    ]);
+    setCreateMembers(pRes.data?.members || []);
+    setCreateMilestones(mRes.data || []);
+  };
+
+  const handleCreateTask = async () => {
+    if (!taskForm.title.trim() || !createProjectId) return;
+    setCreating(true);
+    try {
+      await pmsApi.createTask(Number(createProjectId), {
+        ...taskForm,
+        milestone_id: taskForm.milestone_id ? Number(taskForm.milestone_id) : null,
+        assignee_id: taskForm.assignee_id ? Number(taskForm.assignee_id) : null,
+        estimated_hours: taskForm.estimated_hours ? Number(taskForm.estimated_hours) : 0,
+      });
+      fetchTasks();
+      setShowCreateTask(false);
+      setTaskForm({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+      setCreateProjectId('');
+      setCreateMembers([]);
+      setCreateMilestones([]);
+    } finally {
+      setCreating(false);
+    }
+  };
+
   // Grouping
   const [groupBy, setGroupBy] = useState<'flat' | 'project'>('flat');
 
@@ -226,11 +267,65 @@ export default function MyTasksPage() {
         <div className="flex items-center gap-4 mb-6">
           <h1 className="text-2xl font-bold text-gray-900">My Tasks</h1>
           {avgEff !== null && <EffBadge value={avgEff} />}
-          <button onClick={() => window.open(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/pms/my-tasks/export?format=csv`, '_blank')}
-            className="ml-auto text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 text-gray-600">
-            Export CSV
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={() => setShowCreateTask(true)}
+              className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700">
+              + Create Task
+            </button>
+            <button onClick={() => window.open(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/pms/my-tasks/export?format=csv`, '_blank')}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 text-gray-600">
+              Export CSV
+            </button>
+          </div>
         </div>
+
+        {/* Create Task Modal */}
+        {showCreateTask && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 w-96 shadow-xl">
+              <h3 className="font-semibold text-gray-900 mb-4">New Task</h3>
+              <div className="space-y-3">
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  value={createProjectId} onChange={e => handleProjectSelect(e.target.value)}>
+                  <option value="">Select project *</option>
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Task title *" value={taskForm.title} onChange={e => setTaskForm({ ...taskForm, title: e.target.value })} />
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  value={taskForm.priority} onChange={e => setTaskForm({ ...taskForm, priority: e.target.value })}>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  value={taskForm.milestone_id} onChange={e => setTaskForm({ ...taskForm, milestone_id: e.target.value })}>
+                  <option value="">No milestone</option>
+                  {createMilestones.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  value={taskForm.assignee_id} onChange={e => setTaskForm({ ...taskForm, assignee_id: e.target.value })}>
+                  <option value="">Unassigned</option>
+                  {createMembers.map((m: any) => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
+                </select>
+                <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  value={taskForm.due_date} onChange={e => setTaskForm({ ...taskForm, due_date: e.target.value })} />
+                <input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  placeholder="Estimated hours" min="0" step="0.5"
+                  value={taskForm.estimated_hours} onChange={e => setTaskForm({ ...taskForm, estimated_hours: e.target.value })} />
+              </div>
+              <div className="flex gap-3 mt-5">
+                <button onClick={() => { setShowCreateTask(false); setTaskForm({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' }); setCreateProjectId(''); setCreateMembers([]); setCreateMilestones([]); }}
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
+                <button onClick={handleCreateTask} disabled={!taskForm.title.trim() || !createProjectId || creating}
+                  className="flex-1 bg-indigo-600 text-white rounded-lg px-3 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                  {creating ? 'Creating…' : 'Create Task'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Filter bar */}
         <div className="flex flex-wrap items-center gap-3 mb-4">

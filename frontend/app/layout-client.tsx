@@ -29,9 +29,22 @@ export function LayoutClient({ children }: { children: React.ReactNode }) {
 function DashboardShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const token = getAuthToken()
-    if (token) {
-      fetchMyPermissions()
+    if (!token) return
+
+    // Restore user_role cookie if localStorage has the user but the cookie was lost
+    // (session cookies are cleared on browser close while localStorage persists)
+    const userRoleCookie = document.cookie.split(';').some(c => c.trim().startsWith('user_role='))
+    if (!userRoleCookie) {
+      try {
+        const stored = localStorage.getItem('user')
+        if (stored) {
+          const user = JSON.parse(stored)
+          document.cookie = `user_role=${user.role || 'support'}; path=/; SameSite=Lax; Max-Age=2592000`
+        }
+      } catch {}
     }
+
+    fetchMyPermissions()
   }, [])
 
   return (
