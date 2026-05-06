@@ -83,6 +83,7 @@ def _enrich_task(task: PMSTask, db: Session) -> dict:
     d = {c.name: getattr(task, c.name) for c in task.__table__.columns}
     d["assignee_name"] = task.assignee.full_name if task.assignee else None
     d["labels"] = [{"id": l.id, "name": l.name, "color": l.color} for l in task.labels]
+    d["dependencies"] = [{"id": dep.id, "task_id": dep.task_id, "depends_on_id": dep.depends_on_id, "type": dep.type} for dep in task.dependencies]
     d["subtask_count"] = db.query(PMSTask).filter_by(parent_task_id=task.id).count()
     d["efficiency"] = _task_efficiency(task)
     d["watcher_names"] = [w.user.full_name for w in task.watchers if w.user]
