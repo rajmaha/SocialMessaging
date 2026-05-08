@@ -15,6 +15,104 @@ const STAGE_BADGE: Record<string, string> = {
 
 const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
+function BulkActionModal({ action, members, milestones, onConfirm, onCancel }: {
+  action: string;
+  members: any[];
+  milestones: any[];
+  onConfirm: (params: any) => void;
+  onCancel: () => void;
+}) {
+  const [assigneeId, setAssigneeId] = useState('');
+  const [stage, setStage] = useState('development');
+  const [priority, setPriority] = useState('medium');
+  const [milestoneId, setMilestoneId] = useState('');
+
+  const handleConfirm = () => {
+    if (action === 'assign') { if (!assigneeId) return; onConfirm({ assignee_id: Number(assigneeId) }); }
+    else if (action === 'move_stage') onConfirm({ to_stage: stage });
+    else if (action === 'set_priority') onConfirm({ priority });
+    else if (action === 'set_milestone') onConfirm({ milestone_id: milestoneId ? Number(milestoneId) : null });
+    else if (action === 'delete') onConfirm({});
+  };
+
+  const titles: Record<string, string> = {
+    assign: 'Assign To', move_stage: 'Move to Stage', set_priority: 'Set Priority',
+    set_milestone: 'Set Milestone', delete: 'Delete Tasks',
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-2xl w-80 p-5">
+        <h3 className="font-semibold text-gray-800 mb-4">{titles[action]}</h3>
+
+        {action === 'assign' && (
+          <div>
+            <label className="text-xs text-gray-500 block mb-1.5">Select assignee</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white" value={assigneeId}
+              onChange={e => setAssigneeId(e.target.value)} autoFocus>
+              <option value="">— Unassigned —</option>
+              {members.map((m: any) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.user_name || `User ${m.user_id}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {action === 'move_stage' && (
+          <div>
+            <label className="text-xs text-gray-500 block mb-1.5">Select stage</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white" value={stage}
+              onChange={e => setStage(e.target.value)}>
+              {['development', 'qa', 'pm_review', 'client_review', 'approved', 'completed'].map(s => (
+                <option key={s} value={s}>{s.replace('_', ' ')}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {action === 'set_priority' && (
+          <div>
+            <label className="text-xs text-gray-500 block mb-1.5">Select priority</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white" value={priority}
+              onChange={e => setPriority(e.target.value)}>
+              {['low', 'medium', 'high', 'urgent'].map(p => (
+                <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {action === 'set_milestone' && (
+          <div>
+            <label className="text-xs text-gray-500 block mb-1.5">Select milestone</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white" value={milestoneId}
+              onChange={e => setMilestoneId(e.target.value)}>
+              <option value="">— None —</option>
+              {milestones.map((m: any) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {action === 'delete' && (
+          <p className="text-sm text-gray-600">Are you sure you want to delete the selected tasks? This cannot be undone.</p>
+        )}
+
+        <div className="flex gap-2 mt-5">
+          <button onClick={onCancel} className="flex-1 border rounded-lg px-3 py-2 text-sm hover:bg-gray-50">Cancel</button>
+          <button onClick={handleConfirm}
+            className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium text-white ${action === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+            {action === 'delete' ? 'Delete' : 'Apply'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EffBadge({ value }: { value: number | null }) {
   if (value === null || value === undefined) return null;
   const c = value >= 80 ? 'bg-green-100 text-green-700' : value >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
@@ -32,6 +130,7 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
   const createFileRef = useRef<HTMLInputElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkAction, setBulkAction] = useState('');
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [dragTaskId, setDragTaskId] = useState<number | null>(null);
 
   /* ── FilterBar state ───────────────────────────────────────────── */
@@ -247,24 +346,29 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
             <option value="set_milestone">Set Milestone</option>
             <option value="delete">Delete</option>
           </select>
-          <button onClick={async () => {
-            if (!bulkAction) return;
-            let params: any = {};
-            if (bulkAction === 'assign') { const id = prompt('Assignee user ID:'); if (!id) return; params = { assignee_id: Number(id) }; }
-            else if (bulkAction === 'move_stage') { const s = prompt('Stage (development/qa/pm_review/client_review/approved/completed):'); if (!s) return; params = { to_stage: s }; }
-            else if (bulkAction === 'set_priority') { const p = prompt('Priority (low/medium/high/urgent):'); if (!p) return; params = { priority: p }; }
-            else if (bulkAction === 'set_milestone') { const m = prompt('Milestone ID:'); if (!m) return; params = { milestone_id: Number(m) }; }
-            else if (bulkAction === 'delete') { if (!confirm('Delete selected tasks?')) return; }
-            await pmsApi.bulkAction({ task_ids: Array.from(selectedIds), action: bulkAction, params });
-            setSelectedIds(new Set());
-            setBulkAction('');
-            onReload();
-          }} disabled={!bulkAction}
+          <button onClick={() => { if (bulkAction) setBulkModalOpen(true); }} disabled={!bulkAction}
             className="text-sm bg-white text-indigo-700 px-3 py-1 rounded font-medium disabled:opacity-50">
             Apply
           </button>
           <button onClick={() => setSelectedIds(new Set())} className="text-sm text-indigo-200 hover:text-white">Cancel</button>
         </div>
+      )}
+
+      {/* Bulk Action Modal */}
+      {bulkModalOpen && bulkAction && (
+        <BulkActionModal
+          action={bulkAction}
+          members={members}
+          milestones={milestones}
+          onConfirm={async (params) => {
+            await pmsApi.bulkAction({ task_ids: Array.from(selectedIds), action: bulkAction, params });
+            setBulkModalOpen(false);
+            setSelectedIds(new Set());
+            setBulkAction('');
+            onReload();
+          }}
+          onCancel={() => setBulkModalOpen(false)}
+        />
       )}
 
       {showCreate && (
