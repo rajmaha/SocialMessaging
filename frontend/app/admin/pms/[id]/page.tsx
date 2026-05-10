@@ -120,7 +120,7 @@ export default function ProjectDetailPage() {
               <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
                 value={taskForm.assignee_id} onChange={e => setTaskForm({ ...taskForm, assignee_id: e.target.value })}>
                 <option value="">Unassigned</option>
-                {(project?.members || []).map((m: any) => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
+                {(project?.members || []).map((m: any) => <option key={m.id} value={m.user_id}>{m.user_name || m.user_email}</option>)}
               </select>
               <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 value={taskForm.due_date} onChange={e => setTaskForm({ ...taskForm, due_date: e.target.value })} />
