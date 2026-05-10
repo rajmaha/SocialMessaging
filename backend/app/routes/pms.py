@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func as sqlfunc
 from typing import List, Optional
 from datetime import date, datetime, timedelta
@@ -218,7 +218,7 @@ def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), curren
 
 @router.get("/projects/{project_id}")
 def get_project(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    p = db.query(PMSProject).filter_by(id=project_id).first()
+    p = db.query(PMSProject).options(joinedload(PMSProject.members).joinedload(PMSProjectMember.user)).filter_by(id=project_id).first()
     if not p:
         raise HTTPException(404, "Project not found")
     _require_member(db, project_id, current_user)
