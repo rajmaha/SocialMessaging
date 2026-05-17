@@ -206,7 +206,7 @@ export default function WorklogReports() {
                     <td className="px-4 py-3 text-gray-600">{row.category_or_project || '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{row.task_or_conversation || '—'}</td>
                     <td className="px-4 py-3 text-right font-bold">{row.hours}h</td>
-                    <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{row.summary || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{row.summary ? <span dangerouslySetInnerHTML={{ __html: row.summary }} /> : '—'}</td>
                     <td className="px-4 py-3">
                       {row.attachments?.length > 0 ? (
                         <div className="flex gap-1 flex-wrap">
