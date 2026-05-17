@@ -135,6 +135,15 @@ const sidebarGroups = [
         ],
     },
     {
+        label: 'Worklog',
+        items: [
+            { href: '/admin/worklog', label: 'My Worklog', icon: '⏱️', pageKey: 'worklog' },
+            { href: '/admin/worklog/approval', label: 'Approval Queue', icon: '✓', pageKey: 'worklog', adminOnly: true },
+            { href: '/admin/worklog/reports', label: 'Reports', icon: '📊', pageKey: 'worklog', adminOnly: true },
+            { href: '/admin/worklog/categories', label: 'Categories', icon: '🏷️', pageKey: 'worklog', adminOnly: true },
+        ],
+    },
+    {
         label: 'CRM',
         items: [
             { href: '/admin/crm/dashboard/my-day', label: 'My Day', icon: '☀️', pageKey: 'crm' },
