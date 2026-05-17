@@ -256,6 +256,18 @@ export const worklogApi = {
 
   // Reports (admin)
   getReport: (params: any) => api.get('/api/worklog/reports', { params }),
+
+  // Export
+  exportReport: (params: any) => api.get('/api/worklog/reports/export', { params, responseType: 'blob' }),
+  exportEntries: (params: any) => api.get('/api/worklog/entries/export', { params, responseType: 'blob' }),
+  exportApprovalHistory: () => api.get('/api/worklog/approval/history?format=csv', { responseType: 'blob' }),
+
+  // Summary
+  getSummary: (params?: any) => api.get('/api/worklog/summary', { params }),
+
+  // Bulk approval
+  bulkApprove: (entryIds: number[]) => api.post('/api/worklog/entries/bulk-approve', { entry_ids: entryIds }),
+  bulkReject: (entryIds: number[], rejectionNote: string) => api.post('/api/worklog/entries/bulk-reject', { entry_ids: entryIds, rejection_note: rejectionNote }),
 };
 
 // ─── Roles API ───────────────────────────────────────────────────────────────

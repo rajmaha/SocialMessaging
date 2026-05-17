@@ -1,9 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 from typing import List, Optional
 from datetime import date, datetime, timedelta
+from pydantic import BaseModel as PydanticBaseModel
 import os
+import csv
+import io
 
 from app.database import get_db
 from app.dependencies import get_current_user
@@ -153,6 +157,11 @@ def create_entry(data: WorklogEntryCreate, db: Session = Depends(get_db), user: 
     db.add(entry)
     db.commit()
     db.refresh(entry)
+    try:
+        from app.services.worklog_notifications import notify_entry_submitted
+        notify_entry_submitted(entry, db)
+    except Exception:
+        pass
     return _enrich_entry(entry)
 
 
@@ -203,6 +212,11 @@ def resubmit_entry(entry_id: int, db: Session = Depends(get_db), user: User = De
     entry.reviewer_id = None
     entry.reviewed_at = None
     db.commit()
+    try:
+        from app.services.worklog_notifications import notify_entry_resubmitted
+        notify_entry_resubmitted(entry, db)
+    except Exception:
+        pass
     return _enrich_entry(entry)
 
 
@@ -330,6 +344,11 @@ def approve_entry(entry_id: int, db: Session = Depends(get_db), user: User = Dep
     entry.reviewer_id = user.id
     entry.reviewed_at = datetime.now()
     db.commit()
+    try:
+        from app.services.worklog_notifications import notify_entry_approved
+        notify_entry_approved(entry, db)
+    except Exception:
+        pass
     return _enrich_entry(entry)
 
 
@@ -346,6 +365,11 @@ def reject_entry(entry_id: int, data: WorklogRejectRequest, db: Session = Depend
     entry.reviewed_at = datetime.now()
     entry.rejection_note = data.rejection_note
     db.commit()
+    try:
+        from app.services.worklog_notifications import notify_entry_rejected
+        notify_entry_rejected(entry, db)
+    except Exception:
+        pass
     return _enrich_entry(entry)
 
 
@@ -536,3 +560,265 @@ def sync_call_records(
 
     db.commit()
     return {"synced": synced, "date": str(target_date)}
+
+
+# ── Export (CSV/PDF) ────────────────────────────────────
+
+def _generate_report_pdf(rows, start_date, end_date, total_hours, breakdown, db):
+    from fpdf import FPDF
+
+    company_name = "Worklog Report"
+    try:
+        from app.models.branding import BrandingSettings
+        b = db.query(BrandingSettings).first()
+        if b and b.company_name:
+            company_name = b.company_name
+    except Exception:
+        pass
+
+    pdf = FPDF()
+    pdf.add_page(orientation='L')
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, company_name, ln=True, align="C")
+    pdf.set_font("Helvetica", "", 11)
+    pdf.cell(0, 7, f"Worklog Report: {start_date} to {end_date}", ln=True, align="C")
+    pdf.cell(0, 7, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align="C")
+    pdf.ln(5)
+
+    pdf.set_font("Helvetica", "B", 9)
+    col_widths = [35, 22, 22, 50, 50, 15, 80]
+    headers = ["Agent", "Date", "Source", "Category/Project", "Task/Conversation", "Hours", "Summary"]
+    for i, h in enumerate(headers):
+        pdf.cell(col_widths[i], 7, h, border=1)
+    pdf.ln()
+
+    pdf.set_font("Helvetica", "", 8)
+    for r in rows:
+        pdf.cell(col_widths[0], 6, str(r.get("user_name", ""))[:20], border=1)
+        pdf.cell(col_widths[1], 6, str(r.get("log_date", "")), border=1)
+        pdf.cell(col_widths[2], 6, str(r.get("source", "")), border=1)
+        pdf.cell(col_widths[3], 6, str(r.get("category_or_project", "") or "")[:30], border=1)
+        pdf.cell(col_widths[4], 6, str(r.get("task_or_conversation", "") or "")[:30], border=1)
+        pdf.cell(col_widths[5], 6, str(r["hours"]), border=1)
+        pdf.cell(col_widths[6], 6, str(r.get("summary", "") or "")[:50], border=1)
+        pdf.ln()
+
+    pdf.ln(5)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 7, f"Total Hours: {total_hours}", ln=True)
+    breakdown_str = " | ".join(f"{k}: {v:.1f}h" for k, v in breakdown.items())
+    pdf.cell(0, 7, f"Breakdown: {breakdown_str}", ln=True)
+
+    return pdf.output()
+
+
+@router.get("/reports/export")
+def export_report(
+    format: str,
+    start_date: date,
+    end_date: date,
+    user_id: Optional[int] = None,
+    source: Optional[str] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    _require_admin(user)
+    report = get_report(start_date=start_date, end_date=end_date, user_id=user_id, source=source, db=db, user=user)
+    rows = report["rows"]
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Agent", "Date", "Source", "Category/Project", "Task/Conversation", "Hours", "Summary", "Attachments", "Late Entry"])
+        for r in rows:
+            att_names = ", ".join(a["file_name"] for a in r.get("attachments", []))
+            writer.writerow([r["user_name"], str(r["log_date"]), r["source"], r.get("category_or_project", ""), r.get("task_or_conversation", ""), r["hours"], r.get("summary", ""), att_names, "Yes" if r.get("is_late_entry") else ""])
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=worklog-report-{start_date}-to-{end_date}.csv"}
+        )
+
+    if format == "pdf":
+        pdf_bytes = _generate_report_pdf(rows, start_date, end_date, report["total_hours"], report["breakdown"], db)
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=worklog-report-{start_date}-to-{end_date}.pdf"}
+        )
+
+    raise HTTPException(status_code=400, detail="format must be 'csv' or 'pdf'")
+
+
+@router.get("/entries/export")
+def export_entries(
+    format: str = "csv",
+    log_date: Optional[date] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    q = db.query(WorklogEntry).filter(WorklogEntry.user_id == user.id)
+    if log_date:
+        q = q.filter(WorklogEntry.log_date == log_date)
+    q = q.order_by(WorklogEntry.log_date.desc())
+    entries = q.all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Category", "Hours", "Summary", "Status", "Attachments"])
+    for e in entries:
+        cat_name = f"{e.category.group.name} > {e.category.name}" if e.category and e.category.group else ""
+        att_names = ", ".join(a.file_name for a in e.attachments)
+        writer.writerow([str(e.log_date), cat_name, e.hours, e.summary or "", e.status, att_names])
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=my-worklog-{date.today()}.csv"}
+    )
+
+
+@router.get("/approval/history")
+def get_approval_history(
+    format: Optional[str] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    _require_admin(user)
+    entries = db.query(WorklogEntry).filter(
+        WorklogEntry.status.in_(["approved", "rejected"])
+    ).order_by(WorklogEntry.reviewed_at.desc()).all()
+
+    history = []
+    for e in entries:
+        history.append({
+            "id": e.id,
+            "user_name": e.user.full_name if e.user else "Unknown",
+            "log_date": e.log_date,
+            "hours": e.hours,
+            "summary": e.summary,
+            "status": e.status,
+            "reviewer_name": e.reviewer.full_name if e.reviewer else "Unknown",
+            "reviewed_at": e.reviewed_at,
+            "rejection_note": e.rejection_note,
+        })
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Agent", "Date", "Hours", "Summary", "Status", "Reviewer", "Reviewed At", "Rejection Note"])
+        for h in history:
+            writer.writerow([h["user_name"], str(h["log_date"]), h["hours"], h["summary"] or "", h["status"], h["reviewer_name"], str(h["reviewed_at"] or ""), h["rejection_note"] or ""])
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=approval-history-{date.today()}.csv"}
+        )
+
+    return history
+
+
+# ── Summary Metrics ─────────────────────────────────────
+
+@router.get("/summary")
+def get_summary(
+    team: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+
+    today_hours = db.query(sqlfunc.coalesce(sqlfunc.sum(WorklogEntry.hours), 0)).filter(
+        WorklogEntry.user_id == user.id, WorklogEntry.log_date == today
+    ).scalar()
+
+    week_hours = db.query(sqlfunc.coalesce(sqlfunc.sum(WorklogEntry.hours), 0)).filter(
+        WorklogEntry.user_id == user.id, WorklogEntry.log_date >= week_start, WorklogEntry.log_date <= today
+    ).scalar()
+
+    pending_count = db.query(WorklogEntry).filter(
+        WorklogEntry.user_id == user.id, WorklogEntry.status == "pending"
+    ).count()
+
+    approved_week_count = db.query(WorklogEntry).filter(
+        WorklogEntry.user_id == user.id, WorklogEntry.status == "approved",
+        WorklogEntry.log_date >= week_start
+    ).count()
+
+    timer_active = user.id in _active_timers
+
+    result = {
+        "today_hours": float(today_hours),
+        "week_hours": float(week_hours),
+        "pending_count": pending_count,
+        "approved_week_count": approved_week_count,
+        "timer_active": timer_active,
+    }
+
+    if team and getattr(user, 'role', '') == "admin":
+        team_today = db.query(sqlfunc.coalesce(sqlfunc.sum(WorklogEntry.hours), 0)).filter(
+            WorklogEntry.log_date == today
+        ).scalar()
+        total_pending = db.query(WorklogEntry).filter(WorklogEntry.status == "pending").count()
+        result["team_today_hours"] = float(team_today)
+        result["total_pending"] = total_pending
+
+    return result
+
+
+# ── Bulk Approval ───────────────────────────────────────
+
+class BulkApproveRequest(PydanticBaseModel):
+    entry_ids: list
+
+class BulkRejectRequest(PydanticBaseModel):
+    entry_ids: list
+    rejection_note: str
+
+
+@router.post("/entries/bulk-approve")
+def bulk_approve(data: BulkApproveRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
+    entries = db.query(WorklogEntry).filter(
+        WorklogEntry.id.in_(data.entry_ids),
+        WorklogEntry.status == "pending"
+    ).all()
+    for entry in entries:
+        entry.status = "approved"
+        entry.reviewer_id = user.id
+        entry.reviewed_at = datetime.now()
+    db.commit()
+    for entry in entries:
+        try:
+            from app.services.worklog_notifications import notify_entry_approved
+            notify_entry_approved(entry, db)
+        except Exception:
+            pass
+    return {"affected": len(entries)}
+
+
+@router.post("/entries/bulk-reject")
+def bulk_reject(data: BulkRejectRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
+    entries = db.query(WorklogEntry).filter(
+        WorklogEntry.id.in_(data.entry_ids),
+        WorklogEntry.status == "pending"
+    ).all()
+    for entry in entries:
+        entry.status = "rejected"
+        entry.reviewer_id = user.id
+        entry.reviewed_at = datetime.now()
+        entry.rejection_note = data.rejection_note
+    db.commit()
+    for entry in entries:
+        try:
+            from app.services.worklog_notifications import notify_entry_rejected
+            notify_entry_rejected(entry, db)
+        except Exception:
+            pass
+    return {"affected": len(entries)}

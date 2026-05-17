@@ -19,6 +19,7 @@ export default function WorklogPage() {
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerCategoryId, setTimerCategoryId] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [summary, setSummary] = useState<any>(null);
 
   const load = async () => {
     setLoading(true);
@@ -34,7 +35,18 @@ export default function WorklogPage() {
       setTimerSeconds(timerRes.data.elapsed_seconds);
       setTimerCategoryId(timerRes.data.category_id);
     }
+    worklogApi.getSummary().then(r => setSummary(r.data)).catch(() => {});
     setLoading(false);
+  };
+
+  const handleExportMine = async () => {
+    const res = await worklogApi.exportEntries({ format: 'csv', log_date: selectedDate });
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'my-worklog.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   useEffect(() => { load(); }, [selectedDate]);
@@ -110,8 +122,37 @@ export default function WorklogPage() {
           <div className="flex items-center gap-3">
             <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="border rounded px-3 py-2 text-sm" />
             <span className="text-sm text-gray-500">Total: <strong>{totalHours.toFixed(1)}h</strong></span>
+            <button onClick={handleExportMine} className="px-3 py-2 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700">Export CSV</button>
           </div>
         </div>
+
+        {/* Summary Cards */}
+        {summary && (
+          <div className="grid grid-cols-5 gap-3 mb-4">
+            <div className="bg-white border rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-gray-900">{summary.today_hours.toFixed(1)}h</div>
+              <div className="text-xs text-gray-500">Today</div>
+            </div>
+            <div className="bg-white border rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-gray-900">{summary.week_hours.toFixed(1)}h</div>
+              <div className="text-xs text-gray-500">This Week</div>
+            </div>
+            <div className="bg-white border rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-yellow-600">{summary.pending_count}</div>
+              <div className="text-xs text-gray-500">Pending</div>
+            </div>
+            <div className="bg-white border rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-green-600">{summary.approved_week_count}</div>
+              <div className="text-xs text-gray-500">Approved (Week)</div>
+            </div>
+            <div className="bg-white border rounded-lg p-3 text-center">
+              <div className={`text-xl font-bold ${summary.timer_active ? 'text-red-600' : 'text-gray-400'}`}>
+                {summary.timer_active ? 'Running' : 'Idle'}
+              </div>
+              <div className="text-xs text-gray-500">Timer</div>
+            </div>
+          </div>
+        )}
 
         {/* Timer Section */}
         <div className="bg-white border rounded-lg p-4 mb-4">

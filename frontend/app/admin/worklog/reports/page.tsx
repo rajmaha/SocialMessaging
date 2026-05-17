@@ -56,6 +56,23 @@ export default function WorklogReports() {
     setLoading(false);
   };
 
+  const handleExport = async (format: string) => {
+    let params: any;
+    if (period === 'custom') {
+      params = { format, start_date: customStart, end_date: customEnd };
+    } else {
+      params = { format, ...getDateRange(period, refDate) };
+    }
+    if (sourceFilter) params.source = sourceFilter;
+    const res = await worklogApi.exportReport(params);
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `worklog-report.${format}`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     if (period === 'custom' && (!customStart || !customEnd)) return;
     loadReport();
@@ -108,6 +125,10 @@ export default function WorklogReports() {
                 <option value="email">Email</option>
                 <option value="call">Calls</option>
               </select>
+            </div>
+            <div className="flex gap-2 ml-auto">
+              <button onClick={() => handleExport('csv')} className="px-3 py-2 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700">Export CSV</button>
+              <button onClick={() => handleExport('pdf')} className="px-3 py-2 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700">Export PDF</button>
             </div>
           </div>
         </div>

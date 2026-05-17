@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { API_URL } from "@/lib/config";
+import { worklogApi } from "@/lib/api";
 import MainHeader from "@/components/MainHeader";
 import AdminNav from "@/components/AdminNav";
 
@@ -36,9 +38,11 @@ function KpiCard({ label, value, sub, color = "blue" }: { label: string; value: 
 
 export default function AdminDashboard() {
   const user = authAPI.getUser();
+  const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [worklogSummary, setWorklogSummary] = useState<any>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -59,6 +63,10 @@ export default function AdminDashboard() {
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  useEffect(() => {
+    worklogApi.getSummary({ team: true }).then(r => setWorklogSummary(r.data)).catch(() => {});
+  }, []);
 
   const conv = data?.conversations;
   const crm = data?.crm;
@@ -127,6 +135,26 @@ export default function AdminDashboard() {
                 <KpiCard label="Win Rate" value={crm?.win_rate != null ? `${crm.win_rate}%` : "—"} color="purple" />
               </div>
             </section>
+
+            {/* Worklog Widget */}
+            {worklogSummary && (
+              <section>
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">Worklog</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <KpiCard label="Today (You)" value={`${worklogSummary.today_hours?.toFixed(1)}h`} color="blue" />
+                  <KpiCard label="Week (You)" value={`${worklogSummary.week_hours?.toFixed(1)}h`} color="green" />
+                  <KpiCard label="Team Today" value={`${(worklogSummary.team_today_hours ?? 0).toFixed(1)}h`} color="purple" />
+                  <div
+                    className="rounded-xl border-t-4 p-5 shadow-sm border-amber-500 bg-amber-50 text-amber-900 cursor-pointer hover:shadow-md transition"
+                    onClick={() => router.push('/admin/worklog/approval')}
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-wide opacity-60">Pending Approval</p>
+                    <p className="text-3xl font-bold mt-1">{worklogSummary.total_pending ?? worklogSummary.pending_count}</p>
+                    <p className="text-xs mt-1 opacity-50">Click to review</p>
+                  </div>
+                </div>
+              </section>
+            )}
 
             {/* Pipeline by Stage + Agent Leaderboard */}
             <div className="grid grid-cols-3 gap-6">

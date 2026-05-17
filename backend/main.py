@@ -2818,6 +2818,18 @@ async def startup_event():
 
         scheduler.add_job(run_due_backup_jobs, 'interval', minutes=1, id='run_due_backup_jobs')
         scheduler.add_job(purge_old_logs, 'interval', hours=24, id='purge_old_logs')
+
+        def worklog_daily_digest():
+            try:
+                from app.services.worklog_notifications import send_daily_digest
+                db = SessionLocal()
+                send_daily_digest(db)
+                db.close()
+            except Exception as e:
+                logger.error("Worklog digest error: %s", e)
+                _log_job_error(f"Worklog digest error: {e}", exc=e, job_name="worklog_daily_digest")
+        scheduler.add_job(worklog_daily_digest, 'cron', hour=8, minute=0, id='worklog_daily_digest')
+
         scheduler.start()
 
         # ── Seed CI/CD scheduled deployments from DB ──────────────────────────
