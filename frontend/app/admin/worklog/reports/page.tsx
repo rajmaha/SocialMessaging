@@ -80,7 +80,7 @@ export default function WorklogReports() {
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
-      <MainHeader user={user} />
+      <MainHeader user={user!} />
       <AdminNav />
       <div className="p-6 max-w-7xl">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Worklog Report</h1>

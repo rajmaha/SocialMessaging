@@ -114,7 +114,7 @@ export default function WorklogPage() {
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
-      <MainHeader user={user} />
+      <MainHeader user={user!} />
       <AdminNav />
       <div className="p-6 max-w-5xl">
         <div className="flex items-center justify-between mb-6">
