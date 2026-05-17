@@ -3,11 +3,13 @@ import { useEffect, useState, useRef } from 'react';
 import { worklogApi } from '@/lib/api';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
+import { authAPI } from '@/lib/auth';
 
 interface CategoryGroup { id: number; name: string; color: string; categories: { id: number; name: string; }[]; }
 interface Entry { id: number; category_id: number; category_name: string; group_name: string; log_date: string; hours: number; summary: string; status: string; rejection_note: string | null; attachments: any[]; created_at: string; }
 
 export default function WorklogPage() {
+  const user = authAPI.getUser();
   const [groups, setGroups] = useState<CategoryGroup[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,7 +102,7 @@ export default function WorklogPage() {
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
-      <MainHeader />
+      <MainHeader user={user} />
       <AdminNav />
       <div className="p-6 max-w-5xl">
         <div className="flex items-center justify-between mb-6">

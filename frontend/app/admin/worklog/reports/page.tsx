@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { worklogApi } from '@/lib/api';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
+import { authAPI } from '@/lib/auth';
 
 type Period = 'daily' | 'weekly' | 'monthly' | 'custom';
 
@@ -32,6 +33,7 @@ const SOURCE_COLORS: Record<string, string> = {
 };
 
 export default function WorklogReports() {
+  const user = authAPI.getUser();
   const [period, setPeriod] = useState<Period>('daily');
   const [refDate, setRefDate] = useState(new Date().toISOString().split('T')[0]);
   const [customStart, setCustomStart] = useState('');
@@ -61,7 +63,7 @@ export default function WorklogReports() {
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
-      <MainHeader />
+      <MainHeader user={user} />
       <AdminNav />
       <div className="p-6 max-w-7xl">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Worklog Report</h1>

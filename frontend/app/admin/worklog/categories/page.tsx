@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react';
 import { worklogApi } from '@/lib/api';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
+import { authAPI } from '@/lib/auth';
 
 interface Category { id: number; name: string; group_id: number; created_at: string; }
 interface CategoryGroup { id: number; name: string; color: string; created_at: string; categories: Category[]; }
 
 export default function WorklogCategories() {
+  const user = authAPI.getUser();
   const [groups, setGroups] = useState<CategoryGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [showGroupForm, setShowGroupForm] = useState(false);
@@ -59,7 +61,7 @@ export default function WorklogCategories() {
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
-      <MainHeader />
+      <MainHeader user={user} />
       <AdminNav />
       <div className="p-6 max-w-4xl">
         <div className="flex items-center justify-between mb-6">

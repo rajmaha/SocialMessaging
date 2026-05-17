@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { worklogApi } from '@/lib/api';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
+import { authAPI } from '@/lib/auth';
 
 interface PendingEntry {
   id: number; user_id: number; user_name: string; category_name: string; group_name: string;
@@ -10,6 +11,7 @@ interface PendingEntry {
 }
 
 export default function WorklogApproval() {
+  const user = authAPI.getUser();
   const [entries, setEntries] = useState<PendingEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [rejectId, setRejectId] = useState<number | null>(null);
@@ -37,7 +39,7 @@ export default function WorklogApproval() {
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
-      <MainHeader />
+      <MainHeader user={user} />
       <AdminNav />
       <div className="p-6 max-w-6xl">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Worklog Approval Queue</h1>
