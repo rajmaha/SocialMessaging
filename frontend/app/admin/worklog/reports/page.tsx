@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { worklogApi } from '@/lib/api';
+import { API_URL } from '@/lib/config';
+import { getAuthToken } from '@/lib/auth';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
 import { authAPI } from '@/lib/auth';
@@ -39,8 +41,18 @@ export default function WorklogReports() {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
+  const [agentFilter, setAgentFilter] = useState('');
+  const [agents, setAgents] = useState<any[]>([]);
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const token = getAuthToken();
+    fetch(`${API_URL}/admin/users`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => setAgents(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
 
   const loadReport = async () => {
     setLoading(true);
@@ -51,6 +63,7 @@ export default function WorklogReports() {
       params = getDateRange(period, refDate);
     }
     if (sourceFilter) params.source = sourceFilter;
+    if (agentFilter) params.user_id = agentFilter;
     const res = await worklogApi.getReport(params);
     setReport(res.data);
     setLoading(false);
@@ -64,6 +77,7 @@ export default function WorklogReports() {
       params = { format, ...getDateRange(period, refDate) };
     }
     if (sourceFilter) params.source = sourceFilter;
+    if (agentFilter) params.user_id = agentFilter;
     const res = await worklogApi.exportReport(params);
     const url = window.URL.createObjectURL(new Blob([res.data]));
     const a = document.createElement('a');
@@ -76,7 +90,7 @@ export default function WorklogReports() {
   useEffect(() => {
     if (period === 'custom' && (!customStart || !customEnd)) return;
     loadReport();
-  }, [period, refDate, customStart, customEnd, sourceFilter]);
+  }, [period, refDate, customStart, customEnd, sourceFilter, agentFilter]);
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
@@ -90,7 +104,7 @@ export default function WorklogReports() {
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <label className="text-xs text-gray-500 block mb-1">Period</label>
-              <select value={period} onChange={e => setPeriod(e.target.value as Period)} className="border rounded px-3 py-2 text-sm">
+              <select value={period} onChange={e => setPeriod(e.target.value as Period)} className="border border-gray-300 rounded px-3 py-2 text-sm bg-white">
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
@@ -100,24 +114,33 @@ export default function WorklogReports() {
             {period !== 'custom' && (
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Reference Date</label>
-                <input type="date" value={refDate} onChange={e => setRefDate(e.target.value)} className="border rounded px-3 py-2 text-sm" />
+                <input type="date" value={refDate} onChange={e => setRefDate(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm bg-white h-[38px]" />
               </div>
             )}
             {period === 'custom' && (
               <>
                 <div>
                   <label className="text-xs text-gray-500 block mb-1">Start</label>
-                  <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="border rounded px-3 py-2 text-sm" />
+                  <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm bg-white h-[38px]" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 block mb-1">End</label>
-                  <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="border rounded px-3 py-2 text-sm" />
+                  <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm bg-white h-[38px]" />
                 </div>
               </>
             )}
             <div>
+              <label className="text-xs text-gray-500 block mb-1">Agent</label>
+              <select value={agentFilter} onChange={e => setAgentFilter(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm bg-white">
+                <option value="">All Agents</option>
+                {agents.map((a: any) => (
+                  <option key={a.id} value={a.id}>{a.full_name || a.email}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="text-xs text-gray-500 block mb-1">Source</label>
-              <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="border rounded px-3 py-2 text-sm">
+              <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm bg-white">
                 <option value="">All Sources</option>
                 <option value="manual">Manual</option>
                 <option value="pms">PMS Tasks</option>
