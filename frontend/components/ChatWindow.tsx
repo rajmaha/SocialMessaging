@@ -7,6 +7,7 @@ import { getAuthToken, authAPI } from '@/lib/auth'
 import { useEvents } from '@/lib/events-context'
 import { useBranding } from '@/lib/branding-context'
 import { API_URL } from '@/lib/config';
+import { worklogApi } from '@/lib/api';
 import CrmSidebar from './CrmSidebar';
 import ClickablePhone from '@/components/ClickablePhone';
 import ClickableEmail from '@/components/ClickableEmail';
@@ -131,6 +132,7 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
         { event_type: "open_conversation", data: { conversation_id: conversation.id } },
         { headers: { Authorization: getAuthToken() || "" } }
       ).catch(() => {})
+      worklogApi.trackOpen('messaging', conversation.id).catch(() => {})
       // For webchat, immediately check whether visitor is currently connected
       if (conversation.platform === 'webchat') {
         setVisitorOnline(false)
@@ -420,6 +422,7 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
 
       // webchat delivery is tracked via webchat_visitor_online/offline events
 
+      worklogApi.trackReply('messaging', conversation.id).catch(() => {})
       setMessageText('')
       // Refresh messages and conversations
       if (conversation) {
