@@ -12,6 +12,7 @@ from app.routes.email_templates import router as email_templates_router
 from app.routes.db_migrations import router as db_migrations_router
 from app.routes.backups import router as backups_router
 from app.routes import pms as pms_routes
+from app.routes import worklog as worklog_routes
 from app.routes import roles as roles_routes
 from app.routes import platform_accounts
 from app.routes import widget_domains
@@ -1973,6 +1974,7 @@ app.include_router(email_templates_router)
 app.include_router(db_migrations_router)
 app.include_router(backups_router)
 app.include_router(pms_routes.router)
+app.include_router(worklog_routes.router)
 app.include_router(roles_routes.router)
 app.include_router(api_servers_router)
 app.include_router(user_api_creds_router)
