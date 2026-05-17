@@ -32,6 +32,7 @@ from app.models.backup_job import BackupJob  # noqa: F401
 from app.models.backup_run import BackupRun  # noqa: F401
 from app.models.automation import AutomationRule, EmailSequence, EmailSequenceStep, EmailSequenceEnrollment  # noqa: F401
 from app.models import pms  # noqa: F401
+from app.models import worklog  # noqa: F401
 from app.models.user_permission_override import UserPermissionOverride  # noqa: F401 — ensures table creation
 from app.models.webchat_otp import WebchatOtp  # noqa: F401 — ensures table creation
 from app.models.campaign_link import CampaignLink, CampaignClick  # noqa: F401
