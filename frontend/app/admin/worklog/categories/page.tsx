@@ -17,6 +17,8 @@ export default function WorklogCategories() {
   const [groupForm, setGroupForm] = useState({ name: '', color: '#6366f1' });
   const [catForm, setCatForm] = useState({ name: '' });
   const [editGroup, setEditGroup] = useState<CategoryGroup | null>(null);
+  const [editCat, setEditCat] = useState<Category | null>(null);
+  const [editCatName, setEditCatName] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -50,6 +52,14 @@ export default function WorklogCategories() {
     await worklogApi.createCategory({ group_id: groupId, name: catForm.name });
     setCatForm({ name: '' });
     setShowCatForm(null);
+    load();
+  };
+
+  const handleUpdateCategory = async () => {
+    if (!editCat || !editCatName.trim()) return;
+    await worklogApi.updateCategory(editCat.id, { name: editCatName });
+    setEditCat(null);
+    setEditCatName('');
     load();
   };
 
@@ -124,8 +134,21 @@ export default function WorklogCategories() {
                   <div className="divide-y">
                     {group.categories.map(cat => (
                       <div key={cat.id} className="flex items-center justify-between px-4 py-2.5 pl-8">
-                        <span className="text-sm text-gray-700">{cat.name}</span>
-                        <button onClick={() => handleDeleteCategory(cat.id)} className="text-xs text-red-500 hover:underline">Remove</button>
+                        {editCat?.id === cat.id ? (
+                          <div className="flex gap-2 items-center flex-1">
+                            <input value={editCatName} onChange={e => setEditCatName(e.target.value)} className="flex-1 border rounded px-2 py-1 text-sm" onKeyDown={e => e.key === 'Enter' && handleUpdateCategory()} />
+                            <button onClick={handleUpdateCategory} className="text-xs text-indigo-600 hover:underline">Save</button>
+                            <button onClick={() => setEditCat(null)} className="text-xs text-gray-500 hover:underline">Cancel</button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-sm text-gray-700">{cat.name}</span>
+                            <div className="flex gap-2">
+                              <button onClick={() => { setEditCat(cat); setEditCatName(cat.name); }} className="text-xs text-gray-500 hover:underline">Edit</button>
+                              <button onClick={() => handleDeleteCategory(cat.id)} className="text-xs text-red-500 hover:underline">Remove</button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>
