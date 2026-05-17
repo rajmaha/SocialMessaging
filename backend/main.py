@@ -12,6 +12,7 @@ from app.routes.email_templates import router as email_templates_router
 from app.routes.db_migrations import router as db_migrations_router
 from app.routes.backups import router as backups_router
 from app.routes import pms as pms_routes
+from app.routes import worklog as worklog_routes
 from app.routes import roles as roles_routes
 from app.routes import platform_accounts
 from app.routes import widget_domains
@@ -34,6 +35,7 @@ from app.models.backup_job import BackupJob  # noqa: F401
 from app.models.backup_run import BackupRun  # noqa: F401
 from app.models.automation import AutomationRule, EmailSequence, EmailSequenceStep, EmailSequenceEnrollment  # noqa: F401
 from app.models import pms  # noqa: F401
+from app.models import worklog  # noqa: F401
 from app.models.user_permission_override import UserPermissionOverride  # noqa: F401 — ensures table creation
 from app.models.webchat_otp import WebchatOtp  # noqa: F401 — ensures table creation
 from app.models.campaign_link import CampaignLink, CampaignClick  # noqa: F401
@@ -2370,6 +2372,7 @@ app.include_router(email_templates_router)
 app.include_router(db_migrations_router)
 app.include_router(backups_router)
 app.include_router(pms_routes.router)
+app.include_router(worklog_routes.router)
 app.include_router(roles_routes.router)
 app.include_router(api_servers_router)
 app.include_router(user_api_creds_router)
@@ -3347,6 +3350,18 @@ async def startup_event():
 
         scheduler.add_job(run_due_backup_jobs, 'interval', minutes=1, id='run_due_backup_jobs')
         scheduler.add_job(purge_old_logs, 'interval', hours=24, id='purge_old_logs')
+
+        def worklog_daily_digest():
+            try:
+                from app.services.worklog_notifications import send_daily_digest
+                db = SessionLocal()
+                send_daily_digest(db)
+                db.close()
+            except Exception as e:
+                logger.error("Worklog digest error: %s", e)
+                _log_job_error(f"Worklog digest error: {e}", exc=e, job_name="worklog_daily_digest")
+        scheduler.add_job(worklog_daily_digest, 'cron', hour=8, minute=0, id='worklog_daily_digest')
+
         scheduler.start()
 
         # ── Seed CI/CD scheduled deployments from DB ──────────────────────────

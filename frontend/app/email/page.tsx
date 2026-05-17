@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { FiArrowLeft } from 'react-icons/fi'
 import axios from 'axios'
+import { worklogApi } from '@/lib/api'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Blockquote } from '@tiptap/extension-blockquote'
@@ -1314,6 +1315,7 @@ export default function EmailPage() {
   // When selecting a thread with a real thread_id, fetch the FULL thread (received + sent replies)
   const selectThread = async (thread: EmailThread) => {
     setSelectedThread(thread) // Show immediately with preloaded data
+    if (typeof thread.id === 'number') worklogApi.trackOpen('email', thread.id).catch(() => {})
     if (typeof thread.id === 'number') {
       try {
         const token = getAuthToken()
@@ -1870,6 +1872,9 @@ export default function EmailPage() {
       }
       showToast('✓ Email sent successfully!')
       playEmailSentSound()
+      if (selectedThread && typeof selectedThread.id === 'number') {
+        worklogApi.trackReply('email', selectedThread.id).catch(() => {})
+      }
       // Delete the draft from the backend before resetting compose state
       const sentDraftId = currentDraftIdRef.current
       resetCompose()

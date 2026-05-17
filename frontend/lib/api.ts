@@ -307,6 +307,66 @@ export const pmsApi = {
     api.put(`/api/pms/milestones/${milestoneId}/dependency`, null, { params: { depends_on_id: dependsOnId } }),
 };
 
+// ─── Worklog API ────────────────────────────────────────────────────────────
+export const worklogApi = {
+  // Category Groups
+  listCategoryGroups: () => api.get('/api/worklog/category-groups'),
+  createCategoryGroup: (data: any) => api.post('/api/worklog/category-groups', data),
+  updateCategoryGroup: (id: number, data: any) => api.put(`/api/worklog/category-groups/${id}`, data),
+  deleteCategoryGroup: (id: number) => api.delete(`/api/worklog/category-groups/${id}`),
+
+  // Categories
+  createCategory: (data: any) => api.post('/api/worklog/categories', data),
+  updateCategory: (id: number, data: any) => api.put(`/api/worklog/categories/${id}`, data),
+  deleteCategory: (id: number) => api.delete(`/api/worklog/categories/${id}`),
+
+  // Entries
+  listEntries: (params?: any) => api.get('/api/worklog/entries', { params }),
+  createEntry: (data: any) => api.post('/api/worklog/entries', data),
+  updateEntry: (id: number, data: any) => api.put(`/api/worklog/entries/${id}`, data),
+  deleteEntry: (id: number) => api.delete(`/api/worklog/entries/${id}`),
+  resubmitEntry: (id: number) => api.post(`/api/worklog/entries/${id}/resubmit`),
+
+  // Attachments
+  uploadAttachment: (entryId: number, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post(`/api/worklog/entries/${entryId}/attachments`, fd);
+  },
+  deleteAttachment: (id: number) => api.delete(`/api/worklog/attachments/${id}`),
+
+  // Timer
+  startTimer: (data: any) => api.post('/api/worklog/timer/start', data),
+  stopTimer: (data: any) => api.post('/api/worklog/timer/stop', data),
+  getTimerStatus: () => api.get('/api/worklog/timer/status'),
+
+  // Approval (admin)
+  listPendingEntries: (params?: any) => api.get('/api/worklog/approval', { params }),
+  approveEntry: (id: number) => api.post(`/api/worklog/entries/${id}/approve`),
+  rejectEntry: (id: number, data: any) => api.post(`/api/worklog/entries/${id}/reject`, data),
+
+  // Auto-tracking
+  trackOpen: (source: string, referenceId: number) =>
+    api.post(`/api/worklog/auto/track-open?source=${source}&reference_id=${referenceId}`),
+  trackReply: (source: string, referenceId: number) =>
+    api.post(`/api/worklog/auto/track-reply?source=${source}&reference_id=${referenceId}`),
+
+  // Reports (admin)
+  getReport: (params: any) => api.get('/api/worklog/reports', { params }),
+
+  // Export
+  exportReport: (params: any) => api.get('/api/worklog/reports/export', { params, responseType: 'blob' }),
+  exportEntries: (params: any) => api.get('/api/worklog/entries/export', { params, responseType: 'blob' }),
+  exportApprovalHistory: () => api.get('/api/worklog/approval/history?format=csv', { responseType: 'blob' }),
+
+  // Summary
+  getSummary: (params?: any) => api.get('/api/worklog/summary', { params }),
+
+  // Bulk approval
+  bulkApprove: (entryIds: number[]) => api.post('/api/worklog/entries/bulk-approve', { entry_ids: entryIds }),
+  bulkReject: (entryIds: number[], rejectionNote: string) => api.post('/api/worklog/entries/bulk-reject', { entry_ids: entryIds, rejection_note: rejectionNote }),
+};
+
 // ─── Roles API ───────────────────────────────────────────────────────────────
 export const rolesApi = {
   list: () => api.get('/roles'),
