@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { worklogApi } from '@/lib/api';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
@@ -184,8 +184,8 @@ export default function WorklogApproval() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {groupedEntries().map(group => (
-                  <>{group.key && (
+                {groupedEntries().map((group, gi) => (
+                  <React.Fragment key={group.key || gi}>{group.key && (
                     <tr key={`group-${group.key}`} className="bg-gray-100">
                       <td className="px-4 py-2">
                         <input type="checkbox" checked={group.entries.every(e => selectedIds.has(e.id))} onChange={() => handleGroupSelect(group.entries)} className="rounded" />
@@ -230,7 +230,7 @@ export default function WorklogApproval() {
                         </div>
                       </td>
                     </tr>
-                  ))}</>
+                  ))}</React.Fragment>
                 ))}
               </tbody>
             </table>
