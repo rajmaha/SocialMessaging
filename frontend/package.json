@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@stripe/stripe-js": "^2.0.0",
+    "@tailwindcss/typography": "^0.5.19",
     "@tiptap/extension-color": "^3.20.0",
     "@tiptap/extension-font-family": "^3.20.0",
     "@tiptap/extension-image": "^3.20.0",

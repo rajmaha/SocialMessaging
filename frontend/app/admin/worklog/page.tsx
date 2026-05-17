@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
 import { worklogApi } from '@/lib/api';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
@@ -8,18 +10,47 @@ import { authAPI } from '@/lib/auth';
 interface CategoryGroup { id: number; name: string; color: string; categories: { id: number; name: string; }[]; }
 interface Entry { id: number; category_id: number; category_name: string; group_name: string; log_date: string; hours: number; summary: string; status: string; rejection_note: string | null; attachments: any[]; created_at: string; }
 
+type EntryMode = 'manual' | 'timer';
+
+function MiniToolbar({ editor }: { editor: any }) {
+  if (!editor) return null;
+  return (
+    <div className="flex items-center gap-0.5 px-2 py-1 border-b bg-gray-50 rounded-t">
+      <button type="button" onClick={() => editor.chain().focus().toggleBold().run()}
+        className={`px-1.5 py-0.5 rounded text-xs font-bold ${editor.isActive('bold') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`}>B</button>
+      <button type="button" onClick={() => editor.chain().focus().toggleItalic().run()}
+        className={`px-1.5 py-0.5 rounded text-xs italic ${editor.isActive('italic') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`}>I</button>
+      <button type="button" onClick={() => editor.chain().focus().toggleBulletList().run()}
+        className={`px-1.5 py-0.5 rounded text-xs ${editor.isActive('bulletList') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`}>&#8226; List</button>
+      <button type="button" onClick={() => editor.chain().focus().toggleOrderedList().run()}
+        className={`px-1.5 py-0.5 rounded text-xs ${editor.isActive('orderedList') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`}>1. List</button>
+    </div>
+  );
+}
+
 export default function WorklogPage() {
   const user = authAPI.getUser();
   const [groups, setGroups] = useState<CategoryGroup[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [form, setForm] = useState({ category_id: 0, hours: '', summary: '' });
+  const [categoryId, setCategoryId] = useState(0);
+  const [mode, setMode] = useState<EntryMode>('manual');
+  const [hours, setHours] = useState('');
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [timerActive, setTimerActive] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(0);
-  const [timerCategoryId, setTimerCategoryId] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [summary, setSummary] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const editor = useEditor({
+    extensions: [StarterKit],
+    content: '',
+    editorProps: {
+      attributes: { class: 'prose prose-sm max-w-none px-3 py-2 min-h-[80px] focus:outline-none' },
+    },
+  });
 
   const load = async () => {
     setLoading(true);
@@ -33,7 +64,8 @@ export default function WorklogPage() {
     if (timerRes.data.active) {
       setTimerActive(true);
       setTimerSeconds(timerRes.data.elapsed_seconds);
-      setTimerCategoryId(timerRes.data.category_id);
+      setCategoryId(timerRes.data.category_id);
+      setMode('timer');
     }
     worklogApi.getSummary().then(r => setSummary(r.data)).catch(() => {});
     setLoading(false);
@@ -68,24 +100,35 @@ export default function WorklogPage() {
   };
 
   const handleStartTimer = async () => {
-    if (!timerCategoryId) return alert('Select a category first');
-    await worklogApi.startTimer({ category_id: timerCategoryId, log_date: selectedDate });
+    if (!categoryId) return alert('Select a category first');
+    await worklogApi.startTimer({ category_id: categoryId, log_date: selectedDate });
     setTimerActive(true);
     setTimerSeconds(0);
   };
 
   const handleStopTimer = async () => {
-    const summary = prompt('Summary for this time entry:') || '';
-    await worklogApi.stopTimer({ summary });
+    const summaryText = editor?.getHTML() || '';
+    await worklogApi.stopTimer({ summary: summaryText });
     setTimerActive(false);
     setTimerSeconds(0);
+    editor?.commands.clearContent();
     load();
   };
 
   const handleManualEntry = async () => {
-    if (!form.category_id || !form.hours) return;
-    await worklogApi.createEntry({ category_id: form.category_id, log_date: selectedDate, hours: parseFloat(form.hours), summary: form.summary });
-    setForm({ category_id: 0, hours: '', summary: '' });
+    if (!categoryId || !hours) return;
+    const summaryText = editor?.getHTML() || '';
+    const res = await worklogApi.createEntry({ category_id: categoryId, log_date: selectedDate, hours: parseFloat(hours), summary: summaryText });
+    if (attachments.length > 0 && res.data?.id) {
+      for (const file of attachments) {
+        await worklogApi.uploadAttachment(res.data.id, file);
+      }
+    }
+    setCategoryId(0);
+    setHours('');
+    setAttachments([]);
+    editor?.commands.clearContent();
+    if (fileInputRef.current) fileInputRef.current.value = '';
     load();
   };
 
@@ -105,6 +148,15 @@ export default function WorklogPage() {
     load();
   };
 
+  const handleAddFiles = (files: FileList | null) => {
+    if (!files) return;
+    setAttachments(prev => [...prev, ...Array.from(files)]);
+  };
+
+  const removeAttachment = (idx: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== idx));
+  };
+
   const statusBadge = (status: string) => {
     const colors: Record<string, string> = { pending: 'bg-yellow-100 text-yellow-700', approved: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700' };
     return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colors[status] || ''}`}>{status}</span>;
@@ -114,7 +166,7 @@ export default function WorklogPage() {
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
-      <MainHeader user={user} />
+      <MainHeader user={user!} />
       <AdminNav />
       <div className="p-6 max-w-5xl">
         <div className="flex items-center justify-between mb-6">
@@ -154,35 +206,29 @@ export default function WorklogPage() {
           </div>
         )}
 
-        {/* Timer Section */}
+        {/* Unified New Entry Form */}
         <div className="bg-white border rounded-lg p-4 mb-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-3">Timer</h3>
-          <div className="flex items-center gap-4">
-            <select value={timerCategoryId} onChange={e => setTimerCategoryId(Number(e.target.value))} className="border rounded px-3 py-2 text-sm flex-1" disabled={timerActive}>
-              <option value={0}>Select category...</option>
-              {groups.map(g => (
-                <optgroup key={g.id} label={g.name}>
-                  {g.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </optgroup>
-              ))}
-            </select>
-            <span className="font-mono text-xl font-bold text-gray-900 w-28 text-center">{formatTime(timerSeconds)}</span>
-            {!timerActive ? (
-              <button onClick={handleStartTimer} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">Start</button>
-            ) : (
-              <button onClick={handleStopTimer} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">Stop</button>
-            )}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-gray-700">New Entry</h3>
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              <button onClick={() => !timerActive && setMode('manual')}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition ${mode === 'manual' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}>
+                Manual
+              </button>
+              <button onClick={() => setMode('timer')}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition ${mode === 'timer' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}>
+                Timer
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Manual Entry Form */}
-        <div className="bg-white border rounded-lg p-4 mb-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-3">Manual Entry</h3>
-          <div className="flex gap-3 items-end">
+          {/* Category + Hours/Timer row */}
+          <div className="flex gap-3 items-end mb-3">
             <div className="flex-1">
-              <label className="text-xs text-gray-500">Category</label>
-              <select value={form.category_id} onChange={e => setForm({ ...form, category_id: Number(e.target.value) })} className="w-full border rounded px-3 py-2 text-sm">
-                <option value={0}>Select...</option>
+              <label className="text-xs text-gray-500 block mb-1">Category</label>
+              <select value={categoryId} onChange={e => setCategoryId(Number(e.target.value))}
+                className="w-full border rounded px-3 py-2 text-sm" disabled={timerActive}>
+                <option value={0}>Select category...</option>
                 {groups.map(g => (
                   <optgroup key={g.id} label={g.name}>
                     {g.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -190,15 +236,57 @@ export default function WorklogPage() {
                 ))}
               </select>
             </div>
-            <div className="w-24">
-              <label className="text-xs text-gray-500">Hours</label>
-              <input type="number" step="0.25" min="0" value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" placeholder="2.5" />
+            {mode === 'manual' ? (
+              <div className="w-28">
+                <label className="text-xs text-gray-500 block mb-1">Hours</label>
+                <input type="number" step="0.25" min="0" value={hours} onChange={e => setHours(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-sm" placeholder="2.5" />
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xl font-bold text-gray-900 w-28 text-center">{formatTime(timerSeconds)}</span>
+                {!timerActive ? (
+                  <button onClick={handleStartTimer} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">Start</button>
+                ) : (
+                  <button onClick={handleStopTimer} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">Stop &amp; Save</button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Rich text summary */}
+          <div className="mb-3">
+            <label className="text-xs text-gray-500 block mb-1">Summary</label>
+            <div className="border rounded overflow-hidden">
+              <MiniToolbar editor={editor} />
+              <EditorContent editor={editor} />
             </div>
+          </div>
+
+          {/* Attachments */}
+          <div className="flex items-center gap-3">
             <div className="flex-1">
-              <label className="text-xs text-gray-500">Summary</label>
-              <input value={form.summary} onChange={e => setForm({ ...form, summary: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" placeholder="What did you work on?" />
+              <label className="text-xs text-gray-500 block mb-1">Attachments</label>
+              <div className="flex items-center gap-2">
+                <input ref={fileInputRef} type="file" multiple onChange={e => handleAddFiles(e.target.files)}
+                  className="text-sm text-gray-600 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200" />
+                {attachments.length > 0 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {attachments.map((f, i) => (
+                      <span key={i} className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded flex items-center gap-1">
+                        {f.name}
+                        <button type="button" onClick={() => removeAttachment(i)} className="text-indigo-400 hover:text-indigo-700">&times;</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <button onClick={handleManualEntry} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">Add</button>
+            {mode === 'manual' && (
+              <button onClick={handleManualEntry} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 self-end">
+                Add Entry
+              </button>
+            )}
           </div>
         </div>
 
@@ -214,13 +302,15 @@ export default function WorklogPage() {
           ) : (
             <div className="divide-y">
               {entries.map(entry => (
-                <div key={entry.id} className="px-4 py-3 flex items-center gap-4">
+                <div key={entry.id} className="px-4 py-3 flex items-start gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-gray-900">{entry.group_name} &gt; {entry.category_name}</span>
                       {statusBadge(entry.status)}
                     </div>
-                    {entry.summary && <p className="text-sm text-gray-600 mt-0.5">{entry.summary}</p>}
+                    {entry.summary && (
+                      <div className="text-sm text-gray-600 mt-0.5 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: entry.summary }} />
+                    )}
                     {entry.rejection_note && <p className="text-xs text-red-600 mt-1">Rejection: {entry.rejection_note}</p>}
                     {entry.attachments.length > 0 && (
                       <div className="flex gap-2 mt-1">

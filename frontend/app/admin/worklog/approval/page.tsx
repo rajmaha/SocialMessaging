@@ -132,7 +132,7 @@ export default function WorklogApproval() {
 
   return (
     <div className="ml-60 pt-14 min-h-screen bg-gray-50">
-      <MainHeader user={user} />
+      <MainHeader user={user!} />
       <AdminNav />
       <div className="p-6 max-w-6xl">
         <div className="flex items-center justify-between mb-6">
@@ -213,7 +213,7 @@ export default function WorklogApproval() {
                       <td className="px-4 py-3 text-gray-600">{entry.log_date}</td>
                       <td className="px-4 py-3 text-gray-600">{entry.group_name} &gt; {entry.category_name}</td>
                       <td className="px-4 py-3 text-right font-bold">{entry.hours}h</td>
-                      <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{entry.summary || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{entry.summary ? <span dangerouslySetInnerHTML={{ __html: entry.summary }} /> : '—'}</td>
                       <td className="px-4 py-3">
                         {entry.attachments.length > 0 ? (
                           <div className="flex gap-1 flex-wrap">
