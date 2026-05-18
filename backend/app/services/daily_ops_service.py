@@ -84,7 +84,7 @@ def get_assigned_pms_tasks(db: Session, user_id: int, today: date) -> List[Dict[
     tasks = db.query(PMSTask).filter(
         PMSTask.assignee_id == user_id,
         PMSTask.due_date <= today,
-        PMSTask.status.notin_(["done", "cancelled"])
+        PMSTask.stage.notin_(["done", "cancelled"])
     ).all()
     return [
         {
