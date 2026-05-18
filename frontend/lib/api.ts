@@ -495,4 +495,9 @@ export const dailyOpsApi = {
   getCommandCenterConfig: () => api.get('/daily-ops/command-center/config'),
   updateCommandCenterConfig: (data: { metrics: any[] }) =>
     api.put('/daily-ops/command-center/config', data),
+
+  // Reports
+  getStandupCompliance: (params?: any) => api.get('/daily-ops/reports/standup-compliance', { params }),
+  getTeamActivity: (params?: any) => api.get('/daily-ops/reports/team-activity', { params }),
+  exportReport: (params: any) => api.get('/daily-ops/reports/export', { params, responseType: 'blob' }),
 }

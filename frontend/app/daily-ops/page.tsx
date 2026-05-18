@@ -8,8 +8,9 @@ import AdminNav from '@/components/AdminNav'
 import MyDayTab from '@/components/daily-ops/MyDayTab'
 import TeamStandupsTab from '@/components/daily-ops/TeamStandupsTab'
 import CommandCenterTab from '@/components/daily-ops/CommandCenterTab'
+import ReportsTab from '@/components/daily-ops/ReportsTab'
 
-type Tab = 'my-day' | 'standups' | 'command-center'
+type Tab = 'my-day' | 'standups' | 'command-center' | 'reports'
 
 export default function DailyOpsPageWrapper() {
   return (
@@ -35,10 +36,13 @@ function DailyOpsPage() {
 
   if (!isMounted || !user) return null
 
+  const isAdmin = user?.role === 'admin'
+
   const tabs: { key: Tab; label: string }[] = [
     { key: 'my-day', label: 'My Day' },
     { key: 'standups', label: 'Team Standups' },
     { key: 'command-center', label: 'Command Center' },
+    ...(isAdmin ? [{ key: 'reports' as Tab, label: 'Reports' }] : []),
   ]
 
   return (
@@ -50,7 +54,7 @@ function DailyOpsPage() {
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Daily Ops</h1>
-            {activeTab !== 'command-center' && (
+            {activeTab !== 'command-center' && activeTab !== 'reports' && (
               <input
                 type="date"
                 value={selectedDate}
@@ -81,6 +85,7 @@ function DailyOpsPage() {
           {activeTab === 'my-day' && <MyDayTab selectedDate={selectedDate} />}
           {activeTab === 'standups' && <TeamStandupsTab selectedDate={selectedDate} />}
           {activeTab === 'command-center' && <CommandCenterTab />}
+          {activeTab === 'reports' && <ReportsTab selectedDate={selectedDate} />}
         </div>
       </div>
     </div>
