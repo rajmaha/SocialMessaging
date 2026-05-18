@@ -50,7 +50,7 @@ def get_assigned_tickets(db: Session, user_id: int) -> List[Dict[str, Any]]:
         {
             "id": t.id,
             "type": "ticket",
-            "title": f"#{t.ticket_number} — {t.subject}",
+            "title": f"#{t.ticket_number} — {t.category or ''} {t.customer_name or ''}".strip(),
             "priority": t.priority.value if t.priority else None,
             "due_date": None,
             "link": f"/workspace/tickets/{t.ticket_number}",
@@ -101,10 +101,17 @@ def get_assigned_pms_tasks(db: Session, user_id: int, today: date) -> List[Dict[
 
 def get_unread_emails(db: Session, user_id: int) -> List[Dict[str, Any]]:
     """Get unread emails for user's email accounts."""
+    from app.models.email import UserEmailAccount
+    account_ids = [a.id for a in db.query(UserEmailAccount.id).filter(
+        UserEmailAccount.user_id == user_id
+    ).all()]
+    if not account_ids:
+        return []
     emails = db.query(Email).filter(
-        Email.user_id == user_id,
+        Email.account_id.in_(account_ids),
         Email.is_read == False,
-        Email.folder == "inbox"
+        Email.is_archived == False,
+        Email.is_spam == False,
     ).limit(20).all()
     return [
         {
@@ -122,13 +129,21 @@ def get_unread_emails(db: Session, user_id: int) -> List[Dict[str, Any]]:
 def get_all_assigned_items(db: Session, user_id: int) -> Dict[str, List[Dict[str, Any]]]:
     """Aggregate all assigned items for the planner view."""
     today = date.today()
-    return {
-        "conversations": get_assigned_conversations(db, user_id),
-        "tickets": get_assigned_tickets(db, user_id),
-        "crm_tasks": get_assigned_crm_tasks(db, user_id, today),
-        "pms_tasks": get_assigned_pms_tasks(db, user_id, today),
-        "emails": get_unread_emails(db, user_id),
+    result = {}
+    fetchers = {
+        "conversations": lambda: get_assigned_conversations(db, user_id),
+        "tickets": lambda: get_assigned_tickets(db, user_id),
+        "crm_tasks": lambda: get_assigned_crm_tasks(db, user_id, today),
+        "pms_tasks": lambda: get_assigned_pms_tasks(db, user_id, today),
+        "emails": lambda: get_unread_emails(db, user_id),
     }
+    for key, fn in fetchers.items():
+        try:
+            result[key] = fn()
+        except Exception as e:
+            logger.error("Failed to fetch %s for user %s: %s", key, user_id, e)
+            result[key] = []
+    return result
 
 
 # ── Command Center Metrics ──────────────────────────────────────────────────
