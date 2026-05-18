@@ -92,6 +92,7 @@ const nextConfig = {
       { source: '/admin/:path*', destination: `${backendUrl}/admin/:path*` },
       { source: '/forms/:path*', destination: `${backendUrl}/forms/:path*` },
       { source: '/workspace/:path*', destination: `${backendUrl}/workspace/:path*` },
+      { source: '/daily-ops/:path*', destination: `${backendUrl}/daily-ops/:path*` },
     ];
 
     return { afterFiles, fallback };
