@@ -99,12 +99,18 @@ export default function WorklogApproval() {
 
   const handleDownloadAttachment = async (id: number, fileName: string) => {
     const res = await worklogApi.downloadAttachment(id);
-    const url = window.URL.createObjectURL(new Blob([res.data]));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    const blob = new Blob([res.data], { type: res.headers['content-type'] || '' });
+    const url = window.URL.createObjectURL(blob);
+    const previewable = /^(image\/|application\/pdf|text\/|video\/|audio\/)/.test(blob.type);
+    if (previewable) {
+      window.open(url, '_blank');
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }
   };
 
   const handleExportHistory = async () => {
