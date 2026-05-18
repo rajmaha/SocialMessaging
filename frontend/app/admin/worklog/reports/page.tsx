@@ -211,7 +211,8 @@ export default function WorklogReports() {
                       {row.attachments?.length > 0 ? (
                         <div className="flex gap-1 flex-wrap">
                           {row.attachments.map((a: any) => (
-                            <span key={a.id} className="text-xs bg-gray-100 px-2 py-0.5 rounded">{a.file_name}</span>
+                            <a key={a.id} href={`${API_URL}/api/worklog/attachments/${a.id}/download`} target="_blank" rel="noopener noreferrer"
+                              className="text-xs bg-gray-100 px-2 py-0.5 rounded text-indigo-600 hover:text-indigo-800 hover:bg-gray-200">{a.file_name}</a>
                           ))}
                         </div>
                       ) : '—'}

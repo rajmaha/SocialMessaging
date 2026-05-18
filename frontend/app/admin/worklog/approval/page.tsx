@@ -1,6 +1,7 @@
 'use client';
 import React, { useEffect, useState, useRef } from 'react';
 import { worklogApi } from '@/lib/api';
+import { API_URL } from '@/lib/config';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
 import { authAPI } from '@/lib/auth';
@@ -218,7 +219,8 @@ export default function WorklogApproval() {
                         {entry.attachments.length > 0 ? (
                           <div className="flex gap-1 flex-wrap">
                             {entry.attachments.map((a: any) => (
-                              <span key={a.id} className="text-xs bg-gray-100 px-2 py-0.5 rounded">{a.file_name}</span>
+                              <a key={a.id} href={`${API_URL}/api/worklog/attachments/${a.id}/download`} target="_blank" rel="noopener noreferrer"
+                                className="text-xs bg-gray-100 px-2 py-0.5 rounded text-indigo-600 hover:text-indigo-800 hover:bg-gray-200">{a.file_name}</a>
                             ))}
                           </div>
                         ) : '—'}

@@ -249,6 +249,17 @@ async def upload_attachment(
     return {"id": att.id, "file_name": att.file_name, "file_size": att.file_size}
 
 
+@router.get("/attachments/{att_id}/download")
+def download_attachment(att_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    from fastapi.responses import FileResponse
+    att = db.query(WorklogAttachment).filter_by(id=att_id).first()
+    if not att:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if not os.path.exists(att.file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    return FileResponse(att.file_path, filename=att.file_name)
+
+
 @router.delete("/attachments/{att_id}")
 def delete_attachment(att_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     att = db.query(WorklogAttachment).filter_by(id=att_id).first()
