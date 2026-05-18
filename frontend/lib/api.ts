@@ -334,6 +334,7 @@ export const worklogApi = {
     return api.post(`/api/worklog/entries/${entryId}/attachments`, fd);
   },
   deleteAttachment: (id: number) => api.delete(`/api/worklog/attachments/${id}`),
+  downloadAttachment: (id: number) => api.get(`/api/worklog/attachments/${id}/download`, { responseType: 'blob' }),
 
   // Timer
   startTimer: (data: any) => api.post('/api/worklog/timer/start', data),
