@@ -3,7 +3,6 @@ import { useEffect, useState, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { worklogApi } from '@/lib/api';
-import { API_URL } from '@/lib/config';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
 import { authAPI } from '@/lib/auth';
@@ -161,6 +160,16 @@ export default function WorklogPage() {
 
   const removeAttachment = (idx: number) => {
     setAttachments(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleDownloadAttachment = async (id: number, fileName: string) => {
+    const res = await worklogApi.downloadAttachment(id);
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const statusBadge = (status: string) => {
@@ -325,8 +334,8 @@ export default function WorklogPage() {
                     {entry.attachments.length > 0 && (
                       <div className="flex gap-2 mt-1">
                         {entry.attachments.map((a: any) => (
-                          <a key={a.id} href={`${API_URL}/api/worklog/attachments/${a.id}/download`} target="_blank" rel="noopener noreferrer"
-                            className="text-xs bg-gray-100 px-2 py-0.5 rounded text-indigo-600 hover:text-indigo-800 hover:bg-gray-200">{a.file_name}</a>
+                          <button key={a.id} onClick={() => handleDownloadAttachment(a.id, a.file_name)}
+                            className="text-xs bg-gray-100 px-2 py-0.5 rounded text-indigo-600 hover:text-indigo-800 hover:bg-gray-200 cursor-pointer">{a.file_name}</button>
                         ))}
                       </div>
                     )}

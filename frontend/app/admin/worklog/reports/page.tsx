@@ -69,6 +69,16 @@ export default function WorklogReports() {
     setLoading(false);
   };
 
+  const handleDownloadAttachment = async (id: number, fileName: string) => {
+    const res = await worklogApi.downloadAttachment(id);
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   const handleExport = async (format: string) => {
     let params: any;
     if (period === 'custom') {
@@ -211,8 +221,8 @@ export default function WorklogReports() {
                       {row.attachments?.length > 0 ? (
                         <div className="flex gap-1 flex-wrap">
                           {row.attachments.map((a: any) => (
-                            <a key={a.id} href={`${API_URL}/api/worklog/attachments/${a.id}/download`} target="_blank" rel="noopener noreferrer"
-                              className="text-xs bg-gray-100 px-2 py-0.5 rounded text-indigo-600 hover:text-indigo-800 hover:bg-gray-200">{a.file_name}</a>
+                            <button key={a.id} onClick={() => handleDownloadAttachment(a.id, a.file_name)}
+                              className="text-xs bg-gray-100 px-2 py-0.5 rounded text-indigo-600 hover:text-indigo-800 hover:bg-gray-200 cursor-pointer">{a.file_name}</button>
                           ))}
                         </div>
                       ) : '—'}
