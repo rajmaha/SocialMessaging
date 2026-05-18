@@ -43,6 +43,7 @@ export default function WorklogPage() {
   const [timerSeconds, setTimerSeconds] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [summary, setSummary] = useState<any>(null);
+  const [validationError, setValidationError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
@@ -101,7 +102,8 @@ export default function WorklogPage() {
   };
 
   const handleStartTimer = async () => {
-    if (!categoryId) return alert('Select a category first');
+    if (!categoryId) { setValidationError('Please select a category.'); return; }
+    setValidationError('');
     await worklogApi.startTimer({ category_id: categoryId, log_date: selectedDate });
     setTimerActive(true);
     setTimerSeconds(0);
@@ -117,7 +119,10 @@ export default function WorklogPage() {
   };
 
   const handleManualEntry = async () => {
-    if (!categoryId || !hours) return;
+    if (!categoryId && !hours) { setValidationError('Please select a category and enter hours.'); return; }
+    if (!categoryId) { setValidationError('Please select a category.'); return; }
+    if (!hours) { setValidationError('Please enter hours.'); return; }
+    setValidationError('');
     const summaryText = editor?.getHTML() || '';
     const res = await worklogApi.createEntry({ category_id: categoryId, log_date: selectedDate, hours: parseFloat(hours), summary: summaryText });
     if (attachments.length > 0 && res.data?.id) {
@@ -223,11 +228,15 @@ export default function WorklogPage() {
             </div>
           </div>
 
+          {validationError && (
+            <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-600">{validationError}</div>
+          )}
+
           {/* Category + Hours/Timer row */}
           <div className="flex gap-3 items-end mb-3">
             <div className="flex-1">
               <label className="text-xs text-gray-500 block mb-1">Category</label>
-              <select value={categoryId} onChange={e => setCategoryId(Number(e.target.value))}
+              <select value={categoryId} onChange={e => { setCategoryId(Number(e.target.value)); setValidationError(''); }}
                 className="w-full border rounded px-3 py-2 text-sm" disabled={timerActive}>
                 <option value={0}>Select category...</option>
                 {groups.map(g => (
@@ -240,7 +249,7 @@ export default function WorklogPage() {
             {mode === 'manual' ? (
               <div className="w-28">
                 <label className="text-xs text-gray-500 block mb-1">Hours</label>
-                <input type="number" step="0.25" min="0" value={hours} onChange={e => setHours(e.target.value)}
+                <input type="number" step="0.25" min="0" value={hours} onChange={e => { setHours(e.target.value); setValidationError(''); }}
                   className="w-full border rounded px-3 py-2 text-sm" placeholder="2.5" />
               </div>
             ) : (
