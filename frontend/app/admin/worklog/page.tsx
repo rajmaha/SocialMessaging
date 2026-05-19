@@ -37,6 +37,7 @@ export default function WorklogPage() {
   const [categoryId, setCategoryId] = useState(0);
   const [mode, setMode] = useState<EntryMode>('manual');
   const [hours, setHours] = useState('');
+  const [minutes, setMinutes] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [timerActive, setTimerActive] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(0);
@@ -118,12 +119,13 @@ export default function WorklogPage() {
   };
 
   const handleManualEntry = async () => {
-    if (!categoryId && !hours) { setValidationError('Please select a category and enter hours.'); return; }
+    const totalHoursValue = (parseFloat(hours) || 0) + (parseFloat(minutes) || 0) / 60;
+    if (!categoryId && totalHoursValue <= 0) { setValidationError('Please select a category and enter time.'); return; }
     if (!categoryId) { setValidationError('Please select a category.'); return; }
-    if (!hours) { setValidationError('Please enter hours.'); return; }
+    if (totalHoursValue <= 0) { setValidationError('Please enter hours or minutes.'); return; }
     setValidationError('');
     const summaryText = editor?.getHTML() || '';
-    const res = await worklogApi.createEntry({ category_id: categoryId, log_date: selectedDate, hours: parseFloat(hours), summary: summaryText });
+    const res = await worklogApi.createEntry({ category_id: categoryId, log_date: selectedDate, hours: totalHoursValue, summary: summaryText });
     if (attachments.length > 0 && res.data?.id) {
       for (const file of attachments) {
         await worklogApi.uploadAttachment(res.data.id, file);
@@ -131,6 +133,7 @@ export default function WorklogPage() {
     }
     setCategoryId(0);
     setHours('');
+    setMinutes('');
     setAttachments([]);
     editor?.commands.clearContent();
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -183,6 +186,14 @@ export default function WorklogPage() {
     return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colors[status] || ''}`}>{status}</span>;
   };
 
+  const formatHoursMinutes = (h: number) => {
+    const hrs = Math.floor(h);
+    const mins = Math.round((h - hrs) * 60);
+    if (hrs > 0 && mins > 0) return `${hrs}h ${mins}m`;
+    if (hrs > 0) return `${hrs}h`;
+    return `${mins}m`;
+  };
+
   const totalHours = entries.reduce((sum, e) => sum + e.hours, 0);
 
   return (
@@ -194,7 +205,7 @@ export default function WorklogPage() {
           <h1 className="text-2xl font-bold text-gray-900">Daily Worklog</h1>
           <div className="flex items-center gap-3">
             <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="border rounded px-3 py-2 text-sm" />
-            <span className="text-sm text-gray-500">Total: <strong>{totalHours.toFixed(1)}h</strong></span>
+            <span className="text-sm text-gray-500">Total: <strong>{formatHoursMinutes(totalHours)}</strong></span>
             <button onClick={handleExportMine} className="px-3 py-2 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700">Export CSV</button>
           </div>
         </div>
@@ -203,11 +214,11 @@ export default function WorklogPage() {
         {summary && (
           <div className="grid grid-cols-5 gap-3 mb-4">
             <div className="bg-white border rounded-lg p-3 text-center">
-              <div className="text-xl font-bold text-gray-900">{summary.today_hours.toFixed(1)}h</div>
+              <div className="text-xl font-bold text-gray-900">{formatHoursMinutes(summary.today_hours)}</div>
               <div className="text-xs text-gray-500">Today</div>
             </div>
             <div className="bg-white border rounded-lg p-3 text-center">
-              <div className="text-xl font-bold text-gray-900">{summary.week_hours.toFixed(1)}h</div>
+              <div className="text-xl font-bold text-gray-900">{formatHoursMinutes(summary.week_hours)}</div>
               <div className="text-xs text-gray-500">This Week</div>
             </div>
             <div className="bg-white border rounded-lg p-3 text-center">
@@ -262,10 +273,17 @@ export default function WorklogPage() {
               </select>
             </div>
             {mode === 'manual' ? (
-              <div className="w-28">
-                <label className="text-xs text-gray-500 block mb-1">Hours</label>
-                <input type="number" step="0.25" min="0" value={hours} onChange={e => { setHours(e.target.value); setValidationError(''); }}
-                  className="w-full border rounded px-3 py-2 text-sm" placeholder="2.5" />
+              <div className="flex items-end gap-2">
+                <div className="w-20">
+                  <label className="text-xs text-gray-500 block mb-1">Hours</label>
+                  <input type="number" min="0" max="23" step="1" value={hours} onChange={e => { setHours(e.target.value); setValidationError(''); }}
+                    className="w-full border rounded px-3 py-2 text-sm" placeholder="0" />
+                </div>
+                <div className="w-20">
+                  <label className="text-xs text-gray-500 block mb-1">Minutes</label>
+                  <input type="number" min="0" max="59" step="5" value={minutes} onChange={e => { setMinutes(e.target.value); setValidationError(''); }}
+                    className="w-full border rounded px-3 py-2 text-sm" placeholder="0" />
+                </div>
               </div>
             ) : (
               <div className="flex items-center gap-3">
@@ -346,7 +364,7 @@ export default function WorklogPage() {
                       </div>
                     )}
                   </div>
-                  <span className="text-sm font-bold text-gray-900 w-16 text-right">{entry.hours}h</span>
+                  <span className="text-sm font-bold text-gray-900 w-20 text-right">{formatHoursMinutes(entry.hours)}</span>
                   <div className="flex gap-2">
                     {entry.status === 'pending' && (
                       <>
