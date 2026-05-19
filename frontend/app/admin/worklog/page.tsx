@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { worklogApi } from '@/lib/api';
@@ -30,10 +31,11 @@ function MiniToolbar({ editor }: { editor: any }) {
 
 export default function WorklogPage() {
   const user = authAPI.getUser();
+  const searchParams = useSearchParams();
   const [groups, setGroups] = useState<CategoryGroup[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(searchParams.get('date') || new Date().toISOString().split('T')[0]);
   const [categoryId, setCategoryId] = useState(0);
   const [mode, setMode] = useState<EntryMode>('manual');
   const [hours, setHours] = useState('');
