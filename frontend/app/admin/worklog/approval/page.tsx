@@ -10,6 +10,14 @@ interface PendingEntry {
   log_date: string; hours: number; summary: string; attachments: any[]; created_at: string; is_late_entry: boolean;
 }
 
+function formatHoursMinutes(h: number) {
+  const hrs = Math.floor(h);
+  const mins = Math.round((h - hrs) * 60);
+  if (hrs > 0 && mins > 0) return `${hrs}h ${mins}m`;
+  if (hrs > 0) return `${hrs}h`;
+  return `${mins}m`;
+}
+
 export default function WorklogApproval() {
   const user = authAPI.getUser();
   const [entries, setEntries] = useState<PendingEntry[]>([]);
@@ -212,7 +220,7 @@ export default function WorklogApproval() {
                       </td>
                       <td className="px-4 py-3 text-gray-600">{entry.log_date}</td>
                       <td className="px-4 py-3 text-gray-600">{entry.group_name} &gt; {entry.category_name}</td>
-                      <td className="px-4 py-3 text-right font-bold">{entry.hours}h</td>
+                      <td className="px-4 py-3 text-right font-bold">{formatHoursMinutes(entry.hours)}</td>
                       <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{entry.summary ? <span dangerouslySetInnerHTML={{ __html: entry.summary }} /> : '—'}</td>
                       <td className="px-4 py-3">
                         {entry.attachments.length > 0 ? (

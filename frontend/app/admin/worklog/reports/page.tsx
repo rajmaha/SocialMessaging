@@ -32,6 +32,14 @@ const SOURCE_COLORS: Record<string, string> = {
   call: 'bg-orange-100 text-orange-700',
 };
 
+function formatHoursMinutes(h: number) {
+  const hrs = Math.floor(h);
+  const mins = Math.round((h - hrs) * 60);
+  if (hrs > 0 && mins > 0) return `${hrs}h ${mins}m`;
+  if (hrs > 0) return `${hrs}h`;
+  return `${mins}m`;
+}
+
 export default function WorklogReports() {
   const user = authAPI.getUser();
   const [period, setPeriod] = useState<Period>('daily');
@@ -182,7 +190,7 @@ export default function WorklogReports() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{row.category_or_project || '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{row.task_or_conversation || '—'}</td>
-                    <td className="px-4 py-3 text-right font-bold">{row.hours}h</td>
+                    <td className="px-4 py-3 text-right font-bold">{formatHoursMinutes(row.hours)}</td>
                     <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{row.summary ? <span dangerouslySetInnerHTML={{ __html: row.summary }} /> : '—'}</td>
                     <td className="px-4 py-3">
                       {row.attachments?.length > 0 ? (
