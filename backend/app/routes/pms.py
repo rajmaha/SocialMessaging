@@ -12,7 +12,7 @@ from app.models.pms import (
     PMSProject, PMSProjectMember, PMSMilestone, PMSTask,
     PMSTaskDependency, PMSTaskComment, PMSTaskTimeLog,
     PMSTaskAttachment, PMSTaskLabel, PMSWorkflowHistory, PMSAlert,
-    PMSLabelDefinition, PMSAuditLog, PMSTaskChecklist
+    PMSLabelDefinition, PMSAuditLog, PMSTaskChecklist, PMSSprint
 )
 from app.schemas.pms import *
 
@@ -245,7 +245,16 @@ def remove_member(project_id: int, user_id: int, db: Session = Depends(get_db), 
 @router.get("/projects/{project_id}/milestones")
 def list_milestones(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _require_member(db, project_id, current_user)
-    return db.query(PMSMilestone).filter_by(project_id=project_id).all()
+    milestones = db.query(PMSMilestone).filter_by(project_id=project_id).all()
+    result = []
+    for ms in milestones:
+        task_count = db.query(PMSTask).filter_by(milestone_id=ms.id).count()
+        completed_count = db.query(PMSTask).filter_by(milestone_id=ms.id, stage="completed").count()
+        d = {c.name: getattr(ms, c.name) for c in ms.__table__.columns}
+        d["task_count"] = task_count
+        d["completed_count"] = completed_count
+        result.append(d)
+    return result
 
 @router.post("/projects/{project_id}/milestones")
 def create_milestone(project_id: int, data: PMSMilestoneCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -328,7 +337,7 @@ def update_task(task_id: int, data: PMSTaskUpdate, db: Session = Depends(get_db)
     # Before updates: capture old assignee
     old_assignee_name = task.assignee.full_name if task.assignee else None
     old_assignee_id = task.assignee_id
-    for k, v in data.dict(exclude_none=True).items():
+    for k, v in data.dict(exclude_unset=True).items():
         setattr(task, k, v)
     db.commit()
     db.refresh(task)
@@ -621,6 +630,124 @@ def mark_alert_read(alert_id: int, db: Session = Depends(get_db), current_user: 
     alert.is_read = True
     db.commit()
     return {"ok": True}
+
+# ── Sprints ──────────────────────────────────────────────
+
+@router.get("/projects/{project_id}/sprints")
+def list_sprints(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    sprints = db.query(PMSSprint).filter_by(project_id=project_id).order_by(PMSSprint.start_date.desc()).all()
+    result = []
+    for s in sprints:
+        task_count = db.query(PMSTask).filter_by(project_id=project_id, sprint_id=s.id).count()
+        completed_count = db.query(PMSTask).filter_by(project_id=project_id, sprint_id=s.id, stage="completed").count()
+        total_est = db.query(sqlfunc.coalesce(sqlfunc.sum(PMSTask.estimated_hours), 0)).filter(PMSTask.project_id == project_id, PMSTask.sprint_id == s.id).scalar()
+        total_actual = db.query(sqlfunc.coalesce(sqlfunc.sum(PMSTask.actual_hours), 0)).filter(PMSTask.project_id == project_id, PMSTask.sprint_id == s.id).scalar()
+        result.append({
+            "id": s.id, "project_id": s.project_id, "name": s.name,
+            "start_date": s.start_date, "end_date": s.end_date,
+            "goal": s.goal, "status": s.status, "created_at": s.created_at,
+            "task_count": task_count, "completed_count": completed_count,
+            "total_estimated_hours": round(total_est, 1), "total_actual_hours": round(total_actual, 1),
+        })
+    return result
+
+@router.post("/projects/{project_id}/sprints")
+def create_sprint(project_id: int, data: PMSSprintCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    m = _require_member(db, project_id, current_user)
+    if m.role not in ("pm",) and not _is_admin(current_user):
+        raise HTTPException(403, "PM or admin only")
+    sprint = PMSSprint(project_id=project_id, **data.dict())
+    db.add(sprint)
+    db.commit()
+    db.refresh(sprint)
+    return {"id": sprint.id, "project_id": sprint.project_id, "name": sprint.name,
+            "start_date": sprint.start_date, "end_date": sprint.end_date,
+            "goal": sprint.goal, "status": sprint.status, "created_at": sprint.created_at,
+            "task_count": 0, "completed_count": 0, "total_estimated_hours": 0, "total_actual_hours": 0}
+
+@router.put("/sprints/{sprint_id}")
+def update_sprint(sprint_id: int, data: PMSSprintUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sprint = db.query(PMSSprint).filter_by(id=sprint_id).first()
+    if not sprint:
+        raise HTTPException(404)
+    m = _require_member(db, sprint.project_id, current_user)
+    if m.role not in ("pm",) and not _is_admin(current_user):
+        raise HTTPException(403)
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(sprint, k, v)
+    db.commit()
+    db.refresh(sprint)
+    return {"id": sprint.id, "project_id": sprint.project_id, "name": sprint.name,
+            "start_date": sprint.start_date, "end_date": sprint.end_date,
+            "goal": sprint.goal, "status": sprint.status}
+
+@router.delete("/sprints/{sprint_id}")
+def delete_sprint(sprint_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sprint = db.query(PMSSprint).filter_by(id=sprint_id).first()
+    if not sprint:
+        raise HTTPException(404)
+    m = _require_member(db, sprint.project_id, current_user)
+    if m.role not in ("pm",) and not _is_admin(current_user):
+        raise HTTPException(403)
+    db.delete(sprint)
+    db.commit()
+    return {"ok": True}
+
+@router.get("/sprints/{sprint_id}/tasks")
+def list_sprint_tasks(sprint_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sprint = db.query(PMSSprint).filter_by(id=sprint_id).first()
+    if not sprint:
+        raise HTTPException(404)
+    _require_member(db, sprint.project_id, current_user)
+    tasks = db.query(PMSTask).filter_by(sprint_id=sprint_id).order_by(PMSTask.position).all()
+    return [_enrich_task(t, db) for t in tasks]
+
+@router.post("/sprints/{sprint_id}/tasks/{task_id}")
+def assign_task_to_sprint(sprint_id: int, task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sprint = db.query(PMSSprint).filter_by(id=sprint_id).first()
+    if not sprint:
+        raise HTTPException(404, "Sprint not found")
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404, "Task not found")
+    _require_member(db, sprint.project_id, current_user)
+    task.sprint_id = sprint_id
+    db.commit()
+    return {"ok": True}
+
+@router.delete("/sprints/{sprint_id}/tasks/{task_id}")
+def remove_task_from_sprint(sprint_id: int, task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sprint = db.query(PMSSprint).filter_by(id=sprint_id).first()
+    if not sprint:
+        raise HTTPException(404)
+    task = db.query(PMSTask).filter_by(id=task_id, sprint_id=sprint_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, sprint.project_id, current_user)
+    task.sprint_id = None
+    db.commit()
+    return {"ok": True}
+
+@router.get("/sprints/{sprint_id}/burndown")
+def get_sprint_burndown(sprint_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sprint = db.query(PMSSprint).filter_by(id=sprint_id).first()
+    if not sprint:
+        raise HTTPException(404)
+    _require_member(db, sprint.project_id, current_user)
+    tasks = db.query(PMSTask).filter_by(sprint_id=sprint_id).all()
+    total = sum(t.estimated_hours or 0 for t in tasks)
+    if not sprint.start_date or not sprint.end_date:
+        return {"total": total, "burndown": [], "ideal": []}
+    current = sprint.start_date
+    burndown = []
+    while current <= min(sprint.end_date, date.today()):
+        completed = sum((t.estimated_hours or 0) for t in tasks if t.stage == "completed" and t.updated_at and t.updated_at.date() <= current)
+        burndown.append({"date": str(current), "remaining": round(total - completed, 1)})
+        current += timedelta(days=1)
+    days_total = (sprint.end_date - sprint.start_date).days or 1
+    ideal = [{"date": str(sprint.start_date + timedelta(days=i)), "ideal": round(total - (total * i / days_total), 1)} for i in range(days_total + 1)]
+    return {"total": total, "burndown": burndown, "ideal": ideal}
 
 # ── Gantt ─────────────────────────────────────────────────
 

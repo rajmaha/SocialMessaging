@@ -52,6 +52,7 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
     if (filters.stages.length > 0 && !filters.stages.includes(t.stage)) return false;
     // Milestone
     if (filters.milestone_id && t.milestone_id !== filters.milestone_id) return false;
+    if (filters.sprint_id && t.sprint_id !== filters.sprint_id) return false;
     // Due date range
     if (filters.due_from && t.due_date && t.due_date < filters.due_from) return false;
     if (filters.due_to && t.due_date && t.due_date > filters.due_to) return false;

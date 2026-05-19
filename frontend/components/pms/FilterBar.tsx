@@ -8,6 +8,7 @@ export type FilterState = {
   priorities: string[];
   stages: string[];
   milestone_id: number | null;
+  sprint_id: number | null;
   due_from: string;
   due_to: string;
   labels: number[];
@@ -21,6 +22,7 @@ export const defaultFilters: FilterState = {
   priorities: [],
   stages: [],
   milestone_id: null,
+  sprint_id: null,
   due_from: '',
   due_to: '',
   labels: [],
@@ -32,6 +34,7 @@ export const defaultFilters: FilterState = {
 interface FilterBarProps {
   members: any[];
   milestones: any[];
+  sprints?: any[];
   labels: any[];
   filters: FilterState;
   onFilterChange: (filters: FilterState) => void;
@@ -118,6 +121,7 @@ function MultiSelectDropdown({ label, options, selected, onToggle, renderOption 
 export default function FilterBar({
   members,
   milestones,
+  sprints = [],
   labels,
   filters,
   onFilterChange,
@@ -186,6 +190,15 @@ export default function FilterBar({
     });
   }
 
+  if (filters.sprint_id !== null) {
+    const sp = sprints.find((x: any) => x.id === filters.sprint_id);
+    pills.push({
+      key: 'sprint',
+      label: `Sprint: ${sp?.name || filters.sprint_id}`,
+      onRemove: () => update({ sprint_id: null }),
+    });
+  }
+
   if (filters.due_from) pills.push({ key: 'due_from', label: `Due from: ${filters.due_from}`, onRemove: () => update({ due_from: '' }) });
   if (filters.due_to) pills.push({ key: 'due_to', label: `Due to: ${filters.due_to}`, onRemove: () => update({ due_to: '' }) });
   if (filters.created_from) pills.push({ key: 'created_from', label: `Created from: ${filters.created_from}`, onRemove: () => update({ created_from: '' }) });
@@ -214,10 +227,15 @@ export default function FilterBar({
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (msRef.current && !msRef.current.contains(e.target as Node)) setMsOpen(false);
+      if (spRef.current && !spRef.current.contains(e.target as Node)) setSpOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  /* sprint dropdown state */
+  const [spOpen, setSpOpen] = useState(false);
+  const spRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-3 mb-4">
@@ -313,6 +331,48 @@ export default function FilterBar({
             </div>
           )}
         </div>
+
+        {/* Sprint dropdown */}
+        {sprints.length > 0 && (
+        <div ref={spRef} className="relative">
+          <button
+            onClick={() => setSpOpen(!spOpen)}
+            className={`text-sm px-3 py-1.5 rounded-lg border whitespace-nowrap ${
+              filters.sprint_id !== null
+                ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                : 'border-gray-300 text-gray-600'
+            } hover:bg-gray-50`}
+          >
+            {filters.sprint_id !== null
+              ? sprints.find((s: any) => s.id === filters.sprint_id)?.name || 'Sprint'
+              : 'Sprint'}
+            <span className="ml-1">&#9662;</span>
+          </button>
+          {spOpen && (
+            <div className="absolute top-full mt-1 left-0 bg-white border rounded-lg shadow-lg z-20 py-1 min-w-[180px] max-h-60 overflow-y-auto">
+              <button
+                onClick={() => { update({ sprint_id: null }); setSpOpen(false); }}
+                className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${
+                  filters.sprint_id === null ? 'font-semibold text-indigo-600' : 'text-gray-600'
+                }`}
+              >
+                All Sprints
+              </button>
+              {sprints.map((s: any) => (
+                <button
+                  key={s.id}
+                  onClick={() => { update({ sprint_id: s.id }); setSpOpen(false); }}
+                  className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${
+                    filters.sprint_id === s.id ? 'font-semibold text-indigo-600' : 'text-gray-600'
+                  }`}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        )}
 
         {/* Due date range */}
         <div className="flex items-center gap-1">

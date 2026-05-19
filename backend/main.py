@@ -1193,6 +1193,21 @@ def _run_inline_migrations():
             )
         """))
 
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_sprints (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                name VARCHAR NOT NULL,
+                start_date DATE,
+                end_date DATE,
+                goal TEXT,
+                status VARCHAR DEFAULT 'planning',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("ALTER TABLE pms_tasks ADD COLUMN IF NOT EXISTS sprint_id INTEGER REFERENCES pms_sprints(id) ON DELETE SET NULL"))
+        conn.execute(text("ALTER TABLE pms_milestones ADD COLUMN IF NOT EXISTS description TEXT"))
+
         # hours_per_day on project members
         conn.execute(text("""
             ALTER TABLE pms_project_members ADD COLUMN IF NOT EXISTS hours_per_day FLOAT DEFAULT 7.0

@@ -187,6 +187,16 @@ export const pmsApi = {
   listAlerts: () => api.get('/api/pms/alerts'),
   markAlertRead: (id: number) => api.post(`/api/pms/alerts/${id}/read`),
 
+  // Sprints
+  listSprints: (projectId: number) => api.get(`/api/pms/projects/${projectId}/sprints`),
+  createSprint: (projectId: number, data: any) => api.post(`/api/pms/projects/${projectId}/sprints`, data),
+  updateSprint: (id: number, data: any) => api.put(`/api/pms/sprints/${id}`, data),
+  deleteSprint: (id: number) => api.delete(`/api/pms/sprints/${id}`),
+  getSprintTasks: (sprintId: number) => api.get(`/api/pms/sprints/${sprintId}/tasks`),
+  assignTaskToSprint: (sprintId: number, taskId: number) => api.post(`/api/pms/sprints/${sprintId}/tasks/${taskId}`),
+  removeTaskFromSprint: (sprintId: number, taskId: number) => api.delete(`/api/pms/sprints/${sprintId}/tasks/${taskId}`),
+  getSprintBurndown: (sprintId: number) => api.get(`/api/pms/sprints/${sprintId}/burndown`),
+
   // Gantt
   getGantt: (projectId: number) => api.get(`/api/pms/projects/${projectId}/gantt`),
 

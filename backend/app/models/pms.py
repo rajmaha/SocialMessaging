@@ -43,12 +43,28 @@ class PMSMilestone(Base):
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("pms_projects.id", ondelete="CASCADE"))
     name = Column(String, nullable=False)
+    description = Column(Text)
     due_date = Column(Date)
     status = Column(String, default="pending")
     color = Column(String, default="#f59e0b")
 
     project = relationship("PMSProject", back_populates="milestones")
     tasks = relationship("PMSTask", back_populates="milestone")
+
+
+class PMSSprint(Base):
+    __tablename__ = "pms_sprints"
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("pms_projects.id", ondelete="CASCADE"))
+    name = Column(String, nullable=False)
+    start_date = Column(Date)
+    end_date = Column(Date)
+    goal = Column(Text)
+    status = Column(String, default="planning")
+    created_at = Column(DateTime, server_default=func.now())
+
+    project = relationship("PMSProject")
+    tasks = relationship("PMSTask", back_populates="sprint")
 
 
 class PMSTask(Base):
@@ -66,6 +82,7 @@ class PMSTask(Base):
     due_date = Column(Date)
     estimated_hours = Column(Float, default=0)
     actual_hours = Column(Float, default=0)
+    sprint_id = Column(Integer, ForeignKey("pms_sprints.id", ondelete="SET NULL"), nullable=True)
     position = Column(Integer, default=0)
     ticket_id = Column(Integer, nullable=True)
     crm_deal_id = Column(Integer, nullable=True)
@@ -74,6 +91,7 @@ class PMSTask(Base):
 
     project = relationship("PMSProject", back_populates="tasks")
     milestone = relationship("PMSMilestone", back_populates="tasks")
+    sprint = relationship("PMSSprint", back_populates="tasks")
     assignee = relationship("User", foreign_keys=[assignee_id])
     subtasks = relationship("PMSTask", back_populates="parent", foreign_keys=[parent_task_id])
     parent = relationship("PMSTask", back_populates="subtasks", remote_side=[id])
@@ -83,6 +101,7 @@ class PMSTask(Base):
     attachments = relationship("PMSTaskAttachment", back_populates="task", cascade="all, delete-orphan")
     labels = relationship("PMSTaskLabel", back_populates="task", cascade="all, delete-orphan")
     workflow_history = relationship("PMSWorkflowHistory", back_populates="task", cascade="all, delete-orphan")
+    checklists = relationship("PMSTaskChecklist", back_populates="task", cascade="all, delete-orphan")
 
 
 class PMSTaskDependency(Base):

@@ -39,6 +39,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
   const [expandAttachments, setExpandAttachments] = useState(true);
   const [expandChecklist, setExpandChecklist] = useState(true);
   const [expandHistory, setExpandHistory] = useState(false);
+  const [sprints, setSprints] = useState<any[]>([]);
 
   const loadTask = async () => {
     const r = await pmsApi.getTask(taskId);
@@ -52,6 +53,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
       start_date: r.data.start_date || '',
       due_date: r.data.due_date || '',
       estimated_hours: r.data.estimated_hours || '',
+      sprint_id: r.data.sprint_id || '',
     });
     setDirty(false);
   };
@@ -63,6 +65,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
     pmsApi.listTimeLogs(taskId).then(r => setTimelogs(r.data)).catch(() => {});
     pmsApi.listAttachments(taskId).then(r => setAttachments(r.data)).catch(() => {});
     pmsApi.listChecklists(taskId).then(r => setChecklists(r.data)).catch(() => {});
+    pmsApi.listSprints(projectId).then(r => setSprints(r.data)).catch(() => {});
   };
 
   useEffect(() => { loadAll(); }, [taskId]);
@@ -78,6 +81,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
       ...form,
       assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
       estimated_hours: form.estimated_hours ? Number(form.estimated_hours) : 0,
+      sprint_id: form.sprint_id ? Number(form.sprint_id) : null,
     });
     setSaving(false);
     setDirty(false);
@@ -202,10 +206,20 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
                 onChange={e => updateField('due_date', e.target.value)} />
             </div>
           </div>
-          <div>
-            <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Est. Hours</label>
-            <input type="number" step="0.5" className="w-full border rounded px-2.5 py-1.5 text-sm mt-0.5"
-              value={form.estimated_hours} onChange={e => updateField('estimated_hours', e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Est. Hours</label>
+              <input type="number" step="0.5" className="w-full border rounded px-2.5 py-1.5 text-sm mt-0.5"
+                value={form.estimated_hours} onChange={e => updateField('estimated_hours', e.target.value)} />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Sprint</label>
+              <select className="w-full border rounded px-2.5 py-1.5 text-sm mt-0.5" value={form.sprint_id}
+                onChange={e => updateField('sprint_id', e.target.value)}>
+                <option value="">No sprint</option>
+                {sprints.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
           </div>
           <div>
             <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Description</label>

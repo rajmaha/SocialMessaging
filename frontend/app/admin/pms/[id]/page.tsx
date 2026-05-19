@@ -9,7 +9,7 @@ import GanttChart from '@/components/pms/GanttChart';
 import BoardView from '@/components/pms/BoardView';
 import ListView from '@/components/pms/ListView';
 
-const TABS = ['Gantt', 'Board', 'List', 'Milestones', 'Settings'];
+const TABS = ['Gantt', 'Board', 'List', 'Milestones', 'Sprints', 'Settings'];
 
 export default function ProjectDetailPage() {
   const { id } = useParams();
@@ -80,52 +80,288 @@ export default function ProjectDetailPage() {
           </div>
         )}
         {activeTab === 'List' && <ListView projectId={projectId} tasks={tasks} milestones={milestones} members={project?.members || []} onReload={reload} />}
-        {activeTab === 'Milestones' && <MilestonesTab projectId={projectId} milestones={milestones} onReload={reload} />}
+        {activeTab === 'Milestones' && <MilestonesTab projectId={projectId} milestones={milestones} tasks={tasks} onReload={reload} />}
+        {activeTab === 'Sprints' && <SprintsTab projectId={projectId} tasks={tasks} members={project?.members || []} onReload={reload} />}
         {activeTab === 'Settings' && <SettingsTab project={project} onReload={reload} />}
       </div>
     </div>
   );
 }
 
-function MilestonesTab({ projectId, milestones, onReload }: any) {
+function MilestonesTab({ projectId, milestones, tasks, onReload }: any) {
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', due_date: '', color: '#f59e0b' });
+  const [form, setForm] = useState({ name: '', description: '', due_date: '', color: '#f59e0b' });
+  const [editId, setEditId] = useState<number | null>(null);
 
   const handleCreate = async () => {
     await pmsApi.createMilestone(projectId, form);
     onReload();
     setShowCreate(false);
-    setForm({ name: '', due_date: '', color: '#f59e0b' });
+    setForm({ name: '', description: '', due_date: '', color: '#f59e0b' });
+  };
+
+  const handleStatusToggle = async (ms: any) => {
+    const next = ms.status === 'pending' ? 'reached' : ms.status === 'reached' ? 'missed' : 'pending';
+    await pmsApi.updateMilestone(ms.id, { status: next });
+    onReload();
+  };
+
+  const handleDelete = async (id: number) => {
+    await pmsApi.deleteMilestone(id);
+    onReload();
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 max-w-3xl">
       <div className="flex justify-between items-center mb-4">
         <h2 className="font-semibold text-gray-800">Milestones</h2>
-        <button onClick={() => setShowCreate(true)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm">+ Add</button>
+        <button onClick={() => setShowCreate(true)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm">+ New Milestone</button>
       </div>
       <div className="space-y-3">
-        {milestones.map((m: any) => (
-          <div key={m.id} className="flex items-center gap-3 bg-white border rounded-lg p-4">
-            <div className="w-3 h-3 rounded-full" style={{ background: m.color }} />
-            <span className="font-medium text-gray-800">{m.name}</span>
-            <span className="text-sm text-gray-400 ml-auto">{m.due_date}</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full ${m.status === 'reached' ? 'bg-green-100 text-green-700' : m.status === 'missed' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{m.status}</span>
-          </div>
-        ))}
-        {milestones.length === 0 && <p className="text-gray-400 text-sm">No milestones yet.</p>}
+        {milestones.map((m: any) => {
+          const taskCount = m.task_count ?? 0;
+          const completedCount = m.completed_count ?? 0;
+          const progress = taskCount > 0 ? Math.round((completedCount / taskCount) * 100) : 0;
+          const isOverdue = m.due_date && new Date(m.due_date) < new Date() && m.status === 'pending';
+          return (
+            <div key={m.id} className="bg-white border rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full flex-none" style={{ background: m.color }} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-gray-800">{m.name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      m.status === 'reached' ? 'bg-green-100 text-green-700' :
+                      m.status === 'missed' ? 'bg-red-100 text-red-700' :
+                      isOverdue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                    }`}>{isOverdue ? 'Overdue' : m.status}</span>
+                  </div>
+                  {m.description && <p className="text-xs text-gray-400 mt-0.5">{m.description}</p>}
+                </div>
+                <div className="text-right flex-none">
+                  <div className="text-xs text-gray-400">{m.due_date ? `Due: ${m.due_date}` : 'No due date'}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{completedCount}/{taskCount} tasks</div>
+                </div>
+                <button onClick={() => handleStatusToggle(m)} className="text-xs text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded hover:bg-indigo-50">
+                  {m.status === 'pending' ? 'Mark Reached' : m.status === 'reached' ? 'Mark Missed' : 'Reset'}
+                </button>
+                <button onClick={() => handleDelete(m.id)} className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
+              </div>
+              {taskCount > 0 && (
+                <div className="mt-2 ml-6">
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div className="bg-green-500 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }} />
+                  </div>
+                  <span className="text-[10px] text-gray-400">{progress}% complete</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {milestones.length === 0 && <p className="text-gray-400 text-sm">No milestones yet. Milestones are target deadlines that group related tasks (e.g., &quot;Phase 1 Launch&quot;, &quot;Beta Release&quot;).</p>}
       </div>
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-96">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <h3 className="font-semibold mb-3">New Milestone</h3>
-            <input className="w-full border rounded px-3 py-2 text-sm mb-2" placeholder="Milestone name"
-              value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-            <input type="date" className="w-full border rounded px-3 py-2 text-sm mb-3"
-              value={form.due_date} onChange={e => setForm({...form, due_date: e.target.value})} />
-            <div className="flex gap-3">
+            <div className="space-y-2">
+              <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Milestone name (e.g., Phase 1 Launch)"
+                value={form.name} onChange={e => setForm({...form, name: e.target.value})} autoFocus />
+              <textarea className="w-full border rounded px-3 py-2 text-sm resize-none" rows={2} placeholder="Description (optional)"
+                value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Target Due Date</label>
+                <input type="date" className="w-full border rounded px-3 py-2 text-sm"
+                  value={form.due_date} onChange={e => setForm({...form, due_date: e.target.value})} />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-4">
               <button onClick={() => setShowCreate(false)} className="flex-1 border rounded px-3 py-2 text-sm">Cancel</button>
-              <button onClick={handleCreate} className="flex-1 bg-indigo-600 text-white rounded px-3 py-2 text-sm">Create</button>
+              <button onClick={handleCreate} disabled={!form.name} className="flex-1 bg-indigo-600 text-white rounded px-3 py-2 text-sm disabled:opacity-50">Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SprintsTab({ projectId, tasks, members, onReload }: { projectId: number; tasks: any[]; members: any[]; onReload: () => void }) {
+  const [sprints, setSprints] = useState<any[]>([]);
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: '', start_date: '', end_date: '', goal: '' });
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [sprintTasks, setSprintTasks] = useState<any[]>([]);
+  const [showAssign, setShowAssign] = useState<number | null>(null);
+
+  const load = () => {
+    pmsApi.listSprints(projectId).then(r => { setSprints(r.data); setLoading(false); }).catch(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, [projectId]);
+
+  const handleCreate = async () => {
+    await pmsApi.createSprint(projectId, { ...form, status: 'planning' });
+    setShowCreate(false);
+    setForm({ name: '', start_date: '', end_date: '', goal: '' });
+    load();
+  };
+
+  const handleStatusChange = async (id: number, status: string) => {
+    await pmsApi.updateSprint(id, { status });
+    load();
+  };
+
+  const handleDelete = async (id: number) => {
+    await pmsApi.deleteSprint(id);
+    if (expandedId === id) setExpandedId(null);
+    load();
+  };
+
+  const toggleExpand = async (id: number) => {
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    const r = await pmsApi.getSprintTasks(id);
+    setSprintTasks(r.data);
+  };
+
+  const handleAssignTask = async (sprintId: number, taskId: number) => {
+    await pmsApi.assignTaskToSprint(sprintId, taskId);
+    const r = await pmsApi.getSprintTasks(sprintId);
+    setSprintTasks(r.data);
+    load();
+    onReload();
+  };
+
+  const handleRemoveTask = async (sprintId: number, taskId: number) => {
+    await pmsApi.removeTaskFromSprint(sprintId, taskId);
+    const r = await pmsApi.getSprintTasks(sprintId);
+    setSprintTasks(r.data);
+    load();
+    onReload();
+  };
+
+  const STATUS_COLORS: Record<string, string> = { planning: 'bg-gray-100 text-gray-700', active: 'bg-green-100 text-green-700', completed: 'bg-blue-100 text-blue-700' };
+  const STAGE_BADGE: Record<string, string> = {
+    development: 'bg-indigo-100 text-indigo-700', qa: 'bg-amber-100 text-amber-700',
+    pm_review: 'bg-purple-100 text-purple-700', client_review: 'bg-cyan-100 text-cyan-700',
+    approved: 'bg-green-100 text-green-700', completed: 'bg-gray-100 text-gray-600',
+  };
+
+  if (loading) return <div className="text-gray-400 text-center py-10">Loading sprints...</div>;
+
+  const sprintTaskIds = new Set(sprintTasks.map((t: any) => t.id));
+  const unassignedTasks = tasks.filter(t => !t.sprint_id && !t.parent_task_id);
+
+  return (
+    <div className="p-6 max-w-4xl">
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <h2 className="font-semibold text-gray-800">Sprints</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Time-boxed work periods. Assign tasks to sprints to plan and track your team&apos;s work.</p>
+        </div>
+        <button onClick={() => setShowCreate(true)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm">+ New Sprint</button>
+      </div>
+      <div className="space-y-3">
+        {sprints.map((s: any) => {
+          const progress = s.task_count > 0 ? Math.round((s.completed_count / s.task_count) * 100) : 0;
+          const isExpanded = expandedId === s.id;
+          return (
+            <div key={s.id} className="bg-white border rounded-lg overflow-hidden">
+              <div className="p-4">
+                <div className="flex items-center gap-3">
+                  <button onClick={() => toggleExpand(s.id)} className="text-gray-400 hover:text-gray-600 flex-none">
+                    <span className={`inline-block transition-transform ${isExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                  </button>
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpand(s.id)}>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium text-gray-900">{s.name}</h3>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[s.status] || 'bg-gray-100 text-gray-600'}`}>{s.status}</span>
+                    </div>
+                    {s.goal && <p className="text-xs text-gray-400 mt-0.5">{s.goal}</p>}
+                  </div>
+                  <div className="text-right flex-none text-xs text-gray-400">
+                    <div>{s.start_date || '?'} &rarr; {s.end_date || '?'}</div>
+                    <div className="mt-0.5">{s.completed_count}/{s.task_count} tasks &middot; {s.total_actual_hours}/{s.total_estimated_hours}h</div>
+                  </div>
+                  <div className="flex gap-1 flex-none">
+                    {s.status === 'planning' && <button onClick={() => handleStatusChange(s.id, 'active')} className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded hover:bg-green-100">Start</button>}
+                    {s.status === 'active' && <button onClick={() => handleStatusChange(s.id, 'completed')} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100">Complete</button>}
+                    <button onClick={() => handleDelete(s.id)} className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
+                  </div>
+                </div>
+                {s.task_count > 0 && (
+                  <div className="mt-2 ml-7">
+                    <div className="w-full bg-gray-100 rounded-full h-1.5">
+                      <div className={`h-1.5 rounded-full transition-all ${s.status === 'completed' ? 'bg-blue-500' : 'bg-green-500'}`} style={{ width: `${progress}%` }} />
+                    </div>
+                    <span className="text-[10px] text-gray-400">{progress}% complete</span>
+                  </div>
+                )}
+              </div>
+
+              {isExpanded && (
+                <div className="border-t bg-gray-50 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase">Sprint Tasks</h4>
+                    <button onClick={() => setShowAssign(showAssign === s.id ? null : s.id)}
+                      className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-100">
+                      + Assign Tasks
+                    </button>
+                  </div>
+
+                  {showAssign === s.id && unassignedTasks.length > 0 && (
+                    <div className="mb-3 border rounded bg-white p-2 max-h-40 overflow-y-auto">
+                      <p className="text-[10px] text-gray-400 mb-1 uppercase font-semibold">Unassigned Tasks (click to add)</p>
+                      {unassignedTasks.map(t => (
+                        <button key={t.id} onClick={() => handleAssignTask(s.id, t.id)}
+                          className="block w-full text-left text-xs px-2 py-1.5 hover:bg-indigo-50 rounded truncate text-gray-700">
+                          {t.title} <span className="text-gray-400">({t.stage?.replace('_', ' ')})</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {showAssign === s.id && unassignedTasks.length === 0 && (
+                    <p className="mb-3 text-xs text-gray-400">All tasks are already assigned to sprints.</p>
+                  )}
+
+                  {sprintTasks.length > 0 ? (
+                    <div className="space-y-1">
+                      {sprintTasks.map((t: any) => (
+                        <div key={t.id} className="flex items-center gap-2 bg-white rounded border px-3 py-2 text-xs">
+                          <span className={`px-1.5 py-0.5 rounded-full font-medium ${STAGE_BADGE[t.stage] || 'bg-gray-100 text-gray-600'}`}>{t.stage?.replace('_', ' ')}</span>
+                          <span className="flex-1 text-gray-800 truncate">{t.title}</span>
+                          <span className="text-gray-400">{t.assignee_name || 'Unassigned'}</span>
+                          <span className="text-gray-400">{t.actual_hours}/{t.estimated_hours}h</span>
+                          <button onClick={() => handleRemoveTask(s.id, t.id)} className="text-red-400 hover:text-red-600" title="Remove from sprint">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400">No tasks assigned to this sprint yet.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {sprints.length === 0 && <p className="text-gray-400 text-sm">No sprints yet. Sprints are time-boxed work periods (e.g., &quot;Sprint 1: May 19-30&quot;) that group tasks for focused delivery.</p>}
+      </div>
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h3 className="font-semibold mb-3">New Sprint</h3>
+            <div className="space-y-2">
+              <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Sprint name (e.g., Sprint 1)" value={form.name} onChange={e => setForm({...form, name: e.target.value})} autoFocus />
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="text-xs text-gray-500">Start Date</label><input type="date" className="w-full border rounded px-3 py-2 text-sm" value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})} /></div>
+                <div><label className="text-xs text-gray-500">End Date</label><input type="date" className="w-full border rounded px-3 py-2 text-sm" value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})} /></div>
+              </div>
+              <textarea className="w-full border rounded px-3 py-2 text-sm resize-none" placeholder="Sprint goal (optional)" rows={2} value={form.goal} onChange={e => setForm({...form, goal: e.target.value})} />
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setShowCreate(false)} className="flex-1 border rounded px-3 py-2 text-sm">Cancel</button>
+              <button onClick={handleCreate} disabled={!form.name} className="flex-1 bg-indigo-600 text-white rounded px-3 py-2 text-sm disabled:opacity-50">Create</button>
             </div>
           </div>
         </div>

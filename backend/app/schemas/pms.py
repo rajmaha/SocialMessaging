@@ -54,12 +54,14 @@ class PMSMemberAdd(BaseModel):
 # ── Milestone ─────────────────────────────────────────────
 class PMSMilestoneCreate(BaseModel):
     name: str
+    description: Optional[str] = None
     due_date: Optional[date] = None
     status: str = "pending"
     color: str = "#f59e0b"
 
 class PMSMilestoneUpdate(BaseModel):
     name: Optional[str] = None
+    description: Optional[str] = None
     due_date: Optional[date] = None
     status: Optional[str] = None
     color: Optional[str] = None
@@ -74,11 +76,28 @@ class PMSMilestoneOut(BaseModel):
     class Config: from_attributes = True
 
 
+# ── Sprint ────────────────────────────────────────────────
+class PMSSprintCreate(BaseModel):
+    name: str
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    goal: Optional[str] = None
+    status: str = "planning"
+
+class PMSSprintUpdate(BaseModel):
+    name: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    goal: Optional[str] = None
+    status: Optional[str] = None
+
+
 # ── Task ──────────────────────────────────────────────────
 class PMSTaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
     milestone_id: Optional[int] = None
+    sprint_id: Optional[int] = None
     parent_task_id: Optional[int] = None
     priority: str = "medium"
     assignee_id: Optional[int] = None
@@ -92,6 +111,7 @@ class PMSTaskUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     milestone_id: Optional[int] = None
+    sprint_id: Optional[int] = None
     priority: Optional[str] = None
     assignee_id: Optional[int] = None
     start_date: Optional[date] = None
