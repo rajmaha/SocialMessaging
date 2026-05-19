@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { pmsApi } from '@/lib/api';
 import FilterBar, { FilterState, defaultFilters } from './FilterBar';
+import TaskDetailPanel from './TaskDetailPanel';
 
 const STAGES = ['development', 'qa', 'pm_review', 'client_review', 'approved', 'completed'];
 const STAGE_LABELS: Record<string, string> = {
@@ -28,6 +29,7 @@ function EffBadge({ value }: { value: number | null }) {
 
 export default function BoardView({ projectId: _projectId, tasks, members = [], milestones = [], onReload }: { projectId: number; tasks: any[]; members?: any[]; milestones?: any[]; onReload: () => void }) {
   const [dragTaskId, setDragTaskId] = useState<number | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [allLabels, setAllLabels] = useState<any[]>([]);
 
@@ -96,7 +98,8 @@ export default function BoardView({ projectId: _projectId, tasks, members = [], 
                 return (
                 <div key={t.id} draggable
                   onDragStart={() => setDragTaskId(t.id)}
-                  className={`bg-white rounded-lg p-3 shadow-sm border border-gray-100 cursor-grab active:cursor-grabbing select-none ${isOverdue ? 'border-l-4 border-l-red-500' : ''}`}>
+                  onClick={() => setSelectedTaskId(t.id)}
+                  className={`bg-white rounded-lg p-3 shadow-sm border border-gray-100 cursor-grab active:cursor-grabbing select-none hover:shadow-md transition-shadow ${isOverdue ? 'border-l-4 border-l-red-500' : ''}`}>
                   <div className="flex items-start gap-2 mb-1">
                     <span className={`w-2 h-2 rounded-full mt-1 flex-none ${PRIORITY_DOT[t.priority] || 'bg-gray-300'}`} />
                     <span className="text-sm font-medium text-gray-800 leading-snug">{t.title}</span>
@@ -120,6 +123,12 @@ export default function BoardView({ projectId: _projectId, tasks, members = [], 
         );
       })}
       </div>
+
+      {selectedTaskId && (
+        <TaskDetailPanel taskId={selectedTaskId} projectId={_projectId} members={members}
+          onClose={() => setSelectedTaskId(null)}
+          onUpdated={onReload} />
+      )}
     </div>
   );
 }

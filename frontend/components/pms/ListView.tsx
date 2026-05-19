@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { pmsApi } from '@/lib/api';
 import FilterBar, { FilterState, defaultFilters } from './FilterBar';
+import TaskDetailPanel from './TaskDetailPanel';
 
 const PRIORITY_COLORS: Record<string, string> = {
   low: 'text-gray-400', medium: 'text-yellow-500', high: 'text-orange-500', urgent: 'text-red-500',
@@ -25,7 +26,8 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
 }) {
   const [filter, setFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+  const [form, setForm] = useState({ title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', start_date: new Date().toISOString().split('T')[0], due_date: '', estimated_hours: '' });
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
 
   /* ── FilterBar state ───────────────────────────────────────────── */
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -102,7 +104,7 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
     });
     onReload();
     setShowCreate(false);
-    setForm({ title: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+    setForm({ title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', start_date: new Date().toISOString().split('T')[0], due_date: '', estimated_hours: '' });
   };
 
   return (
@@ -153,7 +155,7 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
               const isOverdue = t.due_date && new Date(t.due_date) < new Date() && t.stage !== 'completed';
               const isDueSoon = !isOverdue && t.due_date && ((new Date(t.due_date).getTime() - new Date().getTime()) / 86400000) <= 2 && t.stage !== 'completed';
               return (
-              <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+              <tr key={t.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setSelectedTaskId(t.id)}>
                 <td className="px-4 py-2.5 font-medium text-gray-800">
                   <div>{t.title}
                   {t.subtask_count > 0 && <span className="ml-1 text-xs text-gray-400 font-normal">+{t.subtask_count} sub</span>}</div>
@@ -197,6 +199,8 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
             <div className="space-y-3">
               <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Task title *"
                 value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
+              <textarea className="w-full border rounded-lg px-3 py-2 text-sm h-16 resize-none" placeholder="Description"
+                value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-gray-500 block mb-1">Priority</label>
@@ -222,6 +226,11 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
                   </select>
                 </div>
                 <div>
+                  <label className="text-xs text-gray-500 block mb-1">Start Date</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.start_date}
+                    onChange={e => setForm({...form, start_date: e.target.value})} />
+                </div>
+                <div>
                   <label className="text-xs text-gray-500 block mb-1">Due Date</label>
                   <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.due_date}
                     onChange={e => setForm({...form, due_date: e.target.value})} />
@@ -240,6 +249,12 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
             </div>
           </div>
         </div>
+      )}
+
+      {selectedTaskId && (
+        <TaskDetailPanel taskId={selectedTaskId} projectId={projectId} members={members}
+          onClose={() => setSelectedTaskId(null)}
+          onUpdated={() => { onReload(); }} />
       )}
     </div>
   );

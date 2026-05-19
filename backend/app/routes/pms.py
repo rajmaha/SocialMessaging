@@ -12,7 +12,7 @@ from app.models.pms import (
     PMSProject, PMSProjectMember, PMSMilestone, PMSTask,
     PMSTaskDependency, PMSTaskComment, PMSTaskTimeLog,
     PMSTaskAttachment, PMSTaskLabel, PMSWorkflowHistory, PMSAlert,
-    PMSLabelDefinition, PMSAuditLog
+    PMSLabelDefinition, PMSAuditLog, PMSTaskChecklist
 )
 from app.schemas.pms import *
 
@@ -525,6 +525,85 @@ def delete_attachment(att_id: int, db: Session = Depends(get_db), current_user: 
     if os.path.exists(att.file_path):
         os.remove(att.file_path)
     db.delete(att)
+    db.commit()
+    return {"ok": True}
+
+@router.get("/tasks/{task_id}/attachments")
+def list_attachments(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    attachments = db.query(PMSTaskAttachment).filter_by(task_id=task_id).order_by(PMSTaskAttachment.created_at.desc()).all()
+    result = []
+    for att in attachments:
+        uploader = db.query(User).filter_by(id=att.uploaded_by).first()
+        result.append({
+            "id": att.id,
+            "task_id": att.task_id,
+            "file_path": att.file_path,
+            "file_name": att.file_name,
+            "file_size": att.file_size,
+            "uploaded_by": att.uploaded_by,
+            "uploader_name": uploader.full_name if uploader else None,
+            "created_at": att.created_at,
+        })
+    return result
+
+# ── Checklists ───────────────────────────────────────────
+
+@router.get("/tasks/{task_id}/checklists")
+def list_checklists(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    return db.query(PMSTaskChecklist).filter_by(task_id=task_id).order_by(PMSTaskChecklist.position).all()
+
+@router.post("/tasks/{task_id}/checklists")
+def create_checklist_item(task_id: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    text = payload.get("text", "").strip()
+    if not text:
+        raise HTTPException(400, "text is required")
+    position = payload.get("position")
+    if position is None:
+        max_pos = db.query(sqlfunc.max(PMSTaskChecklist.position)).filter_by(task_id=task_id).scalar()
+        position = (max_pos or 0) + 1
+    item = PMSTaskChecklist(task_id=task_id, text=text, position=position)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+@router.put("/checklists/{item_id}")
+def update_checklist_item(item_id: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(PMSTaskChecklist).filter_by(id=item_id).first()
+    if not item:
+        raise HTTPException(404)
+    task = db.query(PMSTask).filter_by(id=item.task_id).first()
+    _require_member(db, task.project_id, current_user)
+    if "text" in payload:
+        item.text = payload["text"]
+    if "is_checked" in payload:
+        item.is_checked = payload["is_checked"]
+    if "position" in payload:
+        item.position = payload["position"]
+    db.commit()
+    db.refresh(item)
+    return item
+
+@router.delete("/checklists/{item_id}")
+def delete_checklist_item(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(PMSTaskChecklist).filter_by(id=item_id).first()
+    if not item:
+        raise HTTPException(404)
+    task = db.query(PMSTask).filter_by(id=item.task_id).first()
+    _require_member(db, task.project_id, current_user)
+    db.delete(item)
     db.commit()
     return {"ok": True}
 

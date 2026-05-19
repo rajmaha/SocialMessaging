@@ -1182,6 +1182,17 @@ def _run_inline_migrations():
             )
         """))
 
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_task_checklists (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER NOT NULL REFERENCES pms_tasks(id) ON DELETE CASCADE,
+                text VARCHAR NOT NULL,
+                is_checked BOOLEAN DEFAULT FALSE,
+                position INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
         # hours_per_day on project members
         conn.execute(text("""
             ALTER TABLE pms_project_members ADD COLUMN IF NOT EXISTS hours_per_day FLOAT DEFAULT 7.0

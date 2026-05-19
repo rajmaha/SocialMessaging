@@ -190,3 +190,13 @@ class PMSAuditLog(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     actor = relationship("User", foreign_keys=[actor_id])
+
+
+class PMSTaskChecklist(Base):
+    __tablename__ = "pms_task_checklists"
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("pms_tasks.id", ondelete="CASCADE"), nullable=False)
+    text = Column(String, nullable=False)
+    is_checked = Column(Boolean, default=False)
+    position = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
