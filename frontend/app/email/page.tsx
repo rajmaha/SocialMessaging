@@ -3393,7 +3393,14 @@ export default function EmailPage() {
 
                                 {/* Email body */}
                                 <div className="px-4 py-4">
-                                  <div className="bg-white rounded-lg border border-gray-100 p-4 overflow-auto max-h-[60vh] text-sm text-gray-800 leading-relaxed email-body">
+                                  <div className="bg-white rounded-lg border border-gray-100 p-4 overflow-auto max-h-[60vh] text-sm text-gray-800 leading-relaxed email-body"
+                                    onClick={(e) => {
+                                      const a = (e.target as HTMLElement).closest('a[href]');
+                                      if (a) {
+                                        e.preventDefault();
+                                        window.open(a.getAttribute('href')!, '_blank', 'noopener,noreferrer');
+                                      }
+                                    }}>
                                     {email.body_html ? (
                                       <div dangerouslySetInnerHTML={{ __html: email.body_html }} />
                                     ) : (
