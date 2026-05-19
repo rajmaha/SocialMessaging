@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { pmsApi } from '@/lib/api';
 import FilterBar, { FilterState, defaultFilters } from './FilterBar';
-import TaskDrawer from './TaskDrawer';
+import TaskDetailPanel from './TaskDetailPanel';
 
 const PRIORITY_COLORS: Record<string, string> = {
   low: 'text-gray-400', medium: 'text-yellow-500', high: 'text-orange-500', urgent: 'text-red-500',
@@ -124,8 +124,8 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
 }) {
   const [filter, setFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [drawerTaskId, setDrawerTaskId] = useState<number | null>(null);
-  const [form, setForm] = useState({ title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [form, setForm] = useState({ title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', start_date: new Date().toISOString().split('T')[0], due_date: '', estimated_hours: '' });
   const [createFiles, setCreateFiles] = useState<File[]>([]);
   const createFileRef = useRef<HTMLInputElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -212,7 +212,7 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
     }
     onReload();
     setShowCreate(false);
-    setForm({ title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' });
+    setForm({ title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', start_date: new Date().toISOString().split('T')[0], due_date: '', estimated_hours: '' });
     setCreateFiles([]);
   };
 
@@ -296,7 +296,7 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
                     }} />
                 </td>
                 <td className="px-4 py-2.5 font-medium text-gray-800">
-                  <button onClick={() => setDrawerTaskId(t.id)} className="text-left hover:text-indigo-600 transition-colors">
+                  <button onClick={() => setSelectedTaskId(t.id)} className="text-left hover:text-indigo-600 transition-colors">
                     {t.title}
                     {t.subtask_count > 0 && <span className="ml-1 text-xs text-gray-400 font-normal">+{t.subtask_count} sub</span>}
                   </button>
@@ -405,6 +405,11 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
                   </select>
                 </div>
                 <div>
+                  <label className="text-xs text-gray-500 block mb-1">Start Date</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.start_date}
+                    onChange={e => setForm({...form, start_date: e.target.value})} />
+                </div>
+                <div>
                   <label className="text-xs text-gray-500 block mb-1">Due Date</label>
                   <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.due_date}
                     onChange={e => setForm({...form, due_date: e.target.value})} />
@@ -446,12 +451,10 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
         </div>
       )}
 
-      {drawerTaskId && (
-        <TaskDrawer
-          taskId={drawerTaskId}
-          onClose={() => setDrawerTaskId(null)}
-          onReload={onReload}
-        />
+      {selectedTaskId && (
+        <TaskDetailPanel taskId={selectedTaskId} projectId={projectId} members={members}
+          onClose={() => setSelectedTaskId(null)}
+          onUpdated={() => { onReload(); }} />
       )}
     </div>
   );

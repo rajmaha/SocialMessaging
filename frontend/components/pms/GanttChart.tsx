@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { pmsApi } from '@/lib/api';
+import TaskDetailPanel from './TaskDetailPanel';
 
 interface GanttTask {
   id: number; title: string; stage: string; priority: string;
@@ -55,7 +56,7 @@ function getWeek(d: Date): number {
   return Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7);
 }
 
-export default function GanttChart({ projectId, tasks: initialTasks, milestones }: { projectId: number; tasks: GanttTask[]; milestones: Milestone[]; }) {
+export default function GanttChart({ projectId, tasks: initialTasks, milestones, members = [] }: { projectId: number; tasks: GanttTask[]; milestones: Milestone[]; members?: any[]; }) {
   const [tasks, setTasks] = useState<GanttTask[]>(initialTasks);
   const [zoom, setZoom] = useState<ZoomLevel>('week');
   const [selectedTask, setSelectedTask] = useState<GanttTask | null>(null);
@@ -271,7 +272,7 @@ export default function GanttChart({ projectId, tasks: initialTasks, milestones 
       </div>
 
       {selectedTask && (
-        <TaskDetailPanel task={selectedTask} projectId={projectId}
+        <TaskDetailPanel taskId={selectedTask.id} projectId={projectId} members={members}
           onClose={() => setSelectedTask(null)}
           onUpdated={async () => { const r = await pmsApi.listTasks(projectId); setTasks(r.data); }} />
       )}
@@ -279,137 +280,3 @@ export default function GanttChart({ projectId, tasks: initialTasks, milestones 
   );
 }
 
-const NEXT_STAGES: Record<string, string[]> = {
-  development: ['qa'], qa: ['pm_review', 'development'],
-  pm_review: ['client_review', 'development'],
-  client_review: ['approved', 'development'], approved: ['completed'],
-};
-
-function TaskDetailPanel({ task, projectId: _projectId, onClose, onUpdated }: any) {
-  const [comments, setComments] = useState<any[]>([]);
-  const [newComment, setNewComment] = useState('');
-  const [history, setHistory] = useState<any[]>([]);
-  const [timelogs, setTimelogs] = useState<any[]>([]);
-  const [logHours, setLogHours] = useState('');
-  const [tab, setTab] = useState('details');
-
-  useEffect(() => {
-    pmsApi.listComments(task.id).then(r => setComments(r.data));
-    pmsApi.getTaskHistory(task.id).then(r => setHistory(r.data));
-    pmsApi.listTimeLogs(task.id).then(r => setTimelogs(r.data));
-  }, [task.id]);
-
-  const transition = async (to: string) => {
-    await pmsApi.transitionTask(task.id, { to_stage: to });
-    onUpdated();
-  };
-
-  return (
-    <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-2xl border-l border-gray-200 flex flex-col z-40">
-      <div className="flex items-center justify-between p-4 border-b">
-        <h3 className="font-semibold text-gray-900 truncate pr-2">{task.title}</h3>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
-      </div>
-      <div className="flex border-b px-2">
-        {['details', 'comments', 'time', 'history'].map(t2 => (
-          <button key={t2} onClick={() => setTab(t2)}
-            className={`px-3 py-2 text-xs font-medium border-b-2 ${tab === t2 ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>
-            {t2.charAt(0).toUpperCase() + t2.slice(1)}
-          </button>
-        ))}
-      </div>
-      <div className="flex-1 overflow-y-auto p-4">
-        {tab === 'details' && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              <span className="px-2 py-1 rounded text-xs font-medium text-white" style={{ background: STAGE_COLORS[task.stage] || '#6366f1' }}>
-                {task.stage?.replace('_', ' ')}
-              </span>
-              <span className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700">{task.priority}</span>
-            </div>
-            {task.description && <p className="text-sm text-gray-600">{task.description}</p>}
-            <div className="text-xs text-gray-500 space-y-1">
-              {task.assignee_name && <div>Assignee: <span className="text-gray-800 font-medium">{task.assignee_name}</span></div>}
-              <div>Due: <span className="text-gray-800">{task.due_date || '—'}</span></div>
-              <div>Hours: <span className={`font-medium ${task.actual_hours > task.estimated_hours && task.estimated_hours > 0 ? 'text-red-500' : 'text-gray-800'}`}>{task.actual_hours}/{task.estimated_hours}h</span> <EffBadge value={task.efficiency} /></div>
-            </div>
-            {NEXT_STAGES[task.stage]?.length > 0 && (
-              <div>
-                <div className="text-xs font-medium text-gray-500 mb-2">Move to:</div>
-                <div className="flex flex-wrap gap-2">
-                  {NEXT_STAGES[task.stage].map((s: string) => (
-                    <button key={s} onClick={() => transition(s)}
-                      className="px-3 py-1 rounded text-xs font-medium text-white hover:opacity-90"
-                      style={{ background: STAGE_COLORS[s] || '#6366f1' }}>
-                      {s.replace('_', ' ')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        {tab === 'comments' && (
-          <div className="space-y-3">
-            {comments.map((c: any) => (
-              <div key={c.id} className="bg-gray-50 rounded-lg p-3">
-                <div className="text-xs font-medium text-gray-700 mb-1">{c.user_name || 'User'}</div>
-                <div className="text-sm text-gray-600">{c.content}</div>
-              </div>
-            ))}
-            {comments.length === 0 && <p className="text-sm text-gray-400">No comments yet.</p>}
-            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Add comment (press Enter)..."
-              value={newComment} onChange={e => setNewComment(e.target.value)}
-              onKeyDown={async e2 => {
-                if (e2.key === 'Enter' && newComment.trim()) {
-                  await pmsApi.createComment(task.id, { content: newComment });
-                  const r = await pmsApi.listComments(task.id);
-                  setComments(r.data);
-                  setNewComment('');
-                }
-              }} />
-          </div>
-        )}
-        {tab === 'time' && (
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <input type="number" step="0.5" className="flex-1 border rounded px-3 py-2 text-sm" placeholder="Hours"
-                value={logHours} onChange={e => setLogHours(e.target.value)} />
-              <button className="bg-indigo-600 text-white px-3 py-2 rounded text-sm hover:bg-indigo-700"
-                onClick={async () => {
-                  if (!logHours) return;
-                  await pmsApi.logTime(task.id, { hours: parseFloat(logHours) });
-                  const r = await pmsApi.listTimeLogs(task.id);
-                  setTimelogs(r.data);
-                  setLogHours('');
-                  onUpdated();
-                }}>Log</button>
-            </div>
-            {timelogs.map((l: any) => (
-              <div key={l.id} className="flex justify-between items-center text-sm border-b pb-2">
-                <span className="text-gray-700">{l.user_name} — <strong>{l.hours}h</strong></span>
-                <span className="text-gray-400 text-xs">{l.log_date}</span>
-              </div>
-            ))}
-            {timelogs.length === 0 && <p className="text-sm text-gray-400">No time logged yet.</p>}
-          </div>
-        )}
-        {tab === 'history' && (
-          <div className="space-y-2">
-            {history.map((h: any) => (
-              <div key={h.id} className="text-xs text-gray-500 border-l-2 border-indigo-200 pl-3 py-1">
-                <span className="font-medium text-gray-700">{h.actor_name || 'System'}</span>
-                {' → '}
-                <span className="text-indigo-600 font-medium">{h.to_stage?.replace('_', ' ')}</span>
-                {h.from_stage && <span className="text-gray-400"> (from {h.from_stage?.replace('_', ' ')})</span>}
-                {h.note && <span className="block text-gray-400 italic mt-0.5">{h.note}</span>}
-                <span className="block text-gray-300 mt-0.5">{new Date(h.created_at).toLocaleString()}</span>
-              </div>
-            ))}
-            {history.length === 0 && <p className="text-sm text-gray-400">No history yet.</p>}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}

@@ -648,6 +648,63 @@ def download_attachment(att_id: int, db: Session = Depends(get_db), current_user
         raise HTTPException(404, "File not found on disk")
     return FileResponse(att.file_path, filename=att.file_name, media_type="application/octet-stream")
 
+# ── Checklists ───────────────────────────────────────────
+
+@router.get("/tasks/{task_id}/checklists")
+def list_checklists(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    return db.query(PMSTaskChecklist).filter_by(task_id=task_id).order_by(PMSTaskChecklist.position).all()
+
+@router.post("/tasks/{task_id}/checklists")
+def create_checklist_item(task_id: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(PMSTask).filter_by(id=task_id).first()
+    if not task:
+        raise HTTPException(404)
+    _require_member(db, task.project_id, current_user)
+    text = payload.get("text", "").strip()
+    if not text:
+        raise HTTPException(400, "text is required")
+    position = payload.get("position")
+    if position is None:
+        max_pos = db.query(sqlfunc.max(PMSTaskChecklist.position)).filter_by(task_id=task_id).scalar()
+        position = (max_pos or 0) + 1
+    item = PMSTaskChecklist(task_id=task_id, text=text, position=position)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+@router.put("/checklists/{item_id}")
+def update_checklist_item(item_id: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(PMSTaskChecklist).filter_by(id=item_id).first()
+    if not item:
+        raise HTTPException(404)
+    task = db.query(PMSTask).filter_by(id=item.task_id).first()
+    _require_member(db, task.project_id, current_user)
+    if "text" in payload:
+        item.text = payload["text"]
+    if "is_checked" in payload:
+        item.is_checked = payload["is_checked"]
+    if "position" in payload:
+        item.position = payload["position"]
+    db.commit()
+    db.refresh(item)
+    return item
+
+@router.delete("/checklists/{item_id}")
+def delete_checklist_item(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(PMSTaskChecklist).filter_by(id=item_id).first()
+    if not item:
+        raise HTTPException(404)
+    task = db.query(PMSTask).filter_by(id=item.task_id).first()
+    _require_member(db, task.project_id, current_user)
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
 # ── Alerts ────────────────────────────────────────────────
 
 @router.get("/alerts")

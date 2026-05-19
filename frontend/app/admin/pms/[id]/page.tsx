@@ -179,7 +179,7 @@ export default function ProjectDetailPage() {
       <div className={activeTab === 'Gantt' || activeTab === 'Board' ? 'flex-1 overflow-hidden' : 'flex-1'}>
         {activeTab === 'Gantt' && (
           <div className="h-full" style={{ height: 'calc(100vh - 14rem)' }}>
-            <GanttChart projectId={projectId} tasks={tasks} milestones={milestones} />
+            <GanttChart projectId={projectId} tasks={tasks} milestones={milestones} members={project?.members || []} />
           </div>
         )}
         {activeTab === 'Board' && (

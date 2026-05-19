@@ -175,10 +175,18 @@ export const pmsApi = {
     });
   },
   deleteAttachment: (id: number) => api.delete(`/api/pms/attachments/${id}`),
+  listAttachments: (taskId: number) => api.get(`/api/pms/tasks/${taskId}/attachments`),
   getAttachmentDownloadUrl: (attId: number) => {
     const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     return `${base}/api/pms/attachments/${attId}/download`;
   },
+  downloadAttachment: (id: number) => api.get(`/api/pms/attachments/${id}/download`, { responseType: 'blob' }),
+
+  // Checklists
+  listChecklists: (taskId: number) => api.get(`/api/pms/tasks/${taskId}/checklists`),
+  createChecklist: (taskId: number, data: any) => api.post(`/api/pms/tasks/${taskId}/checklists`, data),
+  updateChecklist: (id: number, data: any) => api.put(`/api/pms/checklists/${id}`, data),
+  deleteChecklist: (id: number) => api.delete(`/api/pms/checklists/${id}`),
 
   // Alerts
   listAlerts: () => api.get('/api/pms/alerts'),
