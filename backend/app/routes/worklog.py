@@ -14,7 +14,7 @@ from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.worklog import (
     WorklogCategoryGroup, WorklogCategory, WorklogEntry,
-    WorklogAttachment, WorklogAutoEntry
+    WorklogAttachment, WorklogAutoEntry, WorklogActiveTimer
 )
 from app.schemas.worklog import *
 
@@ -265,49 +265,53 @@ def delete_attachment(att_id: int, db: Session = Depends(get_db), user: User = D
 
 
 # ── Timer ────────────────────────────────────────────────
-_active_timers: dict = {}
 
 
 @router.post("/timer/start")
-def timer_start(data: WorklogTimerStartRequest, user: User = Depends(get_current_user)):
-    if user.id in _active_timers:
+def timer_start(data: WorklogTimerStartRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    existing = db.query(WorklogActiveTimer).filter(WorklogActiveTimer.user_id == user.id).first()
+    if existing:
         raise HTTPException(status_code=400, detail="Timer already running")
-    _active_timers[user.id] = {
-        "category_id": data.category_id,
-        "log_date": data.log_date or date.today(),
-        "start_time": datetime.now()
-    }
-    return {"status": "started", "start_time": _active_timers[user.id]["start_time"]}
+    timer = WorklogActiveTimer(
+        user_id=user.id,
+        category_id=data.category_id,
+        log_date=data.log_date or date.today(),
+        start_time=datetime.now()
+    )
+    db.add(timer)
+    db.commit()
+    db.refresh(timer)
+    return {"status": "started", "start_time": timer.start_time}
 
 
 @router.post("/timer/stop")
 def timer_stop(data: WorklogTimerStopRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.id not in _active_timers:
+    timer = db.query(WorklogActiveTimer).filter(WorklogActiveTimer.user_id == user.id).first()
+    if not timer:
         raise HTTPException(status_code=400, detail="No active timer")
-    timer = _active_timers.pop(user.id)
-    end_time = datetime.now()
-    elapsed = (end_time - timer["start_time"]).total_seconds() / 3600.0
+    elapsed = (datetime.now() - timer.start_time).total_seconds() / 3600.0
     entry = WorklogEntry(
         user_id=user.id,
-        category_id=timer["category_id"],
-        log_date=timer["log_date"],
+        category_id=timer.category_id,
+        log_date=timer.log_date,
         hours=round(elapsed, 2),
         summary=data.summary,
         status="pending"
     )
     db.add(entry)
+    db.delete(timer)
     db.commit()
     db.refresh(entry)
     return _enrich_entry(entry)
 
 
 @router.get("/timer/status")
-def timer_status(user: User = Depends(get_current_user)):
-    if user.id not in _active_timers:
+def timer_status(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    timer = db.query(WorklogActiveTimer).filter(WorklogActiveTimer.user_id == user.id).first()
+    if not timer:
         return {"active": False}
-    timer = _active_timers[user.id]
-    elapsed = (datetime.now() - timer["start_time"]).total_seconds()
-    return {"active": True, "category_id": timer["category_id"], "elapsed_seconds": round(elapsed)}
+    elapsed = (datetime.now() - timer.start_time).total_seconds()
+    return {"active": True, "category_id": timer.category_id, "elapsed_seconds": round(elapsed)}
 
 
 # ── Approval (Admin) ─────────────────────────────────────
@@ -750,7 +754,7 @@ def get_summary(
         WorklogEntry.log_date >= week_start
     ).count()
 
-    timer_active = user.id in _active_timers
+    timer_active = db.query(WorklogActiveTimer).filter(WorklogActiveTimer.user_id == user.id).first() is not None
 
     result = {
         "today_hours": float(today_hours),

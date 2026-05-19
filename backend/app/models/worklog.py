@@ -58,6 +58,19 @@ class WorklogAttachment(Base):
     entry = relationship("WorklogEntry", back_populates="attachments")
 
 
+class WorklogActiveTimer(Base):
+    __tablename__ = "worklog_active_timers"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    category_id = Column(Integer, ForeignKey("worklog_categories.id", ondelete="SET NULL"), nullable=True)
+    log_date = Column(Date, nullable=False)
+    start_time = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", foreign_keys=[user_id])
+    category = relationship("WorklogCategory")
+
+
 class WorklogAutoEntry(Base):
     __tablename__ = "worklog_auto_entries"
     id = Column(Integer, primary_key=True, index=True)

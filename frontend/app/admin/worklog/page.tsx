@@ -111,11 +111,15 @@ export default function WorklogPage() {
 
   const handleStopTimer = async () => {
     const summaryText = editor?.getHTML() || '';
-    await worklogApi.stopTimer({ summary: summaryText });
-    setTimerActive(false);
-    setTimerSeconds(0);
-    editor?.commands.clearContent();
-    load();
+    try {
+      await worklogApi.stopTimer({ summary: summaryText });
+      setTimerActive(false);
+      setTimerSeconds(0);
+      editor?.commands.clearContent();
+      load();
+    } catch {
+      setValidationError('Failed to stop timer. Please try again.');
+    }
   };
 
   const handleManualEntry = async () => {
