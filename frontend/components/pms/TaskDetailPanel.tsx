@@ -145,14 +145,16 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
   const checkedCount = checklists.filter(c => c.is_checked).length;
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[420px] bg-white shadow-2xl border-l border-gray-200 flex flex-col z-40">
+    <>
+    <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+    <div className="fixed top-0 bottom-0 right-0 w-[420px] bg-white shadow-2xl border-l border-gray-200 flex flex-col z-50">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50 flex-none">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: STAGE_COLORS[task.stage] || '#6366f1' }} />
           <span className="font-semibold text-gray-900 truncate text-sm">{task.title}</span>
         </div>
-        <button onClick={onClose} className="ml-2 w-7 h-7 flex items-center justify-center rounded hover:bg-gray-200 text-gray-400 hover:text-gray-700 text-lg flex-none">&times;</button>
+        <button onClick={onClose} className="ml-2 w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-100 text-gray-500 hover:text-red-600 text-xl font-bold flex-none transition-colors" title="Close">&times;</button>
       </div>
 
       {/* Scrollable content */}
@@ -356,5 +358,6 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
         </div>
       </div>
     </div>
+    </>
   );
 }
