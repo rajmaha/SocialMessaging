@@ -12,6 +12,7 @@ class PMSProjectCreate(BaseModel):
     end_date: Optional[date] = None
     color: str = "#6366f1"
     team_id: Optional[int] = None
+    owner_id: Optional[int] = None
 
 class PMSProjectUpdate(BaseModel):
     name: Optional[str] = None
@@ -21,6 +22,7 @@ class PMSProjectUpdate(BaseModel):
     end_date: Optional[date] = None
     color: Optional[str] = None
     team_id: Optional[int] = None
+    owner_id: Optional[int] = None
 
 class PMSProjectMemberOut(BaseModel):
     id: int

@@ -1213,6 +1213,18 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE pms_tasks ADD COLUMN IF NOT EXISTS sprint_id INTEGER REFERENCES pms_sprints(id) ON DELETE SET NULL"))
         conn.execute(text("ALTER TABLE pms_milestones ADD COLUMN IF NOT EXISTS description TEXT"))
 
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS pms_project_documents (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER REFERENCES pms_projects(id) ON DELETE CASCADE,
+                file_path VARCHAR NOT NULL,
+                file_name VARCHAR NOT NULL,
+                file_size INTEGER DEFAULT 0,
+                uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
         # hours_per_day on project members
         conn.execute(text("""
             ALTER TABLE pms_project_members ADD COLUMN IF NOT EXISTS hours_per_day FLOAT DEFAULT 7.0

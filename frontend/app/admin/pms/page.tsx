@@ -1,12 +1,17 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { pmsApi } from '@/lib/api';
+import dynamic from 'next/dynamic';
+import { pmsApi, teamsApi } from '@/lib/api';
+import { API_URL } from '@/lib/config';
+import { getAuthToken } from '@/lib/auth';
 import MainHeader from '@/components/MainHeader';
 import AdminNav from '@/components/AdminNav';
 import { authAPI } from '@/lib/auth';
 import { hasPermission } from '@/lib/permissions';
+
+const KbEditor = dynamic(() => import('@/components/KbEditor'), { ssr: false });
 
 const PRIORITY_DOT: Record<string, string> = { low: 'bg-gray-400', medium: 'bg-yellow-500', high: 'bg-orange-500', urgent: 'bg-red-500' };
 const STAGE_BADGE: Record<string, string> = { development: 'bg-indigo-100 text-indigo-700', qa: 'bg-amber-100 text-amber-700', pm_review: 'bg-purple-100 text-purple-700', client_review: 'bg-cyan-100 text-cyan-700', approved: 'bg-green-100 text-green-700', completed: 'bg-gray-100 text-gray-600' };
@@ -25,7 +30,13 @@ export default function PMSDashboard() {
   const [staleDays, setStaleDays] = useState(7);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '', color: '#6366f1', status: 'planning' });
+  const emptyForm = { name: '', description: '', color: '#6366f1', status: 'planning', start_date: '', end_date: '', team_id: '', owner_id: '' };
+  const [form, setForm] = useState(emptyForm);
+  const [createFiles, setCreateFiles] = useState<File[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [creating, setCreating] = useState(false);
+  const [teams, setTeams] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
   const [digestOpen, setDigestOpen] = useState(true);
   const [cpSort, setCpSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'name', dir: 'asc' });
   const [favorites, setFavorites] = useState<any[]>([]);
@@ -36,11 +47,36 @@ export default function PMSDashboard() {
     pmsApi.listFavorites().then(r => setFavorites(r.data)).catch(() => {});
   }, [staleDays]);
 
+  useEffect(() => {
+    teamsApi.list().then(r => setTeams(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+    const token = getAuthToken();
+    fetch(`${API_URL}/admin/users`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => setAllUsers(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
+
   const handleCreate = async () => {
-    await pmsApi.createProject(form);
-    setShowCreate(false);
-    setForm({ name: '', description: '', color: '#6366f1', status: 'planning' });
-    pmsApi.getDashboard(staleDays).then(r => setData(r.data));
+    setCreating(true);
+    try {
+      const payload: any = { ...form };
+      if (payload.team_id) payload.team_id = Number(payload.team_id);
+      else delete payload.team_id;
+      if (payload.owner_id) payload.owner_id = Number(payload.owner_id);
+      else delete payload.owner_id;
+      if (!payload.start_date) delete payload.start_date;
+      if (!payload.end_date) delete payload.end_date;
+      const res = await pmsApi.createProject(payload);
+      if (createFiles.length > 0 && res.data?.id) {
+        await Promise.all(createFiles.map(f => pmsApi.uploadProjectDocument(res.data.id, f)));
+      }
+      setShowCreate(false);
+      setForm(emptyForm);
+      setCreateFiles([]);
+      pmsApi.getDashboard(staleDays).then(r => setData(r.data));
+    } finally {
+      setCreating(false);
+    }
   };
 
   if (!user) return null;
@@ -417,34 +453,108 @@ export default function PMSDashboard() {
         {/* ── Create Project Modal ─────────────────────────────── */}
         {showCreate && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <div className="bg-white rounded-xl p-6 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
               <h2 className="text-lg font-semibold mb-4">New Project</h2>
-              <div className="space-y-3">
-                <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Project name"
-                  value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-                <textarea className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Description" rows={3}
-                  value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
-                <div className="flex gap-3">
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">Color</label>
-                    <input type="color" className="w-10 h-8 rounded cursor-pointer border"
-                      value={form.color} onChange={e => setForm({...form, color: e.target.value})} />
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Project Name *</label>
+                  <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Project name"
+                    value={form.name} onChange={e => setForm({...form, name: e.target.value})} autoFocus />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Description</label>
+                  <div className="border rounded-lg overflow-hidden">
+                    <KbEditor content={form.description} onChange={(html: string) => setForm({...form, description: html})} />
                   </div>
-                  <div className="flex-1">
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Start Date</label>
+                    <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                      value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">End Date</label>
+                    <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                      value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Owner / PM</label>
+                    <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                      value={form.owner_id} onChange={e => setForm({...form, owner_id: e.target.value})}>
+                      <option value="">Current user (me)</option>
+                      {allUsers.map((u: any) => (
+                        <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Team</label>
+                    <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                      value={form.team_id} onChange={e => setForm({...form, team_id: e.target.value})}>
+                      <option value="">No team</option>
+                      {teams.map((t: any) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
                     <label className="text-xs text-gray-500 block mb-1">Status</label>
-                    <select className="w-full border rounded-lg px-3 py-2 text-sm"
+                    <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
                       value={form.status} onChange={e => setForm({...form, status: e.target.value})}>
                       <option value="planning">Planning</option>
                       <option value="active">Active</option>
                       <option value="on_hold">On Hold</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Color</label>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <input type="color" className="w-10 h-8 rounded cursor-pointer border"
+                        value={form.color} onChange={e => setForm({...form, color: e.target.value})} />
+                      <span className="text-xs text-gray-400">{form.color}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Project Documents</label>
+                  <div
+                    onClick={() => fileRef.current?.click()}
+                    className="border border-dashed border-gray-300 rounded-lg px-3 py-3 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors">
+                    <p className="text-xs text-gray-400">Click to attach files (specs, designs, contracts, etc.)</p>
+                  </div>
+                  <input ref={fileRef} type="file" multiple className="hidden"
+                    onChange={e => setCreateFiles(prev => [...prev, ...Array.from(e.target.files || [])])} />
+                  {createFiles.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {createFiles.map((f, i) => (
+                        <li key={i} className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded px-2 py-1">
+                          <span className="flex-1 truncate">{f.name}</span>
+                          <span className="text-gray-400">{(f.size / 1024).toFixed(0)} KB</span>
+                          <button onClick={() => setCreateFiles(prev => prev.filter((_, j) => j !== i))}
+                            className="text-red-400 hover:text-red-600">✕</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
               <div className="flex gap-3 mt-5">
-                <button onClick={() => setShowCreate(false)} className="flex-1 border rounded-lg px-4 py-2 text-sm">Cancel</button>
-                <button onClick={handleCreate} disabled={!form.name}
-                  className="flex-1 bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-50">Create</button>
+                <button onClick={() => { setShowCreate(false); setForm(emptyForm); setCreateFiles([]); }}
+                  className="flex-1 border rounded-lg px-4 py-2 text-sm">Cancel</button>
+                <button onClick={handleCreate} disabled={!form.name || creating}
+                  className="flex-1 bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-50">
+                  {creating ? 'Creating...' : 'Create Project'}
+                </button>
               </div>
             </div>
           </div>

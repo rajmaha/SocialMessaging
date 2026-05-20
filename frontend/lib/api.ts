@@ -131,6 +131,18 @@ export const pmsApi = {
   updateProject: (id: number, data: any) => api.put(`/api/pms/projects/${id}`, data),
   deleteProject: (id: number) => api.delete(`/api/pms/projects/${id}`),
 
+  // Project Documents
+  listProjectDocuments: (projectId: number) => api.get(`/api/pms/projects/${projectId}/documents`),
+  uploadProjectDocument: (projectId: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post(`/api/pms/projects/${projectId}/documents`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  downloadProjectDocument: (docId: number) => api.get(`/api/pms/projects/documents/${docId}/download`, { responseType: 'blob' }),
+  deleteProjectDocument: (docId: number) => api.delete(`/api/pms/projects/documents/${docId}`),
+
   // Members
   listMembers: (projectId: number) => api.get(`/api/pms/projects/${projectId}/members`),
   addMember: (projectId: number, data: any) => api.post(`/api/pms/projects/${projectId}/members`, data),
@@ -323,6 +335,11 @@ export const pmsApi = {
   // Milestone Dependencies
   setMilestoneDependency: (milestoneId: number, dependsOnId: number | null) =>
     api.put(`/api/pms/milestones/${milestoneId}/dependency`, null, { params: { depends_on_id: dependsOnId } }),
+};
+
+// ─── Teams API ─────────────────────────────────────────────────────────────
+export const teamsApi = {
+  list: () => api.get('/teams/'),
 };
 
 // ─── Worklog API ────────────────────────────────────────────────────────────

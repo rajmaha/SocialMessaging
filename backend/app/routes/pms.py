@@ -19,7 +19,7 @@ from app.models.pms import (
     PMSTaskWatcher, PMSCustomFieldDef, PMSCustomFieldValue,
     PMSTaskTemplate, PMSTemplateItem, PMSFavorite,
     PMSProjectTemplate, PMSProjectTemplateMilestone, PMSProjectTemplateTask,
-    PMSAutomation, PMSTaskConversationLink
+    PMSAutomation, PMSTaskConversationLink, PMSProjectDocument
 )
 from app.schemas.pms import *
 
@@ -206,7 +206,10 @@ def list_projects(db: Session = Depends(get_db), current_user: User = Depends(ge
 
 @router.post("/projects")
 def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("pms", "add"))):
-    p = PMSProject(**data.dict(), owner_id=current_user.id)
+    d = data.dict()
+    if not d.get('owner_id'):
+        d['owner_id'] = current_user.id
+    p = PMSProject(**d)
     db.add(p)
     db.flush()
     db.add(PMSProjectMember(project_id=p.id, user_id=current_user.id, role="pm", added_by=current_user.id))
@@ -255,6 +258,52 @@ def delete_project(project_id: int, db: Session = Depends(get_db), current_user:
     if not p:
         raise HTTPException(404)
     db.delete(p)
+    db.commit()
+    return {"ok": True}
+
+# ── Project Documents ────────────────────────────────────
+
+PROJECT_DOC_DIR = "app/attachment_storage/pms/projects"
+os.makedirs(PROJECT_DOC_DIR, exist_ok=True)
+
+@router.get("/projects/{project_id}/documents")
+def list_project_documents(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    docs = db.query(PMSProjectDocument).filter_by(project_id=project_id).order_by(PMSProjectDocument.created_at.desc()).all()
+    return [{"id": d.id, "file_name": d.file_name, "file_size": d.file_size, "uploaded_by": d.uploaded_by, "created_at": d.created_at} for d in docs]
+
+@router.post("/projects/{project_id}/documents")
+def upload_project_document(project_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_member(db, project_id, current_user)
+    safe_name = file.filename.replace("/", "_").replace("\\", "_")
+    path = os.path.join(PROJECT_DOC_DIR, f"{project_id}_{safe_name}")
+    with open(path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    size = os.path.getsize(path)
+    doc = PMSProjectDocument(project_id=project_id, file_path=path, file_name=file.filename, file_size=size, uploaded_by=current_user.id)
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return {"id": doc.id, "file_name": doc.file_name, "file_size": doc.file_size}
+
+@router.get("/projects/documents/{doc_id}/download")
+def download_project_document(doc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from fastapi.responses import FileResponse
+    doc = db.query(PMSProjectDocument).filter_by(id=doc_id).first()
+    if not doc:
+        raise HTTPException(404)
+    _require_member(db, doc.project_id, current_user)
+    return FileResponse(doc.file_path, filename=doc.file_name)
+
+@router.delete("/projects/documents/{doc_id}")
+def delete_project_document(doc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    doc = db.query(PMSProjectDocument).filter_by(id=doc_id).first()
+    if not doc:
+        raise HTTPException(404)
+    _require_member(db, doc.project_id, current_user)
+    if os.path.exists(doc.file_path):
+        os.remove(doc.file_path)
+    db.delete(doc)
     db.commit()
     return {"ok": True}
 
