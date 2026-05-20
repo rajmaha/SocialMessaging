@@ -21,6 +21,20 @@ class PMSProject(Base):
     members = relationship("PMSProjectMember", back_populates="project", cascade="all, delete-orphan")
     milestones = relationship("PMSMilestone", back_populates="project", cascade="all, delete-orphan")
     tasks = relationship("PMSTask", back_populates="project", cascade="all, delete-orphan")
+    documents = relationship("PMSProjectDocument", back_populates="project", cascade="all, delete-orphan")
+
+
+class PMSProjectDocument(Base):
+    __tablename__ = "pms_project_documents"
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("pms_projects.id", ondelete="CASCADE"))
+    file_path = Column(String, nullable=False)
+    file_name = Column(String, nullable=False)
+    file_size = Column(Integer, default=0)
+    uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    created_at = Column(DateTime, server_default=func.now())
+
+    project = relationship("PMSProject", back_populates="documents")
 
 
 class PMSProjectMember(Base):
