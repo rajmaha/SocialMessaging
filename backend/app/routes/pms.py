@@ -207,7 +207,8 @@ def list_projects(db: Session = Depends(get_db), current_user: User = Depends(ge
 
 @router.post("/projects")
 def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("pms", "add"))):
-    d = data.dict()
+    d = data.dict(exclude={"member_ids"})
+    member_ids = data.member_ids or []
     if not d.get('owner_id'):
         d['owner_id'] = current_user.id
     p = PMSProject(**d)
@@ -215,13 +216,10 @@ def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), curren
     db.flush()
     db.add(PMSProjectMember(project_id=p.id, user_id=current_user.id, role="pm", added_by=current_user.id))
     added_user_ids = {current_user.id}
-    if p.team_id:
-        team = db.query(Team).filter_by(id=p.team_id).first()
-        if team:
-            for member in team.members:
-                if member.id not in added_user_ids:
-                    db.add(PMSProjectMember(project_id=p.id, user_id=member.id, role="developer", added_by=current_user.id))
-                    added_user_ids.add(member.id)
+    for uid in member_ids:
+        if uid not in added_user_ids:
+            db.add(PMSProjectMember(project_id=p.id, user_id=uid, role="developer", added_by=current_user.id))
+            added_user_ids.add(uid)
     db.commit()
     db.refresh(p)
     d = {c.name: getattr(p, c.name) for c in p.__table__.columns}
@@ -256,17 +254,8 @@ def update_project(project_id: int, data: PMSProjectUpdate, db: Session = Depend
     m = _require_member(db, project_id, current_user)
     if m.role not in ("pm",) and not _has_permission(current_user, db, "pms", "edit"):
         raise HTTPException(403, "PM or edit permission required")
-    updates = data.dict(exclude_none=True)
-    old_team_id = p.team_id
-    for k, v in updates.items():
+    for k, v in data.dict(exclude_none=True).items():
         setattr(p, k, v)
-    if "team_id" in updates and updates["team_id"] != old_team_id:
-        team = db.query(Team).filter_by(id=updates["team_id"]).first()
-        if team:
-            existing_ids = {m.user_id for m in p.members}
-            for member in team.members:
-                if member.id not in existing_ids:
-                    db.add(PMSProjectMember(project_id=p.id, user_id=member.id, role="developer", added_by=current_user.id))
     db.commit()
     db.refresh(p)
     d = {c.name: getattr(p, c.name) for c in p.__table__.columns}
