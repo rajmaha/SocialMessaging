@@ -13,6 +13,7 @@ class PMSProjectCreate(BaseModel):
     color: str = "#6366f1"
     team_id: Optional[int] = None
     owner_id: Optional[int] = None
+    member_ids: Optional[List[int]] = None
 
 class PMSProjectUpdate(BaseModel):
     name: Optional[str] = None
