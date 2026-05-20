@@ -8,6 +8,7 @@ import os, shutil
 from app.database import get_db
 from app.dependencies import get_current_user, require_page
 from app.models.user import User
+from app.models.team import Team
 from app.models.pms import (
     PMSProject, PMSProjectMember, PMSMilestone, PMSTask,
     PMSTaskDependency, PMSTaskComment, PMSTaskTimeLog,
@@ -154,10 +155,23 @@ def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), curren
     db.add(p)
     db.flush()
     db.add(PMSProjectMember(project_id=p.id, user_id=current_user.id, role="pm", added_by=current_user.id))
+    added_user_ids = {current_user.id}
+    if p.team_id:
+        team = db.query(Team).filter_by(id=p.team_id).first()
+        if team:
+            for member in team.members:
+                if member.id not in added_user_ids:
+                    db.add(PMSProjectMember(project_id=p.id, user_id=member.id, role="developer", added_by=current_user.id))
+                    added_user_ids.add(member.id)
     db.commit()
     db.refresh(p)
     d = {c.name: getattr(p, c.name) for c in p.__table__.columns}
-    d["members"] = []
+    d["members"] = [
+        {"id": m.id, "user_id": m.user_id, "role": m.role,
+         "user_name": m.user.full_name if m.user else None,
+         "user_email": m.user.email if m.user else None}
+        for m in p.members
+    ]
     return d
 
 @router.get("/projects/{project_id}")
@@ -183,12 +197,26 @@ def update_project(project_id: int, data: PMSProjectUpdate, db: Session = Depend
     m = _require_member(db, project_id, current_user)
     if m.role not in ("pm",) and not _is_admin(current_user):
         raise HTTPException(403, "PM or admin only")
-    for k, v in data.dict(exclude_none=True).items():
+    updates = data.dict(exclude_none=True)
+    old_team_id = p.team_id
+    for k, v in updates.items():
         setattr(p, k, v)
+    if "team_id" in updates and updates["team_id"] != old_team_id:
+        team = db.query(Team).filter_by(id=updates["team_id"]).first()
+        if team:
+            existing_ids = {m.user_id for m in p.members}
+            for member in team.members:
+                if member.id not in existing_ids:
+                    db.add(PMSProjectMember(project_id=p.id, user_id=member.id, role="developer", added_by=current_user.id))
     db.commit()
     db.refresh(p)
     d = {c.name: getattr(p, c.name) for c in p.__table__.columns}
-    d["members"] = []
+    d["members"] = [
+        {"id": m.id, "user_id": m.user_id, "role": m.role,
+         "user_name": m.user.full_name if m.user else None,
+         "user_email": m.user.email if m.user else None}
+        for m in p.members
+    ]
     return d
 
 @router.delete("/projects/{project_id}")
