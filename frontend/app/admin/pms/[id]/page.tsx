@@ -11,7 +11,7 @@ import ListView from '@/components/pms/ListView';
 import ActivityFeed from '@/components/pms/ActivityFeed';
 import CalendarView from '@/components/pms/CalendarView';
 
-const TABS = ['Gantt', 'Board', 'List', 'Calendar', 'Milestones', 'Sprints', 'Activity', 'Settings'];
+const TABS = ['Overview', 'Gantt', 'Board', 'List', 'Calendar', 'Milestones', 'Sprints', 'Activity', 'Settings'];
 
 export default function ProjectDetailPage() {
   const { id } = useParams();
@@ -20,7 +20,7 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [milestones, setMilestones] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState('Gantt');
+  const [activeTab, setActiveTab] = useState('Overview');
   const [loading, setLoading] = useState(true);
   const [showCreateTask, setShowCreateTask] = useState(false);
   const emptyTaskForm = { title: '', description: '', priority: 'medium', milestone_id: '', assignee_id: '', due_date: '', estimated_hours: '' };
@@ -177,6 +177,7 @@ export default function ProjectDetailPage() {
       </div>
       {/* Tab content — Gantt gets fixed height, others scroll naturally */}
       <div className={activeTab === 'Gantt' || activeTab === 'Board' ? 'flex-1 overflow-hidden' : 'flex-1'}>
+        {activeTab === 'Overview' && <OverviewTab projectId={projectId} tasks={tasks} milestones={milestones} members={project?.members || []} />}
         {activeTab === 'Gantt' && (
           <div className="h-full" style={{ height: 'calc(100vh - 14rem)' }}>
             <GanttChart projectId={projectId} tasks={tasks} milestones={milestones} members={project?.members || []} />
@@ -194,6 +195,227 @@ export default function ProjectDetailPage() {
         {activeTab === 'Activity' && <ActivityFeed projectId={projectId} />}
         {activeTab === 'Settings' && <SettingsTab project={project} onReload={reload} />}
       </div>
+    </div>
+  );
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  development: 'Development', qa: 'QA', pm_review: 'PM Review',
+  client_review: 'Client Review', approved: 'Approved', completed: 'Completed',
+};
+const STAGE_COLORS: Record<string, string> = {
+  development: 'bg-indigo-500', qa: 'bg-amber-500', pm_review: 'bg-purple-500',
+  client_review: 'bg-cyan-500', approved: 'bg-green-500', completed: 'bg-gray-400',
+};
+const PRIORITY_COLORS: Record<string, string> = {
+  urgent: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-500', low: 'bg-gray-400',
+};
+
+function OverviewTab({ projectId, tasks, milestones, members }: { projectId: number; tasks: any[]; milestones: any[]; members: any[] }) {
+  const [sprints, setSprints] = useState<any[]>([]);
+  useEffect(() => { pmsApi.listSprints(projectId).then(r => setSprints(r.data)).catch(() => {}); }, [projectId]);
+
+  const parentTasks = tasks.filter(t => !t.parent_task_id);
+  const total = parentTasks.length;
+  const completed = parentTasks.filter(t => t.stage === 'completed').length;
+  const overdue = parentTasks.filter(t => t.due_date && new Date(t.due_date) < new Date() && t.stage !== 'completed');
+  const completionPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  const stageCounts: Record<string, number> = {};
+  parentTasks.forEach(t => { stageCounts[t.stage] = (stageCounts[t.stage] || 0) + 1; });
+
+  const priorityCounts: Record<string, number> = {};
+  parentTasks.forEach(t => { priorityCounts[t.priority] = (priorityCounts[t.priority] || 0) + 1; });
+
+  const totalHoursEst = parentTasks.reduce((s, t) => s + (t.estimated_hours || 0), 0);
+  const totalHoursActual = parentTasks.reduce((s, t) => s + (t.actual_hours || 0), 0);
+
+  const memberStats = members.map((m: any) => {
+    const memberTasks = parentTasks.filter(t => t.assignee_id === m.user_id);
+    const memberCompleted = memberTasks.filter(t => t.stage === 'completed').length;
+    const memberOverdue = memberTasks.filter(t => t.due_date && new Date(t.due_date) < new Date() && t.stage !== 'completed').length;
+    return { ...m, taskCount: memberTasks.length, completed: memberCompleted, overdue: memberOverdue };
+  });
+
+  const unassigned = parentTasks.filter(t => !t.assignee_id).length;
+  const activeSprint = sprints.find(s => s.status === 'active');
+
+  const upcomingMilestones = milestones
+    .filter((m: any) => m.status === 'pending' && m.due_date)
+    .sort((a: any, b: any) => a.due_date.localeCompare(b.due_date))
+    .slice(0, 5);
+
+  return (
+    <div className="p-6 space-y-6 max-w-6xl">
+      {/* Top stats row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border p-4">
+          <div className="text-xs text-gray-400 font-medium uppercase">Total Tasks</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">{total}</div>
+          <div className="text-xs text-gray-400 mt-1">{unassigned > 0 ? `${unassigned} unassigned` : 'All assigned'}</div>
+        </div>
+        <div className="bg-white rounded-xl border p-4">
+          <div className="text-xs text-gray-400 font-medium uppercase">Completion</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">{completionPct}%</div>
+          <div className="w-full bg-gray-100 rounded-full h-2 mt-2">
+            <div className="bg-green-500 h-2 rounded-full transition-all" style={{ width: `${completionPct}%` }} />
+          </div>
+          <div className="text-xs text-gray-400 mt-1">{completed} of {total} done</div>
+        </div>
+        <div className="bg-white rounded-xl border p-4">
+          <div className="text-xs text-gray-400 font-medium uppercase">Overdue</div>
+          <div className={`text-2xl font-bold mt-1 ${overdue.length > 0 ? 'text-red-600' : 'text-green-600'}`}>{overdue.length}</div>
+          <div className="text-xs text-gray-400 mt-1">{overdue.length > 0 ? 'Need attention' : 'On track'}</div>
+        </div>
+        <div className="bg-white rounded-xl border p-4">
+          <div className="text-xs text-gray-400 font-medium uppercase">Hours</div>
+          <div className="text-2xl font-bold text-gray-900 mt-1">{totalHoursActual}<span className="text-sm text-gray-400 font-normal">/{totalHoursEst}h</span></div>
+          <div className="text-xs text-gray-400 mt-1">
+            {totalHoursEst > 0 ? `${Math.round((totalHoursActual / totalHoursEst) * 100)}% of estimate used` : 'No estimates'}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Tasks by stage */}
+        <div className="bg-white rounded-xl border p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Tasks by Stage</h3>
+          <div className="space-y-2">
+            {['development', 'qa', 'pm_review', 'client_review', 'approved', 'completed'].map(stage => {
+              const count = stageCounts[stage] || 0;
+              const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+              return (
+                <div key={stage} className="flex items-center gap-3">
+                  <span className="text-xs text-gray-500 w-24 truncate">{STAGE_LABELS[stage]}</span>
+                  <div className="flex-1 bg-gray-100 rounded-full h-2.5">
+                    <div className={`${STAGE_COLORS[stage]} h-2.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-500 w-12 text-right">{count} ({pct}%)</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Tasks by priority */}
+        <div className="bg-white rounded-xl border p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Tasks by Priority</h3>
+          <div className="space-y-2">
+            {['urgent', 'high', 'medium', 'low'].map(priority => {
+              const count = priorityCounts[priority] || 0;
+              const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+              return (
+                <div key={priority} className="flex items-center gap-3">
+                  <span className="text-xs text-gray-500 w-24 capitalize">{priority}</span>
+                  <div className="flex-1 bg-gray-100 rounded-full h-2.5">
+                    <div className={`${PRIORITY_COLORS[priority]} h-2.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-500 w-12 text-right">{count} ({pct}%)</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Active Sprint */}
+        <div className="bg-white rounded-xl border p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Active Sprint</h3>
+          {activeSprint ? (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="font-medium text-gray-900">{activeSprint.name}</span>
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Active</span>
+              </div>
+              {activeSprint.goal && <p className="text-xs text-gray-400 mb-2">{activeSprint.goal}</p>}
+              <div className="text-xs text-gray-400 mb-2">{activeSprint.start_date || '?'} &rarr; {activeSprint.end_date || '?'}</div>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div className="bg-green-500 h-2 rounded-full transition-all" style={{ width: `${activeSprint.task_count > 0 ? Math.round((activeSprint.completed_count / activeSprint.task_count) * 100) : 0}%` }} />
+                  </div>
+                </div>
+                <span className="text-xs text-gray-500">{activeSprint.completed_count}/{activeSprint.task_count} tasks</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">{activeSprint.total_actual_hours || 0}/{activeSprint.total_estimated_hours || 0}h logged</div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">No active sprint. Start one from the Sprints tab.</p>
+          )}
+        </div>
+
+        {/* Upcoming Milestones */}
+        <div className="bg-white rounded-xl border p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Upcoming Milestones</h3>
+          {upcomingMilestones.length > 0 ? (
+            <div className="space-y-2">
+              {upcomingMilestones.map((m: any) => {
+                const taskCount = m.task_count ?? 0;
+                const completedCount = m.completed_count ?? 0;
+                const pct = taskCount > 0 ? Math.round((completedCount / taskCount) * 100) : 0;
+                const isOverdue = m.due_date && new Date(m.due_date) < new Date();
+                return (
+                  <div key={m.id} className="flex items-center gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: m.color }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-gray-800 truncate">{m.name}</div>
+                      <div className="text-xs text-gray-400">{completedCount}/{taskCount} tasks · {pct}%</div>
+                    </div>
+                    <span className={`text-xs flex-none ${isOverdue ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+                      {isOverdue ? 'Overdue' : ''} {m.due_date}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">No upcoming milestones.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Team workload */}
+      <div className="bg-white rounded-xl border p-5">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Team Workload</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {memberStats.map((m: any) => (
+            <div key={m.id} className="border rounded-lg p-3 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold flex-none">
+                {(m.user_name || 'U').charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-gray-800 truncate">{m.user_name || `User #${m.user_id}`}</div>
+                <div className="text-xs text-gray-400">
+                  {m.taskCount} tasks · {m.completed} done
+                  {m.overdue > 0 && <span className="text-red-500 ml-1">· {m.overdue} overdue</span>}
+                </div>
+              </div>
+              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded capitalize flex-none">{m.role}</span>
+            </div>
+          ))}
+          {memberStats.length === 0 && <p className="text-sm text-gray-400 col-span-full">No team members.</p>}
+        </div>
+      </div>
+
+      {/* Overdue tasks list */}
+      {overdue.length > 0 && (
+        <div className="bg-white rounded-xl border p-5">
+          <h3 className="text-sm font-semibold text-red-600 mb-3">Overdue Tasks ({overdue.length})</h3>
+          <div className="space-y-1">
+            {overdue.slice(0, 10).map((t: any) => {
+              const days = Math.ceil((new Date().getTime() - new Date(t.due_date).getTime()) / (1000 * 60 * 60 * 24));
+              return (
+                <div key={t.id} className="flex items-center gap-3 px-3 py-2 rounded hover:bg-red-50 text-sm">
+                  <span className={`w-2 h-2 rounded-full flex-none ${PRIORITY_COLORS[t.priority] || 'bg-gray-400'}`} />
+                  <span className="flex-1 text-gray-800 truncate">{t.title}</span>
+                  <span className="text-xs text-gray-400">{t.assignee_name || 'Unassigned'}</span>
+                  <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{days}d overdue</span>
+                </div>
+              );
+            })}
+            {overdue.length > 10 && <p className="text-xs text-gray-400 px-3">+{overdue.length - 10} more</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
