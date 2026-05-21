@@ -274,7 +274,6 @@ export default function ProjectsPage() {
               {form.team_id && (() => {
                 const team = teams.find((t: any) => String(t.id) === String(form.team_id));
                 const members = team?.members || [];
-                if (members.length === 0) return null;
                 return (
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
@@ -282,27 +281,36 @@ export default function ProjectsPage() {
                         Team Members
                         {selectedMemberIds.length > 0 && <span className="ml-1 text-indigo-600 font-medium">({selectedMemberIds.length} selected)</span>}
                       </label>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => setSelectedMemberIds(members.map((m: any) => m.id))}
-                          className="text-xs text-indigo-600 hover:text-indigo-800">Select all</button>
-                        <button type="button" onClick={() => setSelectedMemberIds([])}
-                          className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
+                      {members.length > 0 && (
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => setSelectedMemberIds(members.map((m: any) => m.id))}
+                            className="text-xs text-indigo-600 hover:text-indigo-800">Select all</button>
+                          <button type="button" onClick={() => setSelectedMemberIds([])}
+                            className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
+                        </div>
+                      )}
+                    </div>
+                    {members.length === 0 ? (
+                      <div className="border border-dashed rounded-lg p-3 text-center">
+                        <p className="text-xs text-gray-400">This team has no members.</p>
+                        <a href="/admin/teams" className="text-xs text-indigo-600 hover:text-indigo-800">Add members in Admin → Teams</a>
                       </div>
-                    </div>
-                    <div className="border rounded-lg p-2 max-h-40 overflow-y-auto space-y-1">
-                      {members.map((m: any) => (
-                        <label key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer">
-                          <input type="checkbox" className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                            checked={selectedMemberIds.includes(m.id)}
-                            onChange={e => {
-                              if (e.target.checked) setSelectedMemberIds(prev => [...prev, m.id]);
-                              else setSelectedMemberIds(prev => prev.filter(id => id !== m.id));
-                            }} />
-                          <span className="text-sm text-gray-700 flex-1">{m.full_name}</span>
-                          <span className="text-xs text-gray-400 capitalize">{m.role}</span>
-                        </label>
-                      ))}
-                    </div>
+                    ) : (
+                      <div className="border rounded-lg p-2 max-h-40 overflow-y-auto space-y-1">
+                        {members.map((m: any) => (
+                          <label key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer">
+                            <input type="checkbox" className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                              checked={selectedMemberIds.includes(m.id)}
+                              onChange={e => {
+                                if (e.target.checked) setSelectedMemberIds(prev => [...prev, m.id]);
+                                else setSelectedMemberIds(prev => prev.filter(id => id !== m.id));
+                              }} />
+                            <span className="text-sm text-gray-700 flex-1">{m.full_name}</span>
+                            <span className="text-xs text-gray-400 capitalize">{m.role}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
