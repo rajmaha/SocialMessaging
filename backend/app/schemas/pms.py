@@ -4,6 +4,10 @@ from datetime import date, datetime
 
 
 # ── Project ──────────────────────────────────────────────
+class PMSMemberInput(BaseModel):
+    user_id: int
+    role: str = "developer"
+
 class PMSProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -14,6 +18,7 @@ class PMSProjectCreate(BaseModel):
     team_id: Optional[int] = None
     owner_id: Optional[int] = None
     member_ids: Optional[List[int]] = None
+    members_with_roles: Optional[List[PMSMemberInput]] = None
 
 class PMSProjectUpdate(BaseModel):
     name: Optional[str] = None

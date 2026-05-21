@@ -207,8 +207,7 @@ def list_projects(db: Session = Depends(get_db), current_user: User = Depends(ge
 
 @router.post("/projects")
 def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("pms", "add"))):
-    d = data.dict(exclude={"member_ids"})
-    member_ids = data.member_ids or []
+    d = data.dict(exclude={"member_ids", "members_with_roles"})
     if not d.get('owner_id'):
         d['owner_id'] = current_user.id
     p = PMSProject(**d)
@@ -216,10 +215,16 @@ def create_project(data: PMSProjectCreate, db: Session = Depends(get_db), curren
     db.flush()
     db.add(PMSProjectMember(project_id=p.id, user_id=current_user.id, role="pm", added_by=current_user.id))
     added_user_ids = {current_user.id}
-    for uid in member_ids:
-        if uid not in added_user_ids:
-            db.add(PMSProjectMember(project_id=p.id, user_id=uid, role="developer", added_by=current_user.id))
-            added_user_ids.add(uid)
+    if data.members_with_roles:
+        for m in data.members_with_roles:
+            if m.user_id not in added_user_ids:
+                db.add(PMSProjectMember(project_id=p.id, user_id=m.user_id, role=m.role, added_by=current_user.id))
+                added_user_ids.add(m.user_id)
+    elif data.member_ids:
+        for uid in data.member_ids:
+            if uid not in added_user_ids:
+                db.add(PMSProjectMember(project_id=p.id, user_id=uid, role="developer", added_by=current_user.id))
+                added_user_ids.add(uid)
     db.commit()
     db.refresh(p)
     d = {c.name: getattr(p, c.name) for c in p.__table__.columns}

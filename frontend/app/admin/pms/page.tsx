@@ -37,7 +37,7 @@ export default function PMSDashboard() {
   const [creating, setCreating] = useState(false);
   const [teams, setTeams] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([]);
+  const [selectedMembers, setSelectedMembers] = useState<{user_id: number, role: string}[]>([]);
   const [digestOpen, setDigestOpen] = useState(true);
   const [cpSort, setCpSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'name', dir: 'asc' });
   const [favorites, setFavorites] = useState<any[]>([]);
@@ -67,7 +67,7 @@ export default function PMSDashboard() {
       else delete payload.owner_id;
       if (!payload.start_date) delete payload.start_date;
       if (!payload.end_date) delete payload.end_date;
-      if (selectedMemberIds.length > 0) payload.member_ids = selectedMemberIds;
+      if (selectedMembers.length > 0) payload.members_with_roles = selectedMembers;
       const res = await pmsApi.createProject(payload);
       if (createFiles.length > 0 && res.data?.id) {
         await Promise.all(createFiles.map(f => pmsApi.uploadProjectDocument(res.data.id, f)));
@@ -75,7 +75,7 @@ export default function PMSDashboard() {
       setShowCreate(false);
       setForm(emptyForm);
       setCreateFiles([]);
-      setSelectedMemberIds([]);
+      setSelectedMembers([]);
       pmsApi.getDashboard(staleDays).then(r => setData(r.data));
     } finally {
       setCreating(false);
@@ -499,7 +499,7 @@ export default function PMSDashboard() {
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Team</label>
                     <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                      value={form.team_id} onChange={e => { setForm({...form, team_id: e.target.value}); setSelectedMemberIds([]); }}>
+                      value={form.team_id} onChange={e => { setForm({...form, team_id: e.target.value}); setSelectedMembers([]); }}>
                       <option value="">No team</option>
                       {teams.map((t: any) => (
                         <option key={t.id} value={t.id}>{t.name}</option>
@@ -516,13 +516,13 @@ export default function PMSDashboard() {
                       <div className="flex items-center justify-between mb-1.5">
                         <label className="text-xs text-gray-500">
                           Team Members
-                          {selectedMemberIds.length > 0 && <span className="ml-1 text-indigo-600 font-medium">({selectedMemberIds.length} selected)</span>}
+                          {selectedMembers.length > 0 && <span className="ml-1 text-indigo-600 font-medium">({selectedMembers.length} selected)</span>}
                         </label>
                         {members.length > 0 && (
                           <div className="flex gap-2">
-                            <button type="button" onClick={() => setSelectedMemberIds(members.map((m: any) => m.id))}
+                            <button type="button" onClick={() => setSelectedMembers(members.map((m: any) => ({ user_id: m.id, role: 'developer' })))}
                               className="text-xs text-indigo-600 hover:text-indigo-800">Select all</button>
-                            <button type="button" onClick={() => setSelectedMemberIds([])}
+                            <button type="button" onClick={() => setSelectedMembers([])}
                               className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
                           </div>
                         )}
@@ -533,19 +533,32 @@ export default function PMSDashboard() {
                           <a href="/admin/teams" className="text-xs text-indigo-600 hover:text-indigo-800">Add members in Admin → Teams</a>
                         </div>
                       ) : (
-                        <div className="border rounded-lg p-2 max-h-40 overflow-y-auto space-y-1">
-                          {members.map((m: any) => (
-                            <label key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer">
-                              <input type="checkbox" className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                checked={selectedMemberIds.includes(m.id)}
-                                onChange={e => {
-                                  if (e.target.checked) setSelectedMemberIds(prev => [...prev, m.id]);
-                                  else setSelectedMemberIds(prev => prev.filter(id => id !== m.id));
-                                }} />
-                              <span className="text-sm text-gray-700 flex-1">{m.full_name}</span>
-                              <span className="text-xs text-gray-400 capitalize">{m.role}</span>
-                            </label>
-                          ))}
+                        <div className="border rounded-lg p-2 max-h-48 overflow-y-auto space-y-1">
+                          {members.map((m: any) => {
+                            const sel = selectedMembers.find(s => s.user_id === m.id);
+                            return (
+                              <div key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50">
+                                <input type="checkbox" className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                  checked={!!sel}
+                                  onChange={e => {
+                                    if (e.target.checked) setSelectedMembers(prev => [...prev, { user_id: m.id, role: 'developer' }]);
+                                    else setSelectedMembers(prev => prev.filter(s => s.user_id !== m.id));
+                                  }} />
+                                <span className="text-sm text-gray-700 flex-1">{m.full_name}</span>
+                                {sel && (
+                                  <select className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-600"
+                                    value={sel.role}
+                                    onChange={e => setSelectedMembers(prev => prev.map(s => s.user_id === m.id ? { ...s, role: e.target.value } : s))}>
+                                    <option value="pm">PM</option>
+                                    <option value="developer">Developer</option>
+                                    <option value="designer">Designer</option>
+                                    <option value="qa">QA</option>
+                                    <option value="viewer">Viewer</option>
+                                  </select>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -596,7 +609,7 @@ export default function PMSDashboard() {
                 </div>
               </div>
               <div className="flex gap-3 mt-5">
-                <button onClick={() => { setShowCreate(false); setForm(emptyForm); setCreateFiles([]); setSelectedMemberIds([]); }}
+                <button onClick={() => { setShowCreate(false); setForm(emptyForm); setCreateFiles([]); setSelectedMembers([]); }}
                   className="flex-1 border rounded-lg px-4 py-2 text-sm">Cancel</button>
                 <button onClick={handleCreate} disabled={!form.name || creating}
                   className="flex-1 bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-50">
