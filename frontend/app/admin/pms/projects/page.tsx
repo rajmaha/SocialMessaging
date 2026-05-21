@@ -268,32 +268,58 @@ export default function ProjectsPage() {
                       className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
                   </div>
                 </div>
-                <div className="border rounded-lg p-2 max-h-48 overflow-y-auto space-y-1">
-                  {allUsers.map((u: any) => {
-                    const sel = selectedMembers.find(s => s.user_id === u.id);
-                    return (
-                      <div key={u.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50">
-                        <input type="checkbox" className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                          checked={!!sel}
-                          onChange={e => {
-                            if (e.target.checked) setSelectedMembers(prev => [...prev, { user_id: u.id, role: 'developer' }]);
-                            else setSelectedMembers(prev => prev.filter(s => s.user_id !== u.id));
-                          }} />
-                        <span className="text-sm text-gray-700 flex-1">{u.full_name || u.email}</span>
-                        {sel && (
-                          <select className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-600"
-                            value={sel.role}
-                            onChange={e => setSelectedMembers(prev => prev.map(s => s.user_id === u.id ? { ...s, role: e.target.value } : s))}>
-                            <option value="pm">PM</option>
-                            <option value="developer">Developer</option>
-                            <option value="designer">Designer</option>
-                            <option value="qa">QA</option>
-                            <option value="viewer">Viewer</option>
-                          </select>
-                        )}
+                <div className="border rounded-lg p-2 max-h-56 overflow-y-auto">
+                  {Object.entries(allUsers.reduce((groups: Record<string, any[]>, u: any) => {
+                    const r = u.role || 'other';
+                    if (!groups[r]) groups[r] = [];
+                    groups[r].push(u);
+                    return groups;
+                  }, {})).map(([role, users]) => (
+                    <div key={role} className="mb-2 last:mb-0">
+                      <div className="flex items-center gap-2 px-2 py-1">
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{role}</span>
+                        <div className="flex-1 border-t border-gray-200" />
+                        <button type="button" className="text-xs text-indigo-500 hover:text-indigo-700"
+                          onClick={() => {
+                            const uids = (users as any[]).map(u => u.id);
+                            setSelectedMembers(prev => {
+                              const existing = prev.filter(s => !uids.includes(s.user_id));
+                              const allSelected = uids.every(id => prev.some(s => s.user_id === id));
+                              return allSelected ? existing : [...existing, ...uids.filter(id => !prev.some(s => s.user_id === id)).map(id => ({ user_id: id, role: 'developer' }))];
+                            });
+                          }}>
+                          {(users as any[]).every(u => selectedMembers.some(s => s.user_id === u.id)) ? 'Deselect' : 'Select'} group
+                        </button>
                       </div>
-                    );
-                  })}
+                      <div className="space-y-0.5">
+                        {(users as any[]).map((u: any) => {
+                          const sel = selectedMembers.find(s => s.user_id === u.id);
+                          return (
+                            <div key={u.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50">
+                              <input type="checkbox" className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                checked={!!sel}
+                                onChange={e => {
+                                  if (e.target.checked) setSelectedMembers(prev => [...prev, { user_id: u.id, role: 'developer' }]);
+                                  else setSelectedMembers(prev => prev.filter(s => s.user_id !== u.id));
+                                }} />
+                              <span className="text-sm text-gray-700 flex-1">{u.full_name || u.email}</span>
+                              {sel && (
+                                <select className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-600"
+                                  value={sel.role}
+                                  onChange={e => setSelectedMembers(prev => prev.map(s => s.user_id === u.id ? { ...s, role: e.target.value } : s))}>
+                                  <option value="pm">PM</option>
+                                  <option value="developer">Developer</option>
+                                  <option value="designer">Designer</option>
+                                  <option value="qa">QA</option>
+                                  <option value="viewer">Viewer</option>
+                                </select>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
