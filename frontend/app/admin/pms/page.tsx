@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { pmsApi, teamsApi } from '@/lib/api';
+import { pmsApi } from '@/lib/api';
 import { API_URL } from '@/lib/config';
 import { getAuthToken } from '@/lib/auth';
 import MainHeader from '@/components/MainHeader';
@@ -30,12 +30,11 @@ export default function PMSDashboard() {
   const [staleDays, setStaleDays] = useState(7);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const emptyForm = { name: '', description: '', color: '#6366f1', status: 'planning', start_date: '', end_date: '', team_id: '', owner_id: '' };
+  const emptyForm = { name: '', description: '', color: '#6366f1', status: 'planning', start_date: '', end_date: '', owner_id: '' };
   const [form, setForm] = useState(emptyForm);
   const [createFiles, setCreateFiles] = useState<File[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [creating, setCreating] = useState(false);
-  const [teams, setTeams] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<{user_id: number, role: string}[]>([]);
   const [digestOpen, setDigestOpen] = useState(true);
@@ -49,7 +48,6 @@ export default function PMSDashboard() {
   }, [staleDays]);
 
   useEffect(() => {
-    teamsApi.list().then(r => setTeams(Array.isArray(r.data) ? r.data : [])).catch(() => {});
     const token = getAuthToken();
     fetch(`${API_URL}/admin/users`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
@@ -61,8 +59,6 @@ export default function PMSDashboard() {
     setCreating(true);
     try {
       const payload: any = { ...form };
-      if (payload.team_id) payload.team_id = Number(payload.team_id);
-      else delete payload.team_id;
       if (payload.owner_id) payload.owner_id = Number(payload.owner_id);
       else delete payload.owner_id;
       if (!payload.start_date) delete payload.start_date;
@@ -485,85 +481,58 @@ export default function PMSDashboard() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">Owner / PM</label>
-                    <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                      value={form.owner_id} onChange={e => setForm({...form, owner_id: e.target.value})}>
-                      <option value="">Current user (me)</option>
-                      {allUsers.map((u: any) => (
-                        <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">Team</label>
-                    <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                      value={form.team_id} onChange={e => { setForm({...form, team_id: e.target.value}); setSelectedMembers([]); }}>
-                      <option value="">No team</option>
-                      {teams.map((t: any) => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Owner / PM</label>
+                  <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                    value={form.owner_id} onChange={e => setForm({...form, owner_id: e.target.value})}>
+                    <option value="">Current user (me)</option>
+                    {allUsers.map((u: any) => (
+                      <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
+                    ))}
+                  </select>
                 </div>
 
-                {form.team_id && (() => {
-                  const team = teams.find((t: any) => String(t.id) === String(form.team_id));
-                  const members = team?.members || [];
-                  return (
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-xs text-gray-500">
-                          Team Members
-                          {selectedMembers.length > 0 && <span className="ml-1 text-indigo-600 font-medium">({selectedMembers.length} selected)</span>}
-                        </label>
-                        {members.length > 0 && (
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => setSelectedMembers(members.map((m: any) => ({ user_id: m.id, role: 'developer' })))}
-                              className="text-xs text-indigo-600 hover:text-indigo-800">Select all</button>
-                            <button type="button" onClick={() => setSelectedMembers([])}
-                              className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
-                          </div>
-                        )}
-                      </div>
-                      {members.length === 0 ? (
-                        <div className="border border-dashed rounded-lg p-3 text-center">
-                          <p className="text-xs text-gray-400">This team has no members.</p>
-                          <a href="/admin/teams" className="text-xs text-indigo-600 hover:text-indigo-800">Add members in Admin → Teams</a>
-                        </div>
-                      ) : (
-                        <div className="border rounded-lg p-2 max-h-48 overflow-y-auto space-y-1">
-                          {members.map((m: any) => {
-                            const sel = selectedMembers.find(s => s.user_id === m.id);
-                            return (
-                              <div key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50">
-                                <input type="checkbox" className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                  checked={!!sel}
-                                  onChange={e => {
-                                    if (e.target.checked) setSelectedMembers(prev => [...prev, { user_id: m.id, role: 'developer' }]);
-                                    else setSelectedMembers(prev => prev.filter(s => s.user_id !== m.id));
-                                  }} />
-                                <span className="text-sm text-gray-700 flex-1">{m.full_name}</span>
-                                {sel && (
-                                  <select className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-600"
-                                    value={sel.role}
-                                    onChange={e => setSelectedMembers(prev => prev.map(s => s.user_id === m.id ? { ...s, role: e.target.value } : s))}>
-                                    <option value="pm">PM</option>
-                                    <option value="developer">Developer</option>
-                                    <option value="designer">Designer</option>
-                                    <option value="qa">QA</option>
-                                    <option value="viewer">Viewer</option>
-                                  </select>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs text-gray-500">
+                      Project Members
+                      {selectedMembers.length > 0 && <span className="ml-1 text-indigo-600 font-medium">({selectedMembers.length} selected)</span>}
+                    </label>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setSelectedMembers(allUsers.map((u: any) => ({ user_id: u.id, role: 'developer' })))}
+                        className="text-xs text-indigo-600 hover:text-indigo-800">Select all</button>
+                      <button type="button" onClick={() => setSelectedMembers([])}
+                        className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
                     </div>
-                  );
-                })()}
+                  </div>
+                  <div className="border rounded-lg p-2 max-h-48 overflow-y-auto space-y-1">
+                    {allUsers.map((u: any) => {
+                      const sel = selectedMembers.find(s => s.user_id === u.id);
+                      return (
+                        <div key={u.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50">
+                          <input type="checkbox" className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            checked={!!sel}
+                            onChange={e => {
+                              if (e.target.checked) setSelectedMembers(prev => [...prev, { user_id: u.id, role: 'developer' }]);
+                              else setSelectedMembers(prev => prev.filter(s => s.user_id !== u.id));
+                            }} />
+                          <span className="text-sm text-gray-700 flex-1">{u.full_name || u.email}</span>
+                          {sel && (
+                            <select className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-600"
+                              value={sel.role}
+                              onChange={e => setSelectedMembers(prev => prev.map(s => s.user_id === u.id ? { ...s, role: e.target.value } : s))}>
+                              <option value="pm">PM</option>
+                              <option value="developer">Developer</option>
+                              <option value="designer">Designer</option>
+                              <option value="qa">QA</option>
+                              <option value="viewer">Viewer</option>
+                            </select>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
