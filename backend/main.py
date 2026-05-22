@@ -2049,9 +2049,46 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE cloudpanel_sites ADD COLUMN IF NOT EXISTS created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL"))
         conn.commit()
 
-# ── Log DB Init ────────────────────────────────────────────────────────────
-from app.log_database import init_log_db
-init_log_db()
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMP DEFAULT NOW(),
+                user_id INTEGER,
+                user_email VARCHAR,
+                user_role VARCHAR,
+                action VARCHAR NOT NULL,
+                entity_type VARCHAR,
+                entity_id INTEGER,
+                detail TEXT,
+                ip_address VARCHAR,
+                request_path VARCHAR,
+                request_method VARCHAR
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_timestamp ON audit_logs (timestamp)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_user_id ON audit_logs (user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_action ON audit_logs (action)"))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS error_logs (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMP DEFAULT NOW(),
+                severity VARCHAR NOT NULL DEFAULT 'error',
+                source VARCHAR NOT NULL DEFAULT 'api',
+                error_type VARCHAR,
+                message TEXT NOT NULL,
+                traceback TEXT,
+                user_id INTEGER,
+                request_path VARCHAR,
+                request_method VARCHAR,
+                context TEXT
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_error_logs_timestamp ON error_logs (timestamp)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_error_logs_severity ON error_logs (severity)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_error_logs_source ON error_logs (source)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_error_logs_user_id ON error_logs (user_id)"))
+        conn.commit()
 
 try:
     _run_inline_migrations()

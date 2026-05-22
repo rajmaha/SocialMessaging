@@ -1,10 +1,10 @@
 # backend/app/models/logs.py
 from sqlalchemy import Column, Integer, String, DateTime, Text
 from datetime import datetime
-from app.log_database import LogBase
+from app.database import Base
 
 
-class AuditLog(LogBase):
+class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -21,7 +21,7 @@ class AuditLog(LogBase):
     request_method = Column(String, nullable=True)
 
 
-class ErrorLog(LogBase):
+class ErrorLog(Base):
     __tablename__ = "error_logs"
 
     id = Column(Integer, primary_key=True, index=True)
