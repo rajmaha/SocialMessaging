@@ -64,6 +64,7 @@ class CloudPanelSiteResponse(BaseModel):
     created_at: datetime
     server_name: Optional[str] = None
     server_host: Optional[str] = None
+    created_by_name: Optional[str] = None
 
     class Config:
         from_attributes = True

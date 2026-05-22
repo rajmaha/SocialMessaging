@@ -13,4 +13,5 @@ class CloudPanelSite(Base):
     db_name = Column(String, nullable=True)
     db_user = Column(String, nullable=True)
     template_name = Column(String, nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

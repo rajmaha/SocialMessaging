@@ -2046,6 +2046,9 @@ def _run_inline_migrations():
         """))
         conn.commit()
 
+        conn.execute(text("ALTER TABLE cloudpanel_sites ADD COLUMN IF NOT EXISTS created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL"))
+        conn.commit()
+
 # ── Log DB Init ────────────────────────────────────────────────────────────
 from app.log_database import init_log_db
 init_log_db()

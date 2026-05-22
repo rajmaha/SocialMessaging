@@ -18,6 +18,7 @@ interface CloudPanelSite {
     created_at: string
     server_name: string | null
     server_host: string | null
+    created_by_name: string | null
 }
 
 interface CloudPanelServer {
@@ -255,6 +256,7 @@ export default function CloudPanelSitesPage() {
                                         <th className="px-4 py-3">DB Name</th>
                                         <th className="px-4 py-3">DB User</th>
                                         <th className="px-4 py-3">Template</th>
+                                        <th className="px-4 py-3">Created By</th>
                                         <th className="px-4 py-3">Created</th>
                                         <th className="px-4 py-3 text-right">Actions</th>
                                     </tr>
@@ -276,6 +278,7 @@ export default function CloudPanelSitesPage() {
                                                 ) : '-'}
                                             </td>
                                             <td className="px-4 py-3 text-gray-600">{site.template_name || '-'}</td>
+                                            <td className="px-4 py-3 text-gray-600">{site.created_by_name || '-'}</td>
                                             <td className="px-4 py-3 text-gray-500 text-xs">
                                                 {new Date(site.created_at).toLocaleDateString()}
                                             </td>

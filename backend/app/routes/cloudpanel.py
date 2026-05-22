@@ -133,6 +133,7 @@ def create_site_on_server(
             db_name=result["db_name"],
             db_user=result["db_user"],
             template_name=site_data.templateName,
+            created_by_id=admin_user.id,
         )
         db.add(site_record)
         db.commit()
@@ -172,6 +173,7 @@ def deploy_site_stream(
                     db_name=result["db_name"],
                     db_user=result["db_user"],
                     template_name=site_data.templateName,
+                    created_by_id=admin_user.id,
                 )
                 db.add(site_record)
                 db.commit()
@@ -197,9 +199,9 @@ def list_all_sites(
 ):
     """List all deployed sites, optionally filtered by server.
     If unlinked=true, only return sites not yet linked to any subscription."""
-    query = db.query(CloudPanelSite, CloudPanelServer.name, CloudPanelServer.host).join(
+    query = db.query(CloudPanelSite, CloudPanelServer.name, CloudPanelServer.host, User.full_name).join(
         CloudPanelServer, CloudPanelSite.server_id == CloudPanelServer.id
-    )
+    ).outerjoin(User, CloudPanelSite.created_by_id == User.id)
     if server_id:
         query = query.filter(CloudPanelSite.server_id == server_id)
     if unlinked:
@@ -211,10 +213,11 @@ def list_all_sites(
     rows = query.order_by(CloudPanelSite.created_at.desc()).all()
 
     results = []
-    for site, server_name, server_host in rows:
+    for site, server_name, server_host, creator_name in rows:
         resp = CloudPanelSiteResponse.model_validate(site)
         resp.server_name = server_name
         resp.server_host = server_host
+        resp.created_by_name = creator_name
         results.append(resp)
     return results
 
