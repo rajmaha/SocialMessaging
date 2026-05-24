@@ -543,8 +543,10 @@ async def submit_form(
     form = db.query(Form).filter(Form.slug == slug, Form.is_published == True).first()
     if not form:
         raise HTTPException(status_code=404, detail="Form not found or not published")
+
+    submission_data = _inject_hidden_fields(db, form, dict(data.data))
+
     if form.storage_type == "local":
-        submission_data = _inject_hidden_fields(db, form, dict(data.data))
         submission = FormSubmission(
             form_id=form.id,
             data=submission_data,
@@ -554,6 +556,49 @@ async def submit_form(
         db.commit()
         db.refresh(submission)
         return {"message": form.success_message, "submission_id": submission.id}
+
+    # Remote API form — allowed publicly when allow_public_submit is enabled
+    if form.allow_public_submit:
+        if not form.api_create_method:
+            raise HTTPException(status_code=400, detail="No create endpoint configured for this form")
+        server = db.query(ApiServer).filter(ApiServer.id == form.api_server_id).first()
+        if not server:
+            raise HTTPException(status_code=400, detail="API server not configured for this form")
+        # Use the form creator's credential, fall back to any credential for this server
+        cred = None
+        if form.created_by:
+            cred = db.query(UserApiCredential).filter(
+                UserApiCredential.user_id == form.created_by,
+                UserApiCredential.api_server_id == server.id,
+            ).first()
+        if not cred:
+            cred = db.query(UserApiCredential).filter(
+                UserApiCredential.api_server_id == server.id,
+            ).first()
+        if not cred:
+            raise HTTPException(status_code=500, detail="No API credentials configured for this form")
+        try:
+            result = await api_request(db, server, cred, form.api_create_method, body=submission_data)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail={
+                "remote_error": True,
+                "message": f"Failed to connect to remote API: {str(e)}",
+            })
+        api_message = None
+        api_data = None
+        if isinstance(result, dict):
+            msg_path = server.response_message_path or "message"
+            api_message = _resolve_json_path(result, msg_path)
+            api_data = _extract_data(server, result)
+        return {
+            "message": form.success_message,
+            "api_message": api_message,
+            "result": api_data if api_data is not None else result,
+            "success": True,
+        }
+
     raise HTTPException(status_code=400, detail="API form submission requires authentication")
 
 

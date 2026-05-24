@@ -20,6 +20,7 @@ class Form(Base):
     api_update_method = Column(String, nullable=True)
     api_delete_method = Column(String, nullable=True)
     api_list_columns = Column(JSON, nullable=True)
+    allow_public_submit = Column(Boolean, default=False)
     api_record_id_path = Column(String, nullable=True, default="data.id")
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

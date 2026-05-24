@@ -13,6 +13,7 @@ class FormCreate(BaseModel):
     storage_type: str = "local"
     is_published: bool = False
     require_otp: bool = False
+    allow_public_submit: bool = False
     api_server_id: Optional[int] = None
     api_create_method: Optional[str] = None
     api_list_method: Optional[str] = None
@@ -21,6 +22,25 @@ class FormCreate(BaseModel):
     api_delete_method: Optional[str] = None
     api_list_columns: Optional[List[Dict[str, Any]]] = None
     api_record_id_path: Optional[str] = "data.id"
+
+    from pydantic import model_validator
+
+    @model_validator(mode='before')
+    @classmethod
+    def _normalise_method_aliases(cls, values: Any) -> Any:
+        """Accept api_method_create / api_method_list … from older frontend."""
+        alias_map = {
+            'api_method_create': 'api_create_method',
+            'api_method_list': 'api_list_method',
+            'api_method_detail': 'api_detail_method',
+            'api_method_update': 'api_update_method',
+            'api_method_delete': 'api_delete_method',
+        }
+        if isinstance(values, dict):
+            for old, new in alias_map.items():
+                if old in values and not values.get(new):
+                    values[new] = values.pop(old)
+        return values
 
 
 class FormUpdate(BaseModel):
@@ -31,6 +51,7 @@ class FormUpdate(BaseModel):
     storage_type: Optional[str] = None
     is_published: Optional[bool] = None
     require_otp: Optional[bool] = None
+    allow_public_submit: Optional[bool] = None
     api_server_id: Optional[int] = None
     api_create_method: Optional[str] = None
     api_list_method: Optional[str] = None
@@ -40,9 +61,28 @@ class FormUpdate(BaseModel):
     api_list_columns: Optional[List[Dict[str, Any]]] = None
     api_record_id_path: Optional[str] = None
 
+    from pydantic import model_validator
+
+    @model_validator(mode='before')
+    @classmethod
+    def _normalise_method_aliases(cls, values: Any) -> Any:
+        alias_map = {
+            'api_method_create': 'api_create_method',
+            'api_method_list': 'api_list_method',
+            'api_method_detail': 'api_detail_method',
+            'api_method_update': 'api_update_method',
+            'api_method_delete': 'api_delete_method',
+        }
+        if isinstance(values, dict):
+            for old, new in alias_map.items():
+                if old in values and not values.get(new):
+                    values[new] = values.pop(old)
+        return values
+
 
 class FormResponse(FormCreate):
     id: int
+    allow_public_submit: bool = False
     created_by: Optional[int] = None
     created_at: datetime
     updated_at: datetime

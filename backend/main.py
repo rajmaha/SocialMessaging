@@ -1682,6 +1682,7 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE form_fields ADD COLUMN IF NOT EXISTS is_auto_generated BOOLEAN DEFAULT FALSE"))
         conn.execute(text("ALTER TABLE form_fields ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT TRUE"))
         conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS require_otp BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS allow_public_submit BOOLEAN DEFAULT FALSE"))
 
         # Subscription settings (single-row config for post-create form)
         conn.execute(text("""

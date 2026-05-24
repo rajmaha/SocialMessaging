@@ -36,6 +36,7 @@ interface PublicForm {
   success_message?: string;
   require_otp?: boolean;
   storage_type?: string;
+  allow_public_submit?: boolean;
   api_server_id?: number;
   fields: FormField[];
 }
@@ -371,9 +372,9 @@ export default function PublicFormPage() {
         data,
         submitter_email: submitterEmail || undefined,
       };
-      // Use authenticated submit for API-type forms
+      // Use authenticated submit for remote-API forms unless allow_public_submit is set
       let res;
-      if (form!.storage_type === "api") {
+      if ((form!.storage_type === "api" || form!.storage_type === "remote") && !form!.allow_public_submit) {
         res = await formsApi.submitFormAuthenticated(slug, payload);
       } else {
         res = await formsApi.submitForm(slug, payload);

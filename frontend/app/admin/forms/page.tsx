@@ -12,13 +12,14 @@ const defaultForm = {
   success_message: 'Thank you for your submission!',
   storage_type: 'local',
   api_server_id: '',
-  api_method_create: '',
-  api_method_list: '',
-  api_method_detail: '',
-  api_method_update: '',
-  api_method_delete: '',
+  api_create_method: '',
+  api_list_method: '',
+  api_detail_method: '',
+  api_update_method: '',
+  api_delete_method: '',
   is_published: false,
   require_otp: false,
+  allow_public_submit: false,
 };
 
 export default function FormsPage() {
@@ -56,7 +57,7 @@ export default function FormsPage() {
   };
 
   const handleServerChange = (serverId: string) => {
-    setForm({ ...form, api_server_id: serverId, api_method_create: '', api_method_list: '', api_method_detail: '', api_method_update: '', api_method_delete: '' });
+    setForm({ ...form, api_server_id: serverId, api_create_method: '', api_list_method: '', api_detail_method: '', api_update_method: '', api_delete_method: '' });
     setAutoFillFromSpec(false);
     setSelectedCreateEndpointId(null);
     loadServerEndpoints(serverId);
@@ -69,7 +70,7 @@ export default function FormsPage() {
     } else {
       setForm({ ...form, [field]: '' });
     }
-    if (field === 'api_method_create') {
+    if (field === 'api_create_method') {
       setSelectedCreateEndpointId(endpointId ? Number(endpointId) : null);
     }
   };
@@ -92,13 +93,14 @@ export default function FormsPage() {
       success_message: item.success_message || 'Thank you for your submission!',
       storage_type: item.storage_type || 'local',
       api_server_id: item.api_server_id || '',
-      api_method_create: item.api_method_create || '',
-      api_method_list: item.api_method_list || '',
-      api_method_detail: item.api_method_detail || '',
-      api_method_update: item.api_method_update || '',
-      api_method_delete: item.api_method_delete || '',
+      api_create_method: item.api_create_method || '',
+      api_list_method: item.api_list_method || '',
+      api_detail_method: item.api_detail_method || '',
+      api_update_method: item.api_update_method || '',
+      api_delete_method: item.api_delete_method || '',
       is_published: item.is_published || false,
       require_otp: item.require_otp || false,
+      allow_public_submit: item.allow_public_submit || false,
     });
     setAutoFillFromSpec(false);
     if (item.api_server_id) loadServerEndpoints(item.api_server_id);
@@ -300,6 +302,17 @@ export default function FormsPage() {
 
             {form.storage_type === 'remote' && (
               <div className="border border-gray-200 rounded-lg p-3 mb-3 space-y-2 bg-gray-50">
+                {/* Allow public (unauthenticated) submission */}
+                <label className="flex items-center gap-2 cursor-pointer mb-2">
+                  <input
+                    type="checkbox"
+                    checked={form.allow_public_submit}
+                    onChange={e => setForm({ ...form, allow_public_submit: e.target.checked })}
+                    className="rounded border-gray-300"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Allow public submission</span>
+                  <span className="text-xs text-gray-400">(anyone can submit without logging in)</span>
+                </label>
                 <label className="block text-sm font-medium text-gray-700 mb-1">API Server</label>
                 <select
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
@@ -333,11 +346,11 @@ export default function FormsPage() {
                 )}
 
                 {[
-                  { label: 'Create Method', field: 'api_method_create', placeholder: 'POST /api/records', filterMethod: 'POST' },
-                  { label: 'List Method', field: 'api_method_list', placeholder: 'GET /api/records', filterMethod: 'GET' },
-                  { label: 'Detail Method', field: 'api_method_detail', placeholder: 'GET /api/records/{id}', filterMethod: 'GET' },
-                  { label: 'Update Method', field: 'api_method_update', placeholder: 'PUT /api/records/{id}', filterMethod: 'PUT' },
-                  { label: 'Delete Method', field: 'api_method_delete', placeholder: 'DELETE /api/records/{id}', filterMethod: 'DELETE' },
+                  { label: 'Create Method', field: 'api_create_method', placeholder: 'POST /api/records', filterMethod: 'POST' },
+                  { label: 'List Method', field: 'api_list_method', placeholder: 'GET /api/records', filterMethod: 'GET' },
+                  { label: 'Detail Method', field: 'api_detail_method', placeholder: 'GET /api/records/{id}', filterMethod: 'GET' },
+                  { label: 'Update Method', field: 'api_update_method', placeholder: 'PUT /api/records/{id}', filterMethod: 'PUT' },
+                  { label: 'Delete Method', field: 'api_delete_method', placeholder: 'DELETE /api/records/{id}', filterMethod: 'DELETE' },
                 ].map(({ label, field, placeholder, filterMethod }) => (
                   <div key={field}>
                     <label className="block text-sm font-medium text-gray-700 mt-2">{label}</label>
