@@ -53,7 +53,7 @@ function BulkActionModal({ action, members, milestones, onConfirm, onCancel }: {
               <option value="">— Unassigned —</option>
               {members.map((m: any) => (
                 <option key={m.user_id} value={m.user_id}>
-                  {m.user_name || `User ${m.user_id}`}
+                  {m.user_name || `User ${m.user_id}`}{m.role ? ` (${m.role})` : ''}
                 </option>
               ))}
             </select>
@@ -139,9 +139,15 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [allLabels, setAllLabels] = useState<any[]>([]);
 
+  /* ── Pagination ────────────────────────────────────────────────── */
+  const PAGE_SIZE = 25;
+  const [currentPage, setCurrentPage] = useState(1);
+
   useEffect(() => {
     pmsApi.listLabels().then(r => setAllLabels(r.data)).catch(() => {});
   }, []);
+
+  useEffect(() => { setCurrentPage(1); }, [filter, filters, sortBy, sortDir]);
 
   /* ── Filtering ─────────────────────────────────────────────────── */
   const filtered = tasks.filter(t => {
@@ -149,7 +155,11 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
     // Text search
     if (filter && !t.title?.toLowerCase().includes(filter.toLowerCase())) return false;
     // Assignee
-    if (filters.assignees.length > 0 && !filters.assignees.includes(t.assignee_id)) return false;
+    if (filters.assignees.length > 0 || filters.unassigned) {
+      const matchesAssignee = filters.assignees.length > 0 && filters.assignees.includes(t.assignee_id);
+      const matchesUnassigned = filters.unassigned && !t.assignee_id;
+      if (!matchesAssignee && !matchesUnassigned) return false;
+    }
     // Priority
     if (filters.priorities.length > 0 && !filters.priorities.includes(t.priority)) return false;
     // Stage
@@ -200,6 +210,9 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
 
   const sortIcon = (col: string) => sortBy === col ? (sortDir === 'asc' ? ' \u2191' : ' \u2193') : '';
 
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const paginated = sorted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   const handleCreate = async () => {
     const res = await pmsApi.createTask(projectId, {
       ...form,
@@ -239,14 +252,14 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
         />
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto flex flex-col">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide sticky top-0">
             <tr>
               <th className="px-2 py-2 w-8">
                 <input type="checkbox" className="rounded border-gray-300"
-                  checked={selectedIds.size > 0 && selectedIds.size === sorted.length}
-                  onChange={e => setSelectedIds(e.target.checked ? new Set(sorted.map((t: any) => t.id)) : new Set())} />
+                  checked={selectedIds.size > 0 && selectedIds.size === paginated.length}
+                  onChange={e => setSelectedIds(e.target.checked ? new Set(paginated.map((t: any) => t.id)) : new Set())} />
               </th>
               <th className="text-left px-4 py-2 font-semibold">Task</th>
               <th className="text-left px-4 py-2 font-semibold cursor-pointer hover:text-indigo-600 select-none" onClick={() => toggleSort('stage')}>
@@ -266,7 +279,7 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {sorted.map(t => {
+            {paginated.map(t => {
               const isOverdue = t.due_date && new Date(t.due_date) < new Date() && t.stage !== 'completed';
               const isDueSoon = !isOverdue && t.due_date && ((new Date(t.due_date).getTime() - new Date().getTime()) / 86400000) <= 2 && t.stage !== 'completed';
               return (
@@ -327,12 +340,76 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
               </tr>
               );
             })}
-            {sorted.length === 0 && (
-              <tr><td colSpan={7} className="text-center text-gray-400 py-12">No tasks found.</td></tr>
+            {paginated.length === 0 && (
+              <tr><td colSpan={8} className="text-center text-gray-400 py-12">No tasks found.</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-white flex-none">
+          <span className="text-xs text-gray-500">
+            {sorted.length} task{sorted.length !== 1 ? 's' : ''} · page {currentPage} of {totalPages}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+            >
+              «
+            </button>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+            >
+              ‹
+            </button>
+            {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+              let page: number;
+              if (totalPages <= 7) {
+                page = i + 1;
+              } else if (currentPage <= 4) {
+                page = i + 1;
+              } else if (currentPage >= totalPages - 3) {
+                page = totalPages - 6 + i;
+              } else {
+                page = currentPage - 3 + i;
+              }
+              return (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                    currentPage === page
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'border-gray-300 hover:bg-gray-50 text-gray-700'
+                  }`}
+                >
+                  {page}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+            >
+              ›
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 text-xs rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+            >
+              »
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Action Bar */}
       {selectedIds.size > 0 && (
@@ -402,7 +479,7 @@ export default function ListView({ projectId, tasks, milestones, members, onRelo
                   <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.assignee_id}
                     onChange={e => setForm({...form, assignee_id: e.target.value})}>
                     <option value="">Unassigned</option>
-                    {members.map((m: any) => <option key={m.user_id} value={m.user_id}>{m.user_name || `User ${m.user_id}`}</option>)}
+                    {members.map((m: any) => <option key={m.user_id} value={m.user_id}>{m.user_name || `User ${m.user_id}`}{m.role ? ` (${m.role})` : ''}</option>)}
                   </select>
                 </div>
                 <div>

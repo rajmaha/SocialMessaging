@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 
 export type FilterState = {
   assignees: number[];
+  unassigned: boolean;
   priorities: string[];
   stages: string[];
   milestone_id: number | null;
@@ -19,6 +20,7 @@ export type FilterState = {
 
 export const defaultFilters: FilterState = {
   assignees: [],
+  unassigned: false,
   priorities: [],
   stages: [],
   milestone_id: null,
@@ -142,6 +144,7 @@ export default function FilterBar({
   /* check if any filter is active */
   const hasActiveFilters =
     filters.assignees.length > 0 ||
+    filters.unassigned ||
     filters.priorities.length > 0 ||
     filters.stages.length > 0 ||
     filters.milestone_id !== null ||
@@ -158,12 +161,22 @@ export default function FilterBar({
 
   filters.assignees.forEach(id => {
     const m = members.find((x: any) => x.id === id || x.user_id === id);
+    const displayName = m?.user_name || m?.full_name || m?.name || `User ${id}`;
+    const roleLabel = m?.role ? ` (${m.role})` : '';
     pills.push({
       key: `assignee-${id}`,
-      label: `Assignee: ${m?.full_name || m?.name || id}`,
+      label: `Assignee: ${displayName}${roleLabel}`,
       onRemove: () => toggleArray('assignees', id),
     });
   });
+
+  if (filters.unassigned) {
+    pills.push({
+      key: 'unassigned',
+      label: 'Unassigned',
+      onRemove: () => update({ unassigned: false }),
+    });
+  }
 
   filters.priorities.forEach(p => {
     pills.push({
@@ -243,12 +256,29 @@ export default function FilterBar({
       {/* ── Filter controls row ─────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Assignee multi-select */}
-        <MultiSelectDropdown
-          label="Assignee"
-          options={members.map((m: any) => ({ ...m, id: m.id ?? m.user_id, name: m.full_name || m.name || `User ${m.id ?? m.user_id}` }))}
-          selected={filters.assignees}
-          onToggle={id => toggleArray('assignees', id)}
-        />
+        <div className="flex items-center gap-1">
+          <MultiSelectDropdown
+            label="Assignee"
+            options={members.map((m: any) => {
+              const uid = m.id ?? m.user_id;
+              const displayName = m.user_name || m.full_name || m.name || `User ${uid}`;
+              const roleLabel = m.role ? ` (${m.role})` : '';
+              return { ...m, id: uid, name: `${displayName}${roleLabel}` };
+            })}
+            selected={filters.assignees}
+            onToggle={id => toggleArray('assignees', id)}
+          />
+          <button
+            onClick={() => update({ unassigned: !filters.unassigned })}
+            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+              filters.unassigned
+                ? 'bg-gray-200 text-gray-700 border-gray-400'
+                : 'border-gray-300 text-gray-400'
+            }`}
+          >
+            Unassigned
+          </button>
+        </div>
 
         {/* Priority chips */}
         <div className="flex items-center gap-1">
