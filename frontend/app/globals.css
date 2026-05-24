@@ -289,3 +289,62 @@ body.mobile-chat-open .mobile-bottom-nav { display: none !important; }
     min-height: 50vh;
   }
 }
+
+/* ── PMS task time-log note editor (compact Tiptap) ─────────────── */
+.pms-note-editor .ProseMirror {
+  font-size: 0.8125rem; /* ~13px */
+  line-height: 1.5;
+  outline: none;
+  min-height: 60px;
+}
+.pms-note-editor .ProseMirror > * + * { margin-top: 0.4em; }
+.pms-note-editor .ProseMirror p { margin: 0; }
+.pms-note-editor .ProseMirror ul,
+.pms-note-editor .ProseMirror ol { padding-left: 1.25rem; margin: 0.25em 0; }
+.pms-note-editor .ProseMirror ul { list-style-type: disc; }
+.pms-note-editor .ProseMirror ol { list-style-type: decimal; }
+.pms-note-editor .ProseMirror li { margin-bottom: 0.1em; display: list-item; }
+.pms-note-editor .ProseMirror blockquote {
+  border-left: 3px solid #e5e7eb;
+  padding-left: 0.75em;
+  color: #6b7280;
+  margin: 0.4em 0;
+}
+.pms-note-editor .ProseMirror pre {
+  background: #f3f4f6;
+  border-radius: 0.25rem;
+  padding: 0.4em 0.6em;
+  font-size: 0.75rem;
+  font-family: monospace;
+  overflow-x: auto;
+}
+.pms-note-editor .ProseMirror code {
+  background: #f3f4f6;
+  padding: 0.1em 0.3em;
+  border-radius: 0.2em;
+  font-size: 0.75rem;
+  font-family: monospace;
+}
+.pms-note-editor .ProseMirror s { text-decoration: line-through; }
+
+/* ── PMS note display (rendered HTML in time-log history) ────────── */
+.pms-note-display p { margin: 0 0 0.2em; }
+.pms-note-display p:last-child { margin-bottom: 0; }
+.pms-note-display ul { list-style-type: disc; padding-left: 1.2rem; margin: 0.2em 0; }
+.pms-note-display ol { list-style-type: decimal; padding-left: 1.2rem; margin: 0.2em 0; }
+.pms-note-display li { display: list-item; }
+.pms-note-display strong { font-weight: 600; }
+.pms-note-display em { font-style: italic; }
+.pms-note-display s { text-decoration: line-through; }
+.pms-note-display blockquote {
+  border-left: 2px solid #d1d5db;
+  padding-left: 0.5em;
+  color: #9ca3af;
+  margin: 0.2em 0;
+}
+.pms-note-display code {
+  background: #f3f4f6;
+  padding: 0.1em 0.25em;
+  border-radius: 0.2em;
+  font-family: monospace;
+}

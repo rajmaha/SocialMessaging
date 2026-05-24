@@ -1,6 +1,54 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
 import { pmsApi } from '@/lib/api';
+
+/* ── Lightweight rich-text note editor ──────────────────────────── */
+function NoteEditor({ onChange }: { onChange: (html: string) => void }) {
+  const editor = useEditor({
+    extensions: [StarterKit],
+    content: '<p></p>',
+    immediatelyRender: false,
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML();
+      onChange(html === '<p></p>' ? '' : html);
+    },
+  });
+
+  if (!editor) return null;
+
+  const btn = (active: boolean, onClick: () => void, title: string, label: React.ReactNode) => (
+    <button type="button" title={title} onMouseDown={e => { e.preventDefault(); onClick(); }}
+      className={`px-1.5 py-0.5 rounded text-xs font-medium leading-none transition-colors ${
+        active ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-200'
+      }`}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="border border-gray-300 rounded overflow-hidden focus-within:ring-1 focus-within:ring-indigo-400 focus-within:border-indigo-400">
+      {/* Toolbar */}
+      <div className="flex items-center gap-0.5 px-1.5 py-1 border-b border-gray-200 bg-gray-50">
+        {btn(editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold', <b>B</b>)}
+        {btn(editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run(), 'Italic', <i>I</i>)}
+        {btn(editor.isActive('strike'), () => editor.chain().focus().toggleStrike().run(), 'Strikethrough', <s>S</s>)}
+        <span className="w-px h-3.5 bg-gray-200 mx-0.5" />
+        {btn(editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run(), 'Bullet list', '• ≡')}
+        {btn(editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run(), 'Numbered list', '1 ≡')}
+        <span className="w-px h-3.5 bg-gray-200 mx-0.5" />
+        {btn(editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), 'Blockquote', '" "')}
+        {btn(editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run(), 'Code block', '</>')}
+      </div>
+      {/* Content area */}
+      <EditorContent
+        editor={editor}
+        className="pms-note-editor text-sm px-2.5 py-2 min-h-[72px] max-h-[160px] overflow-y-auto"
+      />
+    </div>
+  );
+}
 
 const STAGE_COLORS: Record<string, string> = {
   development: '#6366f1', qa: '#f59e0b', pm_review: '#8b5cf6',
@@ -29,6 +77,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
   const [timelogs, setTimelogs] = useState<any[]>([]);
   const [logHours, setLogHours] = useState('');
   const [logNote, setLogNote] = useState('');
+  const [logKey, setLogKey] = useState(0);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [checklists, setChecklists] = useState<any[]>([]);
   const [newCheckItem, setNewCheckItem] = useState('');
@@ -102,6 +151,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
     await pmsApi.logTime(taskId, { hours: parseFloat(logHours), note: logNote || undefined });
     setLogHours('');
     setLogNote('');
+    setLogKey(k => k + 1); // remount NoteEditor to clear its content
     const r = await pmsApi.listTimeLogs(taskId);
     setTimelogs(r.data);
     onUpdated();
@@ -299,21 +349,33 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
           </button>
           {expandTime && (
             <div className="px-4 pb-3 space-y-2">
-              <div className="flex gap-1.5">
-                <input type="number" step="0.5" className="w-16 border rounded px-2 py-1 text-sm" placeholder="Hrs"
+              {/* Hours row */}
+              <div className="flex items-center gap-1.5">
+                <input type="number" step="0.5" className="w-20 border rounded px-2 py-1.5 text-sm" placeholder="Hrs"
                   value={logHours} onChange={e => setLogHours(e.target.value)} />
-                <input className="flex-1 border rounded px-2 py-1 text-sm" placeholder="Note (optional)"
-                  value={logNote} onChange={e => setLogNote(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleLogTime()} />
-                <button onClick={handleLogTime}
-                  className="bg-indigo-600 text-white px-2.5 py-1 rounded text-sm hover:bg-indigo-700">Log</button>
+                <span className="text-xs text-gray-400">hours</span>
+                <button onClick={handleLogTime} disabled={!logHours}
+                  className="ml-auto bg-indigo-600 text-white px-3 py-1.5 rounded text-sm hover:bg-indigo-700 disabled:opacity-40">Log</button>
               </div>
-              {timelogs.map(l => (
-                <div key={l.id} className="flex justify-between items-center text-sm">
-                  <span className="text-gray-600">{l.user_name} — <strong>{l.hours}h</strong>{l.note ? ` · ${l.note}` : ''}</span>
-                  <span className="text-gray-400 text-[11px]">{l.log_date}</span>
-                </div>
-              ))}
+              {/* Rich-text note */}
+              <NoteEditor key={logKey} onChange={setLogNote} />
+
+              {/* Logged entries */}
+              {timelogs.length > 0 && <div className="pt-1 space-y-2">
+                {timelogs.map(l => (
+                  <div key={l.id} className="bg-gray-50 rounded-lg px-3 py-2 text-sm">
+                    <div className="flex justify-between items-center mb-0.5">
+                      <span className="font-medium text-gray-700">{l.user_name} — <strong>{l.hours}h</strong></span>
+                      <span className="text-[10px] text-gray-400">{l.log_date}</span>
+                    </div>
+                    {l.note && (
+                      l.note.startsWith('<')
+                        ? <div className="pms-note-display text-xs text-gray-500 mt-0.5" dangerouslySetInnerHTML={{ __html: l.note }} />
+                        : <p className="text-xs text-gray-500 mt-0.5">{l.note}</p>
+                    )}
+                  </div>
+                ))}
+              </div>}
               {timelogs.length === 0 && <p className="text-xs text-gray-400">No time logged.</p>}
             </div>
           )}
