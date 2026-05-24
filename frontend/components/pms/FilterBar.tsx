@@ -160,7 +160,7 @@ export default function FilterBar({
   const pills: { key: string; label: string; onRemove: () => void }[] = [];
 
   filters.assignees.forEach(id => {
-    const m = members.find((x: any) => x.id === id || x.user_id === id);
+    const m = members.find((x: any) => x.user_id === id || x.id === id);
     const displayName = m?.user_name || m?.full_name || m?.name || `User ${id}`;
     const roleLabel = m?.role ? ` (${m.role})` : '';
     pills.push({
@@ -260,7 +260,7 @@ export default function FilterBar({
           <MultiSelectDropdown
             label="Assignee"
             options={members.map((m: any) => {
-              const uid = m.id ?? m.user_id;
+              const uid = m.user_id ?? m.id;
               const displayName = m.user_name || m.full_name || m.name || `User ${uid}`;
               const roleLabel = m.role ? ` (${m.role})` : '';
               return { ...m, id: uid, name: `${displayName}${roleLabel}` };
