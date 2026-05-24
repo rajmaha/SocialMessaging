@@ -1,6 +1,23 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from typing import Optional, List, Any, Dict
 from datetime import datetime
+
+_METHOD_ALIAS_MAP = {
+    'api_method_create': 'api_create_method',
+    'api_method_list': 'api_list_method',
+    'api_method_detail': 'api_detail_method',
+    'api_method_update': 'api_update_method',
+    'api_method_delete': 'api_delete_method',
+}
+
+
+def _normalise_method_aliases(values: Any) -> Any:
+    """Remap legacy api_method_* keys to api_*_method before validation."""
+    if isinstance(values, dict):
+        for old, new in _METHOD_ALIAS_MAP.items():
+            if old in values and not values.get(new):
+                values[new] = values.pop(old)
+    return values
 
 
 # --- Form ---
@@ -23,24 +40,10 @@ class FormCreate(BaseModel):
     api_list_columns: Optional[List[Dict[str, Any]]] = None
     api_record_id_path: Optional[str] = "data.id"
 
-    from pydantic import model_validator
-
     @model_validator(mode='before')
     @classmethod
-    def _normalise_method_aliases(cls, values: Any) -> Any:
-        """Accept api_method_create / api_method_list … from older frontend."""
-        alias_map = {
-            'api_method_create': 'api_create_method',
-            'api_method_list': 'api_list_method',
-            'api_method_detail': 'api_detail_method',
-            'api_method_update': 'api_update_method',
-            'api_method_delete': 'api_delete_method',
-        }
-        if isinstance(values, dict):
-            for old, new in alias_map.items():
-                if old in values and not values.get(new):
-                    values[new] = values.pop(old)
-        return values
+    def _aliases(cls, values: Any) -> Any:
+        return _normalise_method_aliases(values)
 
 
 class FormUpdate(BaseModel):
@@ -61,23 +64,10 @@ class FormUpdate(BaseModel):
     api_list_columns: Optional[List[Dict[str, Any]]] = None
     api_record_id_path: Optional[str] = None
 
-    from pydantic import model_validator
-
     @model_validator(mode='before')
     @classmethod
-    def _normalise_method_aliases(cls, values: Any) -> Any:
-        alias_map = {
-            'api_method_create': 'api_create_method',
-            'api_method_list': 'api_list_method',
-            'api_method_detail': 'api_detail_method',
-            'api_method_update': 'api_update_method',
-            'api_method_delete': 'api_delete_method',
-        }
-        if isinstance(values, dict):
-            for old, new in alias_map.items():
-                if old in values and not values.get(new):
-                    values[new] = values.pop(old)
-        return values
+    def _aliases(cls, values: Any) -> Any:
+        return _normalise_method_aliases(values)
 
 
 class FormResponse(FormCreate):
