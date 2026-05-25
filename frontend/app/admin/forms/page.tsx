@@ -362,7 +362,7 @@ export default function FormsPage() {
                       >
                         <option value="">Select endpoint...</option>
                         {serverEndpoints
-                          .filter((ep: any) => ep.method === filterMethod || ep.method === 'PATCH')
+                          .filter((ep: any) => ep.method === filterMethod || (filterMethod === 'PUT' && ep.method === 'PATCH'))
                           .map((ep: any) => (
                             <option key={ep.id} value={ep.id}>
                               {ep.method} {ep.path}{ep.summary ? ` — ${ep.summary}` : ''}

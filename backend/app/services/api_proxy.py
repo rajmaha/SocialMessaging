@@ -204,13 +204,17 @@ async def api_request(
     headers = _build_headers(server, token)
 
     request_kwargs: Dict[str, Any] = {}
-    if body:
+    if body is not None:
         if server.request_content_type in ("formdata", "form"):
             request_kwargs["data"] = body
         else:
             request_kwargs["json"] = body
     if query_params:
         request_kwargs["params"] = query_params
+
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _log.info("api_request: %s %s body=%s", method, url, body)
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.request(method, url, headers=headers, **request_kwargs)
@@ -229,6 +233,8 @@ async def api_request(
             except Exception:
                 response_body = None
 
+        _log.info("api_request response: status=%s body=%s", resp.status_code, response_body)
+
         # HTTP-level error (4xx/5xx)
         if resp.status_code >= 400:
             detail = "Remote API request failed"
@@ -244,7 +250,7 @@ async def api_request(
                 detail = response_body
             raise HTTPException(
                 status_code=resp.status_code,
-                detail={"remote_error": True, "message": str(detail), "status": resp.status_code},
+                detail={"remote_error": True, "message": str(detail), "status": resp.status_code, "raw_response": response_body},
             )
 
         # Body-level error (HTTP 200 but {"status": false, "message": "..."})
@@ -253,7 +259,7 @@ async def api_request(
             if not is_success:
                 raise HTTPException(
                     status_code=422,
-                    detail={"remote_error": True, "message": err_msg, "status": 422},
+                    detail={"remote_error": True, "message": err_msg, "status": 422, "raw_response": response_body},
                 )
 
         return response_body if response_body is not None else resp.text

@@ -106,6 +106,7 @@ export default function PublicFormPage() {
   const [values, setValues] = useState<Record<string, any>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [generalError, setGeneralError] = useState("");
+  const [rawApiResponse, setRawApiResponse] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitResult, setSubmitResult] = useState<any>(null);
@@ -329,6 +330,7 @@ export default function PublicFormPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setGeneralError("");
+    setRawApiResponse(null);
 
     const errs = validate();
     if (Object.keys(errs).length > 0) {
@@ -387,6 +389,7 @@ export default function PublicFormPage() {
         setGeneralError("You need to log in and set up your API credentials before submitting this form.");
       } else if (typeof detail === "object" && detail?.remote_error) {
         setGeneralError(`Submission failed: ${detail.message || "Remote API rejected the request."}`);
+        if (detail.raw_response) setRawApiResponse(detail.raw_response);
       } else if (typeof detail === "string") {
         setGeneralError(detail);
       } else {
@@ -826,6 +829,16 @@ export default function PublicFormPage() {
           {generalError && (
             <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {generalError}
+              {rawApiResponse && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer font-medium text-red-600 hover:text-red-800">
+                    View API response
+                  </summary>
+                  <pre className="mt-2 text-xs bg-red-100 rounded p-2 overflow-auto max-h-48 text-red-800 whitespace-pre-wrap">
+                    {JSON.stringify(rawApiResponse, null, 2)}
+                  </pre>
+                </details>
+              )}
             </div>
           )}
 
