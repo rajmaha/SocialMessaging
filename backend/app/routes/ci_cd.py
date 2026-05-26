@@ -177,11 +177,14 @@ def trigger_deploy(repo_id: int, db: Session = Depends(get_db), _=Depends(get_ad
             srv = inner_db.query(CloudPanelServer).filter(CloudPanelServer.id == repo.server_id).first() if repo.server_id else None
             from datetime import datetime
             try:
-                dep.git_output = ci_cd_service.git_pull_or_clone(repo, srv)
+                git_out = ci_cd_service.git_pull_or_clone(repo, srv)
+                custom_out = ci_cd_service.run_custom_bash_script(repo, srv)
+                dep.git_output = git_out + ("\n\n--- Custom Script ---\n" + custom_out if custom_out else "")
                 inner_db.commit()  # commit git stage so polling can see progress
 
-                ci_cd_service.run_scripts(repo, dep, inner_db, srv)
-                inner_db.commit()  # commit script logs so polling can see progress
+                if repo.run_default_scripts:
+                    ci_cd_service.run_scripts(repo, dep, inner_db, srv)
+                    inner_db.commit()  # commit script logs so polling can see progress
 
                 ci_cd_service.run_migrations(repo, dep, inner_db, srv)
                 inner_db.commit()  # commit migration logs so polling can see progress

@@ -21,6 +21,8 @@ class CICDRepo(Base):
     db_type = Column(String, nullable=True, default="postgres")  # "postgres" | "mysql"
     db_host = Column(String, nullable=True)              # DB host (on target server), defaults to localhost
     db_port = Column(Integer, nullable=True)             # defaults: postgres=5432, mysql=3306
+    bash_script = Column(Text, nullable=True)             # custom script to run after git pull
+    run_default_scripts = Column(Boolean, nullable=False, default=False)  # run scripts/ directory
     schedule_enabled = Column(Boolean, nullable=False, default=False)
     schedule_cron = Column(String, nullable=True)        # e.g. "0 2 * * *"
     last_deployed_at = Column(DateTime, nullable=True)

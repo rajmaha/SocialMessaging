@@ -221,6 +221,42 @@ def _git_remote(repo: CICDRepo, server: CloudPanelServer) -> str:
     return f"$ git pull/clone on {server.host}\n{out}{err}"
 
 
+# ── Custom bash script execution ─────────────────────────────────────────────
+
+def run_custom_bash_script(repo: CICDRepo, server: Optional[CloudPanelServer] = None) -> str:
+    """Run the user-supplied bash_script content after git pull. Returns combined output."""
+    import base64 as _b64
+    script = (repo.bash_script or "").strip()
+    if not script:
+        return ""
+
+    if server:
+        encoded = _b64.b64encode(script.encode()).decode()
+        cmd = f"cd '{repo.local_path}' && echo {encoded} | base64 -d | bash"
+        rc, out, err = _ssh_run(server, cmd, timeout=600)
+        output = f"{out}{err}"
+        if rc != 0:
+            raise RuntimeError(f"Custom bash script failed on {server.host} (exit {rc}):\n{output[:4000]}")
+        return output
+    else:
+        fd, tmp = tempfile.mkstemp(prefix="cicd_custom_", suffix=".sh")
+        try:
+            os.write(fd, script.encode())
+            os.close(fd)
+            os.chmod(tmp, 0o700)
+            result = subprocess.run(
+                ["bash", tmp],
+                capture_output=True, text=True, cwd=repo.local_path, timeout=600,
+            )
+            output = result.stdout + result.stderr
+            if result.returncode != 0:
+                raise RuntimeError(f"Custom bash script failed (exit {result.returncode}):\n{output[:4000]}")
+            return output
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+
+
 # ── Script execution ──────────────────────────────────────────────────────────
 
 def run_scripts(repo: CICDRepo, deployment: CICDDeployment, db: Session,
@@ -395,8 +431,11 @@ def deploy(repo_id: int, triggered_by: str, db: Session) -> CICDDeployment:
     db.refresh(deployment)
 
     try:
-        deployment.git_output = git_pull_or_clone(repo, server)
-        run_scripts(repo, deployment, db, server)
+        git_out = git_pull_or_clone(repo, server)
+        custom_out = run_custom_bash_script(repo, server)
+        deployment.git_output = git_out + ("\n\n--- Custom Script ---\n" + custom_out if custom_out else "")
+        if repo.run_default_scripts:
+            run_scripts(repo, deployment, db, server)
         run_migrations(repo, deployment, db, server)
         deployment.status = "success"
     except Exception as exc:

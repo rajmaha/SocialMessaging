@@ -29,6 +29,8 @@ interface CICDRepo {
   auth_type: string
   has_ssh_key: boolean
   has_access_token: boolean
+  bash_script: string | null
+  run_default_scripts: boolean
   db_type: string | null
   db_host: string | null
   db_port: number | null
@@ -63,6 +65,8 @@ const emptyRepoForm = {
   auth_type: 'https',
   ssh_private_key: '',
   access_token: '',
+  bash_script: '',
+  run_default_scripts: false,
   db_type: 'postgres',
   db_host: '',
   db_port: '',
@@ -220,6 +224,8 @@ export default function CICDPage() {
       auth_type: repo.auth_type,
       ssh_private_key: '',
       access_token: '',
+      bash_script: repo.bash_script || '',
+      run_default_scripts: repo.run_default_scripts,
       db_type: repo.db_type || 'postgres',
       db_host: repo.db_host || '',
       db_port: repo.db_port ? String(repo.db_port) : '',
@@ -244,6 +250,8 @@ export default function CICDPage() {
         local_path: repoForm.local_path,
         server_id: repoForm.server_id ? parseInt(repoForm.server_id) : null,
         auth_type: repoForm.auth_type,
+        bash_script: repoForm.bash_script || null,
+        run_default_scripts: repoForm.run_default_scripts,
         db_type: repoForm.db_type || 'postgres',
         db_host: repoForm.db_host || null,
         db_port: repoForm.db_port ? parseInt(repoForm.db_port) : null,
@@ -627,6 +635,35 @@ export default function CICDPage() {
                   </label>
                   <input value={repoForm.local_path} onChange={rField('local_path')} required placeholder="/var/www/myapp"
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+
+                {/* Bash Script */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    Bash Script <span className="font-normal text-gray-400">(runs after git pull, if not empty)</span>
+                  </label>
+                  <textarea
+                    value={repoForm.bash_script}
+                    onChange={rField('bash_script')}
+                    rows={5}
+                    placeholder={'#!/bin/bash\nnpm install\nnpm run build'}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Run Default Scripts */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600">Run Default Scripts</label>
+                    <p className="text-xs text-gray-400 mt-0.5">Execute <code className="bg-gray-100 px-1 rounded">scripts/*.sh</code> files from the repo (run once each)</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRepoForm(f => ({ ...f, run_default_scripts: !f.run_default_scripts }))}
+                    className={`relative inline-flex h-5 w-10 rounded-full transition shrink-0 ml-4 ${repoForm.run_default_scripts ? 'bg-blue-600' : 'bg-gray-300'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition ${repoForm.run_default_scripts ? 'translate-x-5' : ''}`} />
+                  </button>
                 </div>
               </div>
 

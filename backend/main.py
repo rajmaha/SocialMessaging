@@ -1523,6 +1523,8 @@ def _run_inline_migrations():
             ALTER TABLE cicd_repos
                 ADD COLUMN IF NOT EXISTS db_type VARCHAR DEFAULT 'postgres'
         """))
+        conn.execute(text("ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS bash_script TEXT"))
+        conn.execute(text("ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS run_default_scripts BOOLEAN NOT NULL DEFAULT FALSE"))
         conn.commit()
 
         # Add permissions column to roles table

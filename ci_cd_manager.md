@@ -54,12 +54,14 @@ CI/CD Service                     → backend/app/services/ci_cd_service.py
        │
        ├── SSH (Paramiko-style via subprocess)   → CloudPanel server
        │         ├── git clone / git pull
-       │         ├── bash scripts/
+       │         ├── run bash_script field (if not empty)
+       │         ├── bash scripts/ (only if run_default_scripts = true)
        │         └── psql / mysql migrations
        │
        └── Local subprocess
                  ├── git clone / git pull
-                 ├── bash scripts/
+                 ├── run bash_script field (if not empty)
+                 ├── bash scripts/ (only if run_default_scripts = true)
                  └── psql / mysql migrations
 ```
 
@@ -84,6 +86,8 @@ All models are in `backend/app/models/ci_cd.py`. Tables are auto-created at star
 | `auth_type` | String | `"https"` or `"ssh"` |
 | `ssh_private_key` | Text | PEM private key for SSH git auth |
 | `access_token` | String | Personal Access Token for HTTPS git auth |
+| `bash_script` | Text | Custom bash script to run after git pull (optional) |
+| `run_default_scripts` | Boolean | Whether to run `scripts/*.sh` files from the repo (default: `false`) |
 | `db_type` | String | `"postgres"` or `"mysql"` (default: `"postgres"`) |
 | `db_host` | String | Database host on the target server (default: `localhost`) |
 | `db_port` | Integer | Database port (default: 5432 / 3306) |
@@ -219,6 +223,8 @@ All routes are prefixed `/cicd` and require `Authorization: Bearer <token>` with
   "auth_type": "https",
   "access_token": "ghp_xxxxxxxxxxxx",
   "ssh_private_key": null,
+  "bash_script": "#!/bin/bash\nnpm install\nnpm run build",
+  "run_default_scripts": false,
   "db_type": "postgres",
   "db_host": "localhost",
   "db_port": 5432,
@@ -299,13 +305,16 @@ When a deployment is triggered (manually or by scheduler), it executes in this o
 2. GIT PULL / CLONE
    └── If .git exists:  git fetch origin <branch> + git reset --hard origin/<branch>
    └── If not:          git clone --branch <branch> --single-branch <url> <path>
-3. RUN SCRIPTS (scripts/*.sh, alphabetical order, each only once)
+3. RUN CUSTOM BASH SCRIPT (bash_script field, if not empty)
+   └── Executed in full on every deployment — not idempotent-guarded
+4. RUN DEFAULT SCRIPTS (scripts/*.sh, only if run_default_scripts = true)
+   └── Alphabetical order, each file runs only once per repo
    └── Skip if already in cicd_script_logs for this repo
-4. RUN MIGRATIONS (database/*.sql, alphabetical order, each once per DB)
+5. RUN MIGRATIONS (database/*.sql, alphabetical order, each once per DB)
    └── Read database/db.csv for target DB names
    └── Skip if already in cicd_migration_logs for this (repo, db, file)
-5. UPDATE deployment status → "success" or "failed"
-6. UPDATE repo.last_deployed_at
+6. UPDATE deployment status → "success" or "failed"
+7. UPDATE repo.last_deployed_at
 ```
 
 If **any step fails**, the error is recorded in `deployment.error` and status is set to `"failed"`. Scripts and migrations that were already run before the failure are **not** rolled back.
@@ -338,9 +347,33 @@ Leave `auth_type` as `https` and `access_token` blank. The repo URL is used as-i
 
 ---
 
-## Shell Scripts
+## Bash Script (Custom — runs every deploy)
 
-Scripts in `scripts/` are executed with `bash` in sorted filename order.
+The **Bash Script** field in the repo form lets you write a script inline that runs on **every deployment**, immediately after git pull. Use this for common build steps like installing dependencies or restarting a process.
+
+Example:
+```bash
+#!/bin/bash
+set -e
+cd /var/www/myapp
+npm install --production
+npm run build
+pm2 restart myapp || pm2 start ecosystem.config.js
+```
+
+**Key behaviour:**
+- Runs on **every** deploy (not idempotency-guarded)
+- Runs before the `scripts/` directory files
+- Script content is base64-encoded and piped to `bash` on remote servers (handles any script content safely)
+- Output is appended to `deployment.git_output` under a `--- Custom Script ---` header
+- Timeout: 600 seconds
+- If the script exits non-zero, the deployment is marked `"failed"` and subsequent steps are skipped
+
+---
+
+## Default Scripts (`scripts/` directory — runs once each)
+
+If **Run Default Scripts** is enabled on the repo, the CI/CD manager also discovers and runs `.sh` files from the `scripts/` directory inside the deployed repo. Each file runs **exactly once** per repository lifetime (tracked in `cicd_script_logs`).
 
 Example `scripts/01_install.sh`:
 ```bash
@@ -348,20 +381,20 @@ Example `scripts/01_install.sh`:
 set -e
 cd /var/www/myapp
 npm install --production
-npm run build
 ```
 
-Example `scripts/02_restart.sh`:
+Example `scripts/02_seed.sh`:
 ```bash
 #!/bin/bash
-pm2 restart myapp || pm2 start /var/www/myapp/ecosystem.config.js
+node /var/www/myapp/seed.js
 ```
 
 **Important rules:**
+- Only runs when **Run Default Scripts** toggle is enabled for the repo
 - Scripts run with the SSH user's environment (when remote) or the backend process user (when local)
-- Scripts run exactly **once** per repo lifetime. If you want a script to run on every deploy, do not use the scripts directory — instead put that logic directly in your deploy hook or use a different mechanism
-- To force a re-run, delete the entry from `cicd_script_logs` in the database
+- Scripts run exactly **once** per repo lifetime. To re-run, delete its record from `cicd_script_logs`
 - Timeout is 600 seconds; a timeout results in `exit_code = -1`
+- stdout/stderr are captured and stored (capped at 50 000 chars each)
 
 ---
 
@@ -504,6 +537,8 @@ Fields:
 - **Deployment Server** — dropdown of CloudPanel servers (or "Local")
 - **CloudPanel site picker** — appears after selecting a server; click a site to auto-fill the path
 - **Local Path** — absolute path on the target server
+- **Bash Script** — inline script textarea; runs on every deploy after git pull (leave blank to skip)
+- **Run Default Scripts** — toggle to enable running `scripts/*.sh` files from the repo (once each)
 - **Git Authentication** — toggle between HTTPS Token and SSH Key
 - **Database Migrations** — select PostgreSQL or MySQL
 - **Scheduled Deployment** — toggle + cron input
@@ -548,6 +583,8 @@ Commit and push to your git remote.
    - **Server**: select your CloudPanel server
    - **Local Path**: pick from the CloudPanel site picker or type manually, e.g. `/var/www/myapp`
    - **Auth**: select HTTPS and paste your PAT, or select SSH and paste your private key
+   - **Bash Script**: (optional) paste your build/restart commands — runs on every deploy
+   - **Run Default Scripts**: enable if your repo has a `scripts/` directory with one-time setup scripts
    - **Database Type**: PostgreSQL or MySQL
 4. Click **Add Repository**
 
@@ -581,7 +618,8 @@ The CI/CD system is designed to be **safe to run multiple times** without accide
 | Operation | Idempotency mechanism |
 |---|---|
 | `git pull` | Always runs on every deployment — idempotent by nature |
-| Shell scripts | `cicd_script_logs` unique constraint on `(repo_id, script_filename)` — each file runs once |
+| Custom bash script (`bash_script` field) | **Runs every deployment** — no deduplication; design it to be safe to re-run |
+| Default scripts (`scripts/*.sh`) | `cicd_script_logs` unique constraint on `(repo_id, script_filename)` — each file runs once |
 | SQL migrations | `cicd_migration_logs` unique constraint on `(repo_id, database_name, sql_filename)` — each file runs once per DB |
 
 **To force a re-run of a script or migration**, delete its record from `cicd_script_logs` or `cicd_migration_logs` directly in the database.
