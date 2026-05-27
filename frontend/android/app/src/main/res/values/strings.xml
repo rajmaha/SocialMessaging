@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SocialMedia Inbox</string>
+    <string name="title_activity_main">SocialMedia Inbox</string>
+    <string name="package_name">com.socialmedia.inbox</string>
+    <string name="custom_url_scheme">com.socialmedia.inbox</string>
+</resources>
