@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, CreditCard, Globe, Trash2, Edit2, X, CheckCircle2, Upload, Image, Server, FileCode, Database, Shield, Link } from 'lucide-react'
+import { Plus, CreditCard, Globe, Trash2, Edit2, X, CheckCircle2, Upload, Image, Server, FileCode, Database, Shield, Link, RefreshCw, AlertCircle } from 'lucide-react'
 import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
 import { API_URL } from '@/lib/config';
@@ -16,6 +16,8 @@ interface Subscription {
     billed_from_date: string | null
     expire_date: string | null
     organization_id: number
+    api_sync_status: string | null
+    api_sync_error: string | null
 }
 
 interface SubscriptionModule {
@@ -96,6 +98,7 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
     const [deploying, setDeploying] = useState(false)
     const [deploySteps, setDeploySteps] = useState<DeployStep[]>([])
     const [deployError, setDeployError] = useState('')
+    const [retryingSync, setRetryingSync] = useState<Set<number>>(new Set())
 
     useEffect(() => {
         fetchSubscriptions()
@@ -402,6 +405,31 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
         }
     }
 
+    const handleRetrySync = async (subId: number) => {
+        setRetryingSync(prev => new Set(prev).add(subId))
+        try {
+            const token = getAuthToken()
+            await axios.post(
+                `${API_URL}/organizations/subscriptions/${subId}/retry-sync`,
+                {},
+                { headers: { Authorization: `Bearer ${token}` } }
+            )
+            // Refresh list so button disappears when status becomes 'synced'
+            fetchSubscriptions()
+        } catch (error: unknown) {
+            const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+            alert(detail || 'Retry sync failed. Please check Subscription API settings.')
+            // Still refresh so latest error is shown
+            fetchSubscriptions()
+        } finally {
+            setRetryingSync(prev => {
+                const next = new Set(prev)
+                next.delete(subId)
+                return next
+            })
+        }
+    }
+
     const toggleModule = (moduleName: string) => {
         if (isReadOnly) return
         const currentModules = currentSub?.modules || []
@@ -483,7 +511,22 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <div className="flex justify-end gap-1">
+                                            <div className="flex justify-end items-center gap-1">
+                                                {sub.api_sync_status === 'failed' && (
+                                                    <button
+                                                        onClick={() => handleRetrySync(sub.id)}
+                                                        disabled={retryingSync.has(sub.id)}
+                                                        title={sub.api_sync_error || 'Remote API sync failed. Click to retry.'}
+                                                        className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50"
+                                                    >
+                                                        {retryingSync.has(sub.id) ? (
+                                                            <RefreshCw className="w-3 h-3 animate-spin" />
+                                                        ) : (
+                                                            <AlertCircle className="w-3 h-3" />
+                                                        )}
+                                                        {retryingSync.has(sub.id) ? 'Syncing…' : 'Retry Sync'}
+                                                    </button>
+                                                )}
                                                 <button onClick={() => handleOpenModal(sub)} className="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors">
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>

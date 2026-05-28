@@ -63,6 +63,8 @@ class SubscriptionUpdate(BaseModel):
 class SubscriptionResponse(SubscriptionBase):
     id: int
     organization_id: int
+    api_sync_status: Optional[str] = None
+    api_sync_error: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -16,6 +16,14 @@ interface ApiServer {
   auth_type: string
 }
 
+interface ApiEndpoint {
+  id: number
+  method: string
+  path: string
+  summary: string | null
+  fields: { key: string; label: string; type?: string; required?: boolean }[]
+}
+
 interface FieldMapping {
   form_key: string      // remote API field name
   source_key: string    // local source e.g. "organization.organization_name"
@@ -85,6 +93,11 @@ export default function SubscriptionSettingsPage() {
   const [endpointPath, setEndpointPath] = useState('')
   const [mappings, setMappings] = useState<FieldMapping[]>([])
 
+  // Endpoint picker state (from spec)
+  const [serverEndpoints, setServerEndpoints] = useState<ApiEndpoint[]>([])
+  const [loadingEndpoints, setLoadingEndpoints] = useState(false)
+  const [selectedEndpointId, setSelectedEndpointId] = useState<string>('')
+
   // ── Data fetching ──────────────────────────────────────────────────────────
 
   const fetchAll = useCallback(async () => {
@@ -123,9 +136,62 @@ export default function SubscriptionSettingsPage() {
     fetchAll()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fetch parsed spec endpoints whenever the selected server changes
+  useEffect(() => {
+    if (!selectedServerId) {
+      setServerEndpoints([])
+      setSelectedEndpointId('')
+      return
+    }
+    setLoadingEndpoints(true)
+    setSelectedEndpointId('')
+    fetch(`${API_URL}/admin/api-servers/${selectedServerId}/endpoints`, {
+      headers: { Authorization: `Bearer ${getAuthToken()}` },
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then((eps: ApiEndpoint[]) => setServerEndpoints(eps))
+      .catch(() => setServerEndpoints([]))
+      .finally(() => setLoadingEndpoints(false))
+  }, [selectedServerId])
+
+  // When saved settings load (or server changes), try to match saved endpoint
+  useEffect(() => {
+    if (!serverEndpoints.length || !endpointPath) return
+    const currentFull = `${httpMethod} ${endpointPath}`.trim()
+    const match = serverEndpoints.find(
+      ep => `${ep.method} ${ep.path}`.toLowerCase() === currentFull.toLowerCase()
+    )
+    if (match) setSelectedEndpointId(String(match.id))
+  }, [serverEndpoints]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const flash = (type: 'success' | 'error', text: string) => {
     setMsg({ type, text })
     setTimeout(() => setMsg(null), 5000)
+  }
+
+  // ── Endpoint selection: auto-fill method, path and field mappings ──────────
+
+  function handleEndpointSelect(epIdStr: string) {
+    setSelectedEndpointId(epIdStr)
+    if (!epIdStr) return
+
+    const ep = serverEndpoints.find(e => String(e.id) === epIdStr)
+    if (!ep) return
+
+    // Set method + path
+    setHttpMethod(ep.method.toUpperCase())
+    setEndpointPath(ep.path)
+
+    // Auto-populate field mappings from the endpoint's fields (keep existing source_key if same key)
+    if (ep.fields && ep.fields.length > 0) {
+      const existing = Object.fromEntries(mappings.map(m => [m.form_key, m.source_key]))
+      setMappings(
+        ep.fields.map(f => ({
+          form_key: f.key,
+          source_key: existing[f.key] || '',
+        }))
+      )
+    }
   }
 
   // ── Mapping row helpers ────────────────────────────────────────────────────
@@ -189,8 +255,8 @@ export default function SubscriptionSettingsPage() {
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-gray-900">Subscription API Integration</h1>
             <p className="text-sm text-gray-500 mt-1">
-              When a new subscription is created via CloudPanel deployment, the system will automatically
-              call the configured remote API with the mapped field values.
+              When a new subscription is created (via CloudPanel deployment or linking an existing site),
+              the system will automatically call the configured remote API with the mapped field values.
             </p>
           </div>
 
@@ -223,11 +289,18 @@ export default function SubscriptionSettingsPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
+                    {/* Server picker */}
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1">API Server</label>
                       <select
                         value={selectedServerId}
-                        onChange={e => setSelectedServerId(e.target.value)}
+                        onChange={e => {
+                          setSelectedServerId(e.target.value)
+                          // Reset endpoint when server changes
+                          setHttpMethod('POST')
+                          setEndpointPath('')
+                          setSelectedEndpointId('')
+                        }}
                         className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">— Disabled (no remote API call) —</option>
@@ -245,30 +318,79 @@ export default function SubscriptionSettingsPage() {
                       )}
                     </div>
 
+                    {/* Endpoint picker (from parsed spec) */}
                     {selectedServerId && (
                       <div>
                         <label className="block text-xs font-semibold text-gray-600 mb-1">
                           API Endpoint
                           <span className="font-normal text-gray-400 ml-1">(method + path on the remote server)</span>
                         </label>
-                        <div className="flex gap-2">
-                          <select
-                            value={httpMethod}
-                            onChange={e => setHttpMethod(e.target.value)}
-                            className="border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono font-semibold text-blue-700 bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 w-28"
-                          >
-                            {HTTP_METHODS.map(m => <option key={m}>{m}</option>)}
-                          </select>
-                          <input
-                            value={endpointPath}
-                            onChange={e => setEndpointPath(e.target.value)}
-                            placeholder="/api/v1/subscriptions"
-                            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Path relative to the server base URL, e.g. <code className="bg-gray-100 px-1 rounded">/api/v1/subscriptions</code>
-                        </p>
+
+                        {loadingEndpoints ? (
+                          <div className="text-xs text-gray-400 py-2">Loading endpoints…</div>
+                        ) : serverEndpoints.length > 0 ? (
+                          <>
+                            {/* Dropdown of parsed spec endpoints */}
+                            <select
+                              value={selectedEndpointId}
+                              onChange={e => handleEndpointSelect(e.target.value)}
+                              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+                            >
+                              <option value="">— pick an endpoint —</option>
+                              {serverEndpoints.map(ep => (
+                                <option key={ep.id} value={String(ep.id)}>
+                                  {ep.method.toUpperCase()} {ep.path}
+                                  {ep.summary ? `  •  ${ep.summary}` : ''}
+                                  {ep.fields?.length ? `  (${ep.fields.length} fields)` : ''}
+                                </option>
+                              ))}
+                            </select>
+
+                            {/* Still show the editable method + path in case they want to override */}
+                            <div className="flex gap-2">
+                              <select
+                                value={httpMethod}
+                                onChange={e => setHttpMethod(e.target.value)}
+                                className="border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono font-semibold text-blue-700 bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 w-28"
+                              >
+                                {HTTP_METHODS.map(m => <option key={m}>{m}</option>)}
+                              </select>
+                              <input
+                                value={endpointPath}
+                                onChange={e => { setEndpointPath(e.target.value); setSelectedEndpointId('') }}
+                                placeholder="/api/v1/subscriptions"
+                                className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">
+                              Selecting an endpoint above auto-fills the path and field mappings from the uploaded spec.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            {/* No spec — manual entry */}
+                            <div className="flex gap-2">
+                              <select
+                                value={httpMethod}
+                                onChange={e => setHttpMethod(e.target.value)}
+                                className="border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono font-semibold text-blue-700 bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 w-28"
+                              >
+                                {HTTP_METHODS.map(m => <option key={m}>{m}</option>)}
+                              </select>
+                              <input
+                                value={endpointPath}
+                                onChange={e => setEndpointPath(e.target.value)}
+                                placeholder="/api/v1/subscriptions"
+                                className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">
+                              No spec uploaded for this server. Path relative to the server base URL, e.g.{' '}
+                              <code className="bg-gray-100 px-1 rounded">/api/v1/subscriptions</code>.
+                              Upload a spec under <a href="/admin/api-servers" className="text-blue-500 hover:underline">API Servers</a> to auto-populate fields.
+                            </p>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -285,6 +407,9 @@ export default function SubscriptionSettingsPage() {
                       </h2>
                       <p className="text-xs text-gray-400 mt-0.5">
                         Map remote API field names (left) to local data sources (right).
+                        {selectedEndpointId && serverEndpoints.length > 0 && (
+                          <span className="ml-1 text-blue-500">Fields auto-populated from spec — just pick a source for each.</span>
+                        )}
                       </p>
                     </div>
                     <button
@@ -298,7 +423,10 @@ export default function SubscriptionSettingsPage() {
 
                   {mappings.length === 0 ? (
                     <div className="text-center py-8 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-xl">
-                      No field mappings yet. Click <span className="font-semibold">+ Add Field</span> to start.
+                      {serverEndpoints.length > 0
+                        ? <>Select an endpoint above to auto-populate fields, or click <span className="font-semibold">+ Add Field</span>.</>
+                        : <>No field mappings yet. Click <span className="font-semibold">+ Add Field</span> to start.</>
+                      }
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -310,48 +438,73 @@ export default function SubscriptionSettingsPage() {
                         <span />
                       </div>
 
-                      {mappings.map((row, i) => (
-                        <div key={i} className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-center">
-                          {/* Remote field name */}
-                          <input
-                            value={row.form_key}
-                            onChange={e => updateMapping(i, 'form_key', e.target.value)}
-                            placeholder="e.g. company_name"
-                            className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
+                      {mappings.map((row, i) => {
+                        // Find the spec field metadata (type, required) for display
+                        const specField = serverEndpoints
+                          .find(ep => String(ep.id) === selectedEndpointId)
+                          ?.fields?.find(f => f.key === row.form_key)
 
-                          {/* Arrow */}
-                          <span className="text-gray-400 text-sm select-none">→</span>
+                        return (
+                          <div key={i} className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-center">
+                            {/* Remote field name */}
+                            <div className="relative">
+                              <input
+                                value={row.form_key}
+                                onChange={e => updateMapping(i, 'form_key', e.target.value)}
+                                placeholder="e.g. company_name"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                              {specField && (
+                                <div className="flex gap-1 mt-0.5">
+                                  {specField.type && (
+                                    <span className="text-[10px] bg-gray-100 text-gray-500 px-1 rounded font-mono">{specField.type}</span>
+                                  )}
+                                  {specField.required && (
+                                    <span className="text-[10px] bg-red-50 text-red-500 px-1 rounded">required</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
 
-                          {/* Local source dropdown */}
-                          <select
-                            value={row.source_key}
-                            onChange={e => updateMapping(i, 'source_key', e.target.value)}
-                            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">— pick a source —</option>
-                            {SOURCE_FIELDS.map(group => (
-                              <optgroup key={group.group} label={group.group}>
-                                {group.options.map(opt => (
-                                  <option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                  </option>
+                            {/* Arrow */}
+                            <span className="text-gray-400 text-sm select-none self-start mt-2">→</span>
+
+                            {/* Local source dropdown */}
+                            <div>
+                              <select
+                                value={row.source_key}
+                                onChange={e => updateMapping(i, 'source_key', e.target.value)}
+                                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                  !row.source_key && specField?.required
+                                    ? 'border-amber-300 bg-amber-50'
+                                    : 'border-gray-200'
+                                }`}
+                              >
+                                <option value="">— pick a source —</option>
+                                {SOURCE_FIELDS.map(group => (
+                                  <optgroup key={group.group} label={group.group}>
+                                    {group.options.map(opt => (
+                                      <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </optgroup>
                                 ))}
-                              </optgroup>
-                            ))}
-                          </select>
+                              </select>
+                            </div>
 
-                          {/* Remove */}
-                          <button
-                            type="button"
-                            onClick={() => removeMapping(i)}
-                            className="text-red-400 hover:text-red-600 text-lg leading-none px-1"
-                            title="Remove"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
+                            {/* Remove */}
+                            <button
+                              type="button"
+                              onClick={() => removeMapping(i)}
+                              className="text-red-400 hover:text-red-600 text-lg leading-none px-1 self-start mt-1.5"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
 
@@ -378,15 +531,16 @@ export default function SubscriptionSettingsPage() {
               <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-sm text-blue-800">
                 <p className="font-semibold mb-1">💡 How it works</p>
                 <ol className="list-decimal list-inside space-y-1 text-blue-700">
-                  <li>Admin creates a new subscription using <strong>Deploy New Site</strong> on an organization</li>
-                  <li>CloudPanel deploys the site and subscription is created locally</li>
+                  <li>Admin creates a new subscription (<strong>Deploy New Site</strong> or <strong>Link Existing Site</strong>) on an organization</li>
+                  <li>Subscription is created locally in the system</li>
                   <li>The system calls <strong>{selectedServerId ? `${httpMethod} ${endpointPath || '/your/endpoint'}` : 'your configured endpoint'}</strong> on the remote API</li>
                   <li>Field mappings are resolved and sent as a JSON body</li>
-                  <li>The deployment progress panel shows <em>Submitted to remote API ✅</em></li>
+                  <li>If the call fails, a <strong>Retry Sync</strong> button appears on the subscription row</li>
                 </ol>
                 <p className="mt-2 text-xs text-blue-600">
                   The remote API call uses the credentials you configured under{' '}
                   <a href="/admin/api-servers" className="underline">API Servers</a> for your user account.
+                  Upload an OpenAPI/Postman spec for the server to enable endpoint and field auto-population.
                 </p>
               </div>
 

@@ -1698,6 +1698,10 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE subscription_settings ADD COLUMN IF NOT EXISTS api_server_id INTEGER REFERENCES api_servers(id) ON DELETE SET NULL"))
         conn.execute(text("ALTER TABLE subscription_settings ADD COLUMN IF NOT EXISTS api_endpoint VARCHAR"))
 
+        # Remote API sync status tracking on subscriptions
+        conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS api_sync_status VARCHAR"))
+        conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS api_sync_error TEXT"))
+
         # CRM Lead Notes table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS crm_lead_notes (

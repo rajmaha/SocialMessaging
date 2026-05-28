@@ -73,7 +73,11 @@ class Subscription(Base):
     stripe_customer_id = Column(String, nullable=True)
     stripe_subscription_id = Column(String, nullable=True)
     status = Column(String, default="active")  # active, past_due, cancelled
-    
+
+    # Remote API sync tracking
+    api_sync_status = Column(String, nullable=True)   # null=not configured, "synced", "failed"
+    api_sync_error = Column(Text, nullable=True)       # last error message if failed
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

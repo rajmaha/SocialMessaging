@@ -311,32 +311,23 @@ def create_subscription(
     db.commit()
     db.refresh(db_sub)
 
-    # Auto-submit to remote API if configured in Subscription Settings
+    # Auto-submit to remote API / form if configured in Subscription Settings
     # Best-effort: failure does NOT block the subscription response
     try:
-        import asyncio, logging as _log
-        settings = db.query(SubscriptionSettings).first()
-        if settings and settings.api_server_id and settings.api_endpoint and settings.post_create_field_map:
-            org = db.query(Organization).filter(Organization.id == org_id).first()
-            form_data = _build_form_payload(settings.post_create_field_map, db_sub, org)
-            server_api = db.query(ApiServer).filter(ApiServer.id == settings.api_server_id).first()
-            cred = db.query(UserApiCredential).filter(
-                UserApiCredential.user_id == admin_user.id,
-                UserApiCredential.api_server_id == settings.api_server_id,
-            ).first()
-            if server_api and cred:
-                loop = asyncio.new_event_loop()
-                try:
-                    loop.run_until_complete(
-                        api_request(db, server_api, cred, settings.api_endpoint, body=form_data)
-                    )
-                finally:
-                    loop.close()
+        import logging as _log
+        _settings = db.query(SubscriptionSettings).first()
+        if _settings:
+            _org = db.query(Organization).filter(Organization.id == org_id).first()
+            _call_subscription_api(db, db_sub, _org, admin_user, _settings)
     except Exception as _api_err:
         import logging
         logging.getLogger(__name__).warning(
-            f"Remote API submission failed after subscription create (org {org_id}): {_api_err}"
+            f"Remote API/form submission failed after subscription create (org {org_id}): {_api_err}"
         )
+    try:
+        db.refresh(db_sub)
+    except Exception:
+        pass
 
     return db_sub
 
@@ -362,6 +353,83 @@ def _build_form_payload(field_map: list, subscription: Subscription, organizatio
         if form_key and source_key:
             payload[form_key] = sources.get(source_key)
     return payload
+
+
+def _call_subscription_api(
+    db: Session,
+    db_sub: Subscription,
+    org: Organization,
+    admin_user: User,
+    settings: SubscriptionSettings,
+) -> None:
+    """
+    Try to call the remote API after a subscription is created/linked.
+    Supports two modes:
+      1. Direct API  — settings.api_server_id + settings.api_endpoint (preferred)
+      2. Form-slug   — settings.post_create_form_slug → form's own api_server + api_create_method (legacy fallback)
+    Sets db_sub.api_sync_status and db_sub.api_sync_error, then commits.
+    Raises RuntimeError on failure (caller may choose to swallow it).
+    """
+    import asyncio
+
+    if not settings or not settings.post_create_field_map:
+        return  # nothing configured
+
+    form_data = _build_form_payload(settings.post_create_field_map, db_sub, org)
+
+    # ── Mode 1: Direct API ──────────────────────────────────────────────────
+    if settings.api_server_id and settings.api_endpoint:
+        server_api = db.query(ApiServer).filter(ApiServer.id == settings.api_server_id).first()
+        cred = db.query(UserApiCredential).filter(
+            UserApiCredential.user_id == admin_user.id,
+            UserApiCredential.api_server_id == settings.api_server_id,
+        ).first()
+        if not server_api or not cred:
+            return  # not configured for this user
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(
+                api_request(db, server_api, cred, settings.api_endpoint, body=form_data)
+            )
+            db_sub.api_sync_status = "synced"
+            db_sub.api_sync_error = None
+        except Exception as e:
+            db_sub.api_sync_status = "failed"
+            db_sub.api_sync_error = str(e)[:2000]
+            db.commit()
+            raise RuntimeError(str(e))
+        finally:
+            loop.close()
+        db.commit()
+        return
+
+    # ── Mode 2: Form-slug (legacy) ──────────────────────────────────────────
+    if settings.post_create_form_slug:
+        form = db.query(FormModel).filter(FormModel.slug == settings.post_create_form_slug).first()
+        if not form or not form.api_server_id or not form.api_create_method:
+            return  # form not found or not wired to a remote API
+        server_api = db.query(ApiServer).filter(ApiServer.id == form.api_server_id).first()
+        cred = db.query(UserApiCredential).filter(
+            UserApiCredential.user_id == admin_user.id,
+            UserApiCredential.api_server_id == form.api_server_id,
+        ).first()
+        if not server_api or not cred:
+            return  # no credentials for this user
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(
+                api_request(db, server_api, cred, form.api_create_method, body=form_data)
+            )
+            db_sub.api_sync_status = "synced"
+            db_sub.api_sync_error = None
+        except Exception as e:
+            db_sub.api_sync_status = "failed"
+            db_sub.api_sync_error = str(e)[:2000]
+            db.commit()
+            raise RuntimeError(str(e))
+        finally:
+            loop.close()
+        db.commit()
 
 
 @router.post("/{org_id}/subscriptions/deploy-and-create")
@@ -497,31 +565,17 @@ async def deploy_and_create_subscription(
 
                 yield f"data: {json.dumps({'step': 'subscription_created', 'status': 'success', 'subscription_id': db_sub.id})}\n\n"
 
-                # Auto-submit to remote API if configured in Subscription Settings
+                # Auto-submit to remote API / form if configured in Subscription Settings
                 try:
-                    import asyncio, logging as _log
-                    settings = db.query(SubscriptionSettings).first()
-                    if settings and settings.api_server_id and settings.api_endpoint and settings.post_create_field_map:
-                        org_obj = db.query(Organization).filter(Organization.id == org_id).first()
-                        form_data = _build_form_payload(settings.post_create_field_map, db_sub, org_obj)
-                        server_api = db.query(ApiServer).filter(ApiServer.id == settings.api_server_id).first()
-                        cred = db.query(UserApiCredential).filter(
-                            UserApiCredential.user_id == admin_user.id,
-                            UserApiCredential.api_server_id == settings.api_server_id,
-                        ).first()
-                        if server_api and cred:
-                            loop = asyncio.new_event_loop()
-                            try:
-                                loop.run_until_complete(
-                                    api_request(db, server_api, cred, settings.api_endpoint, body=form_data)
-                                )
-                            finally:
-                                loop.close()
-                            yield f"data: {json.dumps({'step': 'api_submitted', 'status': 'success', 'message': 'Submitted to remote API'})}\n\n"
-                        elif not cred:
-                            yield f"data: {json.dumps({'step': 'api_submitted', 'status': 'warning', 'message': 'No credentials found for the configured API server'})}\n\n"
+                    import logging as _log
+                    _sse_settings = db.query(SubscriptionSettings).first()
+                    if _sse_settings and _sse_settings.post_create_field_map:
+                        _sse_org = db.query(Organization).filter(Organization.id == org_id).first()
+                        _call_subscription_api(db, db_sub, _sse_org, admin_user, _sse_settings)
+                        yield f"data: {json.dumps({'step': 'api_submitted', 'status': 'success', 'message': 'Submitted to remote API'})}\n\n"
                 except Exception as api_err:
-                    _log.getLogger(__name__).warning(f"Remote API submission failed: {api_err}")
+                    import logging as _log2
+                    _log2.getLogger(__name__).warning(f"Remote API/form submission failed: {api_err}")
                     yield f"data: {json.dumps({'step': 'api_submit_failed', 'status': 'warning', 'message': str(api_err)})}\n\n"
 
         except Exception as e:
@@ -618,6 +672,43 @@ def delete_subscription(
     db.delete(db_sub)
     db.commit()
     return {"status": "success", "message": "Subscription deleted"}
+
+
+@router.post("/subscriptions/{sub_id}/retry-sync", response_model=SubscriptionResponse)
+def retry_subscription_sync(
+    sub_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_subs)
+):
+    """Retry the remote API / form call for a subscription whose api_sync_status is 'failed'."""
+    db_sub = db.query(Subscription).filter(Subscription.id == sub_id).first()
+    if not db_sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+
+    settings = db.query(SubscriptionSettings).first()
+    if not settings or not settings.post_create_field_map:
+        raise HTTPException(status_code=400, detail="Remote API / form is not configured in Subscription Settings")
+
+    # Check at least one integration mode is set
+    has_direct_api = bool(settings.api_server_id and settings.api_endpoint)
+    has_form_slug = bool(settings.post_create_form_slug)
+    if not has_direct_api and not has_form_slug:
+        raise HTTPException(
+            status_code=400,
+            detail="No API server or form slug configured. Set up the integration in Subscription API Settings or Subscription Modules settings."
+        )
+
+    org = db.query(Organization).filter(Organization.id == db_sub.organization_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    try:
+        _call_subscription_api(db, db_sub, org, admin_user, settings)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=f"Remote API/form call failed: {e}")
+
+    db.refresh(db_sub)
+    return db_sub
 
 
 # Organization Emails (filtered by domain)
