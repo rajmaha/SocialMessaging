@@ -1510,10 +1510,10 @@ def _run_inline_migrations():
                 CONSTRAINT uq_cicd_migration_repo_db UNIQUE (repo_id, database_name, sql_filename)
             )
         """))
-        # Migrate cicd_repos.server_id FK from cicd_servers → cloudpanel_servers
-        # Drop old column (pointing to cicd_servers) and re-add pointing to cloudpanel_servers.
-        # Safe: no production data existed in server_id when this migration runs.
-        conn.execute(text("ALTER TABLE cicd_repos DROP COLUMN IF EXISTS server_id"))
+        # cicd_repos.server_id FK — add if not present (references cloudpanel_servers).
+        # NOTE: The old DROP COLUMN was removed because it ran on every startup and
+        # wiped user-saved server_id values.  ADD COLUMN IF NOT EXISTS is safe and
+        # idempotent — it no-ops when the column already exists.
         conn.execute(text("""
             ALTER TABLE cicd_repos
                 ADD COLUMN IF NOT EXISTS server_id INTEGER REFERENCES cloudpanel_servers(id) ON DELETE SET NULL
