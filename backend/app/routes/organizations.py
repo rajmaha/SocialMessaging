@@ -310,6 +310,34 @@ def create_subscription(
     db.add(db_sub)
     db.commit()
     db.refresh(db_sub)
+
+    # Auto-submit to remote API if configured in Subscription Settings
+    # Best-effort: failure does NOT block the subscription response
+    try:
+        import asyncio, logging as _log
+        settings = db.query(SubscriptionSettings).first()
+        if settings and settings.api_server_id and settings.api_endpoint and settings.post_create_field_map:
+            org = db.query(Organization).filter(Organization.id == org_id).first()
+            form_data = _build_form_payload(settings.post_create_field_map, db_sub, org)
+            server_api = db.query(ApiServer).filter(ApiServer.id == settings.api_server_id).first()
+            cred = db.query(UserApiCredential).filter(
+                UserApiCredential.user_id == admin_user.id,
+                UserApiCredential.api_server_id == settings.api_server_id,
+            ).first()
+            if server_api and cred:
+                loop = asyncio.new_event_loop()
+                try:
+                    loop.run_until_complete(
+                        api_request(db, server_api, cred, settings.api_endpoint, body=form_data)
+                    )
+                finally:
+                    loop.close()
+    except Exception as _api_err:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Remote API submission failed after subscription create (org {org_id}): {_api_err}"
+        )
+
     return db_sub
 
 
