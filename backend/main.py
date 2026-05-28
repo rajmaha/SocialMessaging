@@ -1837,6 +1837,11 @@ def _run_inline_migrations():
             ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_email_key
         """))
 
+        # Commit all accumulated migrations before the enum-rename loop, which
+        # calls conn.rollback() on failure and would otherwise undo everything
+        # since the previous commit (including subscription column additions above).
+        conn.commit()
+
         # Rename all CRM PostgreSQL enum values from UPPERCASE to lowercase
         # so they match the Python enum .value strings
         _enum_renames = {
