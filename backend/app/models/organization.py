@@ -98,6 +98,9 @@ class SubscriptionSettings(Base):
     id = Column(Integer, primary_key=True, index=True)
     post_create_form_slug = Column(String, nullable=True)
     post_create_field_map = Column(JSON, nullable=True)  # [{"form_key": "x", "source_key": "subscription.y"}]
+    # Direct remote API config (used instead of post_create_form_slug when set)
+    api_server_id = Column(Integer, ForeignKey("api_servers.id", ondelete="SET NULL"), nullable=True)
+    api_endpoint = Column(String, nullable=True)  # e.g. "POST /api/v1/subscriptions"
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

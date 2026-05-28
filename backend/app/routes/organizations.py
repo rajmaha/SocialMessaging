@@ -110,7 +110,12 @@ def get_subscription_settings(
         db.add(settings)
         db.commit()
         db.refresh(settings)
-    return settings
+    data = SubscriptionSettingsResponse.model_validate(settings)
+    if settings.api_server_id:
+        srv = db.query(ApiServer).filter(ApiServer.id == settings.api_server_id).first()
+        if srv:
+            data.api_server_name = srv.name
+    return data
 
 
 @router.put("/subscription-settings", response_model=SubscriptionSettingsResponse)
@@ -464,38 +469,32 @@ async def deploy_and_create_subscription(
 
                 yield f"data: {json.dumps({'step': 'subscription_created', 'status': 'success', 'subscription_id': db_sub.id})}\n\n"
 
-                # Auto-submit post-create form if configured
+                # Auto-submit to remote API if configured in Subscription Settings
                 try:
+                    import asyncio, logging as _log
                     settings = db.query(SubscriptionSettings).first()
-                    if settings and settings.post_create_form_slug and settings.post_create_field_map:
-                        form_obj = db.query(FormModel).filter(
-                            FormModel.slug == settings.post_create_form_slug,
-                            FormModel.is_published == True,
+                    if settings and settings.api_server_id and settings.api_endpoint and settings.post_create_field_map:
+                        org_obj = db.query(Organization).filter(Organization.id == org_id).first()
+                        form_data = _build_form_payload(settings.post_create_field_map, db_sub, org_obj)
+                        server_api = db.query(ApiServer).filter(ApiServer.id == settings.api_server_id).first()
+                        cred = db.query(UserApiCredential).filter(
+                            UserApiCredential.user_id == admin_user.id,
+                            UserApiCredential.api_server_id == settings.api_server_id,
                         ).first()
-                        if form_obj and form_obj.api_create_method and form_obj.api_server_id:
-                            org = db.query(Organization).filter(Organization.id == org_id).first()
-                            form_data = _build_form_payload(settings.post_create_field_map, db_sub, org)
-
-                            # Inject hidden fields
-                            from app.routes.forms import _inject_hidden_fields
-                            form_data = _inject_hidden_fields(db, form_obj, form_data, current_user)
-
-                            server_api = db.query(ApiServer).filter(ApiServer.id == form_obj.api_server_id).first()
-                            cred = db.query(UserApiCredential).filter(
-                                UserApiCredential.user_id == current_user.id,
-                                UserApiCredential.api_server_id == server_api.id,
-                            ).first()
-                            if server_api and cred:
-                                import asyncio
-                                loop = asyncio.get_event_loop()
-                                result = loop.run_until_complete(
-                                    api_request(db, server_api, cred, form_obj.api_create_method, body=form_data)
+                        if server_api and cred:
+                            loop = asyncio.new_event_loop()
+                            try:
+                                loop.run_until_complete(
+                                    api_request(db, server_api, cred, settings.api_endpoint, body=form_data)
                                 )
-                                yield f"data: {json.dumps({'step': 'form_submitted', 'status': 'success', 'message': 'Form submitted to remote API'})}\n\n"
-                except Exception as form_err:
-                    import logging
-                    logging.getLogger(__name__).warning(f"Post-create form submission failed: {form_err}")
-                    yield f"data: {json.dumps({'step': 'form_submit_failed', 'status': 'warning', 'message': str(form_err)})}\n\n"
+                            finally:
+                                loop.close()
+                            yield f"data: {json.dumps({'step': 'api_submitted', 'status': 'success', 'message': 'Submitted to remote API'})}\n\n"
+                        elif not cred:
+                            yield f"data: {json.dumps({'step': 'api_submitted', 'status': 'warning', 'message': 'No credentials found for the configured API server'})}\n\n"
+                except Exception as api_err:
+                    _log.getLogger(__name__).warning(f"Remote API submission failed: {api_err}")
+                    yield f"data: {json.dumps({'step': 'api_submit_failed', 'status': 'warning', 'message': str(api_err)})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'step': 'error', 'status': 'error', 'message': str(e)})}\n\n"

@@ -83,6 +83,7 @@ const sidebarGroups = [
             { href: '/admin/organizations', label: 'Organizations', icon: '🏢', permission: () => hasModuleAccess('organizations') },
             { href: '/admin/individuals', label: 'Individuals', icon: '👤', permission: () => hasModuleAccess('individuals') },
             { href: '/admin/subscription-modules', label: 'Subscription Modules', icon: '📦', permission: () => hasModuleAccess('subscriptions') },
+            { href: '/admin/subscription-settings', label: 'Subscription API', icon: '🔗', permission: () => hasModuleAccess('subscriptions') },
             { href: '/admin/cicd', label: 'CI/CD Manager', icon: '🔄', adminOnly: true },
             { href: '/admin/cloudpanel/servers', label: 'CloudPanel Servers', icon: '☁️', permission: () => hasAdminFeature('manage_cloudpanel') },
             { href: '/admin/cloudpanel/templates', label: 'Site Templates', icon: '📁', permission: () => hasAdminFeature('manage_cloudpanel') },

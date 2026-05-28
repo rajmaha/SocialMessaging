@@ -1695,6 +1695,8 @@ def _run_inline_migrations():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """))
+        conn.execute(text("ALTER TABLE subscription_settings ADD COLUMN IF NOT EXISTS api_server_id INTEGER REFERENCES api_servers(id) ON DELETE SET NULL"))
+        conn.execute(text("ALTER TABLE subscription_settings ADD COLUMN IF NOT EXISTS api_endpoint VARCHAR"))
 
         # CRM Lead Notes table
         conn.execute(text("""

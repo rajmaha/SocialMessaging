@@ -167,11 +167,16 @@ class SubscriptionModuleResponse(SubscriptionModuleBase):
 class SubscriptionSettingsUpdate(BaseModel):
     post_create_form_slug: Optional[str] = None
     post_create_field_map: Optional[List[dict]] = None
+    api_server_id: Optional[int] = None
+    api_endpoint: Optional[str] = None
 
 
 class SubscriptionSettingsResponse(BaseModel):
     id: int
     post_create_form_slug: Optional[str] = None
     post_create_field_map: Optional[List[dict]] = None
+    api_server_id: Optional[int] = None
+    api_endpoint: Optional[str] = None
+    api_server_name: Optional[str] = None   # populated by the route, not from DB
     updated_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
