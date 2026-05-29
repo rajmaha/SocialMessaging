@@ -311,64 +311,83 @@ def run_scripts(repo: CICDRepo, deployment: CICDDeployment, db: Session,
     return logs
 
 
-# ── CloudPanel domain → DB name resolver ─────────────────────────────────────
+# ── Domain → DB name resolver (nginx + db.php) ────────────────────────────────
+
+def _nginx_conf_dir(server: CloudPanelServer) -> str:
+    """Return the nginx vhost config directory on the server."""
+    rc, out, _ = _ssh_run(server, "test -d /etc/nginx/sites-enabled && echo sites-enabled || echo conf.d", timeout=10)
+    return f"/etc/nginx/{out.strip() or 'sites-enabled'}"
+
+
+def _db_name_from_site_root(root: str, server: CloudPanelServer) -> Optional[str]:
+    """
+    Read the DB name from a CodeIgniter db.php file in the given site root.
+    Looks for:  'database' => 'somedbname',
+    """
+    rc, out, _ = _ssh_run(
+        server,
+        f"grep -m1 \"'database'\\s*=>\" '{root}/db.php' 2>/dev/null",
+        timeout=10,
+    )
+    if rc != 0 or not out.strip():
+        return None
+    # Parse: 'database' => 'somedbname',
+    import re
+    m = re.search(r"'database'\s*=>\s*'([^']+)'", out)
+    return m.group(1) if m else None
+
 
 def _resolve_domain_db_names(domain_pattern: str, server: CloudPanelServer) -> list[str]:
     """
-    Query CloudPanel's SQLite to find DB names for a domain pattern.
-      "example.com"   → exact domain match
-      "*.example.com" → all subdomains of example.com
+    Resolve a domain or wildcard pattern to real DB names via nginx configs + db.php.
+      "example.com"   → exact nginx vhost match → reads db.php for DB name
+      "*.example.com" → all vhosts matching *.example.com → reads each db.php
     Returns a (possibly empty) list of database names.
     """
-    import base64 as _b64
+    conf_dir = _nginx_conf_dir(server)
+    results: list[str] = []
 
     if domain_pattern.startswith("*."):
-        parent = domain_pattern[2:]
-        match_expr = f"%.{parent}"
-        use_like = True
+        parent = domain_pattern[2:]  # "saraloms.com"
+        # List all .conf files whose domain ends with .parent (subdomains only)
+        rc, out, _ = _ssh_run(
+            server,
+            f"ls '{conf_dir}'/*.conf 2>/dev/null | grep -v '/default.conf$'",
+            timeout=10,
+        )
+        if rc != 0 or not out.strip():
+            return []
+        for conf_path in out.splitlines():
+            conf_path = conf_path.strip()
+            domain = Path(conf_path).stem  # strip .conf
+            if not domain.endswith(f".{parent}"):
+                continue
+            rc2, root_out, _ = _ssh_run(
+                server,
+                f"grep -m1 'root ' '{conf_path}' | awk '{{print $2}}' | tr -d ';'",
+                timeout=10,
+            )
+            root = root_out.strip()
+            if not root:
+                continue
+            db_name = _db_name_from_site_root(root, server)
+            if db_name:
+                results.append(db_name)
     else:
-        match_expr = domain_pattern
-        use_like = False
+        # Exact domain
+        conf_path = f"{conf_dir}/{domain_pattern}.conf"
+        rc, root_out, _ = _ssh_run(
+            server,
+            f"grep -m1 'root ' '{conf_path}' 2>/dev/null | awk '{{print $2}}' | tr -d ';'",
+            timeout=10,
+        )
+        root = root_out.strip()
+        if root:
+            db_name = _db_name_from_site_root(root, server)
+            if db_name:
+                results.append(db_name)
 
-    script = (
-        "import sqlite3, json\n"
-        "candidates = [\n"
-        "    '/home/cloudpanel/service/cloud-panel.db',\n"
-        "    '/home/clp/services/cloud-panel.db',\n"
-        "    '/var/lib/cloudpanel/cloud-panel.db',\n"
-        "]\n"
-        "db_path = None\n"
-        "for c in candidates:\n"
-        "    try:\n"
-        "        open(c).close()\n"
-        "        db_path = c\n"
-        "        break\n"
-        "    except Exception:\n"
-        "        pass\n"
-        "if not db_path:\n"
-        "    print(json.dumps([]))\n"
-        "else:\n"
-        "    conn = sqlite3.connect(db_path)\n"
-        "    try:\n"
-        f"        op = 'LIKE' if {use_like} else '='\n"
-        f"        rows = conn.execute(\n"
-        f"            'SELECT db.name FROM database db JOIN site s ON db.site_id = s.id WHERE s.domain_name ' + op + ' ?',\n"
-        f"            ({repr(match_expr)},)\n"
-        f"        ).fetchall()\n"
-        "        print(json.dumps([r[0] for r in rows]))\n"
-        "    except Exception as e:\n"
-        "        print(json.dumps([]))\n"
-        "    finally:\n"
-        "        conn.close()\n"
-    )
-    encoded = _b64.b64encode(script.encode()).decode()
-    rc, out, _ = _ssh_run(server, f"echo {encoded} | base64 -d | python3", timeout=15)
-    if rc != 0:
-        return []
-    try:
-        return json.loads(out.strip())
-    except Exception:
-        return []
+    return results
 
 
 def _is_domain_pattern(entry: str) -> bool:
