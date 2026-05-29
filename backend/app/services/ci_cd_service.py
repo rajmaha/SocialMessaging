@@ -311,6 +311,102 @@ def run_scripts(repo: CICDRepo, deployment: CICDDeployment, db: Session,
     return logs
 
 
+# ── CloudPanel domain → DB name resolver ─────────────────────────────────────
+
+def _resolve_domain_db_names(domain_pattern: str, server: CloudPanelServer) -> list[str]:
+    """
+    Query CloudPanel's SQLite to find DB names for a domain pattern.
+      "example.com"   → exact domain match
+      "*.example.com" → all subdomains of example.com
+    Returns a (possibly empty) list of database names.
+    """
+    import base64 as _b64
+
+    if domain_pattern.startswith("*."):
+        parent = domain_pattern[2:]
+        match_expr = f"%.{parent}"
+        use_like = True
+    else:
+        match_expr = domain_pattern
+        use_like = False
+
+    script = (
+        "import sqlite3, json\n"
+        "candidates = [\n"
+        "    '/home/cloudpanel/service/cloud-panel.db',\n"
+        "    '/home/clp/services/cloud-panel.db',\n"
+        "    '/var/lib/cloudpanel/cloud-panel.db',\n"
+        "]\n"
+        "db_path = None\n"
+        "for c in candidates:\n"
+        "    try:\n"
+        "        open(c).close()\n"
+        "        db_path = c\n"
+        "        break\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "if not db_path:\n"
+        "    print(json.dumps([]))\n"
+        "else:\n"
+        "    conn = sqlite3.connect(db_path)\n"
+        "    try:\n"
+        f"        op = 'LIKE' if {use_like} else '='\n"
+        f"        rows = conn.execute(\n"
+        f"            'SELECT db.name FROM database db JOIN site s ON db.site_id = s.id WHERE s.domain_name ' + op + ' ?',\n"
+        f"            ({repr(match_expr)},)\n"
+        f"        ).fetchall()\n"
+        "        print(json.dumps([r[0] for r in rows]))\n"
+        "    except Exception as e:\n"
+        "        print(json.dumps([]))\n"
+        "    finally:\n"
+        "        conn.close()\n"
+    )
+    encoded = _b64.b64encode(script.encode()).decode()
+    rc, out, _ = _ssh_run(server, f"echo {encoded} | base64 -d | python3", timeout=15)
+    if rc != 0:
+        return []
+    try:
+        return json.loads(out.strip())
+    except Exception:
+        return []
+
+
+def _is_domain_pattern(entry: str) -> bool:
+    """Return True if the CSV entry looks like a domain or wildcard domain rather than a DB name."""
+    return "." in entry and " " not in entry
+
+
+def _expand_db_names(raw_names: list[str], server: Optional[CloudPanelServer]) -> list[str]:
+    """
+    Expand any domain/wildcard entries to real DB names via CloudPanel.
+    Plain DB names (no dot) pass through unchanged.
+    Requires a server; domain entries without a server are skipped with a warning.
+    """
+    result: list[str] = []
+    seen: set[str] = set()
+
+    for entry in raw_names:
+        if not _is_domain_pattern(entry):
+            if entry not in seen:
+                seen.add(entry)
+                result.append(entry)
+            continue
+
+        if server is None:
+            logger.warning("db.csv entry %r looks like a domain but no server is attached — skipping", entry)
+            continue
+
+        resolved = _resolve_domain_db_names(entry, server)
+        if not resolved:
+            logger.warning("No CloudPanel databases found for domain pattern %r", entry)
+        for name in resolved:
+            if name not in seen:
+                seen.add(name)
+                result.append(name)
+
+    return result
+
+
 # ── Migration execution ───────────────────────────────────────────────────────
 
 def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
@@ -332,7 +428,8 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
             return []
         csv_content = csv_file.read_text()
 
-    db_names = [n for line in csv_content.splitlines() for n in (p.strip() for p in line.split(",")) if n]
+    raw_names = [n for line in csv_content.splitlines() for n in (p.strip() for p in line.split(",")) if n]
+    db_names = _expand_db_names(raw_names, server)
     if not db_names:
         return []
 
