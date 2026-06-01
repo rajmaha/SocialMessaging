@@ -2279,11 +2279,12 @@ def bulk_task_action(data: PMSBulkAction, db: Session = Depends(get_db), current
             affected += 1
         elif data.action == "move_stage":
             to_stage = params.get("to_stage")
+            is_admin = _has_permission(current_user, db, "pms_tasks", "edit")
             allowed = WORKFLOW_TRANSITIONS.get(task.stage, {}).get(to_stage)
-            if allowed:
+            if allowed or is_admin:
                 old = task.stage
                 task.stage = to_stage
-                db.add(PMSWorkflowHistory(task_id=task.id, from_stage=old, to_stage=to_stage, moved_by=current_user.id, note="Bulk action"))
+                db.add(PMSWorkflowHistory(task_id=task.id, from_stage=old, to_stage=to_stage, moved_by=current_user.id, note=params.get("note") or "Bulk action"))
                 affected += 1
         elif data.action == "set_priority":
             task.priority = params.get("priority", task.priority)

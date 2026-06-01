@@ -26,10 +26,11 @@ function BulkActionModal({ action, members, milestones, onConfirm, onCancel }: {
   const [stage, setStage] = useState('development');
   const [priority, setPriority] = useState('medium');
   const [milestoneId, setMilestoneId] = useState('');
+  const [remark, setRemark] = useState('');
 
   const handleConfirm = () => {
     if (action === 'assign') { if (!assigneeId) return; onConfirm({ assignee_id: Number(assigneeId) }); }
-    else if (action === 'move_stage') onConfirm({ to_stage: stage });
+    else if (action === 'move_stage') onConfirm({ to_stage: stage, note: remark.trim() || undefined });
     else if (action === 'set_priority') onConfirm({ priority });
     else if (action === 'set_milestone') onConfirm({ milestone_id: milestoneId ? Number(milestoneId) : null });
     else if (action === 'delete') onConfirm({});
@@ -61,14 +62,25 @@ function BulkActionModal({ action, members, milestones, onConfirm, onCancel }: {
         )}
 
         {action === 'move_stage' && (
-          <div>
-            <label className="text-xs text-gray-500 block mb-1.5">Select stage</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white" value={stage}
-              onChange={e => setStage(e.target.value)}>
-              {['development', 'qa', 'pm_review', 'client_review', 'approved', 'completed'].map(s => (
-                <option key={s} value={s}>{s.replace('_', ' ')}</option>
-              ))}
-            </select>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1.5">Select stage</label>
+              <select className="w-full border rounded-lg px-3 py-2 text-sm bg-white" value={stage}
+                onChange={e => setStage(e.target.value)}>
+                {['development', 'qa', 'pm_review', 'client_review', 'approved', 'completed'].map(s => (
+                  <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1.5">Remark <span className="text-gray-400">(optional)</span></label>
+              <input
+                className="w-full border rounded-lg px-3 py-2 text-sm bg-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder="Reason for stage change..."
+                value={remark}
+                onChange={e => setRemark(e.target.value)}
+              />
+            </div>
           </div>
         )}
 
