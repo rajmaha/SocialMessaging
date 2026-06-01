@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { pmsApi } from '@/lib/api';
 import FilterBar, { FilterState, defaultFilters } from './FilterBar';
 import TaskDetailPanel from './TaskDetailPanel';
+import NoteEditor from './NoteEditor';
 
 const PRIORITY_COLORS: Record<string, string> = {
   low: 'text-gray-400', medium: 'text-yellow-500', high: 'text-orange-500', urgent: 'text-red-500',
@@ -27,10 +28,11 @@ function BulkActionModal({ action, members, milestones, onConfirm, onCancel }: {
   const [priority, setPriority] = useState('medium');
   const [milestoneId, setMilestoneId] = useState('');
   const [remark, setRemark] = useState('');
+  const [remarkKey, setRemarkKey] = useState(0);
 
   const handleConfirm = () => {
     if (action === 'assign') { if (!assigneeId) return; onConfirm({ assignee_id: Number(assigneeId) }); }
-    else if (action === 'move_stage') onConfirm({ to_stage: stage, note: remark.trim() || undefined });
+    else if (action === 'move_stage') { onConfirm({ to_stage: stage, note: remark || undefined }); setRemark(''); setRemarkKey(k => k + 1); }
     else if (action === 'set_priority') onConfirm({ priority });
     else if (action === 'set_milestone') onConfirm({ milestone_id: milestoneId ? Number(milestoneId) : null });
     else if (action === 'delete') onConfirm({});
@@ -74,12 +76,7 @@ function BulkActionModal({ action, members, milestones, onConfirm, onCancel }: {
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1.5">Remark <span className="text-gray-400">(optional)</span></label>
-              <input
-                className="w-full border rounded-lg px-3 py-2 text-sm bg-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                placeholder="Reason for stage change..."
-                value={remark}
-                onChange={e => setRemark(e.target.value)}
-              />
+              <NoteEditor key={remarkKey} onChange={setRemark} placeholder="Reason for stage change..." minHeight="56px" />
             </div>
           </div>
         )}

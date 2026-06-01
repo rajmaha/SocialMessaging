@@ -1,54 +1,7 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
 import { pmsApi } from '@/lib/api';
-
-/* ── Lightweight rich-text note editor ──────────────────────────── */
-function NoteEditor({ onChange }: { onChange: (html: string) => void }) {
-  const editor = useEditor({
-    extensions: [StarterKit],
-    content: '<p></p>',
-    immediatelyRender: false,
-    onUpdate: ({ editor }) => {
-      const html = editor.getHTML();
-      onChange(html === '<p></p>' ? '' : html);
-    },
-  });
-
-  if (!editor) return null;
-
-  const btn = (active: boolean, onClick: () => void, title: string, label: React.ReactNode) => (
-    <button type="button" title={title} onMouseDown={e => { e.preventDefault(); onClick(); }}
-      className={`px-1.5 py-0.5 rounded text-xs font-medium leading-none transition-colors ${
-        active ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-200'
-      }`}>
-      {label}
-    </button>
-  );
-
-  return (
-    <div className="border border-gray-300 rounded overflow-hidden focus-within:ring-1 focus-within:ring-indigo-400 focus-within:border-indigo-400">
-      {/* Toolbar */}
-      <div className="flex items-center gap-0.5 px-1.5 py-1 border-b border-gray-200 bg-gray-50">
-        {btn(editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold', <b>B</b>)}
-        {btn(editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run(), 'Italic', <i>I</i>)}
-        {btn(editor.isActive('strike'), () => editor.chain().focus().toggleStrike().run(), 'Strikethrough', <s>S</s>)}
-        <span className="w-px h-3.5 bg-gray-200 mx-0.5" />
-        {btn(editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run(), 'Bullet list', '• ≡')}
-        {btn(editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run(), 'Numbered list', '1 ≡')}
-        <span className="w-px h-3.5 bg-gray-200 mx-0.5" />
-        {btn(editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), 'Blockquote', '" "')}
-        {btn(editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run(), 'Code block', '</>')}
-      </div>
-      {/* Content area */}
-      <EditorContent
-        editor={editor}
-        className="pms-note-editor text-sm px-2.5 py-2 min-h-[72px] max-h-[160px] overflow-y-auto"
-      />
-    </div>
-  );
-}
+import NoteEditor from './NoteEditor';
 
 const STAGE_COLORS: Record<string, string> = {
   development: '#6366f1', qa: '#f59e0b', pm_review: '#8b5cf6',
@@ -92,6 +45,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
 
   const [pendingStage, setPendingStage] = useState<string | null>(null);
   const [stageRemark, setStageRemark] = useState('');
+  const [stageRemarkKey, setStageRemarkKey] = useState(0);
   const [stageChanging, setStageChanging] = useState(false);
 
   const loadTask = async () => {
@@ -109,6 +63,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
     });
     setPendingStage(null);
     setStageRemark('');
+    setStageRemarkKey(k => k + 1);
     setDirty(false);
   };
 
@@ -159,6 +114,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
       await pmsApi.transitionTask(taskId, { to_stage: pendingStage, note: stageRemark.trim() || undefined });
       setPendingStage(null);
       setStageRemark('');
+      setStageRemarkKey(k => k + 1);
       onUpdated();
       await loadTask();
       pmsApi.getTaskHistory(taskId).then(r => setHistory(r.data)).catch(() => {});
@@ -166,6 +122,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
       alert(e?.response?.data?.detail || 'Stage change failed');
       setPendingStage(null);
       setStageRemark('');
+      setStageRemarkKey(k => k + 1);
     }
     setStageChanging(false);
   };
@@ -276,13 +233,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
               <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide">
                 Stage: {task?.stage?.replace(/_/g, ' ')} → {pendingStage.replace(/_/g, ' ')}
               </p>
-              <input
-                className="w-full border border-amber-300 rounded px-2.5 py-1.5 text-sm bg-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                placeholder="Remark (optional)"
-                value={stageRemark}
-                onChange={e => setStageRemark(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleApplyStage()}
-              />
+              <NoteEditor key={stageRemarkKey} onChange={setStageRemark} placeholder="Remark (optional)" minHeight="56px" />
               <div className="flex gap-2">
                 <button
                   onClick={handleApplyStage}
@@ -292,7 +243,7 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
                   {stageChanging ? 'Applying...' : 'Apply Stage Change'}
                 </button>
                 <button
-                  onClick={() => { setPendingStage(null); setStageRemark(''); }}
+                  onClick={() => { setPendingStage(null); setStageRemark(''); setStageRemarkKey(k => k + 1); }}
                   className="px-3 py-1.5 text-sm text-gray-600 border rounded hover:bg-gray-50"
                 >
                   Cancel
