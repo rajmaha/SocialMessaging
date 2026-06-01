@@ -90,13 +90,16 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
   const [expandHistory, setExpandHistory] = useState(false);
   const [sprints, setSprints] = useState<any[]>([]);
 
+  const [pendingStage, setPendingStage] = useState<string | null>(null);
+  const [stageRemark, setStageRemark] = useState('');
+  const [stageChanging, setStageChanging] = useState(false);
+
   const loadTask = async () => {
     const r = await pmsApi.getTask(taskId);
     setTask(r.data);
     setForm({
       title: r.data.title || '',
       description: r.data.description || '',
-      stage: r.data.stage || 'development',
       priority: r.data.priority || 'medium',
       assignee_id: r.data.assignee_id || '',
       start_date: r.data.start_date || '',
@@ -104,6 +107,8 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
       estimated_hours: r.data.estimated_hours || '',
       sprint_id: r.data.sprint_id || '',
     });
+    setPendingStage(null);
+    setStageRemark('');
     setDirty(false);
   };
 
@@ -136,6 +141,33 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
     setDirty(false);
     onUpdated();
     loadTask();
+  };
+
+  const handleStageSelect = (newStage: string) => {
+    if (newStage === task?.stage) {
+      setPendingStage(null);
+      setStageRemark('');
+    } else {
+      setPendingStage(newStage);
+    }
+  };
+
+  const handleApplyStage = async () => {
+    if (!pendingStage) return;
+    setStageChanging(true);
+    try {
+      await pmsApi.transitionTask(taskId, { to_stage: pendingStage, note: stageRemark.trim() || undefined });
+      setPendingStage(null);
+      setStageRemark('');
+      onUpdated();
+      await loadTask();
+      pmsApi.getTaskHistory(taskId).then(r => setHistory(r.data)).catch(() => {});
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Stage change failed');
+      setPendingStage(null);
+      setStageRemark('');
+    }
+    setStageChanging(false);
   };
 
   const handleAddComment = async () => {
@@ -223,9 +255,12 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Stage</label>
-              <select className="w-full border rounded px-2.5 py-1.5 text-sm mt-0.5" value={form.stage}
-                onChange={e => updateField('stage', e.target.value)}>
-                {STAGES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+              <select
+                className="w-full border rounded px-2.5 py-1.5 text-sm mt-0.5"
+                value={pendingStage ?? task?.stage ?? 'development'}
+                onChange={e => handleStageSelect(e.target.value)}
+              >
+                {STAGES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
               </select>
             </div>
             <div>
@@ -236,6 +271,35 @@ export default function TaskDetailPanel({ taskId, projectId, members, onClose, o
               </select>
             </div>
           </div>
+          {pendingStage && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide">
+                Stage: {task?.stage?.replace(/_/g, ' ')} → {pendingStage.replace(/_/g, ' ')}
+              </p>
+              <input
+                className="w-full border border-amber-300 rounded px-2.5 py-1.5 text-sm bg-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                placeholder="Remark (optional)"
+                value={stageRemark}
+                onChange={e => setStageRemark(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleApplyStage()}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleApplyStage}
+                  disabled={stageChanging}
+                  className="flex-1 bg-amber-600 text-white rounded py-1.5 text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {stageChanging ? 'Applying...' : 'Apply Stage Change'}
+                </button>
+                <button
+                  onClick={() => { setPendingStage(null); setStageRemark(''); }}
+                  className="px-3 py-1.5 text-sm text-gray-600 border rounded hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
           <div>
             <label className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Assignee</label>
             <select className="w-full border rounded px-2.5 py-1.5 text-sm mt-0.5" value={form.assignee_id}

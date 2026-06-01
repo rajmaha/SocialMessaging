@@ -505,10 +505,11 @@ def transition_task(task_id: int, data: PMSTransitionRequest, db: Session = Depe
     if not task:
         raise HTTPException(404)
     m = _require_member(db, task.project_id, current_user)
+    is_admin = _has_permission(current_user, db, "pms_tasks", "edit")
     allowed = WORKFLOW_TRANSITIONS.get(task.stage, {}).get(data.to_stage, [])
-    if not allowed:
+    if not allowed and not is_admin:
         raise HTTPException(400, f"No transition from {task.stage} to {data.to_stage}")
-    if m.role not in allowed and not _has_permission(current_user, db, "pms_tasks", "edit"):
+    if allowed and m.role not in allowed and not is_admin:
         raise HTTPException(403, f"Role '{m.role}' cannot perform this transition")
     old_stage = task.stage
     task.stage = data.to_stage
