@@ -1865,6 +1865,12 @@ def _run_inline_migrations():
                 'CALL': 'call', 'EMAIL': 'email', 'MEETING': 'meeting', 'MESSAGE': 'message',
                 'NOTE': 'note', 'TASK_CREATED': 'task_created', 'DEAL_STAGE_CHANGE': 'deal_stage_change',
             },
+            'ticketstatus': {
+                'PENDING': 'pending', 'SOLVED': 'solved', 'FORWARDED': 'forwarded',
+            },
+            'ticketpriority': {
+                'LOW': 'low', 'NORMAL': 'normal', 'HIGH': 'high', 'URGENT': 'urgent',
+            },
         }
         for enum_type, mappings in _enum_renames.items():
             for old_val, new_val in mappings.items():
