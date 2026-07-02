@@ -35,8 +35,8 @@ class Ticket(Base):
     forward_target = Column(String, nullable=True)
     forward_reason = Column(String, nullable=True)
     
-    status = Column(SQLEnum(TicketStatus), default=TicketStatus.PENDING, nullable=False)
-    priority = Column(SQLEnum(TicketPriority), default=TicketPriority.NORMAL, nullable=False)
+    status = Column(SQLEnum(TicketStatus, values_callable=lambda x: [e.value for e in x]), default=TicketStatus.PENDING, nullable=False)
+    priority = Column(SQLEnum(TicketPriority, values_callable=lambda x: [e.value for e in x]), default=TicketPriority.NORMAL, nullable=False)
     
     # assigned to a user (agent/team member)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
