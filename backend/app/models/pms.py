@@ -233,3 +233,6 @@ class PMSTaskChecklist(Base):
     is_checked = Column(Boolean, default=False)
     position = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
+
+    task = relationship("PMSTask", back_populates="checklists")
+
