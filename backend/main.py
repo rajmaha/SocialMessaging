@@ -1869,7 +1869,16 @@ def _run_inline_migrations():
         for enum_type, mappings in _enum_renames.items():
             for old_val, new_val in mappings.items():
                 try:
-                    conn.execute(text(f"ALTER TYPE {enum_type} RENAME VALUE '{old_val}' TO '{new_val}'"))
+                    # Check if the old uppercase value exists as a label in the enum type
+                    res = conn.execute(text("""
+                        SELECT 1 FROM pg_type t
+                        JOIN pg_enum e ON t.oid = e.enumtypid
+                        WHERE t.typname = :enum_type AND e.enumlabel = :old_val
+                    """), {"enum_type": enum_type, "old_val": old_val}).fetchone()
+                    
+                    if res:
+                        conn.execute(text(f"ALTER TYPE {enum_type} RENAME VALUE '{old_val}' TO '{new_val}'"))
+                        conn.commit()
                 except Exception:
                     conn.rollback()  # rollback failed DDL to keep transaction usable
 
