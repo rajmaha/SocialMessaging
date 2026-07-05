@@ -22,6 +22,7 @@ export default function WorklogApproval() {
   const user = authAPI.getUser();
   const [entries, setEntries] = useState<PendingEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<number | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -30,7 +31,18 @@ export default function WorklogApproval() {
 
   const load = () => {
     setLoading(true);
-    worklogApi.listPendingEntries().then(r => { setEntries(r.data); setLoading(false); });
+    setError(null);
+    worklogApi.listPendingEntries()
+      .then(r => { setEntries(r.data); })
+      .catch(err => {
+        const status = err?.response?.status;
+        if (status === 403) {
+          setError('You need admin access to view the approval queue.');
+        } else {
+          setError(err?.response?.data?.detail || 'Failed to load pending entries. Please try again.');
+        }
+      })
+      .finally(() => { setLoading(false); });
   };
 
   useEffect(() => { load(); }, []);
@@ -188,6 +200,11 @@ export default function WorklogApproval() {
 
         {loading ? (
           <div className="text-center py-12 text-gray-500">Loading...</div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <div className="text-red-600 mb-3">{error}</div>
+            <button onClick={load} className="px-4 py-2 bg-gray-900 text-white rounded text-sm font-medium hover:bg-gray-700">Retry</button>
+          </div>
         ) : entries.length === 0 ? (
           <div className="text-center py-12 text-gray-500">No pending entries to approve.</div>
         ) : (
