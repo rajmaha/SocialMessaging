@@ -562,7 +562,7 @@ class EmailService:
             
             logger.info(f"🔄 Starting email sync for {account.email_address}")
             
-            with MailBox(account.imap_host, account.imap_port, timeout=15).login(
+            with MailBox(account.imap_host, account.imap_port, timeout=5).login(
                 account.imap_username, account.imap_password
             ) as mailbox:
                 # Get folder and fetch recent emails
