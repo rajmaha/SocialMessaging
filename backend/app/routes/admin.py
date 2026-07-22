@@ -827,7 +827,7 @@ async def test_email_credentials(
         
         # Test IMAP connection
         try:
-            with MailBox(request_data.imap_host, request_data.imap_port).login(
+            with MailBox(request_data.imap_host, request_data.imap_port, timeout=15).login(
                 request_data.imap_username, request_data.imap_password
             ) as mailbox:
                 mailbox.folder.set('INBOX')

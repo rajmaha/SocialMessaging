@@ -47,7 +47,7 @@ def _move_to_imap_trash(account, message_ids: list):
         return
     try:
         from imap_tools import MailBox
-        with MailBox(account.imap_host, account.imap_port).login(
+        with MailBox(account.imap_host, account.imap_port, timeout=15).login(
             account.imap_username, account.imap_password
         ) as mailbox:
             # Detect the Trash folder name (varies by provider)
@@ -84,7 +84,7 @@ def _delete_from_imap(account, message_ids: list):
         return
     try:
         from imap_tools import MailBox
-        with MailBox(account.imap_host, account.imap_port).login(
+        with MailBox(account.imap_host, account.imap_port, timeout=15).login(
             account.imap_username, account.imap_password
         ) as mailbox:
             for folder in ['INBOX', 'Trash', '[Gmail]/Trash', 'Deleted Items', 'Deleted', 'INBOX.Trash', 'Spam', 'Junk', 'Sent']:
@@ -155,7 +155,7 @@ def _refetch_attachment_from_imap(account, email_obj, attachment_obj, db):
     logs.append(f"ATTACHMENT_DIR={ATTACHMENT_DIR}")
 
     try:
-        with MailBox(account.imap_host, account.imap_port).login(
+        with MailBox(account.imap_host, account.imap_port, timeout=15).login(
             account.imap_username, account.imap_password
         ) as mailbox:
             logs.append("IMAP connected OK")
