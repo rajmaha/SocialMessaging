@@ -2639,6 +2639,15 @@ def send_scheduled_emails():
                 if not account:
                     logger.warning(f"No active account for scheduled email {email.id}, skipping")
                     continue
+                attachments = []
+                for att in email.attachments:
+                    if att.file_path and os.path.exists(att.file_path):
+                        with open(att.file_path, 'rb') as f:
+                            attachments.append({
+                                "filename": att.filename,
+                                "content_type": att.content_type,
+                                "content": f.read(),
+                            })
                 email_service.send_email_from_account(
                     account,
                     email.to_address,
@@ -2646,6 +2655,7 @@ def send_scheduled_emails():
                     email.body_html or email.body_text or "",
                     email.cc,
                     email.bcc,
+                    attachments=attachments,
                 )
                 email.is_sent = True
                 email.received_at = now  # record actual send time so Sent folder shows correct timestamp

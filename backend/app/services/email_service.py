@@ -6,6 +6,7 @@ import smtplib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 from email.utils import formatdate as _formatdate
 from app.config import settings
 import os
@@ -952,13 +953,25 @@ class EmailService:
             logger.error(f"❌ Error syncing emails for {account.email_address}: {str(e)}")
             raise
     
-    def send_email_from_account(self, account, to_address: str, subject: str, body: str, cc: str = None, bcc: str = None, in_reply_to: str = None):
-        """Send email from user's email account via SMTP"""
+    def send_email_from_account(self, account, to_address: str, subject: str, body: str, cc: str = None, bcc: str = None, in_reply_to: str = None, attachments: list = None):
+        """Send email from user's email account via SMTP.
+
+        attachments: optional list of {"filename": str, "content_type": str, "content": bytes}
+        """
         try:
             logger.info(f"📧 Sending email from {account.email_address} to {to_address}")
-            
-            # Create message
-            msg = MIMEMultipart('alternative')
+
+            # Create message - wrap in 'mixed' when there are attachments so they
+            # ride alongside the body instead of being treated as alternative renderings of it.
+            if attachments:
+                msg = MIMEMultipart('mixed')
+                body_part = MIMEMultipart('alternative')
+                body_part.attach(MIMEText(body, 'html'))
+                msg.attach(body_part)
+            else:
+                msg = MIMEMultipart('alternative')
+                msg.attach(MIMEText(body, 'html'))
+
             msg['Subject'] = subject
             msg['Date'] = _formatdate(localtime=True)
             msg['From'] = f"{account.display_name} <{account.email_address}>" if account.display_name else account.email_address
@@ -970,10 +983,12 @@ class EmailService:
             if in_reply_to:
                 msg['In-Reply-To'] = in_reply_to
                 msg['References'] = in_reply_to
-            
-            # Attach body - always send as HTML since we use a rich text editor
-            msg.attach(MIMEText(body, 'html'))
-            
+
+            for att in (attachments or []):
+                part = MIMEApplication(att['content'], Name=att['filename'])
+                part['Content-Disposition'] = f'attachment; filename="{att["filename"]}"'
+                msg.attach(part)
+
             # Connect to SMTP with appropriate security based on smtp_security setting
             smtp_security = getattr(account, 'smtp_security', 'STARTTLS').upper()
             
@@ -1013,7 +1028,31 @@ class EmailService:
         except Exception as e:
             logger.error(f"❌ Error sending email from {account.email_address}: {str(e)}")
             raise
-    
+
+    def save_email_attachments(self, db, account_id: int, email_id: int, files: list):
+        """Persist outbound attachments to disk and create EmailAttachment rows.
+
+        files: list of {"filename": str, "content_type": str, "content": bytes}
+        Mirrors the storage layout used for inbound attachments (ATTACHMENT_STORAGE_DIR/{account_id}/{email_id}/).
+        """
+        from app.models.email import EmailAttachment
+
+        save_dir = os.path.join(ATTACHMENT_STORAGE_DIR, str(account_id), str(email_id))
+        os.makedirs(save_dir, exist_ok=True)
+
+        for f in files:
+            file_path = os.path.join(save_dir, f['filename'])
+            with open(file_path, 'wb') as out:
+                out.write(f['content'])
+
+            db.add(EmailAttachment(
+                email_id=email_id,
+                filename=f['filename'],
+                content_type=f.get('content_type'),
+                size=len(f['content']),
+                file_path=file_path,
+            ))
+
     def sync_all_accounts(self, db=None):
         """Sync all active email accounts (for auto-sync)"""
         try:

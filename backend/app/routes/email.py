@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Request
+from fastapi import APIRouter, Depends, HTTPException, Body, Request, Form, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -12,11 +12,11 @@ from app.models.user import User
 from app.models import UserEmailAccount, Email
 from app.models.email import EmailSignature, Contact, EmailThread, EmailAttachment
 from app.schemas.email import (
-    EmailAccountResponse, SendEmailRequest, SendEmailReplyRequest,
+    EmailAccountResponse, SendEmailRequest,
     EmailResponse, EmailListResponse, SyncEmailsResponse,
     EmailSignatureCreate, EmailSignatureUpdate, EmailSignatureResponse,
     ContactCreate, ContactUpdate, ContactResponse, ContactListResponse,
-    ScheduledSendRequest, EmailThreadListResponse, EmailThreadResponse
+    EmailThreadListResponse, EmailThreadResponse
 )
 from app.services.email_service import email_service
 from pydantic import BaseModel
@@ -25,6 +25,32 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/email", tags=["email"])
+
+
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10MB per file, matches campaign_attachments.py convention
+MAX_TOTAL_ATTACHMENTS_SIZE = 25 * 1024 * 1024  # 25MB combined, common SMTP relay limit
+
+
+async def _read_attachments(files: List[UploadFile]) -> list:
+    """Read and size-validate uploaded files for outbound email attachments.
+
+    Returns a list of {"filename", "content_type", "content"} dicts.
+    """
+    result = []
+    total_size = 0
+    for f in files or []:
+        content = await f.read()
+        if len(content) > MAX_ATTACHMENT_SIZE:
+            raise HTTPException(status_code=400, detail=f"Attachment '{f.filename}' exceeds the 10MB limit")
+        total_size += len(content)
+        if total_size > MAX_TOTAL_ATTACHMENTS_SIZE:
+            raise HTTPException(status_code=400, detail="Total attachments exceed the 25MB limit")
+        result.append({
+            "filename": f.filename,
+            "content_type": f.content_type or "application/octet-stream",
+            "content": content,
+        })
+    return result
 
 
 def _find_imap_uids(mailbox, msg_id):
@@ -952,9 +978,14 @@ def download_attachment(
     )
 
 @router.post("/send")
-def send_email(
-    request: SendEmailRequest,
+async def send_email(
+    to_address: str = Form(...),
+    subject: str = Form(...),
+    body: str = Form(...),
+    cc: Optional[str] = Form(None),
+    bcc: Optional[str] = Form(None),
     account_id: Optional[int] = None,
+    files: List[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -962,33 +993,39 @@ def send_email(
     account = get_user_email_account(db, current_user.id, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Email account not configured")
-    
+
+    attachments = await _read_attachments(files)
+
     try:
         # Send via service
         email_service.send_email_from_account(
             account,
-            request.to_address,
-            request.subject,
-            request.body,
-            request.cc,
-            request.bcc
+            to_address,
+            subject,
+            body,
+            cc,
+            bcc,
+            attachments=attachments
         )
         # Save to sent folder
         from app.models.email import Email as EmailModel
         sent_email = EmailModel(
             account_id=account.id,
             message_id=f"sent_{datetime.utcnow().timestamp()}_{current_user.id}",
-            subject=request.subject,
+            subject=subject,
             from_address=account.email_address,
-            to_address=request.to_address,
-            cc=request.cc,
-            bcc=request.bcc,
-            body_html=request.body,
+            to_address=to_address,
+            cc=cc,
+            bcc=bcc,
+            body_html=body,
             received_at=datetime.utcnow(),
             is_sent=True,
             is_read=True
         )
         db.add(sent_email)
+        db.flush()
+        if attachments:
+            email_service.save_email_attachments(db, account.id, sent_email.id, attachments)
         db.commit()
         return {"status": "success", "message": "Email sent successfully", "id": sent_email.id}
     except Exception as e:
@@ -997,39 +1034,44 @@ def send_email(
 
 
 @router.post("/emails/{email_id}/reply")
-def reply_to_email(
+async def reply_to_email(
     email_id: int,
-    request: SendEmailReplyRequest,
+    body: str = Form(...),
+    cc: Optional[str] = Form(None),
+    bcc: Optional[str] = Form(None),
     account_id: Optional[int] = None,
+    files: List[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Reply to an email thread"""
+    attachments = await _read_attachments(files)
     try:
         # Get the original email
         from app.models.email import Email as EmailModel
         original_email = db.query(EmailModel).filter(EmailModel.id == email_id).first()
         if not original_email:
             raise HTTPException(status_code=404, detail="Email not found")
-            
+
         account = get_user_email_account(db, current_user.id, account_id or original_email.account_id)
         if not account:
             raise HTTPException(status_code=403, detail="Unauthorized")
-        
+
         # Prepare subject
         reply_subject = original_email.subject
         if not reply_subject.startswith("Re:"):
             reply_subject = f"Re: {reply_subject}"
-        
+
         # Send reply via SMTP
         email_service.send_email_from_account(
             account,
             original_email.from_address,
             reply_subject,
-            request.body,
-            request.cc,
-            request.bcc,
-            in_reply_to=original_email.message_id
+            body,
+            cc,
+            bcc,
+            in_reply_to=original_email.message_id,
+            attachments=attachments
         )
         
         # Get or create email thread
@@ -1064,20 +1106,23 @@ def reply_to_email(
             subject=reply_subject,
             from_address=account.email_address,
             to_address=original_email.from_address,
-            cc=request.cc,
-            bcc=request.bcc,
-            body_html=request.body,
+            cc=cc,
+            bcc=bcc,
+            body_html=body,
             received_at=datetime.utcnow(),
             in_reply_to=original_email.message_id,
             is_sent=True,
             is_read=True
         )
         db.add(reply_email)
-        
+        db.flush()
+        if attachments:
+            email_service.save_email_attachments(db, account.id, reply_email.id, attachments)
+
         # Update thread stats
         thread.last_email_at = datetime.utcnow()
         thread.reply_count = (thread.reply_count or 0) + 1
-        
+
         db.commit()
         
         return {
@@ -1807,11 +1852,15 @@ def delete_contact(
 # ========== SCHEDULED EMAIL ENDPOINTS ==========
 
 @router.post("/send-later")
-
-@router.post("/send-later")
-def schedule_email(
-    request_data: ScheduledSendRequest,
+async def schedule_email(
+    to_address: str = Form(...),
+    subject: str = Form(...),
+    body: str = Form(...),
+    scheduled_at: str = Form(...),
+    cc: Optional[str] = Form(None),
+    bcc: Optional[str] = Form(None),
     account_id: Optional[int] = None,
+    files: List[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -1820,8 +1869,10 @@ def schedule_email(
     if not account:
         raise HTTPException(status_code=404, detail="No email account configured")
 
+    attachments = await _read_attachments(files)
+
     try:
-        scheduled_dt = datetime.fromisoformat(request_data.scheduled_at.replace("Z", "+00:00")).replace(tzinfo=None)
+        scheduled_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00")).replace(tzinfo=None)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid scheduled_at format. Use ISO 8601 UTC.")
 
@@ -1832,12 +1883,12 @@ def schedule_email(
     scheduled_email = EmailModel(
         account_id=account.id,
         message_id=f"scheduled_{datetime.utcnow().timestamp()}_{current_user.id}",
-        subject=request_data.subject,
+        subject=subject,
         from_address=account.email_address,
-        to_address=request_data.to_address,
-        cc=request_data.cc,
-        bcc=request_data.bcc,
-        body_html=request_data.body,
+        to_address=to_address,
+        cc=cc,
+        bcc=bcc,
+        body_html=body,
         received_at=scheduled_dt,
         is_draft=False,
         is_sent=False,
@@ -1847,6 +1898,9 @@ def schedule_email(
         is_read=True,
     )
     db.add(scheduled_email)
+    db.flush()
+    if attachments:
+        email_service.save_email_attachments(db, account.id, scheduled_email.id, attachments)
     db.commit()
     db.refresh(scheduled_email)
 
@@ -1854,7 +1908,7 @@ def schedule_email(
         "status": "scheduled",
         "id": scheduled_email.id,
         "scheduled_at": scheduled_dt.isoformat(),
-        "message": f"Email scheduled to send to {request_data.to_address} at {scheduled_dt.strftime('%b %d, %Y %H:%M')} UTC",
+        "message": f"Email scheduled to send to {to_address} at {scheduled_dt.strftime('%b %d, %Y %H:%M')} UTC",
     }
 
 
@@ -1890,6 +1944,10 @@ def list_scheduled_emails(
             "body_html": r.body_html,
             "cc": r.cc,
             "bcc": r.bcc,
+            "attachments": [
+                {"id": a.id, "filename": a.filename, "content_type": a.content_type, "size": a.size}
+                for a in r.attachments
+            ],
         }
         for r in rows
     ]

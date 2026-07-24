@@ -345,6 +345,7 @@ export default function EmailPage() {
   const [scheduledAt, setScheduledAt] = useState('')
   const [scheduledEmails, setScheduledEmails] = useState<{
     id: number; to_address: string; subject: string; scheduled_at: string; body_html?: string
+    attachments?: { id: number; filename: string; content_type?: string; size?: number }[]
   }[]>([])
 
   // Signature state
@@ -1828,70 +1829,6 @@ export default function EmailPage() {
     }
   }
 
-  const _handleSend = async () => {
-    const token = getAuthToken()
-    if (!token) {
-      showToast('Please log in to send emails', 'error')
-      return
-    }
-    if (!composeData.to.trim()) {
-      showToast('Please enter a recipient email address', 'error')
-      return
-    }
-    setIsSending(true)
-    try {
-      if (replyMode === 'reply' || replyMode === 'replyAll') {
-        const lastExpandedId = expandedEmailIds.size > 0 ? [...expandedEmailIds].at(-1) : undefined
-        const replyEmailId = lastExpandedId ?? selectedThread?.emails[selectedThread.emails.length - 1]?.id
-        if (!replyEmailId) {
-          showToast('Could not determine which email to reply to', 'error')
-          return
-        }
-        await axios.post(
-          `${API_URL}/email/emails/${replyEmailId}/reply`,
-          {
-            body: composeData.message,
-            cc: composeData.cc || null,
-            bcc: composeData.bcc || null,
-          },
-          { headers: { Authorization: `Bearer ${token}` } }
-        )
-      } else {
-        // New compose or forward
-        await axios.post(
-          `${API_URL}/email/send`,
-          {
-            to_address: composeData.to,
-            subject: composeData.subject,
-            body: composeData.message,
-            cc: composeData.cc || null,
-            bcc: composeData.bcc || null,
-          },
-          { headers: { Authorization: `Bearer ${token}` } }
-        )
-      }
-      showToast('✓ Email sent successfully!')
-      playEmailSentSound()
-      if (selectedThread && typeof selectedThread.id === 'number') {
-        worklogApi.trackReply('email', selectedThread.id).catch(() => {})
-      }
-      // Delete the draft from the backend before resetting compose state
-      const sentDraftId = currentDraftIdRef.current
-      resetCompose()
-      if (sentDraftId) deleteDraft(sentDraftId)
-      // Refresh: if replying inside a thread, reload full thread so reply appears immediately
-      if ((replyMode === 'reply' || replyMode === 'replyAll') && selectedThread) {
-        selectThread(selectedThread)
-      }
-      fetchEmails()
-    } catch (error: any) {
-      console.error('Error sending email:', error)
-      showToast(error?.response?.data?.detail || 'Failed to send email', 'error')
-    } finally {
-      setIsSending(false)
-    }
-  }
-
   const fetchScheduledEmails = async () => {
     const token = getAuthToken()
     if (!token) return
@@ -1923,16 +1860,17 @@ export default function EmailPage() {
     if (!token) return
     setIsSending(true)
     try {
+      const scheduleFormData = new FormData()
+      scheduleFormData.append('to_address', composeData.to)
+      scheduleFormData.append('subject', composeData.subject)
+      scheduleFormData.append('body', composeData.message)
+      scheduleFormData.append('scheduled_at', schedDate.toISOString())
+      if (composeData.cc) scheduleFormData.append('cc', composeData.cc)
+      if (composeData.bcc) scheduleFormData.append('bcc', composeData.bcc)
+      composeData.attachments.forEach(file => scheduleFormData.append('files', file))
       await axios.post(
         `${API_URL}/email/send-later`,
-        {
-          to_address: composeData.to,
-          subject: composeData.subject,
-          body: composeData.message,
-          scheduled_at: schedDate.toISOString(),
-          cc: composeData.cc || null,
-          bcc: composeData.bcc || null,
-        },
+        scheduleFormData,
         { headers: { Authorization: `Bearer ${token}` } }
       )
       showToast(`✓ Email scheduled for ${schedDate.toLocaleString()}`)
@@ -2054,16 +1992,59 @@ export default function EmailPage() {
     if (!token) { showToast('Please log in', 'error'); return }
     if (!composeData.to.trim()) { showToast('Please enter a recipient', 'error'); return }
     setIsSending(true)
+
+    // Replies send immediately via the threaded reply endpoint — there's no
+    // "scheduled reply" concept on the backend, so no undo window here.
+    if (replyMode === 'reply' || replyMode === 'replyAll') {
+      const lastExpandedId = expandedEmailIds.size > 0 ? [...expandedEmailIds].at(-1) : undefined
+      const replyEmailId = lastExpandedId ?? selectedThread?.emails[selectedThread.emails.length - 1]?.id
+      if (!replyEmailId) {
+        showToast('Could not determine which email to reply to', 'error')
+        setIsSending(false)
+        return
+      }
+      try {
+        const replyFormData = new FormData()
+        replyFormData.append('body', composeData.message)
+        if (composeData.cc) replyFormData.append('cc', composeData.cc)
+        if (composeData.bcc) replyFormData.append('bcc', composeData.bcc)
+        composeData.attachments.forEach(file => replyFormData.append('files', file))
+        await axios.post(
+          `${API_URL}/email/emails/${replyEmailId}/reply`,
+          replyFormData,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        showToast('✓ Email sent successfully!')
+        playEmailSentSound()
+        if (selectedThread && typeof selectedThread.id === 'number') {
+          worklogApi.trackReply('email', selectedThread.id).catch(() => {})
+        }
+        const sentDraftId = currentDraftIdRef.current
+        resetCompose()
+        if (sentDraftId) deleteDraft(sentDraftId)
+        if (selectedThread) selectThread(selectedThread)
+        fetchEmails()
+      } catch (e: any) {
+        showToast(e?.response?.data?.detail || 'Failed to send email', 'error')
+      } finally {
+        setIsSending(false)
+      }
+      return
+    }
+
     try {
       const sendAt = new Date(Date.now() + 6000) // 6 second window
-      const res = await axios.post(`${API_URL}/email/send-later`, {
-        to_address: composeData.to,
-        subject: composeData.subject,
-        body: composeData.message,
-        scheduled_at: sendAt.toISOString(),
-        cc: composeData.cc || null,
-        bcc: composeData.bcc || null,
-      }, { headers: { Authorization: `Bearer ${token}` } })
+      const formData = new FormData()
+      formData.append('to_address', composeData.to)
+      formData.append('subject', composeData.subject)
+      formData.append('body', composeData.message)
+      formData.append('scheduled_at', sendAt.toISOString())
+      if (composeData.cc) formData.append('cc', composeData.cc)
+      if (composeData.bcc) formData.append('bcc', composeData.bcc)
+      composeData.attachments.forEach(file => formData.append('files', file))
+      const res = await axios.post(`${API_URL}/email/send-later`, formData, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
       const scheduledId = res.data?.email_id || res.data?.id
       const sentDraftId = currentDraftIdRef.current
       resetCompose()
@@ -2892,7 +2873,10 @@ export default function EmailPage() {
                         <div className="text-2xl select-none">🕐</div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-gray-800 truncate">{email.to_address}</p>
-                          <p className="text-sm text-gray-600 truncate">{email.subject || '(No Subject)'}</p>
+                          <p className="text-sm text-gray-600 truncate">
+                            {email.subject || '(No Subject)'}
+                            {email.attachments && email.attachments.length > 0 ? ` · 📎 ${email.attachments.length}` : ''}
+                          </p>
                           <p className="text-xs text-blue-600 mt-0.5">
                             Sending {sendAt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </p>

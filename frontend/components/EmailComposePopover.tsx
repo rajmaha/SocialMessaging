@@ -108,15 +108,16 @@ export default function EmailComposePopover() {
 
     setSending(true)
     try {
+      const formData = new FormData()
+      formData.append('to_address', to.trim())
+      formData.append('subject', subject.trim())
+      formData.append('body', body)
+      if (cc.trim()) formData.append('cc', cc.trim())
+      if (bcc.trim()) formData.append('bcc', bcc.trim())
+      attachments.forEach(file => formData.append('files', file))
       await axios.post(
         `${API_URL}/email/send`,
-        {
-          to_address: to.trim(),
-          subject: subject.trim(),
-          body,
-          cc: cc.trim() || null,
-          bcc: bcc.trim() || null,
-        },
+        formData,
         { headers: { Authorization: `Bearer ${token}` } }
       )
       alert('Email sent successfully!')
