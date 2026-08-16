@@ -1,6 +1,7 @@
 # backend/app/routes/db_migrations.py
 import os
 import shutil
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -23,6 +24,25 @@ import app.scheduler_ref as sched_ref
 
 router = APIRouter(prefix="/cloudpanel/migrations", tags=["DB Migrations"])
 require_cp = require_admin_feature("feature_manage_cloudpanel")
+
+
+def _unique_dest(filename: str) -> str:
+    """
+    Give every upload its own file on disk. Re-uploading a name that already
+    exists used to overwrite the stored SQL, so two migration rows could point at
+    one file and the older row would silently run the newer file's contents.
+    """
+    dest = os.path.join(MIGRATION_DIR, filename)
+    if not os.path.exists(dest):
+        return dest
+    stem, ext = os.path.splitext(filename)
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    dest = os.path.join(MIGRATION_DIR, f"{stem}-{stamp}{ext}")
+    counter = 2
+    while os.path.exists(dest):
+        dest = os.path.join(MIGRATION_DIR, f"{stem}-{stamp}-{counter}{ext}")
+        counter += 1
+    return dest
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────
@@ -52,7 +72,7 @@ def upload_migration(
         )
 
     os.makedirs(MIGRATION_DIR, exist_ok=True)
-    dest_path = os.path.join(MIGRATION_DIR, file.filename)
+    dest_path = _unique_dest(file.filename)
     with open(dest_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
@@ -85,26 +105,45 @@ def list_migrations(
 @router.delete("/{migration_id}")
 def delete_migration(
     migration_id: int,
+    force: bool = False,
     db: Session = Depends(get_db),
     admin: User = Depends(require_cp),
 ):
+    """
+    Delete a migration. Run history blocks this by default — deleting it means a
+    re-upload of the same file would be treated as never having run, and for a
+    drop & import that is a second wipe. `force=true` deletes the logs too, which
+    is the only way to clear a mis-uploaded row that has already been attempted.
+    """
     migration = db.query(DbMigration).filter(DbMigration.id == migration_id).first()
     if not migration:
         raise HTTPException(status_code=404, detail="Migration not found")
 
-    log_count = db.query(DbMigrationLog).filter(
+    logs = db.query(DbMigrationLog).filter(
         DbMigrationLog.migration_id == migration_id
-    ).count()
-    if log_count > 0:
-        raise HTTPException(status_code=400, detail="Cannot delete migration with existing logs")
+    ).all()
+    succeeded = [log for log in logs if log.status == "success"]
+    if logs and not force:
+        detail = f"{len(logs)} log entr{'y' if len(logs) == 1 else 'ies'} exist"
+        if succeeded:
+            databases = sorted({log.db_name for log in succeeded if log.db_name})
+            detail += f", including successful runs against {', '.join(databases) or 'a database'}"
+        raise HTTPException(status_code=409, detail=detail)
 
-    # Remove file from disk
-    if os.path.exists(migration.file_path):
+    # Duplicate uploads of one filename used to share a path, so only unlink the
+    # file when no other migration row still points at it.
+    others = db.query(DbMigration).filter(
+        DbMigration.file_path == migration.file_path,
+        DbMigration.id != migration.id,
+    ).count()
+    if others == 0 and os.path.exists(migration.file_path):
         os.remove(migration.file_path)
 
+    for log in logs:
+        db.delete(log)
     db.delete(migration)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "logs_deleted": len(logs)}
 
 
 # ── Logs ──────────────────────────────────────────────────────────────────────

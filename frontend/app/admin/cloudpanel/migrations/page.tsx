@@ -180,15 +180,36 @@ export default function MigrationsPage() {
 
     async function handleDelete(migration: Migration) {
         if (!confirm(`Delete migration "${migration.filename}"? This cannot be undone.`)) return
-        const res = await fetch(`${API}/cloudpanel/migrations/${migration.id}`, {
+
+        let res = await fetch(`${API}/cloudpanel/migrations/${migration.id}`, {
             method: 'DELETE',
             headers: authHeaders(),
         })
+
+        // 409 means run history exists. Deleting it also deletes the record that
+        // this migration already ran, so the second confirm spells that out.
+        if (res.status === 409) {
+            const err = await res.json().catch(() => ({}))
+            if (!confirm(
+                `"${migration.filename}" has run history — ${err.detail}.\n\n` +
+                `Deleting it removes that history as well. If this file is uploaded ` +
+                `again it will be treated as never having run, and a Drop & import ` +
+                `would wipe the database a second time.\n\nDelete anyway?`
+            )) return
+            res = await fetch(`${API}/cloudpanel/migrations/${migration.id}?force=true`, {
+                method: 'DELETE',
+                headers: authHeaders(),
+            })
+        }
+
         if (res.ok) {
-            showMsg('success', 'Migration deleted')
+            const data = await res.json().catch(() => ({}))
+            showMsg('success', data.logs_deleted
+                ? `Migration deleted, along with ${data.logs_deleted} log entr${data.logs_deleted === 1 ? 'y' : 'ies'}`
+                : 'Migration deleted')
             loadAll()
         } else {
-            const err = await res.json()
+            const err = await res.json().catch(() => ({}))
             showMsg('error', err.detail || 'Delete failed')
         }
     }
