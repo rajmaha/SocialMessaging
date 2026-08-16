@@ -187,6 +187,22 @@ export default function MigrationsPage() {
         setLogsDrawer({ open: true, migration, logs })
     }
 
+    function closeLogs() {
+        setLogsDrawer({ open: false, migration: null, logs: [] })
+    }
+
+    // Escape closes whichever overlay is open.
+    useEffect(() => {
+        if (!logsDrawer.open && !runResult) return
+        function onKey(e: KeyboardEvent) {
+            if (e.key !== 'Escape') return
+            if (runResult) setRunResult(null)
+            else closeLogs()
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+    }, [logsDrawer.open, runResult])
+
     // ── Run ─────────────────────────────────────────────────────────────────
 
     async function handleRun(server_id: number) {
@@ -443,14 +459,18 @@ export default function MigrationsPage() {
             </div>
 
             {/* ── Logs Drawer ── */}
+            {/* z-[70] keeps it above the fixed MainHeader (z-[60]), which would
+                otherwise cover the drawer's title row and its close button. */}
             {logsDrawer.open && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-end z-50">
-                    <div className="w-full max-w-2xl bg-gray-900 h-full overflow-y-auto p-6">
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-end z-[70]"
+                    onClick={closeLogs}>
+                    <div className="w-full max-w-2xl bg-gray-900 h-full overflow-y-auto p-6"
+                        onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-white font-semibold">
                                 Logs — {logsDrawer.migration?.filename}
                             </h3>
-                            <button onClick={() => setLogsDrawer({ open: false, migration: null, logs: [] })}
+                            <button onClick={closeLogs}
                                 className="text-gray-400 hover:text-white text-xl">✕</button>
                         </div>
                         {logsDrawer.logs.length === 0 ? (
@@ -490,8 +510,10 @@ export default function MigrationsPage() {
 
             {/* ── Run Result Modal ── */}
             {runResult && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-                    <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto">
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[70]"
+                    onClick={() => setRunResult(null)}>
+                    <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto"
+                        onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-white font-semibold">Migration Run Result</h3>
                             <button onClick={() => setRunResult(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
