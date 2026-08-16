@@ -18,7 +18,18 @@ export async function POST(
     context: any
 ) {
     try {
-        const serverId = context.params?.serverId
+        // Next.js 15+ passes `params` as a Promise in route handlers — it must be
+        // awaited.  Reading it synchronously yields undefined, which would then be
+        // proxied to the backend as the literal string "undefined".
+        const { serverId } = await context.params
+
+        if (!serverId || !/^\d+$/.test(serverId)) {
+            return NextResponse.json(
+                { detail: `Invalid server id: ${serverId}` },
+                { status: 400 }
+            )
+        }
+
         // Docker: BACKEND_INTERNAL_URL=http://backend:8000 (set in docker-compose.yml)
         // Local dev: not set → fall back to localhost where the backend runs directly
         const backendUrl = process.env.BACKEND_INTERNAL_URL || 'http://localhost:8000'
