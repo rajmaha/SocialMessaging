@@ -16,6 +16,7 @@ export default function CloudPanelTemplatesPage() {
     const [uploading, setUploading] = useState(false)
     const [templateName, setTemplateName] = useState('')
     const [templateFile, setTemplateFile] = useState<File | null>(null)
+    const [downloading, setDownloading] = useState<string | null>(null)
 
     const fetchTemplates = async () => {
         setLoading(true)
@@ -83,6 +84,31 @@ export default function CloudPanelTemplatesPage() {
             setMessage({ type: 'error', text: 'Network error during upload' })
         } finally {
             setUploading(false)
+        }
+    }
+
+    const handleDownload = async (name: string) => {
+        setDownloading(name)
+        try {
+            // The endpoint needs a bearer token, so fetch it and hand the browser a blob.
+            const res = await fetch(`${API_URL}/cloudpanel/templates/${name}/download`, {
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            })
+            if (res.ok) {
+                const url = URL.createObjectURL(await res.blob())
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `${name}.zip`
+                a.click()
+                URL.revokeObjectURL(url)
+            } else {
+                const data = await res.json().catch(() => ({}))
+                setMessage({ type: 'error', text: data.detail || 'Download failed' })
+            }
+        } catch (err) {
+            setMessage({ type: 'error', text: 'Network error during download' })
+        } finally {
+            setDownloading(null)
         }
     }
 
@@ -190,22 +216,33 @@ export default function CloudPanelTemplatesPage() {
                                             </span>
                                         )}
                                     </div>
-                                    {t.name !== 'default_site' && (
+                                    <div className="flex items-center gap-3">
                                         <button
-                                            onClick={() => handleDelete(t.name)}
-                                            className="text-red-600 hover:text-red-800 text-sm font-medium bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition"
+                                            onClick={() => handleDownload(t.name)}
+                                            disabled={!t.has_files || downloading === t.name}
+                                            title={t.has_files
+                                                ? 'Download this template as a ZIP to check its contents'
+                                                : 'Nothing to download — this template has no files'}
+                                            className="text-blue-600 hover:text-blue-800 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded transition"
                                         >
-                                            Delete
+                                            {downloading === t.name ? 'Preparing…' : 'Download'}
                                         </button>
-                                    )}
-                                    {t.name === 'default_site' && (
-                                        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full font-medium flex items-center gap-2">
-                                            System Built-in
-                                            <span className={`text-xs ml-2 font-semibold px-2 py-1 rounded-full ${t.has_files ? 'bg-green-100 text-green-700 bg-opacity-50' : 'bg-yellow-100 text-yellow-700 bg-opacity-50'}`}>
-                                                {t.has_files ? 'Has Files' : 'Empty'}
+                                        {t.name !== 'default_site' ? (
+                                            <button
+                                                onClick={() => handleDelete(t.name)}
+                                                className="text-red-600 hover:text-red-800 text-sm font-medium bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition"
+                                            >
+                                                Delete
+                                            </button>
+                                        ) : (
+                                            <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full font-medium flex items-center gap-2">
+                                                System Built-in
+                                                <span className={`text-xs ml-2 font-semibold px-2 py-1 rounded-full ${t.has_files ? 'bg-green-100 text-green-700 bg-opacity-50' : 'bg-yellow-100 text-yellow-700 bg-opacity-50'}`}>
+                                                    {t.has_files ? 'Has Files' : 'Empty'}
+                                                </span>
                                             </span>
-                                        </span>
-                                    )}
+                                        )}
+                                    </div>
                                 </li>
                             ))}
                         </ul>
