@@ -372,10 +372,17 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
         for migration in migrations:
             local_path = migration.file_path
             if not os.path.exists(local_path):
+                # file_path is absolute at upload time, so it goes stale whenever the
+                # app moves (host install → container, or a changed WORKDIR). The
+                # file itself is always MIGRATION_DIR/<filename>, so look there too.
+                fallback = os.path.join(MIGRATION_DIR, migration.filename)
+                if os.path.exists(fallback):
+                    local_path = fallback
+            if not os.path.exists(local_path):
                 # The DB row outlives the file — a redeploy that doesn't carry
                 # migration_storage across leaves rows pointing at nothing.
                 note = (f"{migration.filename}: SQL file is missing on the backend "
-                        f"({local_path}) — re-upload the migration.")
+                        f"({migration.file_path}) — re-upload the migration.")
                 logger.warning(note)
                 summary["notes"].append(note)
                 continue

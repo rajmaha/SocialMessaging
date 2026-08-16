@@ -23,7 +23,8 @@ COPY . .
 RUN mkdir -p /app/app/avatar_storage \
              /app/app/attachment_storage/messages \
              /app/app/attachment_storage/campaigns \
-             /app/templates/default_site
+             /app/templates/default_site \
+             /app/migration_storage
 
 # Non-root user
 RUN adduser --disabled-password --gecos "" appuser && chown -R appuser:appuser /app

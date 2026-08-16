@@ -41,6 +41,10 @@ services:
       - backend_audio:/app/app/audio_storage
       - backend_sub_logos:/app/app/subscription_logo_storage
       - backend_templates:/app/templates
+      # Uploaded .sql files. The DbMigration rows live in postgres_data and
+      # outlive the container, so without this the rows survive a redeploy while
+      # the files they point at do not.
+      - backend_migrations:/app/migration_storage
 
   # ── Next.js Frontend ──
   frontend:
@@ -72,4 +76,6 @@ volumes:
   backend_sub_logos:
     driver: local
   backend_templates:
+    driver: local
+  backend_migrations:
     driver: local
