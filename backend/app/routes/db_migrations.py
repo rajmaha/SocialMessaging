@@ -31,11 +31,24 @@ def upload_migration(
     file: UploadFile = File(...),
     description: Optional[str] = Form(None),
     domain_suffix: Optional[str] = Form(None),
+    drop_before_run: bool = Form(False),
     db: Session = Depends(get_db),
     admin: User = Depends(require_cp),
 ):
     if not file.filename.endswith(".sql"):
         raise HTTPException(status_code=400, detail="Only .sql files are allowed")
+
+    suffix = domain_suffix.strip() if domain_suffix and domain_suffix.strip() else None
+
+    # A drop-first migration wipes the database of every site it matches. Left blank
+    # it would match every site on the server, so refuse that outright. Drop
+    # migrations match on the exact domain only — see site_matches().
+    if drop_before_run and not suffix:
+        raise HTTPException(
+            status_code=400,
+            detail="An exact domain is required when 'Drop database contents first' is "
+                   "enabled, so the wipe cannot affect every site on the server.",
+        )
 
     os.makedirs(MIGRATION_DIR, exist_ok=True)
     dest_path = os.path.join(MIGRATION_DIR, file.filename)
@@ -46,7 +59,8 @@ def upload_migration(
         filename=file.filename,
         file_path=dest_path,
         description=description or None,
-        domain_suffix=domain_suffix.strip() if domain_suffix and domain_suffix.strip() else None,
+        domain_suffix=suffix,
+        drop_before_run=drop_before_run,
         uploaded_by=admin.id,
     )
     db.add(migration)
@@ -135,7 +149,9 @@ def run_migrations_on_server(
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
 
-    result = run_server_migrations(server_id, db)
+    # Manual, admin-triggered run — drop_before_run migrations are permitted here
+    # (the scheduled job passes allow_drop=False).
+    result = run_server_migrations(server_id, db, allow_drop=True)
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
     return result

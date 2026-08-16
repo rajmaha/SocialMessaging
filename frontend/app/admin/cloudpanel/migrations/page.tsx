@@ -10,6 +10,7 @@ interface Migration {
     filename: string
     description: string | null
     domain_suffix: string | null
+    drop_before_run: boolean
     uploaded_by: number | null
     created_at: string
 }
@@ -53,7 +54,7 @@ interface RunResult {
     skipped: number
     success: number
     failed: number
-    details: { site: string; migration: string; status: string; error?: string }[]
+    details: { site: string; migration: string; status: string; error?: string; backup?: string }[]
 }
 
 import { API_URL as API } from '@/lib/config'
@@ -76,6 +77,7 @@ export default function MigrationsPage() {
     const [uploadFile, setUploadFile] = useState<File | null>(null)
     const [uploadDesc, setUploadDesc] = useState('')
     const [uploadSuffix, setUploadSuffix] = useState('')
+    const [uploadDrop, setUploadDrop] = useState(false)
     const [uploading, setUploading] = useState(false)
 
     // Logs drawer
@@ -120,11 +122,25 @@ export default function MigrationsPage() {
     async function handleUpload(e: React.FormEvent) {
         e.preventDefault()
         if (!uploadFile) return
+
+        // Mirrors the backend guard: without a suffix the wipe would hit every site.
+        if (uploadDrop && !uploadSuffix.trim()) {
+            showMsg('error', 'An exact domain is required when "Drop database contents first" is enabled.')
+            return
+        }
+        if (uploadDrop && !confirm(
+            `"${uploadFile.name}" will DROP all tables, views, triggers and routines ` +
+            `from the database of "${uploadSuffix.trim()}" before importing.\n\n` +
+            `A mysqldump backup is taken first, and this migration will never run from ` +
+            `the scheduler.\n\nContinue?`
+        )) return
+
         setUploading(true)
         const fd = new FormData()
         fd.append('file', uploadFile)
         if (uploadDesc) fd.append('description', uploadDesc)
         if (uploadSuffix.trim()) fd.append('domain_suffix', uploadSuffix.trim())
+        fd.append('drop_before_run', String(uploadDrop))
         const res = await fetch(`${API}/cloudpanel/migrations/upload`, {
             method: 'POST',
             headers: authHeaders(),
@@ -135,6 +151,7 @@ export default function MigrationsPage() {
             setUploadFile(null)
             setUploadDesc('')
             setUploadSuffix('')
+            setUploadDrop(false)
             loadAll()
         } else {
             const err = await res.json()
@@ -173,6 +190,19 @@ export default function MigrationsPage() {
     // ── Run ─────────────────────────────────────────────────────────────────
 
     async function handleRun(server_id: number) {
+        // A run applies every migration, so warn about any drop-first ones in the set.
+        const dropping = migrations.filter(m => m.drop_before_run)
+        if (dropping.length > 0) {
+            const list = dropping
+                .map(m => `  • ${m.filename}  →  ${m.domain_suffix}`)
+                .join('\n')
+            if (!confirm(
+                `DESTRUCTIVE RUN\n\nThese migrations will DROP all tables, views, triggers ` +
+                `and routines before importing:\n\n${list}\n\n` +
+                `Each database is backed up with mysqldump first; if that backup fails the ` +
+                `drop is aborted.\n\nContinue?`
+            )) return
+        }
         setRunning(server_id)
         const res = await fetch(`${API}/cloudpanel/migrations/run/${server_id}`, {
             method: 'POST',
@@ -266,13 +296,17 @@ export default function MigrationsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs text-gray-400 mb-1">Domain Suffix</label>
+                                <label className="block text-xs text-gray-400 mb-1">
+                                    {uploadDrop ? 'Exact Domain *' : 'Domain Suffix'}
+                                </label>
                                 <input
                                     type="text"
                                     value={uploadSuffix}
                                     onChange={e => setUploadSuffix(e.target.value)}
-                                    placeholder="e.g. abc.com (blank = all)"
-                                    className="bg-gray-700 text-white text-sm rounded px-3 py-2 w-52"
+                                    placeholder={uploadDrop
+                                        ? 'e.g. podamibe.saraloms.com'
+                                        : 'e.g. abc.com (blank = all)'}
+                                    className={`bg-gray-700 text-white text-sm rounded px-3 py-2 w-52 ${uploadDrop ? 'border border-red-700' : ''}`}
                                 />
                             </div>
                             <button
@@ -282,6 +316,30 @@ export default function MigrationsPage() {
                             >
                                 {uploading ? 'Uploading…' : 'Upload'}
                             </button>
+
+                            {/* ── Drop-before-import toggle ── */}
+                            <div className="w-full mt-1">
+                                <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer w-fit">
+                                    <input
+                                        type="checkbox"
+                                        checked={uploadDrop}
+                                        onChange={e => setUploadDrop(e.target.checked)}
+                                        className="w-4 h-4 accent-red-600"
+                                    />
+                                    Drop all contents from the database before running this SQL
+                                </label>
+                                {uploadDrop && (
+                                    <div className="mt-2 p-3 rounded bg-red-950 border border-red-800 text-xs text-red-200 max-w-2xl">
+                                        <p className="font-semibold mb-1">⚠ Destructive — read before uploading</p>
+                                        <ul className="list-disc list-inside space-y-0.5">
+                                            <li>All tables, views, triggers and routines are dropped from every matching site&apos;s database, then this file is imported.</li>
+                                            <li>A <span className="font-mono">mysqldump</span> backup is written to <span className="font-mono">/var/backups/db_migrations</span> first; if the backup fails, the drop is aborted.</li>
+                                            <li><strong>An exact domain is required.</strong> It matches that one site only — subdomains such as <span className="font-mono">api.your-site.com</span> are <em>not</em> included, and neither are similarly-named sites like <span className="font-mono">newyour-site.com</span>.</li>
+                                            <li>This migration will be <strong>skipped by scheduled runs</strong> — you must trigger it manually.</li>
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
                         </form>
                     </div>
 
@@ -299,6 +357,7 @@ export default function MigrationsPage() {
                                         <th className="py-2 pr-4">Filename</th>
                                         <th className="py-2 pr-4">Description</th>
                                         <th className="py-2 pr-4">Domain Suffix</th>
+                                        <th className="py-2 pr-4">Mode</th>
                                         <th className="py-2 pr-4">Uploaded</th>
                                         <th className="py-2">Actions</th>
                                     </tr>
@@ -312,6 +371,11 @@ export default function MigrationsPage() {
                                                 {m.domain_suffix
                                                     ? <span className="bg-blue-900 text-blue-300 px-2 py-0.5 rounded text-xs">{m.domain_suffix}</span>
                                                     : <span className="text-gray-500 text-xs">all sites</span>}
+                                            </td>
+                                            <td className="py-2 pr-4">
+                                                {m.drop_before_run
+                                                    ? <span className="bg-red-900 text-red-200 px-2 py-0.5 rounded text-xs whitespace-nowrap" title="Drops all tables, views, triggers and routines before importing. Backed up first; skipped by scheduled runs.">⚠ Drop &amp; import</span>
+                                                    : <span className="text-gray-500 text-xs whitespace-nowrap">Import only</span>}
                                             </td>
                                             <td className="py-2 pr-4 text-gray-400 text-xs">
                                                 {new Date(m.created_at).toLocaleDateString()}
@@ -452,8 +516,13 @@ export default function MigrationsPage() {
                                         <tr key={i} className="border-b border-gray-700 text-gray-300">
                                             <td className="py-1 pr-3 font-mono">{d.site}</td>
                                             <td className="py-1 pr-3">{d.migration}</td>
-                                            <td className={`py-1 ${d.status === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                                            <td className={`py-1 ${d.status === 'success' ? 'text-green-400' : d.status === 'skipped' ? 'text-gray-400' : 'text-red-400'}`}>
                                                 {d.status}{d.error ? `: ${d.error}` : ''}
+                                                {d.backup && (
+                                                    <div className="text-gray-500 mt-0.5 break-all">
+                                                        backup: <span className="font-mono">{d.backup}</span>
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}

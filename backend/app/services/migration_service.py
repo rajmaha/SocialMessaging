@@ -1,5 +1,6 @@
 # backend/app/services/migration_service.py
 import os
+import re
 import logging
 import paramiko
 from datetime import datetime
@@ -34,9 +35,149 @@ def _get_ssh_client(server: CloudPanelServer) -> paramiko.SSHClient:
     return client
 
 
-def run_server_migrations(server_id: int, db: Session) -> dict:
+BACKUP_DIR = "/var/backups/db_migrations"
+
+# CloudPanel-generated database names; anything outside this set is refused rather
+# than interpolated into a shell command.
+_SAFE_DB_NAME = re.compile(r"^[A-Za-z0-9_$-]+$")
+
+
+def _run(client: paramiko.SSHClient, cmd: str) -> tuple[int, str, str]:
+    """Execute a command over SSH, returning (exit_code, stdout, stderr)."""
+    _stdin, stdout, stderr = client.exec_command(cmd)
+    out = stdout.read().decode("utf-8", errors="replace")
+    exit_code = stdout.channel.recv_exit_status()
+    err = stderr.read().decode("utf-8", errors="replace").strip()
+    return exit_code, out, err
+
+
+def site_matches(domain: str, suffix: str, exact: bool = False) -> bool:
+    """
+    Decide whether a site's domain is targeted by a migration's domain_suffix.
+
+    Matching is dot-bounded rather than a raw string suffix, so "saraloms.com"
+    matches "app.saraloms.com" but never "notsaraloms.com". With exact=True —
+    used for drop_before_run migrations — only the named domain matches, so a
+    wipe can never fan out to subdomains.
+    """
+    domain = (domain or "").strip().lower().rstrip(".")
+    suffix = (suffix or "").strip().lower().strip(".")
+    if not domain or not suffix:
+        return False
+    if domain == suffix:
+        return True
+    return not exact and domain.endswith("." + suffix)
+
+
+def _quote_ident(name: str) -> str:
+    """Quote a MySQL identifier, escaping any embedded backticks."""
+    return "`" + name.replace("`", "``") + "`"
+
+
+def backup_database(client: paramiko.SSHClient, db_name: str) -> tuple[bool, str, str]:
+    """
+    mysqldump the database to a timestamped gzip file on the remote server.
+
+    Returns (ok, backup_path, error).  Callers must treat a False result as fatal —
+    the whole point of the backup is that the drop cannot proceed without it.
+    """
+    if not _SAFE_DB_NAME.match(db_name):
+        return False, "", f"Unsafe database name: {db_name!r}"
+
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    path = f"{BACKUP_DIR}/{db_name}-{stamp}.sql"
+    # Chained with && so a mysqldump failure short-circuits before gzip and the
+    # exit code propagates (no pipeline, so no need for pipefail).
+    cmd = (
+        f"mkdir -p {BACKUP_DIR} && "
+        f"mysqldump -u root --single-transaction --routines --triggers --events "
+        f"{db_name} > {path} && gzip -f {path}"
+    )
+    exit_code, _out, err = _run(client, cmd)
+    if exit_code != 0:
+        return False, "", err or f"mysqldump exited {exit_code}"
+    return True, f"{path}.gz", ""
+
+
+def drop_database_contents(client: paramiko.SSHClient, db_name: str) -> tuple[bool, str]:
+    """
+    Drop every object in the database — triggers, views, tables, routines — while
+    leaving the database itself (and therefore the site's MySQL grants) intact.
+
+    The object list is read first and the DROP script is generated here rather than
+    in shell, so no identifier is ever interpolated into a remote command line.
+    Returns (ok, error).
+    """
+    if not _SAFE_DB_NAME.match(db_name):
+        return False, f"Unsafe database name: {db_name!r}"
+
+    def query(sql: str) -> tuple[bool, list[list[str]], str]:
+        # -N drops the header row, -B gives tab-separated output.
+        code, out, err = _run(client, f'mysql -u root -N -B -e "{sql}"')
+        if code != 0:
+            return False, [], err or f"mysql exited {code}"
+        rows = [line.split("\t") for line in out.splitlines() if line.strip()]
+        return True, rows, ""
+
+    statements = ["SET FOREIGN_KEY_CHECKS=0;"]
+
+    # Triggers before their tables, views before tables, then tables, then routines.
+    ok, rows, err = query(
+        "SELECT TRIGGER_NAME FROM information_schema.TRIGGERS "
+        f"WHERE TRIGGER_SCHEMA='{db_name}'"
+    )
+    if not ok:
+        return False, f"Listing triggers failed: {err}"
+    statements += [f"DROP TRIGGER IF EXISTS {_quote_ident(r[0])};" for r in rows]
+
+    ok, rows, err = query(
+        "SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES "
+        f"WHERE TABLE_SCHEMA='{db_name}'"
+    )
+    if not ok:
+        return False, f"Listing tables failed: {err}"
+    statements += [
+        f"DROP VIEW IF EXISTS {_quote_ident(r[0])};"
+        for r in rows if len(r) > 1 and r[1] == "VIEW"
+    ]
+    statements += [
+        f"DROP TABLE IF EXISTS {_quote_ident(r[0])};"
+        for r in rows if len(r) > 1 and r[1] == "BASE TABLE"
+    ]
+
+    ok, rows, err = query(
+        "SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES "
+        f"WHERE ROUTINE_SCHEMA='{db_name}'"
+    )
+    if not ok:
+        return False, f"Listing routines failed: {err}"
+    for r in rows:
+        if len(r) > 1 and r[1] in ("PROCEDURE", "FUNCTION"):
+            statements.append(f"DROP {r[1]} IF EXISTS {_quote_ident(r[0])};")
+
+    statements.append("SET FOREIGN_KEY_CHECKS=1;")
+
+    if len(statements) == 2:   # only the FK toggles — database is already empty
+        return True, ""
+
+    # Ship the script over stdin so nothing needs shell-escaping.
+    script = "\n".join(statements) + "\n"
+    stdin, stdout, stderr = client.exec_command(f"mysql -u root {db_name}")
+    stdin.write(script)
+    stdin.channel.shutdown_write()
+    exit_code = stdout.channel.recv_exit_status()
+    err = stderr.read().decode("utf-8", errors="replace").strip()
+    if exit_code != 0:
+        return False, err or f"mysql exited {exit_code}"
+    return True, ""
+
+
+def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) -> dict:
     """
     Run all pending migrations on all matching sites on the given server.
+
+    `allow_drop` gates migrations flagged drop_before_run. Scheduled runs pass
+    False so nothing destructive ever happens unattended.
     Returns a summary dict.
     """
     server = db.query(CloudPanelServer).filter(CloudPanelServer.id == server_id).first()
@@ -83,9 +224,11 @@ def run_server_migrations(server_id: int, db: Session) -> dict:
             remote_tmp = f"/tmp/dbmig_{migration.id}_{migration.filename}"
 
             for site in sites:
-                # Domain suffix filter
+                # Domain suffix filter. Dot-bounded, so "saraloms.com" never matches
+                # "notsaraloms.com"; drop-first migrations must name one exact domain.
                 if migration.domain_suffix:
-                    if not site.domain_name.endswith(migration.domain_suffix):
+                    if not site_matches(site.domain_name, migration.domain_suffix,
+                                        exact=migration.drop_before_run):
                         summary["skipped"] += 1
                         continue
 
@@ -109,6 +252,49 @@ def run_server_migrations(server_id: int, db: Session) -> dict:
                                                "status": "failed", "error": str(e)})
                     continue
 
+                backup_path = None
+                # Destructive path: back up, then wipe the database before importing.
+                # Runs after the SFTP upload so a transfer failure can never leave a
+                # dropped database behind.
+                if migration.drop_before_run:
+                    reason = None
+                    if not allow_drop:
+                        reason = ("Migration is flagged drop_before_run and cannot run "
+                                  "from a scheduled job — trigger it manually.")
+                    elif not migration.domain_suffix:
+                        # Enforced at upload too; repeated here so a row edited
+                        # directly in the DB still cannot fan out to every site.
+                        reason = ("Migration is flagged drop_before_run but has no "
+                                  "domain_suffix — refusing to wipe every site.")
+                    if reason:
+                        logger.warning(f"Skipping {migration.filename} on {site.domain_name}: {reason}")
+                        summary["skipped"] += 1
+                        summary["details"].append({"site": site.domain_name, "migration": migration.filename,
+                                                   "status": "skipped", "error": reason})
+                        client.exec_command(f"rm -f {remote_tmp}")
+                        continue
+
+                    ok, backup_path, err = backup_database(client, site.db_name)
+                    if not ok:
+                        msg = f"Pre-drop backup failed, database left untouched: {err}"
+                        _write_log(db, migration.id, site.id, server_id, "failed", msg)
+                        summary["failed"] += 1
+                        summary["details"].append({"site": site.domain_name, "migration": migration.filename,
+                                                   "status": "failed", "error": msg})
+                        client.exec_command(f"rm -f {remote_tmp}")
+                        continue
+                    logger.info(f"Backed up {site.db_name} to {backup_path} before drop")
+
+                    ok, err = drop_database_contents(client, site.db_name)
+                    if not ok:
+                        msg = f"Drop failed (backup at {backup_path}): {err}"
+                        _write_log(db, migration.id, site.id, server_id, "failed", msg)
+                        summary["failed"] += 1
+                        summary["details"].append({"site": site.domain_name, "migration": migration.filename,
+                                                   "status": "failed", "error": msg})
+                        client.exec_command(f"rm -f {remote_tmp}")
+                        continue
+
                 # Run mysql
                 cmd = f"mysql -u root {site.db_name} < {remote_tmp}"
                 try:
@@ -119,8 +305,11 @@ def run_server_migrations(server_id: int, db: Session) -> dict:
                     if exit_code == 0:
                         _write_log(db, migration.id, site.id, server_id, "success", None)
                         summary["success"] += 1
-                        summary["details"].append({"site": site.domain_name, "migration": migration.filename,
-                                                   "status": "success"})
+                        detail = {"site": site.domain_name, "migration": migration.filename,
+                                  "status": "success"}
+                        if backup_path:
+                            detail["backup"] = backup_path
+                        summary["details"].append(detail)
                     else:
                         _write_log(db, migration.id, site.id, server_id, "failed", err_output)
                         summary["failed"] += 1
@@ -294,7 +483,8 @@ def run_server_migrations_job(server_id: int):
     """APScheduler-compatible wrapper (opens its own DB session)."""
     db = SessionLocal()
     try:
-        result = run_server_migrations(server_id, db)
+        # allow_drop=False: drop_before_run migrations are never applied unattended.
+        result = run_server_migrations(server_id, db, allow_drop=False)
         logger.info(f"Scheduled migration run server={server_id}: {result}")
     except Exception as e:
         logger.error(f"Scheduled migration error server={server_id}: {e}")

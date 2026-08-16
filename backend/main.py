@@ -961,6 +961,11 @@ def _run_inline_migrations():
                 ADD COLUMN IF NOT EXISTS notify_hours_before  INTEGER   NOT NULL DEFAULT 24,
                 ADD COLUMN IF NOT EXISTS status               VARCHAR   NOT NULL DEFAULT 'scheduled'
         """))
+        # Drop-before-import flag for full-dump migrations
+        conn.execute(text("""
+            ALTER TABLE db_migrations
+                ADD COLUMN IF NOT EXISTS drop_before_run BOOLEAN NOT NULL DEFAULT FALSE
+        """))
         conn.commit()
 
         # Tracking enrichment columns for campaign_recipients

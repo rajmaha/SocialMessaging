@@ -10,6 +10,7 @@ class DbMigrationResponse(BaseModel):
     filename: str
     description: Optional[str] = None
     domain_suffix: Optional[str] = None
+    drop_before_run: bool = False
     uploaded_by: Optional[int] = None
     created_at: datetime
 

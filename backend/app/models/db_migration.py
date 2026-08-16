@@ -12,6 +12,9 @@ class DbMigration(Base):
     file_path = Column(String, nullable=False)
     description = Column(String, nullable=True)
     domain_suffix = Column(String, nullable=True)   # e.g. "abc.com" — NULL = all sites
+    # Wipe the target database (tables, views, triggers, routines) before importing
+    # this file. Requires domain_suffix, and never runs from the scheduler.
+    drop_before_run = Column(Boolean, nullable=False, default=False)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
