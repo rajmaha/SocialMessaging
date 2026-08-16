@@ -106,6 +106,7 @@ export default function MigrationsPage() {
     const [backupsError, setBackupsError] = useState('')
     const [downloading, setDownloading] = useState<string | null>(null)
     const [deletingBackup, setDeletingBackup] = useState<string | null>(null)
+    const [restoring, setRestoring] = useState<string | null>(null)
 
     useEffect(() => {
         setUser(authAPI.getUser())
@@ -296,6 +297,38 @@ export default function MigrationsPage() {
             showMsg('error', 'Download failed')
         }
         setDownloading(null)
+    }
+
+    async function restoreBackup(server_id: number, backup: Backup) {
+        const taken = new Date(backup.created_at + 'Z').toLocaleString()
+        if (!confirm(
+            `Restore "${backup.database}" from ${taken}?\n\n` +
+            `Everything currently in "${backup.database}" is dropped and replaced ` +
+            `with the contents of this dump.\n\n` +
+            `A fresh backup of the current contents is taken first, so this can be ` +
+            `undone. Any migration recorded as applied after ${taken} is marked ` +
+            `reverted and will run again on the next run.\n\nContinue?`
+        )) return
+
+        setRestoring(backup.filename)
+        const res = await fetch(
+            `${API}/cloudpanel/migrations/backups/${server_id}/${backup.filename}/restore`,
+            { method: 'POST', headers: authHeaders() },
+        )
+        if (res.ok) {
+            const data = await res.json()
+            const reverted = data.reverted_migrations?.length
+                ? `; reverted ${data.reverted_migrations.join(', ')}`
+                : ''
+            showMsg('success',
+                `Restored ${data.database} from ${data.restored_from}. ` +
+                `Previous contents saved as ${data.safety_backup}${reverted}`)
+            loadBackups(server_id)
+        } else {
+            const err = await res.json().catch(() => ({}))
+            showMsg('error', err.detail || 'Restore failed')
+        }
+        setRestoring(null)
     }
 
     async function deleteBackup(server_id: number, backup: Backup) {
@@ -624,6 +657,14 @@ export default function MigrationsPage() {
                                                     className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs px-3 py-1 rounded whitespace-nowrap"
                                                 >
                                                     {downloading === b.filename ? 'Downloading…' : 'Download'}
+                                                </button>
+                                                <button
+                                                    onClick={() => backupServerId !== null && restoreBackup(backupServerId, b)}
+                                                    disabled={restoring === b.filename}
+                                                    title="Drop the current contents and load this dump back in"
+                                                    className="bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white text-xs px-3 py-1 rounded whitespace-nowrap"
+                                                >
+                                                    {restoring === b.filename ? 'Restoring…' : 'Restore'}
                                                 </button>
                                                 <button
                                                     onClick={() => backupServerId !== null && deleteBackup(backupServerId, b)}

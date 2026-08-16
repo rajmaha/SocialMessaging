@@ -5,7 +5,7 @@ import shlex
 import logging
 import paramiko
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSchedule
@@ -440,6 +440,102 @@ def delete_backup(server: CloudPanelServer, filename: str) -> None:
         logger.info(f"Deleted backup {filename} from {server.name}")
     finally:
         client.close()
+
+
+def restore_backup(server: CloudPanelServer, filename: str, db: Session) -> dict:
+    """
+    Put a dump back into the database it came from, undoing a migration that went
+    wrong.
+
+    The order matters: a fresh safety dump of the current contents is taken first,
+    so a restore started by mistake is itself reversible. Only then is the database
+    wiped and the dump imported — importing over live contents would leave the
+    failed migration's tables mixed in with the restored ones.
+
+    Migrations recorded as successful *after* this dump was taken are the ones the
+    restore just undid, so their log entries are marked 'reverted' and stop
+    counting as applied.
+    """
+    match = _BACKUP_NAME.match(filename)
+    if not match:
+        raise ValueError(f"Not a backup filename: {filename!r}")
+    db_name, date_part, time_part = match.group(1), match.group(2), match.group(3)
+
+    taken_at = datetime.strptime(date_part + time_part, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+    backup_path = shlex.quote(f"{BACKUP_DIR}/{filename}")
+    remote_tmp = f"/tmp/dbrestore_{db_name}_{date_part}-{time_part}.sql"
+    quoted_tmp = shlex.quote(remote_tmp)
+
+    client = _get_ssh_client(server)
+    try:
+        code, _out, _err = _backup_run(client, f"test -f {backup_path}")
+        if code != 0:
+            raise FileNotFoundError(f"{filename} not found on {server.name}")
+
+        auth, auth_err = resolve_mysql_auth(client)
+        if not auth:
+            raise RuntimeError(auth_err)
+
+        # Decompress before touching the database, so a corrupt archive fails while
+        # the database is still intact.
+        readable, _out, _err = _run(client, f"test -r {backup_path}")
+        gunzip = f"gunzip -c {backup_path} > {quoted_tmp}"
+        if readable != 0:
+            gunzip = f"sudo -n gunzip -c {backup_path} > {quoted_tmp}"
+        code, _out, err = _run(client, gunzip)
+        if code != 0:
+            raise RuntimeError(f"Could not read the backup: {err or f'gunzip exited {code}'}")
+
+        try:
+            ok, safety_path, err = backup_database(client, db_name, auth)
+            if not ok:
+                raise RuntimeError(f"Safety backup failed, database left untouched: {err}")
+
+            ok, err = drop_database_contents(client, db_name, auth)
+            if not ok:
+                raise RuntimeError(f"Wipe failed before restore (safety backup at {safety_path}): {err}")
+
+            cmd = auth.shell(f"{auth.binary('mysql', db_name)} < {quoted_tmp}")
+            _stdin, stdout, stderr = client.exec_command(cmd)
+            code = stdout.channel.recv_exit_status()
+            err = stderr.read().decode("utf-8", errors="replace").strip()
+            if code != 0:
+                raise RuntimeError(f"Import failed (safety backup at {safety_path}): "
+                                   f"{err or f'mysql exited {code}'}")
+        finally:
+            client.exec_command(f"rm -f {quoted_tmp}")
+    finally:
+        client.close()
+
+    # Anything recorded as applied after this dump was taken is no longer applied.
+    reverted = []
+    logs = db.query(DbMigrationLog).filter(
+        DbMigrationLog.server_id == server.id,
+        DbMigrationLog.db_name == db_name,
+        DbMigrationLog.status == "success",
+    ).all()
+    for log in logs:
+        executed_at = log.executed_at
+        if executed_at and executed_at.tzinfo is None:
+            executed_at = executed_at.replace(tzinfo=timezone.utc)
+        if executed_at and executed_at <= taken_at:
+            continue    # ran before the dump, so it is still present in it
+        log.status = "reverted"
+        log.error_message = f"Reverted by restore of {filename}"
+        migration = db.query(DbMigration).filter(DbMigration.id == log.migration_id).first()
+        reverted.append(migration.filename if migration else f"migration {log.migration_id}")
+    if reverted:
+        db.commit()
+
+    logger.info(f"Restored {db_name} on {server.name} from {filename}; "
+                f"safety backup {safety_path}; reverted {reverted or 'nothing'}")
+    return {
+        "ok": True,
+        "database": db_name,
+        "restored_from": filename,
+        "safety_backup": os.path.basename(safety_path),
+        "reverted_migrations": reverted,
+    }
 
 
 def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) -> dict:

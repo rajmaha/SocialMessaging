@@ -19,6 +19,7 @@ from app.schemas.db_migration import (
 from app.services.migration_service import (
     run_server_migrations, _upsert_job, MIGRATION_DIR,
     send_migration_notification, list_backups, stream_backup, delete_backup,
+    restore_backup,
 )
 import app.scheduler_ref as sched_ref
 
@@ -252,6 +253,28 @@ def download_server_backup(
             "Content-Length": str(size),
         },
     )
+
+
+@router.post("/backups/{server_id}/{filename}/restore")
+def restore_server_backup(
+    server_id: int,
+    filename: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_cp),
+):
+    """
+    Roll a database back to this dump. Wipes the current contents after taking a
+    safety dump, and un-marks any migration the restore undid.
+    """
+    server = _get_server(server_id, db)
+    try:
+        return restore_backup(server, filename, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.delete("/backups/{server_id}/{filename}")
