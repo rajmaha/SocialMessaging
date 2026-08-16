@@ -105,6 +105,7 @@ export default function MigrationsPage() {
     const [backupsLoading, setBackupsLoading] = useState(false)
     const [backupsError, setBackupsError] = useState('')
     const [downloading, setDownloading] = useState<string | null>(null)
+    const [deletingBackup, setDeletingBackup] = useState<string | null>(null)
 
     useEffect(() => {
         setUser(authAPI.getUser())
@@ -295,6 +296,30 @@ export default function MigrationsPage() {
             showMsg('error', 'Download failed')
         }
         setDownloading(null)
+    }
+
+    async function deleteBackup(server_id: number, backup: Backup) {
+        // The dump is the only record of the database as it stood before the drop.
+        if (!confirm(
+            `Delete backup "${backup.filename}"?\n\n` +
+            `This is the only copy of "${backup.database}" as it stood before that ` +
+            `migration ran — it is removed from the server and cannot be recovered.\n\n` +
+            `Download it first if you are unsure.`
+        )) return
+
+        setDeletingBackup(backup.filename)
+        const res = await fetch(`${API}/cloudpanel/migrations/backups/${server_id}/${backup.filename}`, {
+            method: 'DELETE',
+            headers: authHeaders(),
+        })
+        if (res.ok) {
+            showMsg('success', 'Backup deleted')
+            loadBackups(server_id)
+        } else {
+            const err = await res.json().catch(() => ({}))
+            showMsg('error', err.detail || 'Delete failed')
+        }
+        setDeletingBackup(null)
     }
 
     function formatSize(bytes: number): string {
@@ -592,13 +617,20 @@ export default function MigrationsPage() {
                                             <td className="py-2 pr-4 text-xs text-gray-400 whitespace-nowrap">
                                                 {new Date(b.created_at + 'Z').toLocaleString()}
                                             </td>
-                                            <td className="py-2">
+                                            <td className="py-2 flex gap-2">
                                                 <button
                                                     onClick={() => backupServerId !== null && downloadBackup(backupServerId, b.filename)}
                                                     disabled={downloading === b.filename}
                                                     className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs px-3 py-1 rounded whitespace-nowrap"
                                                 >
                                                     {downloading === b.filename ? 'Downloading…' : 'Download'}
+                                                </button>
+                                                <button
+                                                    onClick={() => backupServerId !== null && deleteBackup(backupServerId, b)}
+                                                    disabled={deletingBackup === b.filename}
+                                                    className="bg-red-800 hover:bg-red-700 disabled:opacity-50 text-white text-xs px-3 py-1 rounded whitespace-nowrap"
+                                                >
+                                                    {deletingBackup === b.filename ? 'Deleting…' : 'Delete'}
                                                 </button>
                                             </td>
                                         </tr>

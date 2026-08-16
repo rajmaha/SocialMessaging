@@ -416,6 +416,32 @@ def stream_backup(server: CloudPanelServer, filename: str):
     return chunks(), size
 
 
+def delete_backup(server: CloudPanelServer, filename: str) -> None:
+    """
+    Remove a dump from the server. Raises ValueError for a name that isn't one of
+    ours, FileNotFoundError if it's already gone, and RuntimeError if the unlink
+    fails — the caller turns those into status codes.
+    """
+    if not _BACKUP_NAME.match(filename):
+        raise ValueError(f"Not a backup filename: {filename!r}")
+
+    quoted = shlex.quote(f"{BACKUP_DIR}/{filename}")
+    client = _get_ssh_client(server)
+    try:
+        # rm -f exits 0 on a missing file, so check first rather than reporting
+        # success for a delete that never happened.
+        code, _out, _err = _backup_run(client, f"test -f {quoted}")
+        if code != 0:
+            raise FileNotFoundError(f"{filename} not found on {server.name}")
+
+        code, _out, err = _backup_run(client, f"rm -f {quoted}")
+        if code != 0:
+            raise RuntimeError(err or f"rm exited {code}")
+        logger.info(f"Deleted backup {filename} from {server.name}")
+    finally:
+        client.close()
+
+
 def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) -> dict:
     """
     Run all pending migrations on all matching sites on the given server.

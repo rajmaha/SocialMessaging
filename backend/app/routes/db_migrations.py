@@ -18,7 +18,7 @@ from app.schemas.db_migration import (
 )
 from app.services.migration_service import (
     run_server_migrations, _upsert_job, MIGRATION_DIR,
-    send_migration_notification, list_backups, stream_backup,
+    send_migration_notification, list_backups, stream_backup, delete_backup,
 )
 import app.scheduler_ref as sched_ref
 
@@ -252,6 +252,26 @@ def download_server_backup(
             "Content-Length": str(size),
         },
     )
+
+
+@router.delete("/backups/{server_id}/{filename}")
+def delete_server_backup(
+    server_id: int,
+    filename: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_cp),
+):
+    """Remove a dump from the server. It is the only copy — there is no undo."""
+    server = _get_server(server_id, db)
+    try:
+        delete_backup(server, filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not delete backup: {e}")
+    return {"ok": True}
 
 
 # ── Schedules ─────────────────────────────────────────────────────────────────
