@@ -327,7 +327,10 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
     migrations = db.query(DbMigration).order_by(DbMigration.filename).all()
 
     if not sites:
-        return {"server_id": server_id, "total_sites": 0, "skipped": 0, "success": 0, "failed": 0, "details": []}
+        return {"server_id": server_id, "total_sites": 0, "skipped": 0, "success": 0,
+                "failed": 0, "details": [],
+                "notes": ["No sites are registered for this server — sync it from "
+                          "Manage Sites first."]}
 
     # Build set of (migration_id, site_id) that already succeeded
     existing_success = set(
@@ -338,10 +341,14 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
         ).all()
     )
 
+    # `notes` explains outcomes that belong to the run as a whole rather than to a
+    # site: without them a run that never reached a single site reports nothing but
+    # zeros, which is indistinguishable from a run that had nothing to do.
     summary = {"server_id": server_id, "total_sites": len(sites),
-               "skipped": 0, "success": 0, "failed": 0, "details": []}
+               "skipped": 0, "success": 0, "failed": 0, "details": [], "notes": []}
 
     if not migrations:
+        summary["notes"].append("No migrations have been uploaded yet.")
         return summary
 
     # Open SSH once for the whole server run
@@ -365,7 +372,12 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
         for migration in migrations:
             local_path = migration.file_path
             if not os.path.exists(local_path):
-                logger.warning(f"Migration file missing: {local_path}")
+                # The DB row outlives the file — a redeploy that doesn't carry
+                # migration_storage across leaves rows pointing at nothing.
+                note = (f"{migration.filename}: SQL file is missing on the backend "
+                        f"({local_path}) — re-upload the migration.")
+                logger.warning(note)
+                summary["notes"].append(note)
                 continue
 
             remote_tmp = f"/tmp/dbmig_{migration.id}_{migration.filename}"

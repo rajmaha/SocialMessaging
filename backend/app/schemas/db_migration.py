@@ -85,3 +85,6 @@ class MigrationRunResult(BaseModel):
     success: int
     failed: int
     details: List[dict]
+    # Run-level explanations (missing SQL file, nothing uploaded, …) that have no
+    # single site to hang off.
+    notes: List[str] = []

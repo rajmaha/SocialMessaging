@@ -55,6 +55,7 @@ interface RunResult {
     success: number
     failed: number
     details: { site: string; migration: string; status: string; error?: string; backup?: string }[]
+    notes?: string[]
 }
 
 import { API_URL as API } from '@/lib/config'
@@ -524,6 +525,19 @@ export default function MigrationsPage() {
                             <span className="text-red-400">Failed: <strong>{runResult.failed}</strong></span>
                             <span className="text-gray-400">Skipped: <strong>{runResult.skipped}</strong></span>
                         </div>
+                        {runResult.notes && runResult.notes.length > 0 && (
+                            <div className="mb-4 p-3 rounded bg-yellow-950 border border-yellow-800 text-xs text-yellow-200">
+                                <ul className="list-disc list-inside space-y-1">
+                                    {runResult.notes.map((n, i) => <li key={i}>{n}</li>)}
+                                </ul>
+                            </div>
+                        )}
+                        {runResult.details.length === 0 && !runResult.notes?.length && (
+                            <p className="text-gray-400 text-xs mb-2">
+                                Nothing ran. No migration matched a site on this server — check the
+                                domain suffix, or open Logs to see migrations that already succeeded.
+                            </p>
+                        )}
                         {runResult.details.length > 0 && (
                             <div className="overflow-x-auto"><table className="w-full text-xs text-left">
                                 <thead>
