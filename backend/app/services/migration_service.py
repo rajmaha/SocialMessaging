@@ -1,8 +1,10 @@
 # backend/app/services/migration_service.py
 import os
 import re
+import shlex
 import logging
 import paramiko
+from dataclasses import dataclass
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
@@ -51,6 +53,136 @@ def _run(client: paramiko.SSHClient, cmd: str) -> tuple[int, str, str]:
     return exit_code, out, err
 
 
+@dataclass
+class MySQLAuth:
+    """
+    How to reach MySQL on a remote CloudPanel box.
+
+    `mysql -u root` with no password only works when the SSH user is root *and*
+    root has a defaults file (or socket auth); on hosts where it doesn't, the old
+    hard-coded command failed with "Access denied for user 'root'@'localhost'
+    (using password: NO)". resolve_mysql_auth() probes for a combination that
+    actually connects and every MySQL command is built through this object.
+    """
+    user: str | None = None        # -u value; None means "use the defaults file"
+    password: str | None = None    # passed via MYSQL_PWD, never on the command line
+    host: str | None = None        # set to force TCP; CloudPanel's master account
+    port: str | None = None        # is granted on 127.0.0.1, not the unix socket
+    sudo: bool = False             # SSH user is not root but has passwordless sudo
+
+    def binary(self, binary: str, args: str = "") -> str:
+        """Build a single mysql/mysqldump invocation (without any sudo wrapper)."""
+        parts = []
+        if self.password:
+            parts.append(f"MYSQL_PWD={shlex.quote(self.password)}")
+        parts.append(binary)
+        if self.host:
+            parts.append(f"-h {shlex.quote(self.host)} --protocol=TCP")
+        if self.port:
+            parts.append(f"-P {shlex.quote(self.port)}")
+        if self.user:
+            parts.append(f"-u {shlex.quote(self.user)}")
+        if args:
+            parts.append(args)
+        return " ".join(parts)
+
+    def shell(self, cmd: str) -> str:
+        """
+        Wrap a whole shell snippet so redirects and mkdir run with the same
+        privileges as the mysql command inside it.
+        """
+        if self.sudo:
+            return "sudo -n sh -c " + shlex.quote(cmd)
+        return cmd
+
+    def describe(self) -> str:
+        who = self.user or "defaults-file user"
+        where = f" at {self.host}:{self.port or 3306}" if self.host else " over the socket"
+        return (f"{'sudo ' if self.sudo else ''}{who}"
+                f"{' with password' if self.password else ''}{where}")
+
+
+def _cred_re(label: str) -> re.Pattern:
+    # Matches both "User Name: root" and the "| User Name | root |" table row.
+    return re.compile(rf"{label}\s*[:|]\s*\|?\s*([^\s|]+)", re.I)
+
+
+_CRED_USER_RE = _cred_re(r"user\s*name")
+_CRED_PASS_RE = _cred_re(r"password")
+_CRED_HOST_RE = _cred_re(r"host(?:\s*name)?")
+_CRED_PORT_RE = _cred_re(r"port")
+
+
+def _parse_master_credentials(out: str) -> dict:
+    """
+    Pull the connection details out of `clpctl db:show:master-credentials`, which
+    prints either "User Name: root" lines or an ASCII table. Host matters: the
+    master account is granted on 127.0.0.1, so the socket connection that
+    `mysql -u root` makes by default is refused.
+    """
+    def grab(pattern: re.Pattern) -> str | None:
+        match = pattern.search(out)
+        return match.group(1) if match else None
+
+    port = grab(_CRED_PORT_RE)
+    return {
+        "user": grab(_CRED_USER_RE),
+        "password": grab(_CRED_PASS_RE),
+        "host": grab(_CRED_HOST_RE),
+        "port": port if (port or "").isdigit() else None,
+    }
+
+
+def resolve_mysql_auth(client: paramiko.SSHClient) -> tuple[MySQLAuth | None, str]:
+    """
+    Find a MySQL login that works on this server, cheapest first:
+    the SSH user's own defaults file, then -u root, then the same two via sudo,
+    and finally CloudPanel's master credentials from clpctl.
+
+    Returns (auth, error); auth is None when nothing connected.
+    """
+    probe = "-N -B -e 'SELECT 1'"
+    tried = []
+
+    def works(auth: MySQLAuth) -> bool:
+        cmd = auth.shell(auth.binary("mysql", probe)) + " >/dev/null 2>&1"
+        code, _out, _err = _run(client, cmd)
+        return code == 0
+
+    for auth in (MySQLAuth(), MySQLAuth(user="root"),
+                 MySQLAuth(sudo=True), MySQLAuth(user="root", sudo=True)):
+        tried.append(auth.describe())
+        if works(auth):
+            return auth, ""
+
+    # CloudPanel keeps a master account; ask clpctl for it rather than guessing.
+    for sudo in (False, True):
+        code, out, _err = _run(client, MySQLAuth(sudo=sudo).shell("clpctl db:show:master-credentials"))
+        if code != 0 or not out.strip():
+            continue
+        creds = _parse_master_credentials(out)
+        tried.append(f"clpctl master credentials{' via sudo' if sudo else ''}")
+        if not creds["user"] or not creds["password"]:
+            continue
+        # Try the reported host first, then the socket, in case a future clpctl
+        # stops printing a host at all.
+        endpoints = [(creds["host"], creds["port"])]
+        if creds["host"]:
+            endpoints.append((None, None))
+        for host, port in endpoints:
+            auth = MySQLAuth(user=creds["user"], password=creds["password"],
+                             host=host, port=port, sudo=sudo)
+            if works(auth):
+                return auth, ""
+
+    return None, (
+        "Could not authenticate to MySQL on this server. Tried: "
+        + ", ".join(tried)
+        + ". Fix by giving the SSH user passwordless sudo, or creating /root/.my.cnf "
+          "with the MySQL root credentials on the server."
+    )
+
+
 def site_matches(domain: str, suffix: str, exact: bool = False) -> bool:
     """
     Decide whether a site's domain is targeted by a migration's domain_suffix.
@@ -74,7 +206,8 @@ def _quote_ident(name: str) -> str:
     return "`" + name.replace("`", "``") + "`"
 
 
-def backup_database(client: paramiko.SSHClient, db_name: str) -> tuple[bool, str, str]:
+def backup_database(client: paramiko.SSHClient, db_name: str,
+                    auth: MySQLAuth | None = None) -> tuple[bool, str, str]:
     """
     mysqldump the database to a timestamped gzip file on the remote server.
 
@@ -84,14 +217,17 @@ def backup_database(client: paramiko.SSHClient, db_name: str) -> tuple[bool, str
     if not _SAFE_DB_NAME.match(db_name):
         return False, "", f"Unsafe database name: {db_name!r}"
 
+    auth = auth or MySQLAuth(user="root")
     stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     path = f"{BACKUP_DIR}/{db_name}-{stamp}.sql"
     # Chained with && so a mysqldump failure short-circuits before gzip and the
     # exit code propagates (no pipeline, so no need for pipefail).
-    cmd = (
-        f"mkdir -p {BACKUP_DIR} && "
-        f"mysqldump -u root --single-transaction --routines --triggers --events "
-        f"{db_name} > {path} && gzip -f {path}"
+    dump = auth.binary(
+        "mysqldump",
+        f"--single-transaction --routines --triggers --events {db_name}",
+    )
+    cmd = auth.shell(
+        f"mkdir -p {BACKUP_DIR} && {dump} > {path} && gzip -f {path}"
     )
     exit_code, _out, err = _run(client, cmd)
     if exit_code != 0:
@@ -99,7 +235,8 @@ def backup_database(client: paramiko.SSHClient, db_name: str) -> tuple[bool, str
     return True, f"{path}.gz", ""
 
 
-def drop_database_contents(client: paramiko.SSHClient, db_name: str) -> tuple[bool, str]:
+def drop_database_contents(client: paramiko.SSHClient, db_name: str,
+                           auth: MySQLAuth | None = None) -> tuple[bool, str]:
     """
     Drop every object in the database — triggers, views, tables, routines — while
     leaving the database itself (and therefore the site's MySQL grants) intact.
@@ -111,9 +248,11 @@ def drop_database_contents(client: paramiko.SSHClient, db_name: str) -> tuple[bo
     if not _SAFE_DB_NAME.match(db_name):
         return False, f"Unsafe database name: {db_name!r}"
 
+    auth = auth or MySQLAuth(user="root")
+
     def query(sql: str) -> tuple[bool, list[list[str]], str]:
         # -N drops the header row, -B gives tab-separated output.
-        code, out, err = _run(client, f'mysql -u root -N -B -e "{sql}"')
+        code, out, err = _run(client, auth.shell(auth.binary("mysql", f'-N -B -e "{sql}"')))
         if code != 0:
             return False, [], err or f"mysql exited {code}"
         rows = [line.split("\t") for line in out.splitlines() if line.strip()]
@@ -162,7 +301,7 @@ def drop_database_contents(client: paramiko.SSHClient, db_name: str) -> tuple[bo
 
     # Ship the script over stdin so nothing needs shell-escaping.
     script = "\n".join(statements) + "\n"
-    stdin, stdout, stderr = client.exec_command(f"mysql -u root {db_name}")
+    stdin, stdout, stderr = client.exec_command(auth.shell(auth.binary("mysql", db_name)))
     stdin.write(script)
     stdin.channel.shutdown_write()
     exit_code = stdout.channel.recv_exit_status()
@@ -212,6 +351,14 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
         logger.error(f"SSH connect failed for server {server_id}: {e}")
         return {"error": str(e)}
 
+    # Work out how to talk to MySQL once per run; every site reuses it.
+    auth, auth_err = resolve_mysql_auth(client)
+    if not auth:
+        client.close()
+        logger.error(f"MySQL auth failed for server {server_id}: {auth_err}")
+        return {"error": auth_err}
+    logger.info(f"Server {server_id}: using MySQL auth = {auth.describe()}")
+
     try:
         sftp = client.open_sftp()
 
@@ -237,8 +384,8 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
                     summary["skipped"] += 1
                     continue
 
-                # No db_name stored — skip
-                if not site.db_name:
+                # No db_name stored (or one that has no business in a shell) — skip
+                if not site.db_name or not _SAFE_DB_NAME.match(site.db_name):
                     summary["skipped"] += 1
                     continue
 
@@ -274,7 +421,7 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
                         client.exec_command(f"rm -f {remote_tmp}")
                         continue
 
-                    ok, backup_path, err = backup_database(client, site.db_name)
+                    ok, backup_path, err = backup_database(client, site.db_name, auth)
                     if not ok:
                         msg = f"Pre-drop backup failed, database left untouched: {err}"
                         _write_log(db, migration.id, site.id, server_id, "failed", msg)
@@ -285,7 +432,7 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
                         continue
                     logger.info(f"Backed up {site.db_name} to {backup_path} before drop")
 
-                    ok, err = drop_database_contents(client, site.db_name)
+                    ok, err = drop_database_contents(client, site.db_name, auth)
                     if not ok:
                         msg = f"Drop failed (backup at {backup_path}): {err}"
                         _write_log(db, migration.id, site.id, server_id, "failed", msg)
@@ -296,7 +443,7 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
                         continue
 
                 # Run mysql
-                cmd = f"mysql -u root {site.db_name} < {remote_tmp}"
+                cmd = auth.shell(f"{auth.binary('mysql', site.db_name)} < {remote_tmp}")
                 try:
                     stdin, stdout, stderr = client.exec_command(cmd)
                     exit_code = stdout.channel.recv_exit_status()

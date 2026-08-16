@@ -11,6 +11,7 @@ from app.models.backup_run import BackupRun
 from app.models.backup_destination import BackupDestination
 from app.models.cloudpanel_server import CloudPanelServer
 from app.services.destinations.base import get_destination
+from app.services.migration_service import resolve_mysql_auth
 
 logger = logging.getLogger(__name__)
 
@@ -101,13 +102,26 @@ class BackupEngine:
         files = []
         try:
             if scope in ("db", "both"):
+                # `mysqldump -u root` with no password only works when the SSH user is
+                # root and root has a defaults file; elsewhere it dies with "Access
+                # denied for user 'root'@'localhost' (using password: NO)". Probe for a
+                # login that actually connects, same as DB migrations do.
+                auth, auth_err = resolve_mysql_auth(ssh)
+                if auth is None:
+                    raise Exception(auth_err)
+
                 remote_db = f"/tmp/backup_db_{server.id}.sql"
-                self._exec(ssh, f"mysqldump -u root --all-databases > {remote_db}")
+                dump = auth.binary("mysqldump", "--all-databases")
+                # The redirect runs inside auth.shell() so that, under sudo, the dump
+                # file is written with the same privileges as mysqldump itself.
+                self._exec(ssh, auth.shell(f"{dump} > {remote_db}"))
                 local_db = os.path.join(tmpdir, f"db_{server.id}.sql")
                 sftp = ssh.open_sftp()
                 sftp.get(remote_db, local_db)
                 sftp.close()
-                self._exec(ssh, f"rm -f {remote_db}")
+                # Also wrapped: /tmp is sticky, so a non-root SSH user cannot unlink a
+                # dump that sudo'd mysqldump created.
+                self._exec(ssh, auth.shell(f"rm -f {remote_db}"))
                 files.append(local_db)
 
             if scope in ("files", "both"):
