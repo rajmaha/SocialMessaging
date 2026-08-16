@@ -437,12 +437,16 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
                 "notes": ["No sites are registered for this server — sync it from "
                           "Manage Sites first."]}
 
-    # Build set of (migration_id, site_id) that already succeeded
+    # Build the set of (migration, database) pairs that already succeeded on this
+    # server. Keyed on db_name rather than site_id so a re-synced or replaced site
+    # row cannot make a migration run against the same database a second time —
+    # for a drop & import that would wipe live data.
     existing_success = set(
-        (row.migration_id, row.site_id)
+        (row.migration_id, row.db_name)
         for row in db.query(DbMigrationLog).filter(
             DbMigrationLog.server_id == server_id,
             DbMigrationLog.status == "success",
+            DbMigrationLog.db_name.isnot(None),
         ).all()
     )
 
@@ -503,21 +507,27 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
                         summary["skipped"] += 1
                         continue
 
-                # Already ran successfully
-                if (migration.id, site.id) in existing_success:
-                    summary["skipped"] += 1
-                    continue
-
                 # No db_name stored (or one that has no business in a shell) — skip
                 if not site.db_name or not _SAFE_DB_NAME.match(site.db_name):
                     summary["skipped"] += 1
+                    continue
+
+                # One run per database, ever. The pair is also recorded as this run
+                # proceeds, so two sites sharing a database don't import it twice.
+                if (migration.id, site.db_name) in existing_success:
+                    summary["skipped"] += 1
+                    summary["details"].append({
+                        "site": site.domain_name, "migration": migration.filename,
+                        "status": "skipped",
+                        "error": f"already applied to database {site.db_name}",
+                    })
                     continue
 
                 # Upload SQL to remote /tmp/
                 try:
                     sftp.put(local_path, remote_tmp)
                 except Exception as e:
-                    _write_log(db, migration.id, site.id, server_id, "failed", f"SFTP upload failed: {e}")
+                    _write_log(db, migration.id, site, server_id, "failed", f"SFTP upload failed: {e}")
                     summary["failed"] += 1
                     summary["details"].append({"site": site.domain_name, "migration": migration.filename,
                                                "status": "failed", "error": str(e)})
@@ -548,7 +558,7 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
                     ok, backup_path, err = backup_database(client, site.db_name, auth)
                     if not ok:
                         msg = f"Pre-drop backup failed, database left untouched: {err}"
-                        _write_log(db, migration.id, site.id, server_id, "failed", msg)
+                        _write_log(db, migration.id, site, server_id, "failed", msg)
                         summary["failed"] += 1
                         summary["details"].append({"site": site.domain_name, "migration": migration.filename,
                                                    "status": "failed", "error": msg})
@@ -559,7 +569,7 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
                     ok, err = drop_database_contents(client, site.db_name, auth)
                     if not ok:
                         msg = f"Drop failed (backup at {backup_path}): {err}"
-                        _write_log(db, migration.id, site.id, server_id, "failed", msg)
+                        _write_log(db, migration.id, site, server_id, "failed", msg)
                         summary["failed"] += 1
                         summary["details"].append({"site": site.domain_name, "migration": migration.filename,
                                                    "status": "failed", "error": msg})
@@ -574,7 +584,9 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
                     err_output = stderr.read().decode("utf-8", errors="replace").strip()
 
                     if exit_code == 0:
-                        _write_log(db, migration.id, site.id, server_id, "success", None)
+                        _write_log(db, migration.id, site, server_id, "success", None)
+                        # Bar this database for the rest of the run as well as future ones.
+                        existing_success.add((migration.id, site.db_name))
                         summary["success"] += 1
                         detail = {"site": site.domain_name, "migration": migration.filename,
                                   "status": "success"}
@@ -582,12 +594,12 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
                             detail["backup"] = backup_path
                         summary["details"].append(detail)
                     else:
-                        _write_log(db, migration.id, site.id, server_id, "failed", err_output)
+                        _write_log(db, migration.id, site, server_id, "failed", err_output)
                         summary["failed"] += 1
                         summary["details"].append({"site": site.domain_name, "migration": migration.filename,
                                                    "status": "failed", "error": err_output})
                 except Exception as e:
-                    _write_log(db, migration.id, site.id, server_id, "failed", str(e))
+                    _write_log(db, migration.id, site, server_id, "failed", str(e))
                     summary["failed"] += 1
                     summary["details"].append({"site": site.domain_name, "migration": migration.filename,
                                                "status": "failed", "error": str(e)})
@@ -615,22 +627,33 @@ def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) 
     return summary
 
 
-def _write_log(db: Session, migration_id: int, site_id: int,
+def _write_log(db: Session, migration_id: int, site: CloudPanelSite,
                server_id: int, status: str, error: str | None):
-    """Insert or update a migration log entry."""
+    """
+    Insert or update the log entry for this migration against this database.
+
+    Keyed on (migration, server, database) so the history follows the database
+    rather than the site row, and the domain is snapshotted alongside it — a site
+    that is later deleted still leaves a readable record of what ran where.
+    """
     existing = db.query(DbMigrationLog).filter(
         DbMigrationLog.migration_id == migration_id,
-        DbMigrationLog.site_id == site_id,
+        DbMigrationLog.server_id == server_id,
+        DbMigrationLog.db_name == site.db_name,
     ).first()
     if existing:
+        existing.site_id = site.id
+        existing.domain_name = site.domain_name
         existing.status = status
         existing.error_message = error
         existing.executed_at = datetime.utcnow()
     else:
         log = DbMigrationLog(
             migration_id=migration_id,
-            site_id=site_id,
+            site_id=site.id,
             server_id=server_id,
+            db_name=site.db_name,
+            domain_name=site.domain_name,
             status=status,
             error_message=error,
         )

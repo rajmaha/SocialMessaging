@@ -24,8 +24,15 @@ class DbMigrationLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     migration_id = Column(Integer, ForeignKey("db_migrations.id", ondelete="CASCADE"), nullable=False)
-    site_id = Column(Integer, ForeignKey("cloudpanel_sites.id", ondelete="CASCADE"), nullable=False)
+    # SET NULL, not CASCADE: re-syncing sites replaces cloudpanel_sites rows, and a
+    # cascaded delete would erase the record that this migration already ran —
+    # letting a drop & import wipe a live database a second time.
+    site_id = Column(Integer, ForeignKey("cloudpanel_sites.id", ondelete="SET NULL"), nullable=True)
     server_id = Column(Integer, ForeignKey("cloudpanel_servers.id", ondelete="CASCADE"), nullable=False)
+    # Snapshots taken at run time. db_name is the identity a migration is keyed on —
+    # site rows come and go, the database is what actually got written to.
+    db_name = Column(String, nullable=True, index=True)
+    domain_name = Column(String, nullable=True)
     status = Column(String, nullable=False, default="pending")  # pending/running/success/failed
     error_message = Column(Text, nullable=True)
     executed_at = Column(DateTime(timezone=True), server_default=func.now())

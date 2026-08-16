@@ -18,11 +18,12 @@ interface Migration {
 interface MigrationLog {
     id: number
     migration_id: number
-    site_id: number
+    site_id: number | null
     server_id: number
     status: string
     error_message: string | null
     executed_at: string
+    db_name: string | null
     domain_name: string | null
     server_name: string | null
 }
@@ -638,7 +639,8 @@ export default function MigrationsPage() {
                             <div className="overflow-x-auto"><table className="w-full text-sm text-left">
                                 <thead>
                                     <tr className="text-gray-400 border-b border-gray-700">
-                                        <th className="py-2 pr-3">Domain</th>
+                                        <th className="py-2 pr-3">Site</th>
+                                        <th className="py-2 pr-3">Database</th>
                                         <th className="py-2 pr-3">Server</th>
                                         <th className="py-2 pr-3">Status</th>
                                         <th className="py-2">Executed</th>
@@ -647,7 +649,15 @@ export default function MigrationsPage() {
                                 <tbody>
                                     {logsDrawer.logs.map(log => (
                                         <tr key={log.id} className="border-b border-gray-800 text-gray-300">
-                                            <td className="py-2 pr-3 text-xs font-mono">{log.domain_name}</td>
+                                            <td className="py-2 pr-3 text-xs font-mono">
+                                                {log.domain_name || <span className="text-gray-600">—</span>}
+                                                {log.site_id === null && (
+                                                    <span className="text-gray-600 ml-1" title="Site no longer exists; history kept">(removed)</span>
+                                                )}
+                                            </td>
+                                            <td className="py-2 pr-3 text-xs font-mono text-gray-400">
+                                                {log.db_name || <span className="text-gray-600">—</span>}
+                                            </td>
                                             <td className="py-2 pr-3 text-xs">{log.server_name}</td>
                                             <td className={`py-2 pr-3 font-semibold text-xs ${statusColor(log.status)}`}>
                                                 {log.status.toUpperCase()}

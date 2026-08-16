@@ -121,7 +121,8 @@ def get_migration_logs(
 
     result = []
     for log in logs:
-        site = db.query(CloudPanelSite).filter(CloudPanelSite.id == log.site_id).first()
+        site = (db.query(CloudPanelSite).filter(CloudPanelSite.id == log.site_id).first()
+                if log.site_id else None)
         server = db.query(CloudPanelServer).filter(CloudPanelServer.id == log.server_id).first()
         item = DbMigrationLogResponse(
             id=log.id,
@@ -131,7 +132,10 @@ def get_migration_logs(
             status=log.status,
             error_message=log.error_message,
             executed_at=log.executed_at,
-            domain_name=site.domain_name if site else None,
+            db_name=log.db_name,
+            # Prefer the live site, fall back to the name recorded at run time so a
+            # deleted site still reads as more than a blank row.
+            domain_name=site.domain_name if site else log.domain_name,
             server_name=server.name if server else None,
         )
         result.append(item)

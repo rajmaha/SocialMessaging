@@ -21,11 +21,12 @@ class DbMigrationResponse(BaseModel):
 class DbMigrationLogResponse(BaseModel):
     id: int
     migration_id: int
-    site_id: int
+    site_id: Optional[int] = None   # NULL once the site row is gone
     server_id: int
     status: str
     error_message: Optional[str] = None
     executed_at: datetime
+    db_name: Optional[str] = None
     # Joined fields (populated manually in route)
     domain_name: Optional[str] = None
     server_name: Optional[str] = None

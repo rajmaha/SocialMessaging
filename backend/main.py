@@ -966,6 +966,37 @@ def _run_inline_migrations():
             ALTER TABLE db_migrations
                 ADD COLUMN IF NOT EXISTS drop_before_run BOOLEAN NOT NULL DEFAULT FALSE
         """))
+        # Migration history is keyed on the database, not the site row: a migration
+        # must never run twice against the same database, even if the site is
+        # re-synced (new row, new id) or removed. Snapshot db/domain onto the log and
+        # stop a site deletion from cascading the history away.
+        conn.execute(text("""
+            ALTER TABLE db_migration_logs
+                ADD COLUMN IF NOT EXISTS db_name     VARCHAR,
+                ADD COLUMN IF NOT EXISTS domain_name VARCHAR
+        """))
+        conn.execute(text("""
+            UPDATE db_migration_logs l
+               SET db_name     = COALESCE(l.db_name, s.db_name),
+                   domain_name = COALESCE(l.domain_name, s.domain_name)
+              FROM cloudpanel_sites s
+             WHERE l.site_id = s.id
+               AND (l.db_name IS NULL OR l.domain_name IS NULL)
+        """))
+        conn.execute(text("ALTER TABLE db_migration_logs ALTER COLUMN site_id DROP NOT NULL"))
+        conn.execute(text("""
+            ALTER TABLE db_migration_logs
+                DROP CONSTRAINT IF EXISTS db_migration_logs_site_id_fkey
+        """))
+        conn.execute(text("""
+            ALTER TABLE db_migration_logs
+                ADD CONSTRAINT db_migration_logs_site_id_fkey
+                FOREIGN KEY (site_id) REFERENCES cloudpanel_sites(id) ON DELETE SET NULL
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_db_migration_logs_applied
+                ON db_migration_logs (migration_id, server_id, db_name)
+        """))
         conn.commit()
 
         # Tracking enrichment columns for campaign_recipients
