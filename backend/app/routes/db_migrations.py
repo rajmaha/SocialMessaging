@@ -2,6 +2,7 @@
 import os
 import shutil
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
@@ -11,12 +12,12 @@ from app.models.db_migration import DbMigration, DbMigrationLog, DbMigrationSche
 from app.models.cloudpanel_server import CloudPanelServer
 from app.models.cloudpanel_site import CloudPanelSite
 from app.schemas.db_migration import (
-    DbMigrationResponse, DbMigrationLogResponse,
+    DbMigrationResponse, DbMigrationLogResponse, DbMigrationBackup,
     DbMigrationScheduleUpsert, DbMigrationScheduleResponse, MigrationRunResult,
 )
 from app.services.migration_service import (
     run_server_migrations, _upsert_job, MIGRATION_DIR,
-    send_migration_notification,
+    send_migration_notification, list_backups, stream_backup,
 )
 import app.scheduler_ref as sched_ref
 
@@ -155,6 +156,59 @@ def run_migrations_on_server(
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
     return result
+
+
+# ── Backups ───────────────────────────────────────────────────────────────────
+
+def _get_server(server_id: int, db: Session) -> CloudPanelServer:
+    server = db.query(CloudPanelServer).filter(CloudPanelServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    return server
+
+
+@router.get("/backups/{server_id}", response_model=List[DbMigrationBackup])
+def list_server_backups(
+    server_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_cp),
+):
+    """The pre-drop dumps kept in /var/backups/db_migrations on this server."""
+    backups, err = list_backups(_get_server(server_id, db))
+    if err:
+        raise HTTPException(status_code=502, detail=err)
+    return backups
+
+
+@router.get("/backups/{server_id}/{filename}")
+def download_server_backup(
+    server_id: int,
+    filename: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_cp),
+):
+    """
+    Stream a dump straight from the server to the browser. The filename is
+    validated against the backup naming pattern, so it cannot escape BACKUP_DIR.
+    """
+    server = _get_server(server_id, db)
+    try:
+        chunks, size = stream_backup(server, filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not read backup: {e}")
+
+    return StreamingResponse(
+        chunks,
+        media_type="application/gzip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(size),
+        },
+    )
 
 
 # ── Schedules ─────────────────────────────────────────────────────────────────

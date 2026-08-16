@@ -311,6 +311,111 @@ def drop_database_contents(client: paramiko.SSHClient, db_name: str,
     return True, ""
 
 
+# Exactly the shape backup_database() writes: <db>-YYYYmmdd-HHMMSS.sql.gz. Anything
+# else is refused, so a filename from the client can never walk out of BACKUP_DIR.
+_BACKUP_NAME = re.compile(r"^([A-Za-z0-9_$-]+)-(\d{8})-(\d{6})\.sql\.gz$")
+
+
+def _backup_run(client: paramiko.SSHClient, cmd: str) -> tuple[int, str, str]:
+    """
+    Run a command against BACKUP_DIR, retrying under sudo if the SSH user can't
+    read it — the dumps are written by whichever account the drop ran as.
+    """
+    code, out, err = _run(client, cmd)
+    if code == 0:
+        return code, out, err
+    sudo_code, sudo_out, sudo_err = _run(client, "sudo -n sh -c " + shlex.quote(cmd))
+    if sudo_code == 0:
+        return sudo_code, sudo_out, sudo_err
+    return code, out, err   # report the original failure, not the sudo one
+
+
+def list_backups(server: CloudPanelServer) -> tuple[list[dict], str]:
+    """
+    List the pre-drop dumps held on a server, newest first.
+
+    Returns (backups, error). An empty list with no error means the directory
+    exists but nothing has been backed up yet.
+    """
+    try:
+        client = _get_ssh_client(server)
+    except Exception as e:
+        return [], f"SSH connect failed: {e}"
+
+    try:
+        # One line per file: name|bytes|mtime. The 2>/dev/null swallows the glob
+        # itself when the directory is empty or absent.
+        code, out, err = _backup_run(
+            client, f"stat -c '%n|%s|%Y' {BACKUP_DIR}/*.sql.gz 2>/dev/null"
+        )
+        if code != 0 and err:
+            return [], err
+    finally:
+        client.close()
+
+    backups = []
+    for line in out.splitlines():
+        parts = line.strip().split("|")
+        if len(parts) != 3:
+            continue
+        name = os.path.basename(parts[0])
+        match = _BACKUP_NAME.match(name)
+        if not match:
+            continue
+        try:
+            size, mtime = int(parts[1]), int(parts[2])
+        except ValueError:
+            continue
+        backups.append({
+            "filename": name,
+            "database": match.group(1),
+            "size_bytes": size,
+            "created_at": datetime.utcfromtimestamp(mtime),
+        })
+
+    backups.sort(key=lambda b: b["created_at"], reverse=True)
+    return backups, ""
+
+
+def stream_backup(server: CloudPanelServer, filename: str):
+    """
+    Open a dump for download. Returns (chunk generator, size_bytes); the SSH
+    connection stays open until the generator is exhausted or closed.
+    """
+    if not _BACKUP_NAME.match(filename):
+        raise ValueError(f"Not a backup filename: {filename!r}")
+
+    path = f"{BACKUP_DIR}/{filename}"
+    quoted = shlex.quote(path)
+    client = _get_ssh_client(server)
+    try:
+        code, out, err = _backup_run(client, f"stat -c '%s' {quoted}")
+        if code != 0:
+            raise FileNotFoundError(err or f"{filename} not found on {server.name}")
+        size = int(out.strip())
+
+        # Decide once whether reading needs sudo, so the stream itself can't
+        # half-fail after the response headers have gone out.
+        readable, _out, _err = _run(client, f"test -r {quoted}")
+        cat = f"cat {quoted}" if readable == 0 else f"sudo -n cat {quoted}"
+        _stdin, stdout, _stderr = client.exec_command(cat)
+    except Exception:
+        client.close()
+        raise
+
+    def chunks():
+        try:
+            while True:
+                chunk = stdout.read(256 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            client.close()
+
+    return chunks(), size
+
+
 def run_server_migrations(server_id: int, db: Session, allow_drop: bool = True) -> dict:
     """
     Run all pending migrations on all matching sites on the given server.

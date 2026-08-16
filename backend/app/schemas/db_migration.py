@@ -78,6 +78,14 @@ class DbMigrationScheduleResponse(BaseModel):
         from_attributes = True
 
 
+class DbMigrationBackup(BaseModel):
+    """A pre-drop mysqldump sitting on a CloudPanel server."""
+    filename: str
+    database: str
+    size_bytes: int
+    created_at: datetime
+
+
 class MigrationRunResult(BaseModel):
     server_id: int
     total_sites: int

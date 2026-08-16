@@ -48,6 +48,13 @@ interface Schedule {
     server_name: string | null
 }
 
+interface Backup {
+    filename: string
+    database: string
+    size_bytes: number
+    created_at: string
+}
+
 interface RunResult {
     server_id: number
     total_sites: number
@@ -90,6 +97,13 @@ export default function MigrationsPage() {
     const [runResult, setRunResult] = useState<RunResult | null>(null)
     const [running, setRunning] = useState<number | null>(null)
     const [notifying, setNotifying] = useState<number | null>(null)
+
+    // Backups panel
+    const [backupServerId, setBackupServerId] = useState<number | null>(null)
+    const [backups, setBackups] = useState<Backup[]>([])
+    const [backupsLoading, setBackupsLoading] = useState(false)
+    const [backupsError, setBackupsError] = useState('')
+    const [downloading, setDownloading] = useState<string | null>(null)
 
     useEffect(() => {
         setUser(authAPI.getUser())
@@ -204,6 +218,72 @@ export default function MigrationsPage() {
         return () => window.removeEventListener('keydown', onKey)
     }, [logsDrawer.open, runResult])
 
+    // ── Backups ─────────────────────────────────────────────────────────────
+
+    // Default to the first server once the list arrives.
+    useEffect(() => {
+        if (backupServerId === null && servers.length > 0) setBackupServerId(servers[0].id)
+    }, [servers, backupServerId])
+
+    useEffect(() => {
+        if (backupServerId !== null) loadBackups(backupServerId)
+    }, [backupServerId])
+
+    async function loadBackups(server_id: number) {
+        setBackupsLoading(true)
+        setBackupsError('')
+        try {
+            const res = await fetch(`${API}/cloudpanel/migrations/backups/${server_id}`, {
+                headers: authHeaders(),
+            })
+            if (res.ok) {
+                setBackups(await res.json())
+            } else {
+                const err = await res.json().catch(() => ({}))
+                setBackups([])
+                setBackupsError(err.detail || 'Could not list backups')
+            }
+        } catch {
+            setBackups([])
+            setBackupsError('Could not reach the server')
+        }
+        setBackupsLoading(false)
+    }
+
+    async function downloadBackup(server_id: number, filename: string) {
+        setDownloading(filename)
+        try {
+            // The API needs a bearer token, so the file is fetched and handed to
+            // the browser as a blob rather than linked to directly.
+            const res = await fetch(`${API}/cloudpanel/migrations/backups/${server_id}/${filename}`, {
+                headers: authHeaders(),
+            })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}))
+                showMsg('error', err.detail || 'Download failed')
+            } else {
+                const url = URL.createObjectURL(await res.blob())
+                const a = document.createElement('a')
+                a.href = url
+                a.download = filename
+                a.click()
+                URL.revokeObjectURL(url)
+            }
+        } catch {
+            showMsg('error', 'Download failed')
+        }
+        setDownloading(null)
+    }
+
+    function formatSize(bytes: number): string {
+        if (bytes < 1024) return `${bytes} B`
+        const units = ['KB', 'MB', 'GB']
+        let value = bytes / 1024
+        let unit = 0
+        while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++ }
+        return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`
+    }
+
     // ── Run ─────────────────────────────────────────────────────────────────
 
     async function handleRun(server_id: number) {
@@ -228,6 +308,8 @@ export default function MigrationsPage() {
         if (res.ok) {
             setRunResult(await res.json())
             loadAll()
+            // A drop & import run just wrote a fresh dump.
+            if (backupServerId !== null) loadBackups(backupServerId)
         } else {
             const err = await res.json()
             showMsg('error', err.detail || 'Run failed')
@@ -419,6 +501,82 @@ export default function MigrationsPage() {
                                                     className="bg-red-800 hover:bg-red-700 text-white text-xs px-3 py-1 rounded"
                                                 >
                                                     Delete
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table></div>
+                        )}
+                    </div>
+
+                    {/* ── Backups Panel ── */}
+                    <div className="bg-gray-800 rounded-lg p-5 mb-6">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                            <div>
+                                <h2 className="text-lg font-semibold text-white">Database Backups</h2>
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                    Dumps taken automatically before each drop &amp; import, kept in{' '}
+                                    <span className="font-mono">/var/backups/db_migrations</span> on the server.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {servers.length > 1 && (
+                                    <select
+                                        value={backupServerId ?? ''}
+                                        onChange={e => setBackupServerId(Number(e.target.value))}
+                                        className="bg-gray-700 text-white text-sm rounded px-2 py-1"
+                                    >
+                                        {servers.map(s => (
+                                            <option key={s.id} value={s.id}>{s.name}</option>
+                                        ))}
+                                    </select>
+                                )}
+                                <button
+                                    onClick={() => backupServerId !== null && loadBackups(backupServerId)}
+                                    disabled={backupServerId === null || backupsLoading}
+                                    className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-xs px-3 py-1 rounded"
+                                >
+                                    {backupsLoading ? 'Loading…' : 'Refresh'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {backupsError ? (
+                            <p className="text-red-400 text-sm">{backupsError}</p>
+                        ) : backupsLoading ? (
+                            <p className="text-gray-400 text-sm">Loading…</p>
+                        ) : backups.length === 0 ? (
+                            <p className="text-gray-400 text-sm">
+                                No backups on this server yet — one is written each time a drop &amp; import runs.
+                            </p>
+                        ) : (
+                            <div className="overflow-x-auto"><table className="w-full text-sm text-left">
+                                <thead>
+                                    <tr className="text-gray-400 border-b border-gray-700">
+                                        <th className="py-2 pr-4">Database</th>
+                                        <th className="py-2 pr-4">File</th>
+                                        <th className="py-2 pr-4">Size</th>
+                                        <th className="py-2 pr-4">Taken</th>
+                                        <th className="py-2">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {backups.map(b => (
+                                        <tr key={b.filename} className="border-b border-gray-700 text-gray-300">
+                                            <td className="py-2 pr-4 font-mono">{b.database}</td>
+                                            <td className="py-2 pr-4 font-mono text-xs text-gray-400 break-all">{b.filename}</td>
+                                            <td className="py-2 pr-4 text-xs whitespace-nowrap">{formatSize(b.size_bytes)}</td>
+                                            <td className="py-2 pr-4 text-xs text-gray-400 whitespace-nowrap">
+                                                {new Date(b.created_at + 'Z').toLocaleString()}
+                                            </td>
+                                            <td className="py-2">
+                                                <button
+                                                    onClick={() => backupServerId !== null && downloadBackup(backupServerId, b.filename)}
+                                                    disabled={downloading === b.filename}
+                                                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs px-3 py-1 rounded whitespace-nowrap"
+                                                >
+                                                    {downloading === b.filename ? 'Downloading…' : 'Download'}
                                                 </button>
                                             </td>
                                         </tr>
