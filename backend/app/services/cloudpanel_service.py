@@ -1,5 +1,7 @@
 import paramiko
 import os
+import re
+import hashlib
 import secrets
 import string
 import logging
@@ -83,20 +85,65 @@ class CloudPanelService:
             pass
         return None, None
 
-    def generate_db_credentials(self, domain: str):
-        import re
-        # CloudPanel requires purely lowercase alphanumeric DB names
-        # e.g. demo-4u.net → demo4unet, app.demo-4u.net → appdemo4unet
-        safe_name = re.sub(r'[^a-zA-Z0-9]', '', domain).lower()
-        safe_name = safe_name[:16]
+    # CloudPanel accepts only lowercase letters and digits in a database or
+    # database-user name, and caps both at 16 characters.
+    DB_IDENTIFIER_MAX = 16
 
-        db_name = safe_name
-        db_user = safe_name
-        
+    def generate_db_credentials(self, domain: str):
+        """Database name, user and password for a domain.
+
+        The name has to be unique per domain, but CloudPanel's character rule
+        means the domain's own separators cannot survive into it. Simply
+        stripping them and truncating, which is what this did, made distinct
+        domains land on the same name:
+
+            testcrm.saraloms.com  -> testcrmsaralomsc
+            test-crm.saraloms.com -> testcrmsaralomsc
+
+        CloudPanel then rejected the second site with "This value already
+        exists", naming a database the person deploying had never created.
+        Truncation did the same to any two domains that first differ past the
+        sixteenth character.
+
+        So the readable part is kept short and a fingerprint of the whole
+        domain -- punctuation included -- is appended. Domains that differ at
+        all now get different names.
+        """
+        normalised = domain.strip().lower().rstrip('.')
+        slug = re.sub(r'[^a-z0-9]', '', normalised)
+        fingerprint = hashlib.sha1(normalised.encode('utf-8')).hexdigest()[:6]
+
+        readable = slug[:self.DB_IDENTIFIER_MAX - len(fingerprint)]
+
+        # MySQL wants an identifier that starts with a letter, and a domain may
+        # legitimately start with a digit, as in 1crm.example.com.
+        if not readable or readable[0].isdigit():
+            readable = ('d' + readable)[:self.DB_IDENTIFIER_MAX - len(fingerprint)]
+
+        safe_name = readable + fingerprint
+
         alphabet = string.ascii_letters + string.digits
         db_pass = ''.join(secrets.choice(alphabet) for i in range(16))
-        
-        return db_name, db_user, db_pass
+
+        return safe_name, safe_name, db_pass
+
+    def _validated_db_identifier(self, value: str, field: str) -> str:
+        """A database name or user typed into the deploy form, or an error
+        somebody can act on.
+
+        CloudPanel answers a bad one with "This value is not valid", which does
+        not say which value or what was wrong with it.
+        """
+        candidate = value.strip()
+
+        if not re.fullmatch(r'[a-z0-9]{1,%d}' % self.DB_IDENTIFIER_MAX, candidate):
+            raise ValueError(
+                f"{field} must be 1 to {self.DB_IDENTIFIER_MAX} characters using only "
+                f"lowercase letters and digits (you gave '{value}'). "
+                f"Leave it blank to have one generated from the domain."
+            )
+
+        return candidate
 
     def create_site(self, data: CloudPanelSiteCreate):
         """Non-streaming version — runs all steps and returns the final result."""
@@ -114,6 +161,13 @@ class CloudPanelService:
         db_name = data.dbName
         db_user = data.dbUser
         db_pass = data.dbPassword
+
+        # Checked here rather than left to CloudPanel, which rejects a name
+        # with a hyphen in it without saying so.
+        if db_name:
+            db_name = self._validated_db_identifier(db_name, "Database name")
+        if db_user:
+            db_user = self._validated_db_identifier(db_user, "Database user name")
 
         if not db_name or not db_user or not db_pass:
             gen_name, gen_user, gen_pass = self.generate_db_credentials(data.domainName)
