@@ -290,6 +290,7 @@ class CloudPanelService:
                         content = content.replace("[db_name]", db_name)
                         content = content.replace("[db_user]", db_user)
                         content = content.replace("[db_password]", db_pass)
+                        content = content.replace("[email_from]", data.email_from or "")
                         with sftp.open(remote_path, "w") as remote_f:
                             remote_f.write(content)
                     except (UnicodeDecodeError, ValueError):

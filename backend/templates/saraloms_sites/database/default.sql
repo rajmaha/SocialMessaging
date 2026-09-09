@@ -2779,7 +2779,7 @@ INSERT INTO `cc_options` (`id`, `option_name`, `option_value`) VALUES
 (15, 'active_theme', NULL),
 (16, 'active_theme', NULL),
 (17, 'landing_page_id', 'default'),
-(18, 'email', 'rajmaha570@yahoo.com'),
+(18, 'email', '[email_from]'),
 (19, 'google_id', ''),
 (20, 'google_secret', ''),
 (21, 'enable_disqus', NULL),

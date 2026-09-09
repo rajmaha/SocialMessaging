@@ -38,6 +38,7 @@ class SubscriptionBase(BaseModel):
     modules: Optional[List[str]] = []
     system_url: Optional[str] = None
     company_logo_url: Optional[str] = None
+    email_from: Optional[str] = None
     subscribed_on_date: Optional[date] = None
     billed_from_date: Optional[date] = None
     expire_date: Optional[date] = None
@@ -56,6 +57,7 @@ class SubscriptionUpdate(BaseModel):
     modules: Optional[List[str]] = None
     system_url: Optional[str] = None
     company_logo_url: Optional[str] = None
+    email_from: Optional[str] = None
     subscribed_on_date: Optional[date] = None
     billed_from_date: Optional[date] = None
     expire_date: Optional[date] = None

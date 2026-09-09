@@ -1738,6 +1738,9 @@ def _run_inline_migrations():
         conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS api_sync_status VARCHAR"))
         conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS api_sync_error TEXT"))
 
+        # Sender address injected into the deployed site
+        conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS email_from VARCHAR"))
+
         # CRM Lead Notes table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS crm_lead_notes (

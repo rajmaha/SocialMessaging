@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Plus, CreditCard, Globe, Trash2, Edit2, X, CheckCircle2, Upload, Image, Server, FileCode, Database, Shield, Link, RefreshCw, AlertCircle } from 'lucide-react'
 import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
+import DateField from '@/components/DateField'
 import { API_URL } from '@/lib/config';
 
 interface Subscription {
@@ -12,6 +13,7 @@ interface Subscription {
     modules: string[]
     system_url: string | null
     company_logo_url: string | null
+    email_from: string | null
     subscribed_on_date: string | null
     billed_from_date: string | null
     expire_date: string | null
@@ -191,6 +193,7 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                 modules: [],
                 system_url: '',
                 company_logo_url: null,
+                email_from: '',
                 subscribed_on_date: new Date().toISOString().split('T')[0],
                 billed_from_date: new Date().toISOString().split('T')[0],
                 expire_date: '',
@@ -205,6 +208,11 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!currentSub) return
+
+        if (!currentSub.expire_date) {
+            alert('Expiration date is required.')
+            return
+        }
 
         setSaving(true)
         setDeployError('')
@@ -310,6 +318,7 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                 formData.append('custom_ssl_key', customKey)
                 formData.append('custom_ssl_chain', customChain)
             }
+            formData.append('email_from', currentSub.email_from || '')
             formData.append('subscribed_on_date', currentSub.subscribed_on_date || '')
             formData.append('billed_from_date', currentSub.billed_from_date || '')
             formData.append('expire_date', currentSub.expire_date || '')
@@ -821,6 +830,22 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                                 </div>
                             </div>
 
+                            {/* Email From */}
+                            <div className="flex items-start gap-4">
+                                <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider pt-2.5">Email From</label>
+                                <div className="flex-1">
+                                    <input
+                                        disabled={isReadOnly}
+                                        type="email"
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                        placeholder="noreply@customer-app.example.com"
+                                        value={currentSub.email_from || ''}
+                                        onChange={(e) => setCurrentSub({ ...currentSub, email_from: e.target.value })}
+                                    />
+                                    <p className="text-[10px] text-gray-400 mt-1">The deployed system sends its emails from this address.</p>
+                                </div>
+                            </div>
+
                             {/* Site Template dropdown — only for new site deploy */}
                             {!currentSub.id && deployMode === 'new' && (
                                 <div className="flex items-center gap-4">
@@ -1012,36 +1037,39 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                             {/* Date fields */}
                             <div className="flex items-center gap-4">
                                 <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">Subscribed On</label>
-                                <input
-                                    disabled={isReadOnly}
-                                    type="date"
-                                    className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
-                                    value={currentSub.subscribed_on_date || ''}
-                                    onChange={(e) => setCurrentSub({ ...currentSub, subscribed_on_date: e.target.value })}
-                                />
+                                <div className="flex-1">
+                                    <DateField
+                                        disabled={isReadOnly}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                        value={currentSub.subscribed_on_date || ''}
+                                        onChange={(v) => setCurrentSub({ ...currentSub, subscribed_on_date: v })}
+                                    />
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-4">
                                 <label className="w-36 flex-shrink-0 text-xs font-bold text-gray-700 uppercase tracking-wider">Billed From</label>
-                                <input
-                                    disabled={isReadOnly}
-                                    type="date"
-                                    className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
-                                    value={currentSub.billed_from_date || ''}
-                                    onChange={(e) => setCurrentSub({ ...currentSub, billed_from_date: e.target.value })}
-                                />
+                                <div className="flex-1">
+                                    <DateField
+                                        disabled={isReadOnly}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                                        value={currentSub.billed_from_date || ''}
+                                        onChange={(v) => setCurrentSub({ ...currentSub, billed_from_date: v })}
+                                    />
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-4">
                                 <label className="w-36 flex-shrink-0 text-xs font-extrabold text-red-600 uppercase tracking-wider">Expiration *</label>
-                                <input
-                                    required
-                                    disabled={isReadOnly}
-                                    type="date"
-                                    className={`flex-1 px-4 py-2 border-2 rounded-lg outline-none font-bold disabled:bg-gray-50 disabled:text-gray-500 ${isReadOnly ? 'border-gray-100' : 'border-red-100 focus:ring-4 focus:ring-red-50/50 focus:border-red-400'}`}
-                                    value={currentSub.expire_date || ''}
-                                    onChange={(e) => setCurrentSub({ ...currentSub, expire_date: e.target.value })}
-                                />
+                                <div className="flex-1">
+                                    <DateField
+                                        required
+                                        disabled={isReadOnly}
+                                        className={`w-full px-4 py-2 border-2 rounded-lg outline-none font-bold disabled:bg-gray-50 disabled:text-gray-500 ${isReadOnly ? 'border-gray-100' : 'border-red-100 focus:ring-4 focus:ring-red-50/50 focus:border-red-400'}`}
+                                        value={currentSub.expire_date || ''}
+                                        onChange={(v) => setCurrentSub({ ...currentSub, expire_date: v })}
+                                    />
+                                </div>
                             </div>
 
                             <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">

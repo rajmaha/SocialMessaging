@@ -450,6 +450,7 @@ async def deploy_and_create_subscription(
     custom_ssl_cert: str = Form(""),
     custom_ssl_key: str = Form(""),
     custom_ssl_chain: str = Form(""),
+    email_from: str = Form(""),
     subscribed_on_date: str = Form(""),
     billed_from_date: str = Form(""),
     expire_date: str = Form(""),
@@ -511,6 +512,7 @@ async def deploy_and_create_subscription(
         custom_ssl_key=custom_ssl_key or None if ssl_mode == "custom" else None,
         custom_ssl_chain=custom_ssl_chain or None if ssl_mode == "custom" else None,
         company_logo_local_path=logo_temp_path,
+        email_from=email_from.strip() or None,
     )
 
     def event_generator():
@@ -542,6 +544,7 @@ async def deploy_and_create_subscription(
                     subscribed_product=subscribed_product or None,
                     modules=modules_list,
                     system_url=system_url or None,
+                    email_from=email_from.strip() or None,
                     cloudpanel_site_id=site_record.id,
                     subscribed_on_date=subscribed_on_date or None,
                     billed_from_date=billed_from_date or None,
