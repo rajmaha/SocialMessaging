@@ -61,6 +61,7 @@ const SOURCE_FIELDS = [
     { value: 'subscription.modules',           label: 'Modules' },
     { value: 'subscription.system_url',        label: 'System URL' },
     { value: 'subscription.company_logo_url',  label: 'Company Logo URL' },
+    { value: 'subscription.email_from',        label: 'Email From' },
     { value: 'subscription.subscribed_on_date',label: 'Subscribed On Date' },
     { value: 'subscription.billed_from_date',  label: 'Billed From Date' },
     { value: 'subscription.expire_date',       label: 'Expire Date' },

@@ -285,6 +285,7 @@ export default function SubscriptionModulesPage() {
                                                                     <option value="subscription.expire_date">Expire Date</option>
                                                                     <option value="subscription.status">Status</option>
                                                                     <option value="subscription.company_logo_url">Logo URL</option>
+                                                                    <option value="subscription.email_from">Email From</option>
                                                                 </optgroup>
                                                                 <optgroup label="Organization">
                                                                     <option value="organization.organization_name">Name</option>
