@@ -1,4 +1,7 @@
+import base64
 import json
+import os
+import tempfile
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -154,6 +157,26 @@ def deploy_site_stream(
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
 
+    # The logo arrives inline (base64) because this endpoint streams SSE over a
+    # JSON request. Write it to a temp file so create_site_steps can upload it.
+    logo_temp_path = None
+    if site_data.company_logo_base64:
+        payload = site_data.company_logo_base64
+        if payload.startswith("data:"):
+            payload = payload.split(",", 1)[-1]
+        try:
+            logo_bytes = base64.b64decode(payload, validate=True)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Company logo is not valid base64 data")
+        if len(logo_bytes) > 200 * 1024:
+            raise HTTPException(status_code=400, detail="Logo file too large. Maximum size is 200KB")
+        logo_ext = os.path.splitext(site_data.company_logo_filename or "")[1] or ".png"
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=logo_ext)
+        tmp.write(logo_bytes)
+        tmp.close()
+        logo_temp_path = tmp.name
+        site_data.company_logo_local_path = logo_temp_path
+
     def event_generator():
         try:
             with CloudPanelService(server) as service:
@@ -179,6 +202,9 @@ def deploy_site_stream(
                 db.commit()
         except Exception as e:
             yield f"data: {json.dumps({'step': 'error', 'status': 'error', 'message': str(e)})}\n\n"
+        finally:
+            if logo_temp_path and os.path.exists(logo_temp_path):
+                os.unlink(logo_temp_path)
 
     return StreamingResponse(
         event_generator(),

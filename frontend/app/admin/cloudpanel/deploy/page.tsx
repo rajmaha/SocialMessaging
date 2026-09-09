@@ -40,7 +40,17 @@ export default function CloudPanelDeployPage() {
 
     const [siteForm, setSiteForm] = useState({
         serverId: '', domainName: '', phpVersion: '8.2', vhostTemplate: 'Generic', templateName: 'default_site', dbName: '', dbUser: '', dbPassword: '',
-        sslMode: 'auto', isWildcard: false, customCert: '', customKey: '', customChain: ''
+        sslMode: 'auto', isWildcard: false, customCert: '', customKey: '', customChain: '', emailFrom: ''
+    })
+    const [logoFile, setLogoFile] = useState<File | null>(null)
+    const [logoPreview, setLogoPreview] = useState<string | null>(null)
+
+    // Read a File as a bare base64 string (data URI prefix stripped by the backend too)
+    const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(file)
     })
 
     function authHeaders(): Record<string, string> {
@@ -93,6 +103,18 @@ export default function CloudPanelDeployPage() {
         // Initialize all steps as pending, first one as in_progress
         setDeploySteps(DEPLOY_STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'in_progress' : 'pending' })))
 
+        let logoBase64: string | undefined
+        if (logoFile) {
+            try {
+                logoBase64 = await fileToBase64(logoFile)
+            } catch {
+                setMessage({ type: 'error', text: 'Could not read the selected logo file.' })
+                setSiteDeploying(false)
+                setDeploySteps([])
+                return
+            }
+        }
+
         try {
             // Use the Next.js API route proxy (/api/cloudpanel-deploy-stream) instead of
             // the normal rewrite path.  Next.js rewrites buffer the full response before
@@ -113,7 +135,10 @@ export default function CloudPanelDeployPage() {
                     is_wildcard_ssl: siteForm.sslMode === 'auto' ? siteForm.isWildcard : false,
                     custom_ssl_cert: siteForm.sslMode === 'custom' ? siteForm.customCert : undefined,
                     custom_ssl_key: siteForm.sslMode === 'custom' ? siteForm.customKey : undefined,
-                    custom_ssl_chain: siteForm.sslMode === 'custom' && siteForm.customChain ? siteForm.customChain : undefined
+                    custom_ssl_chain: siteForm.sslMode === 'custom' && siteForm.customChain ? siteForm.customChain : undefined,
+                    company_logo_base64: logoBase64,
+                    company_logo_filename: logoFile?.name,
+                    email_from: siteForm.emailFrom || undefined
                 })
             })
 
@@ -167,7 +192,9 @@ export default function CloudPanelDeployPage() {
                         type: 'success',
                         text: `Site deployed successfully! DB Name: ${eventData.db_name}, DB User: ${eventData.db_user}`
                     })
-                    setSiteForm({ ...siteForm, domainName: '', dbName: '', dbUser: '', dbPassword: '', customCert: '', customKey: '', customChain: '' })
+                    setSiteForm({ ...siteForm, domainName: '', dbName: '', dbUser: '', dbPassword: '', customCert: '', customKey: '', customChain: '', emailFrom: '' })
+                    setLogoFile(null)
+                    setLogoPreview(null)
                 } else {
                     // Mark completed step and set next step as in_progress
                     setDeploySteps(prev => {
@@ -319,6 +346,60 @@ export default function CloudPanelDeployPage() {
                                 )) : <option value="default_site">default_site (System default)</option>}
                             </select>
                             <p className="text-xs text-gray-500 mt-1">Select the ZIP template files you previously uploaded to deploy to this domain root.</p>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Email From</label>
+                            <input
+                                type="email"
+                                className="w-full p-2 border rounded"
+                                value={siteForm.emailFrom}
+                                onChange={e => setSiteForm({ ...siteForm, emailFrom: e.target.value })}
+                                placeholder="noreply@example.com"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Replaces the [email_from] placeholder in the template, so the deployed system sends its emails from this address.</p>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Company Logo</label>
+                            <div className="flex items-center gap-4">
+                                {logoPreview ? (
+                                    <div className="relative w-16 h-16 rounded-lg border border-gray-200 overflow-hidden bg-gray-50 flex-shrink-0">
+                                        <img src={logoPreview} alt="Company logo" className="w-full h-full object-contain" />
+                                        <button
+                                            type="button"
+                                            onClick={() => { setLogoFile(null); setLogoPreview(null) }}
+                                            className="absolute top-0 right-0 bg-red-500 text-white text-xs leading-none rounded-bl px-1 py-0.5"
+                                        >
+                                            &times;
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 flex-shrink-0" />
+                                )}
+                                <div>
+                                    <label className="cursor-pointer inline-block px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600 hover:bg-gray-100">
+                                        {logoPreview ? 'Change Logo' : 'Upload Logo'}
+                                        <input
+                                            type="file"
+                                            className="hidden"
+                                            accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml"
+                                            onChange={e => {
+                                                const file = e.target.files?.[0]
+                                                if (!file) return
+                                                if (file.size > 200 * 1024) {
+                                                    setMessage({ type: 'error', text: 'Logo file too large. Maximum size is 200KB.' })
+                                                    return
+                                                }
+                                                setMessage({ type: '', text: '' })
+                                                setLogoFile(file)
+                                                setLogoPreview(URL.createObjectURL(file))
+                                            }}
+                                        />
+                                    </label>
+                                    <p className="text-xs text-gray-500 mt-1">Max 200KB. JPEG, PNG, GIF, WebP, SVG. Copied to uploads/oms_company_info on the deployed site.</p>
+                                </div>
+                            </div>
                         </div>
 
                         <div className="pt-4 border-t border-gray-100">

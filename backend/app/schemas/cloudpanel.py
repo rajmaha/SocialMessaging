@@ -51,6 +51,9 @@ class CloudPanelSiteCreate(BaseModel):
     custom_ssl_key: Optional[str] = None
     custom_ssl_chain: Optional[str] = None
     company_logo_local_path: Optional[str] = None  # Temp file path for logo to copy to deployed site
+    company_logo_base64: Optional[str] = None  # Logo sent inline (data URI or bare base64); written to a temp file server-side
+    company_logo_filename: Optional[str] = None  # Original filename, used only for its extension
+    email_from: Optional[str] = None  # Replaces [email_from] in template files
 
 class CloudPanelSiteResponse(BaseModel):
     id: int
