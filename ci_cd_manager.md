@@ -183,7 +183,8 @@ your-repo/
   myapp_production
   myapp_staging
   ```
-- Any `.sql` file in `database/` is discovered, sorted alphabetically, and applied to **each** database listed in `db.csv`
+- SQL files are read from `database/migration/` when the repo has that folder, otherwise directly from `database/`. Only files directly in that folder run (subfolders such as backups or seeds are ignored); they are sorted alphabetically and applied to **each** database listed in `db.csv`
+- `db.csv` always stays in `database/`
 - Each `(database, sql_file)` pair runs exactly once (tracked in `cicd_migration_logs`)
 - If a migration fails, subsequent migrations for that database are stopped
 - Timeout: 120 seconds per migration
@@ -310,7 +311,7 @@ When a deployment is triggered (manually or by scheduler), it executes in this o
 4. RUN DEFAULT SCRIPTS (scripts/*.sh, only if run_default_scripts = true)
    └── Alphabetical order, each file runs only once per repo
    └── Skip if already in cicd_script_logs for this repo
-5. RUN MIGRATIONS (database/*.sql, alphabetical order, each once per DB)
+5. RUN MIGRATIONS (database/migration/*.sql if that folder exists, else database/*.sql; alphabetical, each once per DB)
    └── Read database/db.csv for target DB names
    └── Skip if already in cicd_migration_logs for this (repo, db, file)
 6. UPDATE deployment status → "success" or "failed"
@@ -418,6 +419,8 @@ database/
 ```
 
 Each `.sql` file is applied to **every** database in `db.csv` exactly once.
+
+If the repo has a `database/migration/` folder, the SQL files are taken from there instead of `database/` (only files directly inside it; subfolders are ignored). `db.csv` stays in `database/`.
 
 ### How migrations run (no credentials needed)
 

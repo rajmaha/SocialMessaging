@@ -452,12 +452,23 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
     if not db_names:
         return []
 
+    # SQL files are read from database/migration/ when the repo has that folder,
+    # and from database/ itself otherwise -- the layout this guide documents and
+    # other repos still use. db.csv stays in database/ either way. Only files
+    # directly in the folder are run: subfolders (backups, seeds, setup dumps)
+    # are never treated as migrations.
     if server:
         with _server_key_file(server) as kf:
-            rc, out, _ = _ssh_run(server, f"ls '{database_dir}'/*.sql 2>/dev/null | sort", kf)
+            rc, _, _ = _ssh_run(server, f"test -d '{database_dir}/migration'", kf)
+        migration_dir = f"{database_dir}/migration" if rc == 0 else database_dir
+        with _server_key_file(server) as kf:
+            rc, out, _ = _ssh_run(server, f"ls '{migration_dir}'/*.sql 2>/dev/null | sort", kf)
         sql_files = sorted([Path(f.strip()).name for f in out.splitlines() if f.strip()])
     else:
-        sql_files = sorted([p.name for p in (Path(repo.local_path) / "database").glob("*.sql")])
+        local_migration = Path(repo.local_path) / "database" / "migration"
+        local_sql_dir = local_migration if local_migration.is_dir() else Path(repo.local_path) / "database"
+        migration_dir = str(local_sql_dir)
+        sql_files = sorted([p.name for p in local_sql_dir.glob("*.sql")])
 
     if not sql_files:
         return []
@@ -476,7 +487,7 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
         for fname in sql_files:
             if fname in already_run:
                 continue
-            sql_path = f"{database_dir}/{fname}"
+            sql_path = f"{migration_dir}/{fname}"
             mig_status = "success"
             mig_error: Optional[str] = None
             try:
@@ -487,7 +498,7 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                 else:
                     cli_cmd = f"psql -h {db_host} -p {db_port} -d '{db_name}' -f '{sql_path}' 2>&1"
                     local_args = ["psql", "-h", db_host, "-p", str(db_port), "-d", db_name,
-                                  "-f", str(Path(repo.local_path) / "database" / fname)]
+                                  "-f", str(Path(migration_dir) / fname)]
 
                 if server:
                     with _server_key_file(server) as kf:
@@ -498,7 +509,7 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                 else:
                     if db_type == "mysql":
                         # mysql reads SQL from stdin via '<'
-                        sql_file_path = str(Path(repo.local_path) / "database" / fname)
+                        sql_file_path = str(Path(migration_dir) / fname)
                         with open(sql_file_path) as sql_f:
                             result = subprocess.run(
                                 local_args, stdin=sql_f,
