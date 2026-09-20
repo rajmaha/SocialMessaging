@@ -138,9 +138,9 @@ export default function CICDDetailPage() {
     setMsg({ type, text }); setTimeout(() => setMsg(null), 5000)
   }
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (quiet = false) => {
     if (!id) return
-    setLoading(true)
+    if (!quiet) setLoading(true)
     const h = { Authorization: `Bearer ${getAuthToken()}` }
     try {
       const [repoRes, depRes, scriptRes, migRes] = await Promise.all([
@@ -154,7 +154,7 @@ export default function CICDDetailPage() {
       if (scriptRes.ok) setScriptLogs(await scriptRes.json())
       if (migRes.ok) setMigrationLogs(await migRes.json())
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }, [id])
 
@@ -162,6 +162,21 @@ export default function CICDDetailPage() {
     if (!user || user.role !== 'admin') { router.push('/dashboard'); return }
     fetchAll()
   }, [fetchAll]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // While a run is going, the page re-reads itself: the deployment row, the
+  // panel that is open and the Migrations tab all show what the run has done
+  // so far. It used to refresh exactly once, five seconds after the deploy was
+  // triggered -- so a run of any length finished behind a page that still said
+  // "running" and listed none of the migrations it had recorded.
+  const anyRunning = deployments.some(d => d.status === 'running')
+  useEffect(() => {
+    if (!anyRunning) return
+    const t = setInterval(() => {
+      fetchAll(true)
+      if (expandedDep !== null) loadDepDetail(expandedDep, true)
+    }, 3000)
+    return () => clearInterval(t)
+  }, [anyRunning, expandedDep, fetchAll]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Deployment detail ──────────────────────────────────────────────────────
 
@@ -180,8 +195,15 @@ export default function CICDDetailPage() {
     }
   }
 
-  async function loadDepDetail(depId: number) {
-    if (depDetail[depId]) { setExpandedDep(expandedDep === depId ? null : depId); return }
+  /// Always re-reads the detail when a row is opened, and never caches it.
+  /// A run expanded while it was going used to keep the empty panel it was
+  /// first given: the migrations it went on to record could not be seen again
+  /// without reloading the whole page, which read as nothing being logged.
+  /// `keepOpen` is for the refresh that runs while a deploy is going.
+  async function loadDepDetail(depId: number, keepOpen = false) {
+    const willOpen = keepOpen || expandedDep !== depId
+    setExpandedDep(willOpen ? depId : null)
+    if (!willOpen) return
     const res = await fetch(`${API_URL}/cicd/repos/${id}/deployments/${depId}`, {
       headers: { Authorization: `Bearer ${getAuthToken()}` },
     })
@@ -189,7 +211,6 @@ export default function CICDDetailPage() {
       const d: DeploymentDetail = await res.json()
       setDepDetail(prev => ({ ...prev, [depId]: d }))
     }
-    setExpandedDep(expandedDep === depId ? null : depId)
   }
 
   async function deployNow() {
@@ -198,8 +219,8 @@ export default function CICDDetailPage() {
       const res = await fetch(`${API_URL}/cicd/repos/${id}/deploy`, { method: 'POST', headers: authHeaders() })
       if (res.ok) {
         const d = await res.json()
-        flash('success', `Deployment #${d.deployment_id} started. Refreshing in 5s…`)
-        setTimeout(fetchAll, 5000)
+        flash('success', `Deployment #${d.deployment_id} started. This page follows it while it runs.`)
+        setTimeout(() => fetchAll(true), 2000)
       } else flash('error', 'Failed to trigger deployment.')
     } finally { setDeploying(false) }
   }

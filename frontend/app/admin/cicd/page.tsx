@@ -729,7 +729,10 @@ export default function CICDPage() {
               <div className="border border-gray-100 rounded-xl p-4">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Database Migrations <span className="font-normal text-gray-400">(optional)</span></label>
                 <p className="text-xs text-gray-400 mb-3">
-                  For <code className="bg-gray-100 px-1 rounded">database/db.csv</code> migrations. Runs on the same server — no credentials needed.
+                  For <code className="bg-gray-100 px-1 rounded">database/db.csv</code> migrations, run on the target server.
+                  A login is usually needed: CloudPanel&apos;s MySQL refuses a bare client with
+                  <code className="bg-gray-100 px-1 rounded">Access denied for user &apos;root&apos;@&apos;localhost&apos;</code>.
+                  Open the repository and use Edit to set the database user and password.
                 </p>
                 <div>
                   <label className="block text-xs text-gray-500 mb-2">Database Type</label>

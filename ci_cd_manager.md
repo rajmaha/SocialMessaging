@@ -454,6 +454,13 @@ password: NO)` and every file fails on every database.
 
 ### An empty Migrations tab
 
+**Check first that the page has re-read itself.** The repository page fetches
+the Migrations tab once, when it loads. It now follows a run while it is
+going and re-reads a deployment's detail every time the row is opened; before
+that, a panel expanded during a run kept the empty list it was first given,
+and the tab still showed what was there before the deploy -- so a run that
+recorded thirteen failures looked as though it had recorded nothing.
+
 The Migrations tab is the only record of what a deploy did to which database,
 so a run that reports failures but lists nothing is a fault in the recording,
 not in the run. Two causes, both fixed, both worth knowing:
