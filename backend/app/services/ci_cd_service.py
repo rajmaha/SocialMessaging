@@ -10,6 +10,7 @@ If no server is attached, everything runs locally.
 """
 import contextlib
 import shlex
+import re
 import threading
 import time
 import json
@@ -512,25 +513,42 @@ def _nginx_conf_dir(server: CloudPanelServer) -> str:
     return f"/etc/nginx/{out.strip() or 'sites-enabled'}"
 
 
-def _db_name_from_site_root(root: str, server: CloudPanelServer) -> Optional[str]:
+def _db_login_from_site_root(root: str, server: CloudPanelServer) -> Optional[dict]:
     """
-    Read the DB name from a CodeIgniter db.php file in the given site root.
-    Looks for:  'database' => 'somedbname',
+    Read a CodeIgniter db.php and return that site's own database login.
+
+    The site already holds a user that can write to exactly its own database,
+    so the migrations run as that user and nothing needs a shared root
+    password. Without this the client is run bare and CloudPanel's MySQL
+    answers "Access denied for user 'root'@'localhost' (using password: NO)".
+
+    Returns {"database", "username", "password", "hostname"} or None.
     """
     rc, out, _ = _ssh_run(
         server,
-        f"grep -m1 \"'database'\\s*=>\" '{root}/db.php' 2>/dev/null",
+        f"grep -E \"'(database|username|password|hostname)'[[:space:]]*=>\" '{root}/db.php' 2>/dev/null",
         timeout=10,
     )
     if rc != 0 or not out.strip():
         return None
-    # Parse: 'database' => 'somedbname',
-    import re
-    m = re.search(r"'database'\s*=>\s*'([^']+)'", out)
-    return m.group(1) if m else None
+    login = {}
+    for key in ("database", "username", "password", "hostname"):
+        # The value may be single- or double-quoted; take the first hit, which
+        # is $db['default'] in every tree here.
+        m = re.search(r"'%s'\s*=>\s*(['\"])(.*?)\1" % key, out)
+        if m:
+            login[key] = m.group(2)
+    return login if login.get("database") else None
 
 
-def _resolve_domain_db_names(domain_pattern: str, server: CloudPanelServer) -> list[str]:
+def _db_name_from_site_root(root: str, server: CloudPanelServer) -> Optional[str]:
+    """The database name alone, for callers that do not want the login."""
+    login = _db_login_from_site_root(root, server)
+    return login["database"] if login else None
+
+
+def _resolve_domain_db_names(domain_pattern: str, server: CloudPanelServer,
+                             logins: Optional[dict] = None) -> list[str]:
     """
     Resolve a domain or wildcard pattern to real DB names via nginx configs + db.php.
       "example.com"   → exact nginx vhost match → reads db.php for DB name
@@ -563,9 +581,11 @@ def _resolve_domain_db_names(domain_pattern: str, server: CloudPanelServer) -> l
             root = root_out.strip()
             if not root:
                 continue
-            db_name = _db_name_from_site_root(root, server)
-            if db_name:
-                results.append(db_name)
+            login = _db_login_from_site_root(root, server)
+            if login:
+                results.append(login["database"])
+                if logins is not None:
+                    logins.setdefault(login["database"], login)
     else:
         # Exact domain
         conf_path = f"{conf_dir}/{domain_pattern}.conf"
@@ -576,9 +596,11 @@ def _resolve_domain_db_names(domain_pattern: str, server: CloudPanelServer) -> l
         )
         root = root_out.strip()
         if root:
-            db_name = _db_name_from_site_root(root, server)
-            if db_name:
-                results.append(db_name)
+            login = _db_login_from_site_root(root, server)
+            if login:
+                results.append(login["database"])
+                if logins is not None:
+                    logins.setdefault(login["database"], login)
 
     return results
 
@@ -588,7 +610,8 @@ def _is_domain_pattern(entry: str) -> bool:
     return "." in entry and " " not in entry
 
 
-def _expand_db_names(raw_names: list[str], server: Optional[CloudPanelServer]) -> list[str]:
+def _expand_db_names(raw_names: list[str], server: Optional[CloudPanelServer],
+                     logins: Optional[dict] = None) -> list[str]:
     """
     Expand any domain/wildcard entries to real DB names via CloudPanel.
     Plain DB names (no dot) pass through unchanged.
@@ -608,7 +631,7 @@ def _expand_db_names(raw_names: list[str], server: Optional[CloudPanelServer]) -
             logger.warning("db.csv entry %r looks like a domain but no server is attached — skipping", entry)
             continue
 
-        resolved = _resolve_domain_db_names(entry, server)
+        resolved = _resolve_domain_db_names(entry, server, logins)
         if not resolved:
             logger.warning("No CloudPanel databases found for domain pattern %r", entry)
         for name in resolved:
@@ -644,7 +667,10 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
     # A wildcard in db.csv is resolved over SSH, two commands per site, and
     # that used to happen with nothing on screen at all.
     set_stage(db, deployment, f"Finding databases for {', '.join(raw_names)[:120]}")
-    db_names = _expand_db_names(raw_names, server)
+    # Each resolved site hands back its own db.php login, used below where the
+    # repo names no database user of its own.
+    site_logins: dict = {}
+    db_names = _expand_db_names(raw_names, server, site_logins)
     if not db_names:
         return []
 
@@ -713,8 +739,17 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                 # 'root'@'localhost' (using password: NO)". The password goes
                 # through the environment, never the command line, so it is not
                 # in `ps` on the server.
+                # The repo's own login wins where one is set; otherwise the
+                # site's own db.php login is used, which can always write to
+                # exactly that database. Run bare, CloudPanel's MySQL answers
+                # "Access denied for user 'root'@'localhost' (using password:
+                # NO)" and nothing is applied.
                 db_user = (repo.db_user or "").strip()
                 db_password = repo.db_password or ""
+                if not db_user:
+                    site_login = site_logins.get(db_name) or {}
+                    db_user = (site_login.get("username") or "").strip()
+                    db_password = site_login.get("password") or ""
                 local_env = dict(os.environ)
                 if db_type == "mysql":
                     prefix = f"MYSQL_PWD={shlex.quote(db_password)} " if db_password else ""

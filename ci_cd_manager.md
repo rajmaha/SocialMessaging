@@ -439,10 +439,19 @@ PGPASSWORD=… psql -h localhost -p 5432 -U myapp -d myapp_production -f /var/ww
 MYSQL_PWD=… mysql -h localhost -P 3306 -u root myapp_production < /var/www/myapp/database/001_initial_schema.sql
 ```
 
-Leave the login empty only where the SSH user can already reach the database
-without one (peer auth, a `~/.my.cnf`). CloudPanel's MySQL cannot: run bare it
-answers `ERROR 1045 (28000): Access denied for user 'root'@'localhost' (using
-password: NO)` and every file fails on every database.
+**With no login on the repo, each site's own is used.** A `db.csv` entry that
+is a domain is already resolved by reading that site's `db.php`, and the same
+read now takes its `username` and `password` — a login that can write to
+exactly that one database. So a wildcard across thirteen sites migrates each as
+itself, with no shared root password anywhere, and a repo-level DB user (for a
+database that is not behind a site) still overrides it.
+
+The login is only empty when neither is available, and that works solely where
+the SSH user can already reach the database on its own (peer auth, a
+`~/.my.cnf`). CloudPanel's MySQL cannot: run bare it answers
+`ERROR 1045 (28000): Access denied for user 'root'@'localhost' (using password:
+NO)` and every file fails on every database — which is exactly what a run over
+`*.saraloms.com` did before the per-site login was read.
 
 ### Failure handling
 
@@ -702,7 +711,7 @@ The CI/CD system is designed to be **safe to run multiple times** without accide
   - Server SSH key: stored in `cloudpanel_servers.ssh_key` — used to SSH into the deployment server
   - Git SSH key: stored in `cicd_repos.ssh_private_key` — used to authenticate with the git remote
 - **No Alembic** — migrations here are application-level SQL files you write yourself, not Python migration files
-- **DB credentials not stored** — migrations rely on the server's local `psql`/`mysql` peer auth; no DB username/password is stored in the CI/CD config
+- **DB credentials** — a repo may carry a DB user and password (the password is stored and sent through the environment); with none, each site's own `db.php` login is used, and a bare client is the last resort
 - **Deployment thread is daemon** — if the server restarts mid-deployment, the deployment record will remain in `"running"` status indefinitely. You must manually update it to `"failed"` if needed.
 
 
