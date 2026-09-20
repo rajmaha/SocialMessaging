@@ -123,6 +123,15 @@ def _track_client(client):
                     pass
 
 
+def set_stage(db: Session, deployment, text_: str) -> None:
+    """Record what the run is doing, and commit it so the popup can see it."""
+    try:
+        deployment.stage = text_[:200]
+        db.commit()
+    except Exception:  # never let progress reporting break a deploy
+        db.rollback()
+
+
 def _close_running_migration_rows(db: Session, deployment_id: int, why: str) -> None:
     """A row left at "running" belongs to a run that is no longer going."""
     rows = (
@@ -600,6 +609,9 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
         csv_content = csv_file.read_text()
 
     raw_names = [n for line in csv_content.splitlines() for n in (p.strip() for p in line.split(",")) if n]
+    # A wildcard in db.csv is resolved over SSH, two commands per site, and
+    # that used to happen with nothing on screen at all.
+    set_stage(db, deployment, f"Finding databases for {', '.join(raw_names)[:120]}")
     db_names = _expand_db_names(raw_names, server)
     if not db_names:
         return []
@@ -626,7 +638,8 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
         return []
 
     logs = []
-    for db_name in db_names:
+    set_stage(db, deployment, f"{len(sql_files)} file(s) over {len(db_names)} database(s)")
+    for position, db_name in enumerate(db_names, start=1):
         already_run = {
             row.sql_filename
             for row in db.query(CICDMigrationLog.sql_filename)
@@ -651,6 +664,7 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                 status="running", executed_at=datetime.utcnow(),
             )
             db.add(log)
+            set_stage(db, deployment, f"Migrating {db_name} ({position}/{len(db_names)}): {fname}")
             db.commit()
             mig_status = "success"
             mig_error: Optional[str] = None
@@ -769,14 +783,18 @@ def deploy(repo_id: int, triggered_by: str, db: Session) -> CICDDeployment:
 
     set_current_deployment(deployment.id)
     try:
+        set_stage(db, deployment, "Pulling from git")
         git_out = git_pull_or_clone(repo, server)
         check_cancelled()
+        set_stage(db, deployment, "Running the custom script")
         custom_out = run_custom_bash_script(repo, server)
         deployment.git_output = git_out + ("\n\n--- Custom Script ---\n" + custom_out if custom_out else "")
         check_cancelled()
         if repo.run_default_scripts:
+            set_stage(db, deployment, "Running scripts/")
             run_scripts(repo, deployment, db, server)
         check_cancelled()
+        set_stage(db, deployment, "Reading database/db.csv")
         mig_logs = run_migrations(repo, deployment, db, server)
         mig_error = migration_failure_summary(mig_logs)
         if mig_error:
@@ -794,6 +812,7 @@ def deploy(repo_id: int, triggered_by: str, db: Session) -> CICDDeployment:
     finally:
         clear_cancel(deployment.id)
         set_current_deployment(None)
+        deployment.stage = None
         deployment.finished_at = datetime.utcnow()
         repo.last_deployed_at = datetime.utcnow()
         db.commit()

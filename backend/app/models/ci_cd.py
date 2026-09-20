@@ -40,6 +40,9 @@ class CICDDeployment(Base):
     id = Column(Integer, primary_key=True, index=True)
     repo_id = Column(Integer, ForeignKey("cicd_repos.id", ondelete="CASCADE"), nullable=False, index=True)
     status = Column(String, nullable=False, default="running")   # running / success / failed
+    # What it is doing right now ("Migrating democrm (3/13)"), so a run that
+    # takes half an hour is never a blank screen saying "running".
+    stage = Column(String, nullable=True)
     triggered_by = Column(String, nullable=False, default="manual")  # manual / scheduled
     git_output = Column(Text, nullable=True)
     error = Column(Text, nullable=True)

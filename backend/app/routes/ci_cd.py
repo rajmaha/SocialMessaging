@@ -183,17 +183,21 @@ def trigger_deploy(repo_id: int, db: Session = Depends(get_db), _=Depends(get_ad
             # so Cancel can reach it.
             ci_cd_service.set_current_deployment(dep.id)
             try:
+                ci_cd_service.set_stage(inner_db, dep, "Pulling from git")
                 git_out = ci_cd_service.git_pull_or_clone(repo, srv)
                 ci_cd_service.check_cancelled()
+                ci_cd_service.set_stage(inner_db, dep, "Running the custom script")
                 custom_out = ci_cd_service.run_custom_bash_script(repo, srv)
                 dep.git_output = git_out + ("\n\n--- Custom Script ---\n" + custom_out if custom_out else "")
                 inner_db.commit()  # commit git stage so polling can see progress
 
                 ci_cd_service.check_cancelled()
                 if repo.run_default_scripts:
+                    ci_cd_service.set_stage(inner_db, dep, "Running scripts/")
                     ci_cd_service.run_scripts(repo, dep, inner_db, srv)
                     inner_db.commit()  # commit script logs so polling can see progress
                 ci_cd_service.check_cancelled()
+                ci_cd_service.set_stage(inner_db, dep, "Reading database/db.csv")
 
                 mig_logs = ci_cd_service.run_migrations(repo, dep, inner_db, srv)
                 inner_db.commit()  # commit migration logs so polling can see progress
@@ -216,6 +220,7 @@ def trigger_deploy(repo_id: int, db: Session = Depends(get_db), _=Depends(get_ad
             finally:
                 ci_cd_service.clear_cancel(dep.id)
                 ci_cd_service.set_current_deployment(None)
+                dep.stage = None
                 dep.finished_at = datetime.utcnow()
                 repo.last_deployed_at = datetime.utcnow()
                 inner_db.commit()

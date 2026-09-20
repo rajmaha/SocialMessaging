@@ -130,6 +130,7 @@ class CICDDeploymentOut(BaseModel):
     id: int
     repo_id: int
     status: str
+    stage: Optional[str] = None
     triggered_by: str
     git_output: Optional[str] = None
     error: Optional[str] = None

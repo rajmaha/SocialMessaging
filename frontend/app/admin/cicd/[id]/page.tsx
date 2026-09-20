@@ -47,7 +47,7 @@ interface CPSite {
 }
 
 interface Deployment {
-  id: number; status: string; triggered_by: string
+  id: number; status: string; stage?: string | null; triggered_by: string
   git_output: string | null; error: string | null
   started_at: string | null; finished_at: string | null
 }
@@ -453,7 +453,12 @@ export default function CICDDetailPage() {
                       <>
                         <tr key={dep.id} className="hover:bg-gray-50">
                           <td className="px-5 py-3 font-mono text-gray-500 text-xs">#{dep.id}</td>
-                          <td className="px-5 py-3"><StatusBadge status={dep.status} /></td>
+                          <td className="px-5 py-3">
+                            <StatusBadge status={dep.status} />
+                            {dep.status === 'running' && dep.stage && (
+                              <div className="text-xs text-gray-500 mt-1">{dep.stage}</div>
+                            )}
+                          </td>
                           <td className="px-5 py-3 text-gray-500 capitalize text-xs">{dep.triggered_by}</td>
                           <td className="px-5 py-3 text-gray-500 text-xs">{dep.started_at ? new Date(dep.started_at).toLocaleString() : '—'}</td>
                           <td className="px-5 py-3 text-gray-400 text-xs">{fmtDuration(dep.started_at, dep.finished_at)}</td>

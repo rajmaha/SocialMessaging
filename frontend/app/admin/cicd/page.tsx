@@ -294,6 +294,7 @@ export default function CICDPage() {
 
   function deriveDeployStep(data: {
     status: string
+    stage?: string | null
     git_output?: string | null
     error?: string | null
     script_logs?: { status?: string }[]
@@ -324,6 +325,9 @@ export default function CICDPage() {
       const running = migs.find(m => m.status === 'running')
       if (running) steps.push(`Migrating ${running.database_name ?? ''} — ${running.sql_filename ?? ''}…`)
     }
+    // Whatever it is doing between those points -- resolving a wildcard in
+    // db.csv over SSH, a long custom script -- rather than a blank wait.
+    if (data.status === 'running' && data.stage) steps.push(`${data.stage}…`)
     if (data.status === 'success') steps.push('Deployment succeeded!')
     if (data.status === 'failed') steps.push(`Failed: ${data.error?.slice(0, 100) || 'Unknown error'}`)
 
