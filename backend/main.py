@@ -183,15 +183,31 @@ Base.metadata.create_all(bind=engine)
 def _run_inline_migrations():
     """Safely add columns that may not exist yet (idempotent)."""
     from sqlalchemy import text
+
+    # Each of these runs in its own transaction and is committed at once.
+    # The long block below shares one transaction that is not committed for
+    # another 260 lines, and in PostgreSQL a single failing statement aborts
+    # the whole of it -- so a column added there can be silently rolled back
+    # by something unrelated further down. That is what left cicd_deployments
+    # without `stage` and cicd_repos without its database login, which in turn
+    # made every CI/CD migration run as a passwordless root and show nothing
+    # in the Migrations tab.
+    for stmt in (
+        "ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS db_user VARCHAR",
+        "ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS db_password VARCHAR",
+        "ALTER TABLE cicd_deployments ADD COLUMN IF NOT EXISTS stage VARCHAR",
+    ):
+        try:
+            with engine.begin() as ddl_conn:
+                ddl_conn.execute(text(stmt))
+        except Exception as exc:
+            print(f"[migrations] FAILED: {stmt} -> {exc}")
+
     with engine.connect() as conn:
         conn.execute(text(
             "ALTER TABLE branding_settings "
             "ADD COLUMN IF NOT EXISTS allowed_file_types JSON"
         ))
-        # CI/CD: the DB login migrations run as (see ci_cd_service.run_migrations).
-        conn.execute(text("ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS db_user VARCHAR"))
-        conn.execute(text("ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS db_password VARCHAR"))
-        conn.execute(text("ALTER TABLE cicd_deployments ADD COLUMN IF NOT EXISTS stage VARCHAR"))
         conn.execute(text(
             "ALTER TABLE branding_settings "
             "ADD COLUMN IF NOT EXISTS max_file_size_mb INTEGER DEFAULT 10"

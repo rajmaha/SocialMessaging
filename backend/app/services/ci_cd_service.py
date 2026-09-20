@@ -123,13 +123,45 @@ def _track_client(client):
                     pass
 
 
+_STAGE_AVAILABLE = True
+
+
+def _store_log(db: Session, log, what: str) -> bool:
+    """
+    Commit one migration-log row on its own, and say whether it landed.
+
+    The Migrations tab is the only record of what a deploy did to which
+    database, so a row that cannot be stored is reported in the backend log
+    rather than being lost behind the exception of the next statement.
+    """
+    try:
+        db.commit()
+        return True
+    except Exception as exc:
+        db.rollback()
+        logger.error("CICD: could not store migration log (%s): %s", what, exc)
+        return False
+
+
 def set_stage(db: Session, deployment, text_: str) -> None:
-    """Record what the run is doing, and commit it so the popup can see it."""
+    """
+    Record what the run is doing, and commit it so the popup can see it.
+
+    Reporting progress must never cost a deploy anything: where the column is
+    missing (the app started before the inline migration added it) the first
+    failure switches this off for the process instead of rolling back on every
+    call. Call it only when nothing else is pending on the session.
+    """
+    global _STAGE_AVAILABLE
+    if not _STAGE_AVAILABLE:
+        return
     try:
         deployment.stage = text_[:200]
         db.commit()
-    except Exception:  # never let progress reporting break a deploy
+    except Exception as exc:
         db.rollback()
+        _STAGE_AVAILABLE = False
+        logger.warning("CICD: cannot record deploy stage (%s); progress text disabled", exc)
 
 
 def _close_running_migration_rows(db: Session, deployment_id: int, why: str) -> None:
@@ -664,8 +696,13 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                 status="running", executed_at=datetime.utcnow(),
             )
             db.add(log)
+            # Stored BEFORE the stage is touched. set_stage() commits on this
+            # same session and rolls back when it cannot (an older database
+            # without the stage column), and that rollback would throw away
+            # this row -- the run then counted migrations that the Migrations
+            # tab never showed.
+            _store_log(db, log, f"{db_name}/{fname} started")
             set_stage(db, deployment, f"Migrating {db_name} ({position}/{len(db_names)}): {fname}")
-            db.commit()
             mig_status = "success"
             mig_error: Optional[str] = None
             try:
@@ -734,7 +771,7 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
             log.executed_at = datetime.utcnow()
             # Committed one at a time, not once at the end: until this commit
             # the Migrations tab and the popup show nothing at all.
-            db.commit()
+            _store_log(db, log, f"{db_name}/{fname} {mig_status}")
             logs.append(log)
             if mig_status == "failed":
                 break

@@ -452,6 +452,38 @@ password: NO)` and every file fails on every database.
 - **The deployment itself is then marked `failed`**, with a summary naming the database, the file and the first line of the error. A deploy whose SQL never reached the databases is not a success -- it used to finish green with the failures visible only in the Migrations tab
 - Only successes are remembered, so a failed migration is retried on the next deploy
 
+### An empty Migrations tab
+
+The Migrations tab is the only record of what a deploy did to which database,
+so a run that reports failures but lists nothing is a fault in the recording,
+not in the run. Two causes, both fixed, both worth knowing:
+
+- **The startup migrations share one transaction.** `_run_inline_migrations()`
+  in `backend/main.py` opens one connection and does not commit for another
+  260 lines. In PostgreSQL one failing statement aborts that whole
+  transaction, so a column added at the top is silently rolled back by
+  something unrelated further down -- which is how `cicd_deployments.stage`
+  and the `cicd_repos` database login went missing on a server whose code
+  had them. **Anything the CI/CD code depends on is added in its own
+  `engine.begin()` block**, committed immediately and logged if it fails.
+- **Reporting progress must not cost a row.** `set_stage()` commits on the
+  session, and rolled back when it could not -- discarding the migration-log
+  row that was still pending. The row is stored first now, and a stage that
+  cannot be written switches progress text off for the process instead of
+  rolling back on every file.
+
+To check a server directly:
+
+```sql
+SELECT column_name FROM information_schema.columns
+ WHERE table_name = 'cicd_deployments' AND column_name = 'stage';
+SELECT column_name FROM information_schema.columns
+ WHERE table_name = 'cicd_repos' AND column_name IN ('db_user', 'db_password');
+```
+
+Missing means the backend has not restarted on this code, or the ALTER failed
+-- the log line reads `[migrations] FAILED: ...`.
+
 ### A run that will not finish
 
 A deploy runs in a background thread, so a command that never returns, or a
