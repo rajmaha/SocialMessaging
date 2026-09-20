@@ -405,6 +405,9 @@ def _git_local(repo: CICDRepo) -> str:
         output_parts = []
         git_dot = local / ".git"
         if git_dot.exists():
+            before = subprocess.run(["git", "-C", str(local), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True).stdout.strip()
+            output_parts.append(_rescue_local_changes(str(local)))
             for cmd, label in [
                 (["git", "-C", str(local), "fetch", "origin", repo.branch], f"git fetch origin {repo.branch}"),
                 (["git", "-C", str(local), "reset", "--hard", f"origin/{repo.branch}"], f"git reset --hard origin/{repo.branch}"),
@@ -413,6 +416,7 @@ def _git_local(repo: CICDRepo) -> str:
                 output_parts.append(f"$ {label}\n{result.stdout}{result.stderr}")
                 if result.returncode != 0:
                     raise RuntimeError(f"{label} failed (exit {result.returncode}):\n{result.stderr}")
+            output_parts.append(_deleted_file_report(str(local), before))
         else:
             local.mkdir(parents=True, exist_ok=True)
             result = subprocess.run(
@@ -428,34 +432,117 @@ def _git_local(repo: CICDRepo) -> str:
             os.unlink(ssh_key_file)
 
 
+def _rescue_local_changes(local: str) -> str:
+    """
+    Keep anything edited on the server before `reset --hard` throws it away.
+
+    `git stash create` writes a commit holding the tracked modifications and
+    staged additions without touching the working tree, so this costs the
+    deploy nothing; the tag is what makes it findable afterwards
+    (`git stash list` does not show it). Untracked files are not included and
+    do not need to be -- reset never deletes those.
+    """
+    dirty = subprocess.run(["git", "-C", local, "status", "--porcelain"],
+                           capture_output=True, text=True).stdout.strip()
+    if not dirty:
+        return ""
+    sha = subprocess.run(["git", "-C", local, "stash", "create", "cicd rescue before reset"],
+                         capture_output=True, text=True).stdout.strip()
+    if not sha:
+        return ""
+    tag = "cicd-rescue-" + datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    subprocess.run(["git", "-C", local, "tag", tag, sha], capture_output=True, text=True)
+    count = len(dirty.splitlines())
+    return (f"$ rescue\nLocal changes to {count} file(s) saved as tag {tag} "
+            f"(restore with: git -C {local} checkout {tag} -- <path>)")
+
+
+def _deleted_file_report(local: str, before: str) -> str:
+    """
+    Say what the pull REMOVED, which is the half of a deploy nobody watches.
+
+    One upstream commit deleted 6,934 files here (an asset tree moved from
+    v3.0 to v4.0) and the deploy reported only "Git pull completed", so the
+    first anyone knew of it was a site with no stylesheets.
+    """
+    if not before:
+        return ""
+    after = subprocess.run(["git", "-C", local, "rev-parse", "HEAD"],
+                           capture_output=True, text=True).stdout.strip()
+    if not after or after == before:
+        return ""
+    gone = subprocess.run(
+        ["git", "-C", local, "diff", "--name-only", "--diff-filter=D", before, after],
+        capture_output=True, text=True).stdout.splitlines()
+    if not gone:
+        return ""
+    folders: dict = {}
+    for path in gone:
+        key = "/".join(path.split("/")[:2])
+        folders[key] = folders.get(key, 0) + 1
+    top = sorted(folders.items(), key=lambda kv: -kv[1])[:10]
+    lines = [f"$ deletions\nThis pull DELETED {len(gone)} file(s) (recover with: "
+             f"git -C {local} checkout {before} -- <path>):"]
+    lines += [f"  {count:>6}  {folder}/" for folder, count in top]
+    return "\n".join(lines)
+
+
+def _remote_pull_script(local: str, branch: str, clone_url: str) -> str:
+    """
+    The shell a server runs to bring a checkout to origin/<branch>.
+
+    Two things happen around the reset, because `reset --hard` is the most
+    destructive thing this tool does on somebody else's machine:
+
+      * anything edited on the server is first parked in a tagged stash
+        commit, without touching the working tree;
+      * whatever the pull DELETED is printed with the commit to recover it
+        from. One upstream commit deleted 6,934 files here -- an asset tree
+        that moved from v3.0 to v4.0 -- and the deploy said only "Git pull
+        completed", so the first anyone knew was a site with no stylesheets.
+    """
+    q = f"'{local}'"
+    return (
+        f"if [ -d '{local}/.git' ]; then "
+        f"  BEFORE=$(git -C {q} rev-parse HEAD 2>/dev/null); "
+        f"  if [ -n \"$(git -C {q} status --porcelain)\" ]; then "
+        f"    R=$(git -C {q} stash create 'cicd rescue before reset'); "
+        f"    if [ -n \"$R\" ]; then T=cicd-rescue-$(date -u +%Y%m%d-%H%M%S); "
+        f"      git -C {q} tag \"$T\" \"$R\" >/dev/null 2>&1 && "
+        f"      echo \"NOTE: local changes saved as tag $T (git -C {local} checkout $T -- <path>)\"; fi; "
+        f"  fi; "
+        f"  git -C {q} fetch origin {branch} && git -C {q} reset --hard origin/{branch} || exit 1; "
+        f"  AFTER=$(git -C {q} rev-parse HEAD); "
+        f"  if [ -n \"$BEFORE\" ] && [ \"$BEFORE\" != \"$AFTER\" ]; then "
+        f"    N=$(git -C {q} diff --name-only --diff-filter=D \"$BEFORE\" \"$AFTER\" | wc -l); "
+        f"    if [ \"$N\" -gt 0 ]; then "
+        f"      echo \"NOTE: this pull DELETED $N file(s) "
+        f"(recover: git -C {local} checkout $BEFORE -- <path>):\"; "
+        f"      git -C {q} diff --name-only --diff-filter=D \"$BEFORE\" \"$AFTER\" "
+        f"        | cut -d/ -f1-2 | sort | uniq -c | sort -rn | head -10; fi; "
+        f"  fi; "
+        f"else mkdir -p '{local}' && git clone --branch {branch} --single-branch '{clone_url}' '{local}'; fi"
+    )
+
+
 def _git_remote(repo: CICDRepo, server: CloudPanelServer) -> str:
     local = repo.local_path
     branch = repo.branch
 
     if repo.auth_type == "ssh" and repo.ssh_private_key:
         escaped_key = repo.ssh_private_key.replace("'", "'\\''")
+        # trap, not a trailing rm: the pull below can exit early.
         git_script = (
             f"GIT_KEY=$(mktemp) && chmod 600 \"$GIT_KEY\" && "
+            f"trap 'rm -f \"$GIT_KEY\"' EXIT && "
             f"printf '%s' '{escaped_key}' > \"$GIT_KEY\" && "
             f"export GIT_SSH_COMMAND=\"ssh -i $GIT_KEY -o StrictHostKeyChecking=no -o BatchMode=yes\" && "
-            f"if [ -d '{local}/.git' ]; then "
-            f"  git -C '{local}' fetch origin {branch} && git -C '{local}' reset --hard origin/{branch}; "
-            f"else mkdir -p '{local}' && git clone --branch {branch} --single-branch '{repo.repo_url}' '{local}'; fi; "
-            f"EC=$?; rm -f \"$GIT_KEY\"; exit $EC"
+            + _remote_pull_script(local, branch, repo.repo_url)
         )
     elif repo.auth_type == "https" and repo.access_token:
-        clone_url = _build_https_url(repo.repo_url, repo.access_token)
-        git_script = (
-            f"if [ -d '{local}/.git' ]; then "
-            f"  git -C '{local}' fetch origin {branch} && git -C '{local}' reset --hard origin/{branch}; "
-            f"else mkdir -p '{local}' && git clone --branch {branch} --single-branch '{clone_url}' '{local}'; fi"
-        )
+        git_script = _remote_pull_script(local, branch, _build_https_url(repo.repo_url, repo.access_token))
     else:
-        git_script = (
-            f"if [ -d '{local}/.git' ]; then "
-            f"  git -C '{local}' fetch origin {branch} && git -C '{local}' reset --hard origin/{branch}; "
-            f"else mkdir -p '{local}' && git clone --branch {branch} --single-branch '{repo.repo_url}' '{local}'; fi"
-        )
+        git_script = _remote_pull_script(local, branch, repo.repo_url)
 
     with _server_key_file(server) as kf:
         rc, out, err = _ssh_run(server, git_script, kf, timeout=300)

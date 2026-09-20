@@ -453,6 +453,29 @@ the SSH user can already reach the database on its own (peer auth, a
 NO)` and every file fails on every database — which is exactly what a run over
 `*.saraloms.com` did before the per-site login was read.
 
+### What a pull removes
+
+`git pull` here is `git fetch` + **`git reset --hard origin/<branch>`**, so the
+checkout is made to match the branch exactly. That deletes any file that is
+tracked in the checkout and absent from the branch — which is how one upstream
+commit (an asset tree moved from `v3.0` to `v4.0`) removed 6,934 files from a
+shared server while the deploy reported only "Git pull completed".
+
+Two guards run around it now, and both print into the deploy's git output:
+
+- **Before the reset**, anything edited on the server is parked in a stash
+  commit tagged `cicd-rescue-<timestamp>`. It does not touch the working tree,
+  so it costs the deploy nothing. Restore with
+  `git -C <path> checkout cicd-rescue-… -- <file>`.
+- **After the reset**, the number of files the pull DELETED is reported with
+  the commit they were last present in, and the ten folders that lost the most.
+  Restore with `git -C <path> checkout <that commit> -- <path>`.
+
+Untracked files are never touched: there is no `git clean` anywhere in this
+tool, and `reset --hard` leaves them alone. A file that vanished was therefore
+tracked, which also means it is still in the repository's history and can be
+recovered.
+
 ### Failure handling
 
 A migration ends in one of three states, and the difference is the whole of
