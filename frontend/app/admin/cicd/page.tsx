@@ -313,14 +313,20 @@ export default function CICDPage() {
     if (migs.length > 0) {
       const finished = migs.filter(m => m.status !== 'running')
       const ok = finished.filter(m => m.status === 'success').length
-      const bad = finished.length - ok
+      // "partial" is a file that ran with some statements refused, which is a
+      // different thing from one that never ran at all.
+      const part = finished.filter(m => m.status === 'partial').length
+      const bad = finished.length - ok - part
+      const word = (st?: string) =>
+        st === 'success' ? 'Migrated' : st === 'partial' ? 'Migrated (with errors)' : 'Failed'
       // The last few finished databases, so the popup does not grow without end.
       finished.slice(-4).forEach(m => steps.push(
-        `${m.status === 'success' ? 'Migrated' : 'Failed'} ${m.database_name ?? ''} — ${m.sql_filename ?? ''}`))
+        `${word(m.status)} ${m.database_name ?? ''} — ${m.sql_filename ?? ''}`))
       if (finished.length > 0) {
-        steps.push(bad === 0
-          ? `Applied ${ok} migration(s)`
-          : `Applied ${ok} migration(s), ${bad} FAILED — see the Migrations tab`)
+        const notes = [`Applied ${ok} migration(s)`]
+        if (part) notes.push(`${part} with failing statements`)
+        if (bad) notes.push(`${bad} FAILED`)
+        steps.push(notes.join(', ') + (part || bad ? ' — see the Migrations tab' : ''))
       }
       const running = migs.find(m => m.status === 'running')
       if (running) steps.push(`Migrating ${running.database_name ?? ''} — ${running.sql_filename ?? ''}…`)

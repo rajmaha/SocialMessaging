@@ -127,6 +127,56 @@ def _track_client(client):
 _STAGE_AVAILABLE = True
 
 
+def _migration_outcome(rc: int, output: str):
+    """
+    What one migration did, read from the client's output rather than its
+    exit code.
+
+    mysql --force and psql both carry on past a failed statement and can still
+    exit 0, so an exit code alone would report a file that refused half its
+    statements as applied. Three answers:
+
+      success  nothing complained
+      partial  some statements failed, the rest of the file still ran
+      failed   the client itself could not run (a refused login, no such
+               database), so nothing in the file ran at all
+    """
+    errors = _sql_error_lines(output)
+    joined = "\n".join(errors)
+    if rc != 0:
+        # mysql --force and psql both exit 0 when only STATEMENTS failed, so a
+        # non-zero exit is the client itself giving up: a refused login, no
+        # such database, an unreachable host. Nothing in the file ran.
+        return "failed", (joined or output.strip() or f"the client exited {rc}")[:4000]
+    if errors:
+        return "partial", ("Some statements failed; the rest of the file still ran.\n"
+                           + joined)[:4000]
+    return "success", None
+
+
+def _sql_error_lines(text: str) -> list:
+    """
+    The lines a SQL client printed that are actually errors.
+
+    Everything else it prints is noise for this purpose: an idempotent
+    migration guard ends in `SELECT "oms_gr.branch_id already present"`, whose
+    result and column header are ordinary stdout, and reporting the first line
+    of the capture named that harmless SELECT as the reason 7 databases failed.
+
+    Covers mysql ("ERROR 1060 (42S21) at line 3: ...") and psql
+    ("psql:file.sql:12: ERROR:  ...", "FATAL:  ...").
+    """
+    seen, out = set(), []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or line in seen:
+            continue
+        if re.match(r"^ERROR\s+\d+", line) or "ERROR:" in line or line.startswith("FATAL:"):
+            seen.add(line)
+            out.append(line)
+    return out
+
+
 def _store_log(db: Session, log, what: str) -> bool:
     """
     Commit one migration-log row on its own, and say whether it landed.
@@ -754,9 +804,16 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                 if db_type == "mysql":
                     prefix = f"MYSQL_PWD={shlex.quote(db_password)} " if db_password else ""
                     user_arg = f"-u {shlex.quote(db_user)} " if db_user else ""
-                    cli_cmd = (f"{prefix}mysql -h {shlex.quote(db_host)} -P {db_port} {user_arg}"
+                    # --force: one refused statement does not abandon the rest
+                    # of the file. A compiled migration is hundreds of
+                    # independent sections, and stopping at the first one that
+                    # a database has already had leaves the other 200 unrun.
+                    # It exits 0 even when statements failed, so what actually
+                    # happened is read out of the output below -- never from
+                    # the exit code alone.
+                    cli_cmd = (f"{prefix}mysql --force -h {shlex.quote(db_host)} -P {db_port} {user_arg}"
                                f"{shlex.quote(db_name)} < {shlex.quote(sql_path)} 2>&1")
-                    local_args = ["mysql", "-h", db_host, "-P", str(db_port)]
+                    local_args = ["mysql", "--force", "-h", db_host, "-P", str(db_port)]
                     if db_user:
                         local_args += ["-u", db_user]
                     local_args.append(db_name)
@@ -777,9 +834,7 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                 if server:
                     with _server_key_file(server) as kf:
                         rc, out, err = _ssh_run(server, cli_cmd, kf, timeout=MIGRATION_TIMEOUT_SECONDS)
-                    if rc != 0:
-                        mig_status = "failed"
-                        mig_error = (out + err)[:4000]
+                    mig_status, mig_error = _migration_outcome(rc, out + err)
                 else:
                     if db_type == "mysql":
                         # mysql reads SQL from stdin via '<'
@@ -794,9 +849,8 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                             local_args, env=local_env,
                             capture_output=True, text=True, timeout=MIGRATION_TIMEOUT_SECONDS,
                         )
-                    if result.returncode != 0:
-                        mig_status = "failed"
-                        mig_error = (result.stdout + result.stderr)[:4000]
+                    mig_status, mig_error = _migration_outcome(
+                        result.returncode, result.stdout + result.stderr)
             except Exception as exc:
                 mig_status = "failed"
                 mig_error = str(exc)[:4000]
@@ -815,23 +869,41 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
 
 def migration_failure_summary(logs: list) -> Optional[str]:
     """
-    One sentence per failed migration, for the deployment's error.
+    What went wrong, one line per migration, for the deployment's error.
 
-    A deploy whose SQL never reached the databases is not a success: the run
-    used to finish green with the failures visible only in the Migrations tab,
-    so "13 migrations" read as "13 applied" when every one of them had been
-    refused (a wrong db_type, or mysql/psql declining the login).
+    Two kinds, and the difference matters to whoever reads it: `failed` means
+    the client never ran the file (a refused login, no such database), while
+    `partial` means the file ran and some statements inside it were refused.
+    A deploy whose SQL never reached the databases used to finish green, so
+    "13 migrations" read as "13 applied" when every one had been refused.
     """
     failed = [lg for lg in logs if lg.status == "failed"]
-    if not failed:
+    partial = [lg for lg in logs if lg.status == "partial"]
+    if not failed and not partial:
         return None
 
-    lines = [f"{len(failed)} of {len(logs)} migration(s) failed:"]
-    for lg in failed[:10]:
-        first_line = (lg.error or "").strip().splitlines()
-        lines.append(f"  {lg.database_name} / {lg.sql_filename}: {first_line[0] if first_line else 'no output'}")
-    if len(failed) > 10:
-        lines.append(f"  ... and {len(failed) - 10} more")
+    def _reason(lg) -> str:
+        for line in (lg.error or "").splitlines():
+            line = line.strip()
+            if re.match(r"^ERROR\s+\d+", line) or "ERROR:" in line or line.startswith("FATAL:"):
+                return line
+        first = (lg.error or "").strip().splitlines()
+        return first[0] if first else "no output"
+
+    lines = []
+    if failed:
+        lines.append(f"{len(failed)} of {len(logs)} migration(s) could not run:")
+        for lg in failed[:10]:
+            lines.append(f"  {lg.database_name} / {lg.sql_filename}: {_reason(lg)}")
+        if len(failed) > 10:
+            lines.append(f"  ... and {len(failed) - 10} more")
+    if partial:
+        lines.append(f"{len(partial)} of {len(logs)} migration(s) had failing statements "
+                     f"(the rest of each file still ran):")
+        for lg in partial[:10]:
+            lines.append(f"  {lg.database_name} / {lg.sql_filename}: {_reason(lg)}")
+        if len(partial) > 10:
+            lines.append(f"  ... and {len(partial) - 10} more")
 
     return "\n".join(lines)[:4000]
 

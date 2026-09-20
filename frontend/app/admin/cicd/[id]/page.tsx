@@ -77,6 +77,9 @@ function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     running: 'bg-yellow-100 text-yellow-700',
     success: 'bg-green-100 text-green-700',
+    // A file that ran with some statements refused -- not the same as one the
+    // client never ran, which is what red means here.
+    partial: 'bg-orange-100 text-orange-700',
     failed: 'bg-red-100 text-red-700',
   }
   return <span className={`px-2 py-0.5 rounded text-xs font-semibold ${map[status] || 'bg-gray-100 text-gray-600'}`}>{status}</span>
@@ -529,6 +532,8 @@ export default function CICDDetailPage() {
                                     Migrations ({depDetail[dep.id].migration_logs.filter(m => m.status === 'success').length} applied
                                     {depDetail[dep.id].migration_logs.some(m => m.status === 'failed') &&
                                       <span className="text-red-600">, {depDetail[dep.id].migration_logs.filter(m => m.status === 'failed').length} failed</span>}
+                                    {depDetail[dep.id].migration_logs.some(m => m.status === 'partial') &&
+                                      <span className="text-orange-600">, {depDetail[dep.id].migration_logs.filter(m => m.status === 'partial').length} with failing statements</span>}
                                     {depDetail[dep.id].migration_logs.some(m => m.status === 'running') &&
                                       <span className="text-yellow-700">, {depDetail[dep.id].migration_logs.filter(m => m.status === 'running').length} running</span>}
                                     )

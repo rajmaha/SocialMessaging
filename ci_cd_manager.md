@@ -455,7 +455,33 @@ NO)` and every file fails on every database — which is exactly what a run over
 
 ### Failure handling
 
-- If a migration fails, that migration's log is recorded as `"failed"` with the error output
+A migration ends in one of three states, and the difference is the whole of
+this section:
+
+| status | means |
+|---|---|
+| `success` | the file ran and nothing complained |
+| `partial` | the file ran and **some statements inside it were refused** — the rest still ran |
+| `failed` | the client never ran the file: a refused login, no such database, an unreachable host |
+
+**One refused statement no longer abandons the file.** `mysql` is run with
+`--force` (psql behaves that way already), because a compiled migration is
+hundreds of independent sections and stopping at the first one a database has
+already had leaves the other two hundred unrun.
+
+**The outcome is read from the output, never from the exit code.** Both
+clients exit **0** when only statements failed, so trusting the exit code
+would report a file that refused half its statements as applied — the same
+false green this tool already had once. `_sql_error_lines()` picks out the
+lines that are actually errors (`ERROR 1060 (42S21) at line 3: …`,
+`psql:f.sql:12: ERROR: …`) and `_migration_outcome()` decides from those.
+
+That parsing is also why the summary names the real fault. An idempotent
+guard ends in `SELECT "oms_gr.branch_id already present"`, whose result and
+column header are ordinary stdout; reporting the first line of the capture
+once named that harmless SELECT as the reason seven databases had failed.
+
+- A `partial` or `failed` migration is **retried on the next deploy** — only `success` is remembered, and the migrations are idempotent
 - All remaining migrations for that same database are **skipped** (fail-fast per database)
 - Other databases in `db.csv` may still have their pending migrations run (each database is processed independently)
 - **The deployment itself is then marked `failed`**, with a summary naming the database, the file and the first line of the error. A deploy whose SQL never reached the databases is not a success -- it used to finish green with the failures visible only in the Migrations tab
