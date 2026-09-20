@@ -60,6 +60,11 @@ _CURRENT = threading.local()
 
 STALE_DEPLOYMENT_MINUTES = int(os.environ.get("CICD_STALE_DEPLOYMENT_MINUTES", "30"))
 
+# How long one SQL file may take on one database. A compiled migration is
+# routinely megabytes of ALTERs, which is minutes on a live database, and the
+# old two-minute cap cut the client off part way through the file.
+MIGRATION_TIMEOUT_SECONDS = int(os.environ.get("CICD_MIGRATION_TIMEOUT_SECONDS", "900"))
+
 
 class DeploymentCancelled(Exception):
     """Raised in the worker once someone pressed Cancel."""
@@ -434,7 +439,7 @@ def run_scripts(repo: CICDRepo, deployment: CICDDeployment, db: Session,
             exit_code=exit_code, stdout=stdout, stderr=stderr, executed_at=datetime.utcnow(),
         )
         db.add(log)
-        db.flush()
+        db.commit()
         logs.append(log)
     return logs
 
@@ -655,7 +660,7 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
 
                 if server:
                     with _server_key_file(server) as kf:
-                        rc, out, err = _ssh_run(server, cli_cmd, kf, timeout=120)
+                        rc, out, err = _ssh_run(server, cli_cmd, kf, timeout=MIGRATION_TIMEOUT_SECONDS)
                     if rc != 0:
                         mig_status = "failed"
                         mig_error = (out + err)[:4000]
@@ -666,12 +671,12 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                         with open(sql_file_path) as sql_f:
                             result = subprocess.run(
                                 local_args, stdin=sql_f, env=local_env,
-                                capture_output=True, text=True, timeout=120,
+                                capture_output=True, text=True, timeout=MIGRATION_TIMEOUT_SECONDS,
                             )
                     else:
                         result = subprocess.run(
                             local_args, env=local_env,
-                            capture_output=True, text=True, timeout=120,
+                            capture_output=True, text=True, timeout=MIGRATION_TIMEOUT_SECONDS,
                         )
                     if result.returncode != 0:
                         mig_status = "failed"
@@ -686,7 +691,11 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                 status=mig_status, error=mig_error, executed_at=datetime.utcnow(),
             )
             db.add(log)
-            db.flush()
+            # Committed one at a time, not once at the end: a run over a dozen
+            # databases takes many minutes, and until this commit the
+            # Migrations tab shows nothing at all -- which reads as a deploy
+            # that has hung.
+            db.commit()
             logs.append(log)
             if mig_status == "failed":
                 break
