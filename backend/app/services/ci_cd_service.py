@@ -540,6 +540,29 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
     return logs
 
 
+def migration_failure_summary(logs: list) -> Optional[str]:
+    """
+    One sentence per failed migration, for the deployment's error.
+
+    A deploy whose SQL never reached the databases is not a success: the run
+    used to finish green with the failures visible only in the Migrations tab,
+    so "13 migrations" read as "13 applied" when every one of them had been
+    refused (a wrong db_type, or mysql/psql declining the login).
+    """
+    failed = [lg for lg in logs if lg.status == "failed"]
+    if not failed:
+        return None
+
+    lines = [f"{len(failed)} of {len(logs)} migration(s) failed:"]
+    for lg in failed[:10]:
+        first_line = (lg.error or "").strip().splitlines()
+        lines.append(f"  {lg.database_name} / {lg.sql_filename}: {first_line[0] if first_line else 'no output'}")
+    if len(failed) > 10:
+        lines.append(f"  ... and {len(failed) - 10} more")
+
+    return "\n".join(lines)[:4000]
+
+
 # ── Main deploy entry point ────────────────────────────────────────────────────
 
 def deploy(repo_id: int, triggered_by: str, db: Session) -> CICDDeployment:
@@ -563,8 +586,13 @@ def deploy(repo_id: int, triggered_by: str, db: Session) -> CICDDeployment:
         deployment.git_output = git_out + ("\n\n--- Custom Script ---\n" + custom_out if custom_out else "")
         if repo.run_default_scripts:
             run_scripts(repo, deployment, db, server)
-        run_migrations(repo, deployment, db, server)
-        deployment.status = "success"
+        mig_logs = run_migrations(repo, deployment, db, server)
+        mig_error = migration_failure_summary(mig_logs)
+        if mig_error:
+            deployment.status = "failed"
+            deployment.error = mig_error
+        else:
+            deployment.status = "success"
     except Exception as exc:
         logger.error("CICD deploy repo %d failed: %s", repo_id, exc)
         deployment.status = "failed"

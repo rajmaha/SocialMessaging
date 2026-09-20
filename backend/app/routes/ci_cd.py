@@ -186,10 +186,17 @@ def trigger_deploy(repo_id: int, db: Session = Depends(get_db), _=Depends(get_ad
                     ci_cd_service.run_scripts(repo, dep, inner_db, srv)
                     inner_db.commit()  # commit script logs so polling can see progress
 
-                ci_cd_service.run_migrations(repo, dep, inner_db, srv)
+                mig_logs = ci_cd_service.run_migrations(repo, dep, inner_db, srv)
                 inner_db.commit()  # commit migration logs so polling can see progress
 
-                dep.status = "success"
+                # Migrations that were refused make this deploy a failure, not
+                # a success with a quiet tab full of red.
+                mig_error = ci_cd_service.migration_failure_summary(mig_logs)
+                if mig_error:
+                    dep.status = "failed"
+                    dep.error = mig_error
+                else:
+                    dep.status = "success"
             except Exception as exc:
                 logger.error("CICD manual deploy repo %d failed: %s", repo_id, exc)
                 dep.status = "failed"

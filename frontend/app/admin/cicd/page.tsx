@@ -292,12 +292,20 @@ export default function CICDPage() {
     }
   }
 
-  function deriveDeployStep(data: { status: string; git_output?: string | null; error?: string | null; script_logs?: unknown[]; migration_logs?: unknown[] }): { step: string; steps: string[] } {
+  function deriveDeployStep(data: { status: string; git_output?: string | null; error?: string | null; script_logs?: { status?: string }[]; migration_logs?: { status?: string }[] }): { step: string; steps: string[] } {
     const steps: string[] = []
     steps.push('Starting deployment…')
     if (data.git_output) steps.push('Git pull completed')
-    if (data.script_logs && (data.script_logs as unknown[]).length > 0) steps.push(`Ran ${(data.script_logs as unknown[]).length} script(s)`)
-    if (data.migration_logs && (data.migration_logs as unknown[]).length > 0) steps.push(`Ran ${(data.migration_logs as unknown[]).length} migration(s)`)
+    if (data.script_logs && data.script_logs.length > 0) steps.push(`Ran ${data.script_logs.length} script(s)`)
+    // Counted by outcome: a refused migration is a row here too, and reporting
+    // it as "ran" is how a deploy that applied nothing reads as done.
+    if (data.migration_logs && data.migration_logs.length > 0) {
+      const ok = data.migration_logs.filter(m => m.status === 'success').length
+      const bad = data.migration_logs.length - ok
+      steps.push(bad === 0
+        ? `Applied ${ok} migration(s)`
+        : `Applied ${ok} migration(s), ${bad} FAILED — see the Migrations tab`)
+    }
     if (data.status === 'success') steps.push('Deployment succeeded!')
     if (data.status === 'failed') steps.push(`Failed: ${data.error?.slice(0, 100) || 'Unknown error'}`)
 

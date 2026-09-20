@@ -468,7 +468,12 @@ export default function CICDDetailPage() {
                               )}
                               {depDetail[dep.id].migration_logs.length > 0 && (
                                 <div>
-                                  <p className="text-xs font-semibold text-gray-500 mb-2">Migrations ({depDetail[dep.id].migration_logs.length})</p>
+                                  <p className="text-xs font-semibold text-gray-500 mb-2">
+                                    Migrations ({depDetail[dep.id].migration_logs.filter(m => m.status === 'success').length} applied
+                                    {depDetail[dep.id].migration_logs.some(m => m.status !== 'success') &&
+                                      <span className="text-red-600">, {depDetail[dep.id].migration_logs.filter(m => m.status !== 'success').length} failed</span>}
+                                    )
+                                  </p>
                                   <div className="space-y-1">
                                     {depDetail[dep.id].migration_logs.map(m => (
                                       <div key={m.id} className="flex items-center gap-3 text-xs">
