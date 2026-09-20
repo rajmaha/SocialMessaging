@@ -1,6 +1,7 @@
 # backend/app/routes/ci_cd.py
 import threading
 import logging
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -161,6 +162,8 @@ def delete_repo(repo_id: int, db: Session = Depends(get_db), _=Depends(get_admin
 @router.post("/repos/{repo_id}/deploy")
 def trigger_deploy(repo_id: int, db: Session = Depends(get_db), _=Depends(get_admin_user)):
     _get_repo_or_404(repo_id, db)
+    # Anything left claiming to run from a previous backend is closed first.
+    ci_cd_service.reap_stale_deployments(db)
     deployment = CICDDeployment(repo_id=repo_id, status="running", triggered_by="manual")
     db.add(deployment)
     db.commit()
@@ -176,15 +179,21 @@ def trigger_deploy(repo_id: int, db: Session = Depends(get_db), _=Depends(get_ad
                 return
             srv = inner_db.query(CloudPanelServer).filter(CloudPanelServer.id == repo.server_id).first() if repo.server_id else None
             from datetime import datetime
+            # Everything this thread runs over SSH belongs to this deployment,
+            # so Cancel can reach it.
+            ci_cd_service.set_current_deployment(dep.id)
             try:
                 git_out = ci_cd_service.git_pull_or_clone(repo, srv)
+                ci_cd_service.check_cancelled()
                 custom_out = ci_cd_service.run_custom_bash_script(repo, srv)
                 dep.git_output = git_out + ("\n\n--- Custom Script ---\n" + custom_out if custom_out else "")
                 inner_db.commit()  # commit git stage so polling can see progress
 
+                ci_cd_service.check_cancelled()
                 if repo.run_default_scripts:
                     ci_cd_service.run_scripts(repo, dep, inner_db, srv)
                     inner_db.commit()  # commit script logs so polling can see progress
+                ci_cd_service.check_cancelled()
 
                 mig_logs = ci_cd_service.run_migrations(repo, dep, inner_db, srv)
                 inner_db.commit()  # commit migration logs so polling can see progress
@@ -197,11 +206,16 @@ def trigger_deploy(repo_id: int, db: Session = Depends(get_db), _=Depends(get_ad
                     dep.error = mig_error
                 else:
                     dep.status = "success"
+            except ci_cd_service.DeploymentCancelled:
+                dep.status = "failed"
+                dep.error = "Cancelled."
             except Exception as exc:
                 logger.error("CICD manual deploy repo %d failed: %s", repo_id, exc)
                 dep.status = "failed"
                 dep.error = str(exc)[:4000]
             finally:
+                ci_cd_service.clear_cancel(dep.id)
+                ci_cd_service.set_current_deployment(None)
                 dep.finished_at = datetime.utcnow()
                 repo.last_deployed_at = datetime.utcnow()
                 inner_db.commit()
@@ -223,6 +237,7 @@ def list_deployments(
     _=Depends(get_admin_user),
 ):
     _get_repo_or_404(repo_id, db)
+    ci_cd_service.reap_stale_deployments(db)
     return (
         db.query(CICDDeployment)
         .filter(CICDDeployment.repo_id == repo_id)
@@ -246,6 +261,29 @@ def get_deployment(repo_id: int, dep_id: int, db: Session = Depends(get_db), _=D
         script_logs=script_logs,
         migration_logs=migration_logs,
     )
+
+
+@router.post("/deployments/{dep_id}/cancel")
+def cancel_deployment(dep_id: int, db: Session = Depends(get_db), user=Depends(get_admin_user)):
+    """
+    Stop a run that is still marked running: drop the SSH connections it holds
+    (which ends whatever command is hanging) and close the row. A migration
+    already applied stays applied -- this stops the run, it does not undo it.
+    """
+    dep = db.query(CICDDeployment).filter(CICDDeployment.id == dep_id).first()
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    if dep.status != "running":
+        return {"ok": True, "status": dep.status, "message": "It had already finished."}
+
+    ci_cd_service.request_cancel(dep_id)
+    by = getattr(user, "email", None) or getattr(user, "username", None) or "an admin"
+    dep.status = "failed"
+    dep.error = ((dep.error or "") + f"\nCancelled by {by}.").strip()
+    dep.finished_at = datetime.utcnow()
+    db.commit()
+
+    return {"ok": True, "status": dep.status}
 
 
 # ── Script / Migration logs ───────────────────────────────────────────────────

@@ -44,6 +44,8 @@ class CICDRepoCreate(BaseModel):
     db_type: Optional[str] = "postgres"  # "postgres" | "mysql"
     db_host: Optional[str] = None
     db_port: Optional[int] = None
+    db_user: Optional[str] = None
+    db_password: Optional[str] = None
     schedule_enabled: bool = False
     schedule_cron: Optional[str] = None
 
@@ -62,6 +64,9 @@ class CICDRepoUpdate(BaseModel):
     db_type: Optional[str] = None
     db_host: Optional[str] = None
     db_port: Optional[int] = None
+    db_user: Optional[str] = None
+    # Left out keeps the stored password; "" clears it.
+    db_password: Optional[str] = None
     schedule_enabled: Optional[bool] = None
     schedule_cron: Optional[str] = None
 
@@ -82,6 +87,8 @@ class CICDRepoOut(BaseModel):
     db_type: Optional[str] = None
     db_host: Optional[str] = None
     db_port: Optional[int] = None
+    db_user: Optional[str] = None
+    has_db_password: bool = False
     schedule_enabled: bool
     schedule_cron: Optional[str] = None
     last_deployed_at: Optional[datetime] = None
@@ -108,6 +115,8 @@ class CICDRepoOut(BaseModel):
             db_type=obj.db_type,
             db_host=obj.db_host,
             db_port=obj.db_port,
+            db_user=obj.db_user,
+            has_db_password=bool(obj.db_password),
             schedule_enabled=obj.schedule_enabled,
             schedule_cron=obj.schedule_cron,
             last_deployed_at=obj.last_deployed_at,

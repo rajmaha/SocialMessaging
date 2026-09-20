@@ -422,27 +422,49 @@ Each `.sql` file is applied to **every** database in `db.csv` exactly once.
 
 If the repo has a `database/migration/` folder, the SQL files are taken from there instead of `database/` (only files directly inside it; subfolders are ignored). `db.csv` stays in `database/`.
 
-### How migrations run (no credentials needed)
+### How migrations run
 
-Migrations use the OS-level database clients that are already present on the server:
+Migrations use the OS-level database clients on the server. The repo's **DB
+user** and **DB password** are used when set; the password is passed through
+the environment (`MYSQL_PWD` / `PGPASSWORD`), never on the command line, so it
+does not show up in `ps`.
 
 **PostgreSQL:**
 ```bash
-psql -h localhost -p 5432 -d myapp_production -f /var/www/myapp/database/001_initial_schema.sql
+PGPASSWORD=… psql -h localhost -p 5432 -U myapp -d myapp_production -f /var/www/myapp/database/001_initial_schema.sql
 ```
 
 **MySQL:**
 ```bash
-mysql -h localhost -P 3306 myapp_production < /var/www/myapp/database/001_initial_schema.sql
+MYSQL_PWD=… mysql -h localhost -P 3306 -u root myapp_production < /var/www/myapp/database/001_initial_schema.sql
 ```
 
-This works because CloudPanel typically configures `psql` / `mysql` with peer authentication or a local trust rule for the site user. No password is required.
+Leave the login empty only where the SSH user can already reach the database
+without one (peer auth, a `~/.my.cnf`). CloudPanel's MySQL cannot: run bare it
+answers `ERROR 1045 (28000): Access denied for user 'root'@'localhost' (using
+password: NO)` and every file fails on every database.
 
 ### Failure handling
 
 - If a migration fails, that migration's log is recorded as `"failed"` with the error output
 - All remaining migrations for that same database are **skipped** (fail-fast per database)
 - Other databases in `db.csv` may still have their pending migrations run (each database is processed independently)
+- **The deployment itself is then marked `failed`**, with a summary naming the database, the file and the first line of the error. A deploy whose SQL never reached the databases is not a success -- it used to finish green with the failures visible only in the Migrations tab
+- Only successes are remembered, so a failed migration is retried on the next deploy
+
+### A run that will not finish
+
+A deploy runs in a background thread, so a command that never returns, or a
+backend restart mid-deploy, used to leave the row at `running` for ever.
+
+- **Cancel** on a running deployment (`POST /cicd/deployments/{id}/cancel`)
+  drops the SSH connections that run is holding, which ends the hanging
+  command, and closes the row. Migrations already applied stay applied.
+- Every SSH command now stops waiting at its own timeout rather than blocking
+  for ever.
+- A run still marked `running` after `CICD_STALE_DEPLOYMENT_MINUTES`
+  (default 30) is closed automatically when the deployments list is read or the
+  next deploy starts.
 
 ---
 

@@ -23,6 +23,8 @@ interface Repo {
   db_type: string | null
   db_host: string | null
   db_port: number | null
+  db_user: string | null
+  has_db_password: boolean
   schedule_enabled: boolean
   schedule_cron: string | null
   last_deployed_at: string | null
@@ -97,7 +99,8 @@ function fmtDuration(start: string | null, end: string | null) {
 const emptyRepoForm = {
   name: '', repo_url: '', branch: 'main', local_path: '',
   server_id: '', auth_type: 'https', ssh_private_key: '', access_token: '',
-  db_type: 'postgres', db_host: '', db_port: '', schedule_enabled: false, schedule_cron: '',
+  db_type: 'postgres', db_host: '', db_port: '', db_user: '', db_password: '',
+  schedule_enabled: false, schedule_cron: '',
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -162,6 +165,21 @@ export default function CICDDetailPage() {
 
   // ── Deployment detail ──────────────────────────────────────────────────────
 
+  /// Stops a run that is stuck: the server drops the SSH connections it holds
+  /// and closes the row. Anything already applied stays applied.
+  async function cancelDeployment(depId: number) {
+    if (!confirm('Stop this deployment?\n\nMigrations already applied stay applied; the run just stops.')) return
+    try {
+      const res = await fetch(`${API_URL}/cicd/deployments/${depId}/cancel`, {
+        method: 'POST', headers: authHeaders(),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      await fetchAll()
+    } catch {
+      alert('Could not cancel it. Reload the page and try again.')
+    }
+  }
+
   async function loadDepDetail(depId: number) {
     if (depDetail[depId]) { setExpandedDep(expandedDep === depId ? null : depId); return }
     const res = await fetch(`${API_URL}/cicd/repos/${id}/deployments/${depId}`, {
@@ -210,6 +228,9 @@ export default function CICDDetailPage() {
       db_type: repo.db_type || 'postgres',
       db_host: repo.db_host || '',
       db_port: repo.db_port ? String(repo.db_port) : '',
+      db_user: repo.db_user || '',
+      db_password: '',   // never sent back; blank means "keep what is stored"
+
       schedule_enabled: repo.schedule_enabled,
       schedule_cron: repo.schedule_cron || '',
     })
@@ -266,6 +287,10 @@ export default function CICDDetailPage() {
         db_type: repoForm.db_type || 'postgres',
         db_host: repoForm.db_host || null,
         db_port: repoForm.db_port ? parseInt(repoForm.db_port) : null,
+        db_user: repoForm.db_user || null,
+        // Left out entirely keeps the stored password (the API only writes
+        // fields that were sent); typing one replaces it.
+        ...(repoForm.db_password ? { db_password: repoForm.db_password } : {}),
         schedule_enabled: repoForm.schedule_enabled,
         schedule_cron: repoForm.schedule_cron || null,
       }
@@ -436,6 +461,12 @@ export default function CICDDetailPage() {
                             <button onClick={() => loadDepDetail(dep.id)} className="text-xs text-blue-600 hover:underline">
                               {expandedDep === dep.id ? 'Hide' : 'Details'}
                             </button>
+                            {dep.status === 'running' && (
+                              <button onClick={() => cancelDeployment(dep.id)}
+                                className="text-xs text-red-600 hover:underline ml-3">
+                                Cancel
+                              </button>
+                            )}
                           </td>
                         </tr>
                         {expandedDep === dep.id && depDetail[dep.id] && (
@@ -737,7 +768,9 @@ export default function CICDDetailPage() {
                   Database Migrations <span className="font-normal text-gray-400">(optional)</span>
                 </label>
                 <p className="text-xs text-gray-400 mb-3">
-                  For <code className="bg-gray-100 px-1 rounded">database/db.csv</code> migrations. Runs on the same server — no credentials needed.
+                  For <code className="bg-gray-100 px-1 rounded">database/db.csv</code> migrations, run on the target server.
+                  Leave the login empty only where the SSH user can reach the database without one; CloudPanel&apos;s MySQL
+                  answers <code className="bg-gray-100 px-1 rounded">Access denied for user &apos;root&apos;@&apos;localhost&apos;</code> without it.
                 </p>
                 <div className="flex gap-3">
                   {[{ value: 'postgres', label: '🐘 PostgreSQL' }, { value: 'mysql', label: '🐬 MySQL' }].map(opt => (
@@ -747,6 +780,25 @@ export default function CICDDetailPage() {
                       {opt.label}
                     </button>
                   ))}
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">DB user</label>
+                    <input value={repoForm.db_user}
+                      onChange={e => setRepoForm(f => ({ ...f, db_user: e.target.value }))}
+                      placeholder="root"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">DB password</label>
+                    <input type="password" value={repoForm.db_password} autoComplete="new-password"
+                      onChange={e => setRepoForm(f => ({ ...f, db_password: e.target.value }))}
+                      placeholder={repo?.has_db_password ? 'Unchanged' : 'Not set'}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    {repo?.has_db_password && !repoForm.db_password && (
+                      <p className="text-xs text-green-600 mt-1">✅ Saved — type only to replace it</p>
+                    )}
+                  </div>
                 </div>
               </div>
 

@@ -188,6 +188,9 @@ def _run_inline_migrations():
             "ALTER TABLE branding_settings "
             "ADD COLUMN IF NOT EXISTS allowed_file_types JSON"
         ))
+        # CI/CD: the DB login migrations run as (see ci_cd_service.run_migrations).
+        conn.execute(text("ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS db_user VARCHAR"))
+        conn.execute(text("ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS db_password VARCHAR"))
         conn.execute(text(
             "ALTER TABLE branding_settings "
             "ADD COLUMN IF NOT EXISTS max_file_size_mb INTEGER DEFAULT 10"

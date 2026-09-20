@@ -9,12 +9,15 @@ Migrations run via `psql` (PostgreSQL) or `mysql` (MySQL) on the target server �
 If no server is attached, everything runs locally.
 """
 import contextlib
+import shlex
+import threading
+import time
 import json
 import logging
 import os
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import StringIO
 from pathlib import Path
 from typing import Optional
@@ -36,6 +39,109 @@ _CLOUDPANEL_DB_CANDIDATES = [
 
 
 # ── SSH helpers ───────────────────────────────────────────────────────────────
+
+# ── Cancelling a run ──────────────────────────────────────────────────────────
+#
+# A deploy runs in its own thread (routes/ci_cd.py), so there is nothing to
+# signal and nothing to kill: a command that never returns leaves the row
+# "running" for ever, and so does a backend restart mid-deploy. Two answers,
+# both needed:
+#
+#   * Cancel closes the SSH channels this deployment is holding, which makes
+#     the worker's current command fail, and raises the flag the worker checks
+#     between steps.
+#   * A run whose thread is gone (restart, crash) is reaped by age: nothing is
+#     left claiming to be running that nobody is running.
+
+_CANCELLED: set[int] = set()
+_ACTIVE_CLIENTS: dict[int, list] = {}
+_ACTIVE_LOCK = threading.Lock()
+_CURRENT = threading.local()
+
+STALE_DEPLOYMENT_MINUTES = int(os.environ.get("CICD_STALE_DEPLOYMENT_MINUTES", "30"))
+
+
+class DeploymentCancelled(Exception):
+    """Raised in the worker once someone pressed Cancel."""
+
+
+def set_current_deployment(deployment_id: Optional[int]) -> None:
+    """Tell this thread which deployment its SSH commands belong to."""
+    _CURRENT.deployment_id = deployment_id
+
+
+def _current_deployment_id() -> Optional[int]:
+    return getattr(_CURRENT, "deployment_id", None)
+
+
+def request_cancel(deployment_id: int) -> None:
+    """Flag the run and drop its open SSH connections."""
+    with _ACTIVE_LOCK:
+        _CANCELLED.add(int(deployment_id))
+        clients = list(_ACTIVE_CLIENTS.get(int(deployment_id), []))
+    for client in clients:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+def is_cancelled(deployment_id: Optional[int]) -> bool:
+    return deployment_id is not None and int(deployment_id) in _CANCELLED
+
+
+def check_cancelled() -> None:
+    if is_cancelled(_current_deployment_id()):
+        raise DeploymentCancelled("Cancelled")
+
+
+def clear_cancel(deployment_id: int) -> None:
+    with _ACTIVE_LOCK:
+        _CANCELLED.discard(int(deployment_id))
+        _ACTIVE_CLIENTS.pop(int(deployment_id), None)
+
+
+@contextlib.contextmanager
+def _track_client(client):
+    dep_id = _current_deployment_id()
+    if dep_id is not None:
+        with _ACTIVE_LOCK:
+            _ACTIVE_CLIENTS.setdefault(int(dep_id), []).append(client)
+    try:
+        yield
+    finally:
+        if dep_id is not None:
+            with _ACTIVE_LOCK:
+                try:
+                    _ACTIVE_CLIENTS.get(int(dep_id), []).remove(client)
+                except ValueError:
+                    pass
+
+
+def reap_stale_deployments(db: Session, minutes: int = STALE_DEPLOYMENT_MINUTES) -> int:
+    """
+    Close off runs that claim to be running but are not: their thread died with
+    the backend, or they outlived the limit. Returns how many were closed.
+    """
+    cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+    stale = (
+        db.query(CICDDeployment)
+        .filter(CICDDeployment.status == "running", CICDDeployment.started_at < cutoff)
+        .all()
+    )
+    for dep in stale:
+        dep.status = "failed"
+        dep.error = (dep.error or "") + (
+            f"\nStopped: still marked running after {minutes} minutes. The deploy "
+            "was cancelled, the backend restarted, or a command on the server never returned."
+        )
+        dep.finished_at = datetime.utcnow()
+        request_cancel(dep.id)
+    if stale:
+        db.commit()
+
+    return len(stale)
+
 
 def _make_paramiko_client(server: CloudPanelServer) -> paramiko.SSHClient:
     client = paramiko.SSHClient()
@@ -68,13 +174,35 @@ def _make_paramiko_client(server: CloudPanelServer) -> paramiko.SSHClient:
 def _ssh_run(server: CloudPanelServer, command: str, _key_file: Optional[str] = None,
              timeout: int = 300) -> tuple[int, str, str]:
     """Run a command on the remote server via paramiko. Returns (exit_code, stdout, stderr)."""
+    check_cancelled()
     client = _make_paramiko_client(server)
     try:
-        _, stdout_f, stderr_f = client.exec_command(command, timeout=timeout)
-        exit_code = stdout_f.channel.recv_exit_status()
-        return exit_code, stdout_f.read().decode(errors="replace"), stderr_f.read().decode(errors="replace")
+        with _track_client(client):
+            _, stdout_f, stderr_f = client.exec_command(command, timeout=timeout)
+            channel = stdout_f.channel
+            # recv_exit_status() blocks for ever on a command that never ends,
+            # and that is what leaves a deployment stuck at "running".
+            deadline = time.monotonic() + timeout
+            while not channel.exit_status_ready():
+                if time.monotonic() > deadline:
+                    channel.close()
+                    return 124, "", f"Timed out after {timeout}s: {command[:200]}"
+                if is_cancelled(_current_deployment_id()):
+                    channel.close()
+                    raise DeploymentCancelled("Cancelled")
+                time.sleep(0.2)
+            exit_code = channel.recv_exit_status()
+            return exit_code, stdout_f.read().decode(errors="replace"), stderr_f.read().decode(errors="replace")
+    except (OSError, EOFError, paramiko.SSHException):
+        # Cancel closes the connection under us; anything else is a real fault.
+        if is_cancelled(_current_deployment_id()):
+            raise DeploymentCancelled("Cancelled")
+        raise
     finally:
-        client.close()
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 @contextlib.contextmanager
@@ -487,18 +615,43 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
         for fname in sql_files:
             if fname in already_run:
                 continue
+            check_cancelled()
             sql_path = f"{migration_dir}/{fname}"
             mig_status = "success"
             mig_error: Optional[str] = None
             try:
-                # Build the CLI command based on db_type
+                # Build the CLI command based on db_type. The login is the
+                # repo's when it has one; without it the client is run bare,
+                # which only works where the SSH user has passwordless local
+                # access -- CloudPanel's MySQL answers "Access denied for user
+                # 'root'@'localhost' (using password: NO)". The password goes
+                # through the environment, never the command line, so it is not
+                # in `ps` on the server.
+                db_user = (repo.db_user or "").strip()
+                db_password = repo.db_password or ""
+                local_env = dict(os.environ)
                 if db_type == "mysql":
-                    cli_cmd = f"mysql -h {db_host} -P {db_port} '{db_name}' < '{sql_path}' 2>&1"
-                    local_args = ["mysql", "-h", db_host, "-P", str(db_port), db_name]
+                    prefix = f"MYSQL_PWD={shlex.quote(db_password)} " if db_password else ""
+                    user_arg = f"-u {shlex.quote(db_user)} " if db_user else ""
+                    cli_cmd = (f"{prefix}mysql -h {shlex.quote(db_host)} -P {db_port} {user_arg}"
+                               f"{shlex.quote(db_name)} < {shlex.quote(sql_path)} 2>&1")
+                    local_args = ["mysql", "-h", db_host, "-P", str(db_port)]
+                    if db_user:
+                        local_args += ["-u", db_user]
+                    local_args.append(db_name)
+                    if db_password:
+                        local_env["MYSQL_PWD"] = db_password
                 else:
-                    cli_cmd = f"psql -h {db_host} -p {db_port} -d '{db_name}' -f '{sql_path}' 2>&1"
-                    local_args = ["psql", "-h", db_host, "-p", str(db_port), "-d", db_name,
-                                  "-f", str(Path(migration_dir) / fname)]
+                    prefix = f"PGPASSWORD={shlex.quote(db_password)} " if db_password else ""
+                    user_arg = f"-U {shlex.quote(db_user)} " if db_user else ""
+                    cli_cmd = (f"{prefix}psql -h {shlex.quote(db_host)} -p {db_port} {user_arg}"
+                               f"-d {shlex.quote(db_name)} -f {shlex.quote(sql_path)} 2>&1")
+                    local_args = ["psql", "-h", db_host, "-p", str(db_port)]
+                    if db_user:
+                        local_args += ["-U", db_user]
+                    local_args += ["-d", db_name, "-f", str(Path(migration_dir) / fname)]
+                    if db_password:
+                        local_env["PGPASSWORD"] = db_password
 
                 if server:
                     with _server_key_file(server) as kf:
@@ -512,12 +665,12 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                         sql_file_path = str(Path(migration_dir) / fname)
                         with open(sql_file_path) as sql_f:
                             result = subprocess.run(
-                                local_args, stdin=sql_f,
+                                local_args, stdin=sql_f, env=local_env,
                                 capture_output=True, text=True, timeout=120,
                             )
                     else:
                         result = subprocess.run(
-                            local_args,
+                            local_args, env=local_env,
                             capture_output=True, text=True, timeout=120,
                         )
                     if result.returncode != 0:
@@ -580,12 +733,16 @@ def deploy(repo_id: int, triggered_by: str, db: Session) -> CICDDeployment:
     db.commit()
     db.refresh(deployment)
 
+    set_current_deployment(deployment.id)
     try:
         git_out = git_pull_or_clone(repo, server)
+        check_cancelled()
         custom_out = run_custom_bash_script(repo, server)
         deployment.git_output = git_out + ("\n\n--- Custom Script ---\n" + custom_out if custom_out else "")
+        check_cancelled()
         if repo.run_default_scripts:
             run_scripts(repo, deployment, db, server)
+        check_cancelled()
         mig_logs = run_migrations(repo, deployment, db, server)
         mig_error = migration_failure_summary(mig_logs)
         if mig_error:
@@ -593,11 +750,16 @@ def deploy(repo_id: int, triggered_by: str, db: Session) -> CICDDeployment:
             deployment.error = mig_error
         else:
             deployment.status = "success"
+    except DeploymentCancelled:
+        deployment.status = "failed"
+        deployment.error = "Cancelled."
     except Exception as exc:
         logger.error("CICD deploy repo %d failed: %s", repo_id, exc)
         deployment.status = "failed"
         deployment.error = str(exc)[:4000]
     finally:
+        clear_cancel(deployment.id)
+        set_current_deployment(None)
         deployment.finished_at = datetime.utcnow()
         repo.last_deployed_at = datetime.utcnow()
         db.commit()
