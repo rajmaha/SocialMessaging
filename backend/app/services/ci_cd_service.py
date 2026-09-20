@@ -123,6 +123,24 @@ def _track_client(client):
                     pass
 
 
+def _close_running_migration_rows(db: Session, deployment_id: int, why: str) -> None:
+    """A row left at "running" belongs to a run that is no longer going."""
+    rows = (
+        db.query(CICDMigrationLog)
+        .filter(CICDMigrationLog.deployment_id == deployment_id, CICDMigrationLog.status == "running")
+        .all()
+    )
+    for row in rows:
+        row.status = "failed"
+        row.error = ((row.error or "") + "\n" + why).strip()
+    if rows:
+        db.commit()
+
+
+def close_running_migration_rows(db: Session, deployment_id: int, why: str) -> None:
+    _close_running_migration_rows(db, deployment_id, why)
+
+
 def reap_stale_deployments(db: Session, minutes: int = STALE_DEPLOYMENT_MINUTES) -> int:
     """
     Close off runs that claim to be running but are not: their thread died with
@@ -135,6 +153,7 @@ def reap_stale_deployments(db: Session, minutes: int = STALE_DEPLOYMENT_MINUTES)
         .all()
     )
     for dep in stale:
+        _close_running_migration_rows(db, dep.id, "The deploy stopped before this finished.")
         dep.status = "failed"
         dep.error = (dep.error or "") + (
             f"\nStopped: still marked running after {minutes} minutes. The deploy "
@@ -622,6 +641,17 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                 continue
             check_cancelled()
             sql_path = f"{migration_dir}/{fname}"
+            # The row is written before the file runs, so the deploy popup can
+            # say which database is being migrated right now: a compiled
+            # migration is minutes per database, and a screen that says nothing
+            # for half an hour reads as a hang.
+            log = CICDMigrationLog(
+                repo_id=repo.id, deployment_id=deployment.id,
+                database_name=db_name, sql_filename=fname,
+                status="running", executed_at=datetime.utcnow(),
+            )
+            db.add(log)
+            db.commit()
             mig_status = "success"
             mig_error: Optional[str] = None
             try:
@@ -685,16 +715,11 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                 mig_status = "failed"
                 mig_error = str(exc)[:4000]
 
-            log = CICDMigrationLog(
-                repo_id=repo.id, deployment_id=deployment.id,
-                database_name=db_name, sql_filename=fname,
-                status=mig_status, error=mig_error, executed_at=datetime.utcnow(),
-            )
-            db.add(log)
-            # Committed one at a time, not once at the end: a run over a dozen
-            # databases takes many minutes, and until this commit the
-            # Migrations tab shows nothing at all -- which reads as a deploy
-            # that has hung.
+            log.status = mig_status
+            log.error = mig_error
+            log.executed_at = datetime.utcnow()
+            # Committed one at a time, not once at the end: until this commit
+            # the Migrations tab and the popup show nothing at all.
             db.commit()
             logs.append(log)
             if mig_status == "failed":

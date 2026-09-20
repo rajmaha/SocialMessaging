@@ -277,6 +277,7 @@ def cancel_deployment(dep_id: int, db: Session = Depends(get_db), user=Depends(g
         return {"ok": True, "status": dep.status, "message": "It had already finished."}
 
     ci_cd_service.request_cancel(dep_id)
+    ci_cd_service.close_running_migration_rows(db, dep_id, "Cancelled while this file was running.")
     by = getattr(user, "email", None) or getattr(user, "username", None) or "an admin"
     dep.status = "failed"
     dep.error = ((dep.error or "") + f"\nCancelled by {by}.").strip()

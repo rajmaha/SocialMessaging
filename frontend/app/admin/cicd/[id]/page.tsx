@@ -501,8 +501,10 @@ export default function CICDDetailPage() {
                                 <div>
                                   <p className="text-xs font-semibold text-gray-500 mb-2">
                                     Migrations ({depDetail[dep.id].migration_logs.filter(m => m.status === 'success').length} applied
-                                    {depDetail[dep.id].migration_logs.some(m => m.status !== 'success') &&
-                                      <span className="text-red-600">, {depDetail[dep.id].migration_logs.filter(m => m.status !== 'success').length} failed</span>}
+                                    {depDetail[dep.id].migration_logs.some(m => m.status === 'failed') &&
+                                      <span className="text-red-600">, {depDetail[dep.id].migration_logs.filter(m => m.status === 'failed').length} failed</span>}
+                                    {depDetail[dep.id].migration_logs.some(m => m.status === 'running') &&
+                                      <span className="text-yellow-700">, {depDetail[dep.id].migration_logs.filter(m => m.status === 'running').length} running</span>}
                                     )
                                   </p>
                                   <div className="space-y-1">

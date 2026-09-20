@@ -292,19 +292,37 @@ export default function CICDPage() {
     }
   }
 
-  function deriveDeployStep(data: { status: string; git_output?: string | null; error?: string | null; script_logs?: { status?: string }[]; migration_logs?: { status?: string }[] }): { step: string; steps: string[] } {
+  function deriveDeployStep(data: {
+    status: string
+    git_output?: string | null
+    error?: string | null
+    script_logs?: { status?: string }[]
+    migration_logs?: { status?: string; database_name?: string; sql_filename?: string }[]
+  }): { step: string; steps: string[] } {
     const steps: string[] = []
     steps.push('Starting deployment…')
     if (data.git_output) steps.push('Git pull completed')
     if (data.script_logs && data.script_logs.length > 0) steps.push(`Ran ${data.script_logs.length} script(s)`)
-    // Counted by outcome: a refused migration is a row here too, and reporting
-    // it as "ran" is how a deploy that applied nothing reads as done.
-    if (data.migration_logs && data.migration_logs.length > 0) {
-      const ok = data.migration_logs.filter(m => m.status === 'success').length
-      const bad = data.migration_logs.length - ok
-      steps.push(bad === 0
-        ? `Applied ${ok} migration(s)`
-        : `Applied ${ok} migration(s), ${bad} FAILED — see the Migrations tab`)
+
+    // Per database, as it happens: the server writes a row when a file starts
+    // and updates it when it ends, so a run of many minutes shows where it is.
+    // Counted by outcome -- a refused migration is a row here too, and calling
+    // that "ran" is how a deploy that applied nothing reads as done.
+    const migs = data.migration_logs ?? []
+    if (migs.length > 0) {
+      const finished = migs.filter(m => m.status !== 'running')
+      const ok = finished.filter(m => m.status === 'success').length
+      const bad = finished.length - ok
+      // The last few finished databases, so the popup does not grow without end.
+      finished.slice(-4).forEach(m => steps.push(
+        `${m.status === 'success' ? 'Migrated' : 'Failed'} ${m.database_name ?? ''} — ${m.sql_filename ?? ''}`))
+      if (finished.length > 0) {
+        steps.push(bad === 0
+          ? `Applied ${ok} migration(s)`
+          : `Applied ${ok} migration(s), ${bad} FAILED — see the Migrations tab`)
+      }
+      const running = migs.find(m => m.status === 'running')
+      if (running) steps.push(`Migrating ${running.database_name ?? ''} — ${running.sql_filename ?? ''}…`)
     }
     if (data.status === 'success') steps.push('Deployment succeeded!')
     if (data.status === 'failed') steps.push(`Failed: ${data.error?.slice(0, 100) || 'Unknown error'}`)
