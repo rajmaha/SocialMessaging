@@ -67,7 +67,9 @@ export async function POST(
             status: backendRes.status,
             headers: {
                 'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
+                // no-transform stops Next's response compression from holding the
+                // stream back until it ends, which made every step arrive at once.
+                'Cache-Control': 'no-cache, no-transform',
                 'Connection': 'keep-alive',
                 'X-Accel-Buffering': 'no',
             },

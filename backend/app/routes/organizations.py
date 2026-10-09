@@ -517,6 +517,9 @@ async def deploy_and_create_subscription(
 
     def event_generator():
         try:
+            # A leading comment line makes proxies send the headers and start
+            # streaming right away instead of waiting for the first step.
+            yield ": connected\n\n"
             with CloudPanelService(server) as service:
                 result = None
                 for step_event in service.create_site_steps(site_data):
@@ -592,7 +595,7 @@ async def deploy_and_create_subscription(
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         }

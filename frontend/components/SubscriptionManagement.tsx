@@ -326,7 +326,7 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                 formData.append('company_logo', logoFile)
             }
 
-            const res = await fetch(`${API_URL}/organizations/${organizationId}/subscriptions/deploy-and-create`, {
+            const res = await fetch(`/sse/subscription-deploy/${organizationId}`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: formData

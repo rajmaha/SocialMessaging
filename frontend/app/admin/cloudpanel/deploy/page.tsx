@@ -149,41 +149,13 @@ export default function CloudPanelDeployPage() {
                 return
             }
 
-            // Collect all SSE events from the stream.
-            // Reverse proxies (Coolify/Caddy/Traefik) may buffer the entire
-            // response, so all events can arrive in a single chunk.  We collect
-            // them first, then render them one-by-one with a staggered delay
-            // so the user always sees incremental progress.
-            const reader = res.body?.getReader()
-            const decoder = new TextDecoder()
-            let buffer = ''
-            const allEvents: any[] = []
-
-            while (reader) {
-                const { done, value } = await reader.read()
-                if (done) break
-                buffer += decoder.decode(value, { stream: true })
-                const lines = buffer.split('\n')
-                buffer = lines.pop() || ''
-                for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue
-                    try { allEvents.push(JSON.parse(line.slice(6))) } catch {}
-                }
-            }
-
-            // Render each event with a minimum 400ms gap between steps
-            const STEP_DELAY = 400
-            for (let i = 0; i < allEvents.length; i++) {
-                const eventData = allEvents[i]
-
-                // Wait before rendering (skip delay for the very first event)
-                if (i > 0) await new Promise(r => setTimeout(r, STEP_DELAY))
-
+            // Apply each SSE event the moment it arrives so the steps tick off one by one.
+            // Returns true when the deployment has ended (error), so reading can stop.
+            const applyEvent = (eventData: any): boolean => {
                 if (eventData.step === 'error') {
                     setMessage({ type: 'error', text: eventData.message || 'Deployment failed.' })
                     setDeploySteps(prev => prev.map(s => s.status === 'in_progress' ? { ...s, status: 'error' } : s))
-                    setSiteDeploying(false)
-                    return
+                    return true
                 }
 
                 if (eventData.step === 'complete') {
@@ -207,6 +179,26 @@ export default function CloudPanelDeployPage() {
                         }
                         return updated
                     })
+                }
+                return false
+            }
+
+            const reader = res.body?.getReader()
+            const decoder = new TextDecoder()
+            let buffer = ''
+            let ended = false
+
+            while (reader && !ended) {
+                const { done, value } = await reader.read()
+                if (done) break
+                buffer += decoder.decode(value, { stream: true })
+                const lines = buffer.split('\n')
+                buffer = lines.pop() || ''
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue
+                    let eventData: any
+                    try { eventData = JSON.parse(line.slice(6)) } catch { continue }
+                    if (applyEvent(eventData)) { ended = true; break }
                 }
             }
         } catch (err) {
