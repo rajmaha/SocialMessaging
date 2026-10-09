@@ -507,6 +507,16 @@ export const menuApi = {
   getAll: () => api.get('/menu/all'),
 }
 
+// ── Sidebar menu shortcuts (favourites + recent) ─────────────────────────
+
+export const menuShortcutApi = {
+  get: () => api.get<{ favorites: string[]; recent: string[] }>('/menu-shortcuts'),
+  setFavorite: (path: string, on: boolean) => api.post('/menu-shortcuts/favorite', { path, on }),
+  reorderFavorites: (paths: string[]) => api.put('/menu-shortcuts/favorites/order', { paths }),
+  visit: (path: string) => api.post('/menu-shortcuts/visit', { path }),
+  clearRecent: () => api.delete('/menu-shortcuts/recent'),
+}
+
 // ── Daily Ops ──────────────────────────────────────────────────────────────
 
 export const dailyOpsApi = {

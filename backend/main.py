@@ -20,6 +20,7 @@ from app.routes import daily_ops as daily_ops_routes
 from app.routes.api_servers import router as api_servers_router, user_router as user_api_creds_router
 from app.routes.forms import admin_router as forms_admin_router, public_router as forms_public_router
 from app.routes.menus import router as menus_router
+from app.routes.menu_shortcuts import router as menu_shortcuts_router
 from app.routes.campaign_attachments import router as campaign_attachments_router
 from app.routes.user_permission_overrides import router as permission_overrides_router
 from app.routes.logs import router as logs_router
@@ -35,6 +36,7 @@ from app.models.backup_job import BackupJob  # noqa: F401
 from app.models.backup_run import BackupRun  # noqa: F401
 from app.models.automation import AutomationRule, EmailSequence, EmailSequenceStep, EmailSequenceEnrollment  # noqa: F401
 from app.models import pms  # noqa: F401
+from app.models.menu_shortcut import UserMenuShortcut  # noqa: F401 — ensures table creation
 from app.models import worklog  # noqa: F401
 from app.models.user_permission_override import UserPermissionOverride  # noqa: F401 — ensures table creation
 from app.models.webchat_otp import WebchatOtp  # noqa: F401 — ensures table creation
@@ -2545,6 +2547,7 @@ app.include_router(user_api_creds_router)
 app.include_router(forms_admin_router)
 app.include_router(forms_public_router)
 app.include_router(menus_router)
+app.include_router(menu_shortcuts_router)
 app.include_router(permission_overrides_router)
 app.include_router(campaign_attachments_router)
 app.include_router(logs_router)
