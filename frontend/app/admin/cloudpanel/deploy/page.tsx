@@ -8,7 +8,7 @@ import { API_URL } from "@/lib/config"
 import { hasAdminFeature } from '@/lib/permissions'
 import { useRouter } from 'next/navigation'
 import DeployProgress, {
-    SITE_DEPLOY_STEPS, applyDeployEvent, failRunningStep, initialDeploySteps, type DeployStepState
+    SITE_DEPLOY_STEPS, applyDeployEvent, failRunningStep, followDeployJob, initialDeploySteps, type DeployStepState
 } from '@/components/DeployProgress'
 
 interface CloudPanelServer {
@@ -114,11 +114,10 @@ export default function CloudPanelDeployPage() {
         }
 
         try {
-            // Use the Next.js API route proxy (/api/cloudpanel-deploy-stream) instead of
-            // the normal rewrite path.  Next.js rewrites buffer the full response before
-            // forwarding it, which breaks SSE streaming.  The API route pipes the
-            // ReadableStream directly to the browser with no intermediate buffering.
-            const res = await fetch(`/sse/cloudpanel-deploy/${siteForm.serverId}`, {
+            // Started as a background job and followed by polling, like CI/CD
+            // Deploy: a streamed response was held back by the proxies in Docker /
+            // Coolify until it ended, so only the first and last steps showed.
+            const res = await fetch(`${API_URL}/cloudpanel/servers/${siteForm.serverId}/sites/deploy-stream?background=1`, {
                 method: 'POST',
                 headers: authHeaders(),
                 body: JSON.stringify({
@@ -150,8 +149,8 @@ export default function CloudPanelDeployPage() {
                 return
             }
 
-            // Apply each SSE event the moment it arrives so the steps tick off one by one.
-            // Returns true when the deployment has ended (error), so reading can stop.
+            // Apply each event as the polling hands it over, so the steps tick off one
+            // by one. Returns true when the deployment has ended (error).
             const applyEvent = (eventData: any): boolean => {
                 if (eventData.step === 'error') {
                     const text = eventData.message || 'Deployment failed.'
@@ -178,23 +177,18 @@ export default function CloudPanelDeployPage() {
                 return false
             }
 
-            const reader = res.body?.getReader()
-            const decoder = new TextDecoder()
-            let buffer = ''
+            const { job_id } = await res.json()
             let ended = false
-
-            while (reader && !ended) {
-                const { done, value } = await reader.read()
-                if (done) break
-                buffer += decoder.decode(value, { stream: true })
-                const lines = buffer.split('\n')
-                buffer = lines.pop() || ''
-                for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue
-                    let eventData: any
-                    try { eventData = JSON.parse(line.slice(6)) } catch { continue }
-                    if (applyEvent(eventData)) { ended = true; break }
-                }
+            const outcome = await followDeployJob(job_id, ev => {
+                if (!ended && applyEvent(ev)) ended = true
+            })
+            // The job failed without an error event reaching us (the server
+            // restarted, contact lost): say so rather than leave a spinner.
+            if (outcome.status !== 'success' && !ended) {
+                const text = outcome.error || 'Deployment failed.'
+                setMessage({ type: 'error', text })
+                setDeployError(text)
+                setDeploySteps(prev => failRunningStep(prev))
             }
         } catch (err) {
             setMessage({ type: 'error', text: 'Network error while deploying site.' })

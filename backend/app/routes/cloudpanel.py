@@ -13,6 +13,7 @@ from app.models.cloudpanel_server import CloudPanelServer
 from app.models.cloudpanel_site import CloudPanelSite
 from app.schemas.cloudpanel import CloudPanelServerCreate, CloudPanelServerResponse, CloudPanelServerDetailResponse, CloudPanelServerUpdate, CloudPanelSiteCreate, CloudPanelSiteResponse, CloudPanelSiteDelete
 from app.services.cloudpanel_service import CloudPanelService
+from app.services import site_deploy_jobs
 from app.routes.auth import verify_password
 
 router = APIRouter(prefix="/cloudpanel", tags=["CloudPanel Integration"])
@@ -145,14 +146,73 @@ def create_site_on_server(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"CloudPanel error: {str(e)}")
 
+def _site_deploy_events(server_id: int, site_data: CloudPanelSiteCreate, user_id: int,
+                        logo_temp_path: Optional[str], db: Session):
+    """The deployment's progress events (dicts), for the SSE stream and the
+    background job alike. Records the site once it is deployed and removes the
+    temporary logo whatever happens."""
+    try:
+        server = db.query(CloudPanelServer).filter(CloudPanelServer.id == server_id).first()
+        if not server:
+            yield {'step': 'error', 'status': 'error', 'message': 'Server not found'}
+            return
+        with CloudPanelService(server) as service:
+            result = None
+            for step_event in service.create_site_steps(site_data):
+                yield step_event
+                if step_event.get("step") == "complete":
+                    result = step_event
+
+        # Save deployed site record
+        if result and result.get("status") == "success":
+            site_record = CloudPanelSite(
+                server_id=server_id,
+                domain_name=result["domain"],
+                php_version=site_data.phpVersion,
+                site_user=result["sys_user"],
+                db_name=result["db_name"],
+                db_user=result["db_user"],
+                template_name=site_data.templateName,
+                created_by_id=user_id,
+            )
+            db.add(site_record)
+            db.commit()
+    except Exception as e:
+        yield {'step': 'error', 'status': 'error', 'message': str(e)}
+    finally:
+        if logo_temp_path and os.path.exists(logo_temp_path):
+            os.unlink(logo_temp_path)
+
+
+@router.get("/deploy-jobs/{job_id}")
+def deploy_job_status(
+    job_id: str,
+    after: int = 0,
+    current_user: User = Depends(get_current_user),
+):
+    """A background site deployment's events since `after`, and its state.
+    Polled by the CloudPanel Deploy page and an organization's Subscriptions;
+    only the user who started the job can read it."""
+    state = site_deploy_jobs.poll(job_id, current_user.id, after)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    return state
+
+
 @router.post("/servers/{server_id}/sites/deploy-stream")
 def deploy_site_stream(
     server_id: int,
     site_data: CloudPanelSiteCreate,
+    background: bool = False,
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_cloudpanel)
 ):
-    """SSE endpoint that streams deployment progress step-by-step."""
+    """Deploy a site, streaming progress step by step (SSE).
+
+    With ?background=1 the deployment runs as a background job instead and
+    this answers {"job_id"} at once; poll /cloudpanel/deploy-jobs/{job_id}.
+    That is what the deploy screens use: a stream is held back by the proxies
+    in Docker / Coolify until it ends."""
     server = db.query(CloudPanelServer).filter(CloudPanelServer.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
@@ -177,37 +237,20 @@ def deploy_site_stream(
         logo_temp_path = tmp.name
         site_data.company_logo_local_path = logo_temp_path
 
-    def event_generator():
-        try:
-            # A leading comment line makes proxies send the headers and start
-            # streaming right away instead of waiting for the first step.
-            yield ": connected\n\n"
-            with CloudPanelService(server) as service:
-                result = None
-                for step_event in service.create_site_steps(site_data):
-                    yield f"data: {json.dumps(step_event)}\n\n"
-                    if step_event.get("step") == "complete":
-                        result = step_event
+    user_id = admin_user.id
+    if background:
+        job_id = site_deploy_jobs.start(
+            user_id,
+            lambda job_db: _site_deploy_events(server_id, site_data, user_id, logo_temp_path, job_db),
+        )
+        return {"job_id": job_id}
 
-            # Save deployed site record
-            if result and result.get("status") == "success":
-                site_record = CloudPanelSite(
-                    server_id=server_id,
-                    domain_name=result["domain"],
-                    php_version=site_data.phpVersion,
-                    site_user=result["sys_user"],
-                    db_name=result["db_name"],
-                    db_user=result["db_user"],
-                    template_name=site_data.templateName,
-                    created_by_id=admin_user.id,
-                )
-                db.add(site_record)
-                db.commit()
-        except Exception as e:
-            yield f"data: {json.dumps({'step': 'error', 'status': 'error', 'message': str(e)})}\n\n"
-        finally:
-            if logo_temp_path and os.path.exists(logo_temp_path):
-                os.unlink(logo_temp_path)
+    def event_generator():
+        # A leading comment line makes proxies send the headers and start
+        # streaming right away instead of waiting for the first step.
+        yield ": connected\n\n"
+        for ev in _site_deploy_events(server_id, site_data, user_id, logo_temp_path, db):
+            yield f"data: {json.dumps(ev)}\n\n"
 
     return StreamingResponse(
         event_generator(),

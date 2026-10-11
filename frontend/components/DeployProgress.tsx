@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
+import { API_URL } from '@/lib/config'
+import { getAuthToken } from '@/lib/auth'
 
-// Live progress for a site deployment streamed from the backend's
+// Live progress for a site deployment run by the backend's
 // CloudPanelService.create_site_steps(): a bar, the time so far, every step
 // with a tick or a spinner, and under the running step what it is doing right
 // now ("Uploaded 420 of 980 files", "Running 3-migration-bundle.sql (3 of 10)").
@@ -70,6 +72,40 @@ export function applyDeployEvent(steps: DeployStepState[], ev: any): DeployStepS
   const next = updated.findIndex((s, i) => i > idx && s.status === 'pending')
   if (next >= 0) updated[next] = { ...updated[next], status: 'in_progress' }
   return updated
+}
+
+// Follows a deployment started with ?background=1: asks the server every
+// 1.5 s for the events since the last answer and hands each to onEvent, the
+// way CI/CD Deploy follows its runs. A streamed response did not work here:
+// in Docker / Coolify the proxies held it back until it ended, so the screen
+// jumped from the first step to the last. Resolves when the job ends.
+export async function followDeployJob(
+  jobId: string,
+  onEvent: (ev: any) => void,
+): Promise<{ status: string; error?: string | null }> {
+  let after = 0
+  let misses = 0
+  for (;;) {
+    await new Promise(r => setTimeout(r, 1500))
+    try {
+      const res = await fetch(`${API_URL}/cloudpanel/deploy-jobs/${jobId}?after=${after}`, {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      })
+      if (res.status === 404) {
+        return { status: 'failed', error: 'The server no longer knows this deployment (it may have restarted). Check the site before trying again.' }
+      }
+      if (!res.ok) throw new Error(String(res.status))
+      misses = 0
+      const data = await res.json()
+      for (const ev of data.events || []) onEvent(ev)
+      after = data.next ?? after
+      if (data.status !== 'running') return { status: data.status, error: data.error }
+    } catch {
+      // A blip (a redeploy of this app, a dropped connection): keep asking for
+      // a while; the deployment itself carries on on the server.
+      if (++misses > 40) return { status: 'failed', error: 'Lost contact with the server while deploying. The deployment may still be running there.' }
+    }
+  }
 }
 
 export function failRunningStep(steps: DeployStepState[]): DeployStepState[] {
@@ -178,7 +214,7 @@ export default function DeployProgress({ title = 'Deploying Site', steps, runnin
           </ul>
 
           {running && (
-            <p className="mt-4 text-xs text-gray-400 text-center">Keep this page open until it finishes.</p>
+            <p className="mt-4 text-xs text-gray-400 text-center">It runs on the server: leaving this page does not stop it.</p>
           )}
 
           {error && (

@@ -21,6 +21,7 @@ from app.schemas.organization import (
 )
 from app.schemas.cloudpanel import CloudPanelSiteCreate
 from app.services.cloudpanel_service import CloudPanelService
+from app.services import site_deploy_jobs
 from app.dependencies import get_current_user, require_module, require_admin_feature
 from app.models.user import User
 from app.models.form import Form as FormModel, FormField
@@ -455,11 +456,15 @@ async def deploy_and_create_subscription(
     billed_from_date: str = Form(""),
     expire_date: str = Form(""),
     company_logo: Optional[UploadFile] = File(None),
+    background: bool = False,
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_subs)
 ):
     """Deploy a site via CloudPanel and create the subscription only on success.
-    Returns an SSE stream with deployment progress."""
+    Returns an SSE stream with deployment progress -- or, with ?background=1,
+    {"job_id"} at once while it runs as a background job; poll
+    /cloudpanel/deploy-jobs/{job_id}. The organization page uses the job: the
+    stream is held back by the proxies in Docker / Coolify until it ends."""
     # Validate organization exists
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:
@@ -515,15 +520,22 @@ async def deploy_and_create_subscription(
         email_from=email_from.strip() or None,
     )
 
-    def event_generator():
+    admin_user_id = admin_user.id
+
+    def deploy_events(db: Session):
+        # Progress events (dicts) for the stream and the background job alike.
+        # `db` is the caller's session: the request's for the stream, the
+        # job thread's own for a background job -- so nothing loaded with the
+        # request's session (server, user) is used in here.
         try:
-            # A leading comment line makes proxies send the headers and start
-            # streaming right away instead of waiting for the first step.
-            yield ": connected\n\n"
+            server = db.query(CloudPanelServer).filter(CloudPanelServer.id == server_id).first()
+            if not server:
+                yield {'step': 'error', 'status': 'error', 'message': 'Server not found'}
+                return
             with CloudPanelService(server) as service:
                 result = None
                 for step_event in service.create_site_steps(site_data):
-                    yield f"data: {json.dumps(step_event)}\n\n"
+                    yield step_event
                     if step_event.get("step") == "complete":
                         result = step_event
 
@@ -569,7 +581,7 @@ async def deploy_and_create_subscription(
                     db_sub.company_logo_url = f"/subscription-logos/{unique_name}"
                     db.commit()
 
-                yield f"data: {json.dumps({'step': 'subscription_created', 'status': 'success', 'subscription_id': db_sub.id})}\n\n"
+                yield {'step': 'subscription_created', 'status': 'success', 'subscription_id': db_sub.id}
 
                 # Auto-submit to remote API / form if configured in Subscription Settings
                 try:
@@ -577,19 +589,31 @@ async def deploy_and_create_subscription(
                     _sse_settings = db.query(SubscriptionSettings).first()
                     if _sse_settings and _sse_settings.post_create_field_map:
                         _sse_org = db.query(Organization).filter(Organization.id == org_id).first()
-                        _call_subscription_api(db, db_sub, _sse_org, admin_user, _sse_settings)
-                        yield f"data: {json.dumps({'step': 'api_submitted', 'status': 'success', 'message': 'Submitted to remote API'})}\n\n"
+                        _sse_user = db.query(User).filter(User.id == admin_user_id).first()
+                        _call_subscription_api(db, db_sub, _sse_org, _sse_user, _sse_settings)
+                        yield {'step': 'api_submitted', 'status': 'success', 'message': 'Submitted to remote API'}
                 except Exception as api_err:
                     import logging as _log2
                     _log2.getLogger(__name__).warning(f"Remote API/form submission failed: {api_err}")
-                    yield f"data: {json.dumps({'step': 'api_submit_failed', 'status': 'warning', 'message': str(api_err)})}\n\n"
+                    yield {'step': 'api_submit_failed', 'status': 'warning', 'message': str(api_err)}
 
         except Exception as e:
-            yield f"data: {json.dumps({'step': 'error', 'status': 'error', 'message': str(e)})}\n\n"
+            yield {'step': 'error', 'status': 'error', 'message': str(e)}
         finally:
             # Clean up temp logo file
             if logo_temp_path and os.path.exists(logo_temp_path):
                 os.unlink(logo_temp_path)
+
+    if background:
+        job_id = site_deploy_jobs.start(admin_user_id, deploy_events, success_step="subscription_created")
+        return {"job_id": job_id}
+
+    def event_generator():
+        # A leading comment line makes proxies send the headers and start
+        # streaming right away instead of waiting for the first step.
+        yield ": connected\n\n"
+        for ev in deploy_events(db):
+            yield f"data: {json.dumps(ev)}\n\n"
 
     return StreamingResponse(
         event_generator(),

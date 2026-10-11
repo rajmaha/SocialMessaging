@@ -7,7 +7,7 @@ import { getAuthToken } from '@/lib/auth'
 import DateField from '@/components/DateField'
 import { API_URL } from '@/lib/config';
 import DeployProgress, {
-    SITE_DEPLOY_STEPS, applyDeployEvent, failRunningStep, finishAllSteps, initialDeploySteps, type DeployStepState
+    SITE_DEPLOY_STEPS, applyDeployEvent, failRunningStep, finishAllSteps, followDeployJob, initialDeploySteps, type DeployStepState
 } from '@/components/DeployProgress'
 
 interface Subscription {
@@ -320,7 +320,10 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                 formData.append('company_logo', logoFile)
             }
 
-            const res = await fetch(`/sse/subscription-deploy/${organizationId}`, {
+            // Started as a background job and followed by polling, like CI/CD
+            // Deploy: a streamed response was held back by the proxies in Docker /
+            // Coolify until it ended, so only the first and last steps showed.
+            const res = await fetch(`${API_URL}/organizations/${organizationId}/subscriptions/deploy-and-create?background=1`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: formData
@@ -335,49 +338,39 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
                 return
             }
 
-            const reader = res.body?.getReader()
-            const decoder = new TextDecoder()
-            let buffer = ''
-
-            while (reader) {
-                const { done, value } = await reader.read()
-                if (done) break
-
-                buffer += decoder.decode(value, { stream: true })
-                const lines = buffer.split('\n')
-                buffer = lines.pop() || ''
-
-                for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue
-                    let eventData: any
-                    try { eventData = JSON.parse(line.slice(6)) } catch { continue }
-
-                    if (eventData.step === 'error') {
-                        setDeployError(eventData.message || 'Deployment failed.')
-                        setDeploySteps(prev => failRunningStep(prev))
-                        setDeploying(false)
-                        setSaving(false)
-                        return
-                    }
-
-                    if (eventData.step === 'subscription_created') {
-                        // Deployment + subscription creation succeeded
-                        setDeploySteps(prev => finishAllSteps(prev))
-                        setDeploying(false)
-                        setSaving(false)
-                        fetchSubscriptions()
-                        // Don't close modal yet — let user see the success state and close manually
-                    } else if (eventData.step === 'complete') {
-                        // Site deployed; the subscription is saved next.
-                        setDeploySteps(prev => applyDeployEvent(prev, {
-                            step: 'subscription_created', status: 'progress', detail: 'Saving the subscription for this site',
-                        }))
-                    } else {
-                        // A finished step is ticked and the next one starts; a
-                        // progress event updates what the running step says.
-                        setDeploySteps(prev => applyDeployEvent(prev, eventData))
-                    }
+            const { job_id } = await res.json()
+            let ended = false
+            const outcome = await followDeployJob(job_id, eventData => {
+                if (ended) return
+                if (eventData.step === 'error') {
+                    ended = true
+                    setDeployError(eventData.message || 'Deployment failed.')
+                    setDeploySteps(prev => failRunningStep(prev))
+                    return
                 }
+                if (eventData.step === 'subscription_created') {
+                    // Deployment + subscription creation succeeded
+                    setDeploySteps(prev => finishAllSteps(prev))
+                    setDeploying(false)
+                    setSaving(false)
+                    fetchSubscriptions()
+                    // Don't close modal yet — let user see the success state and close manually
+                } else if (eventData.step === 'complete') {
+                    // Site deployed; the subscription is saved next.
+                    setDeploySteps(prev => applyDeployEvent(prev, {
+                        step: 'subscription_created', status: 'progress', detail: 'Saving the subscription for this site',
+                    }))
+                } else {
+                    // A finished step is ticked and the next one starts; a
+                    // progress event updates what the running step says.
+                    setDeploySteps(prev => applyDeployEvent(prev, eventData))
+                }
+            })
+            // The job failed without an error event reaching us (the server
+            // restarted, contact lost): say so rather than leave a spinner.
+            if (outcome.status !== 'success' && !ended) {
+                setDeployError(outcome.error || 'Deployment failed.')
+                setDeploySteps(prev => failRunningStep(prev))
             }
         } catch (error) {
             console.error('Error saving subscription:', error)
