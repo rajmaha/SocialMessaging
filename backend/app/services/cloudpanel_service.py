@@ -1,6 +1,7 @@
 import paramiko
 import os
 import re
+import shlex
 import hashlib
 import secrets
 import string
@@ -57,6 +58,116 @@ class CloudPanelService:
         if exit_status != 0:
             raise Exception(f"Command failed with status {exit_status}: {err} \n Output: {out}")
         return out
+
+    # ------------------------------------------------------------------
+    # Mounts inside a site's folder
+    # ------------------------------------------------------------------
+    # auto-run-script.sh bind-mounts /home/shared/saraloms-app/asset and
+    # .../oms-app-1.3.0 into the site's document root. `clpctl site:delete`
+    # removes the site's home folder recursively, and a recursive delete
+    # walks INTO a bind mount: deleting a site with its mounts in place
+    # would empty the shared app every other site runs on. So every mount
+    # under the site is taken off first, and the delete is refused while
+    # any remains.
+
+    def _sudo(self) -> str:
+        return "" if (self.server.ssh_user or "") == "root" else "sudo -n "
+
+    @staticmethod
+    def _unescape_mount_path(path: str) -> str:
+        # /proc/self/mounts writes space, tab, newline and backslash as
+        # octal escapes (\040, \011, \012, \134).
+        return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), path)
+
+    def _mount_targets(self) -> list:
+        out = self._execute("cat /proc/self/mounts")
+        targets = []
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                targets.append(self._unescape_mount_path(parts[1]))
+        return targets
+
+    def site_folders(self, domain: str, site_user: str = None) -> list:
+        """The folders a site deletion removes: its home and document root."""
+        bases = []
+        try:
+            root = self._execute(
+                f"grep -m1 -oP 'root\\s+\\K[^;]+' /etc/nginx/sites-enabled/{shlex.quote(domain + '.conf')}"
+            ).strip()
+        except Exception:
+            root = ""
+        if root.startswith("/"):
+            bases.append(root.rstrip("/"))
+            m = re.match(r"^(/home/[^/]+)", root)
+            if m:
+                bases.append(m.group(1))
+        if site_user and re.match(r"^[A-Za-z0-9._-]+$", site_user):
+            bases.append(f"/home/{site_user}")
+        # Never treat a top-level folder (/, /home) as a site's own.
+        return sorted({b for b in bases if b.count("/") >= 2})
+
+    def site_mounts(self, domain: str, site_user: str = None) -> list:
+        bases = self.site_folders(domain, site_user)
+        marker = f"/htdocs/{domain}"
+        found = set()
+        for target in self._mount_targets():
+            t = target.rstrip("/") or "/"
+            if any(t == b or t.startswith(b + "/") for b in bases):
+                found.add(t)
+            elif t.endswith(marker) or (marker + "/") in t:
+                found.add(t)
+        # Deepest first, so a mount inside another comes off before it.
+        return sorted(found, key=lambda p: (p.count("/"), len(p)), reverse=True)
+
+    def unmount_site(self, domain: str, site_user: str = None) -> list:
+        """Unmount everything mounted inside the site. Returns what was
+        unmounted; raises if anything is still mounted afterwards."""
+        sudo = self._sudo()
+        mounts = self.site_mounts(domain, site_user)
+        for target in mounts:
+            q = shlex.quote(target)
+            try:
+                self._execute(f"{sudo}umount {q}")
+            except Exception as e:
+                # Busy (a shell or PHP worker inside it): a lazy unmount
+                # detaches it from the tree at once, which is what keeps
+                # the recursive delete out of the shared folder.
+                logger.warning(f"umount {target} failed ({e}); trying lazy unmount")
+                self._execute(f"{sudo}umount -l {q}")
+
+        still = self.site_mounts(domain, site_user)
+        if still:
+            raise Exception(
+                "These folders are still mounted inside the site, so its files were "
+                "not deleted (deleting them would delete the shared files behind "
+                "the mount): " + ", ".join(still)
+            )
+
+        # A mount written into /etc/fstab would be mounted again at the next
+        # boot onto a folder that no longer exists; take its line out
+        # (a dated copy of fstab is kept).
+        # Only plain paths go into the awk program, as string literals.
+        bases = [b for b in self.site_folders(domain, site_user)
+                 if re.match(r"^/[A-Za-z0-9._/-]+$", b)]
+        if bases:
+            conds = " || ".join(
+                f'$2=="{b}" || index($2, "{b}/")==1' for b in bases
+            )
+            awk_match = f"awk '!/^[[:space:]]*#/ && ({conds}) {{found=1}} END {{exit !found}}' /etc/fstab"
+            try:
+                self._execute(awk_match)
+                has_lines = True
+            except Exception:
+                has_lines = False
+            if has_lines:
+                self._execute(
+                    f"{sudo}cp -p /etc/fstab /etc/fstab.bak-$(date +%Y%m%d%H%M%S) && "
+                    f"awk '/^[[:space:]]*#/ || !({conds})' /etc/fstab > /tmp/fstab.oms.$$ && "
+                    f"{sudo}cp /tmp/fstab.oms.$$ /etc/fstab && rm -f /tmp/fstab.oms.$$"
+                )
+                logger.info(f"Removed fstab entries for {domain}")
+        return mounts
 
     def _get_parent_domain_user(self, root_domain: str):
         """

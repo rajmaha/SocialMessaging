@@ -313,9 +313,15 @@ def delete_site(
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
 
-    # Delete from remote CloudPanel
+    # Delete from remote CloudPanel. Folders bind-mounted into the site
+    # (asset, oms-app-1.3.0 from /home/shared) are unmounted first: the
+    # site delete removes its folder recursively and would otherwise empty
+    # the shared app behind the mount. unmount_site() raises if anything
+    # is still mounted, and then nothing is deleted.
+    unmounted = []
     try:
         with CloudPanelService(server) as service:
+            unmounted = service.unmount_site(site.domain_name, site.site_user)
             service._execute(f"clpctl site:delete --domainName={site.domain_name} --force")
             if site.db_name:
                 try:
@@ -328,7 +334,10 @@ def delete_site(
     # Remove local record
     db.delete(site)
     db.commit()
-    return {"message": f"Site '{site.domain_name}' deleted successfully"}
+    message = f"Site '{site.domain_name}' deleted successfully"
+    if unmounted:
+        message += f" (unmounted {len(unmounted)} folder{'s' if len(unmounted) != 1 else ''} first)"
+    return {"message": message, "unmounted": unmounted}
 
 @router.get("/servers/{server_id}/ssl-report")
 def get_ssl_report(
