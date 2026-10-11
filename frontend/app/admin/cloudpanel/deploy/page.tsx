@@ -7,6 +7,9 @@ import { authAPI, getAuthToken } from "@/lib/auth"
 import { API_URL } from "@/lib/config"
 import { hasAdminFeature } from '@/lib/permissions'
 import { useRouter } from 'next/navigation'
+import DeployProgress, {
+    SITE_DEPLOY_STEPS, applyDeployEvent, failRunningStep, initialDeploySteps, type DeployStepState
+} from '@/components/DeployProgress'
 
 interface CloudPanelServer {
     id: number
@@ -22,8 +25,10 @@ export default function CloudPanelDeployPage() {
     const [templates, setTemplates] = useState<{ name: string, has_files: boolean }[]>([])
     const [siteDeploying, setSiteDeploying] = useState(false)
     const [message, setMessage] = useState({ type: '', text: '' })
-    const [deploySteps, setDeploySteps] = useState<{ id: string, label: string, status: 'pending' | 'done' | 'skipped' | 'error' | 'in_progress' }[]>([])
+    const [deploySteps, setDeploySteps] = useState<DeployStepState[]>([])
     const [deployResult, setDeployResult] = useState<any>(null)
+    const [deployStartedAt, setDeployStartedAt] = useState<number | null>(null)
+    const [deployError, setDeployError] = useState('')
 
     useEffect(() => {
         setIsMounted(true)
@@ -80,15 +85,6 @@ export default function CloudPanelDeployPage() {
     }
 
 
-    const DEPLOY_STEPS = [
-        { id: 'creating_site', label: 'Creating Site' },
-        { id: 'creating_ssl', label: 'Creating SSL' },
-        { id: 'creating_database', label: 'Creating Database' },
-        { id: 'deploying_files', label: 'Deploying Files' },
-        { id: 'copying_logo', label: 'Copying Logo' },
-        { id: 'running_script', label: 'Running Script' },
-        { id: 'importing_database', label: 'Importing Database' },
-    ]
 
     const handleAddSite = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -101,7 +97,9 @@ export default function CloudPanelDeployPage() {
         setMessage({ type: '', text: '' })
 
         // Initialize all steps as pending, first one as in_progress
-        setDeploySteps(DEPLOY_STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'in_progress' : 'pending' })))
+        setDeploySteps(initialDeploySteps(SITE_DEPLOY_STEPS))
+        setDeployStartedAt(Date.now())
+        setDeployError('')
 
         let logoBase64: string | undefined
         if (logoFile) {
@@ -143,8 +141,11 @@ export default function CloudPanelDeployPage() {
             })
 
             if (!res.ok) {
-                const errData = await res.json()
-                setMessage({ type: 'error', text: errData.detail || 'Failed to deploy site.' })
+                const errData = await res.json().catch(() => ({}))
+                const text = errData.detail || 'Failed to deploy site.'
+                setMessage({ type: 'error', text })
+                setDeployError(text)
+                setDeploySteps(prev => failRunningStep(prev))
                 setSiteDeploying(false)
                 return
             }
@@ -153,8 +154,10 @@ export default function CloudPanelDeployPage() {
             // Returns true when the deployment has ended (error), so reading can stop.
             const applyEvent = (eventData: any): boolean => {
                 if (eventData.step === 'error') {
-                    setMessage({ type: 'error', text: eventData.message || 'Deployment failed.' })
-                    setDeploySteps(prev => prev.map(s => s.status === 'in_progress' ? { ...s, status: 'error' } : s))
+                    const text = eventData.message || 'Deployment failed.'
+                    setMessage({ type: 'error', text })
+                    setDeployError(text)
+                    setDeploySteps(prev => failRunningStep(prev))
                     return true
                 }
 
@@ -168,17 +171,9 @@ export default function CloudPanelDeployPage() {
                     setLogoFile(null)
                     setLogoPreview(null)
                 } else {
-                    // Mark completed step and set next step as in_progress
-                    setDeploySteps(prev => {
-                        const updated = prev.map(s =>
-                            s.id === eventData.step ? { ...s, status: eventData.status as any } : s
-                        )
-                        const doneIdx = updated.findIndex(s => s.id === eventData.step)
-                        if (doneIdx >= 0 && doneIdx + 1 < updated.length && updated[doneIdx + 1].status === 'pending') {
-                            updated[doneIdx + 1] = { ...updated[doneIdx + 1], status: 'in_progress' }
-                        }
-                        return updated
-                    })
+                    // A finished step is ticked and the next one starts; a
+                    // progress event updates what the running step says.
+                    setDeploySteps(prev => applyDeployEvent(prev, eventData))
                 }
                 return false
             }
@@ -203,7 +198,8 @@ export default function CloudPanelDeployPage() {
             }
         } catch (err) {
             setMessage({ type: 'error', text: 'Network error while deploying site.' })
-            setDeploySteps(prev => prev.map(s => s.status === 'in_progress' ? { ...s, status: 'error' } : s))
+            setDeployError('Network error while deploying site.')
+            setDeploySteps(prev => failRunningStep(prev))
         } finally {
             setSiteDeploying(false)
         }
@@ -232,69 +228,19 @@ export default function CloudPanelDeployPage() {
                 )}
 
                 {(siteDeploying || deploySteps.length > 0) && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-                        <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4">
-                            <h3 className="text-lg font-semibold text-gray-900 mb-5 text-center">Deploying Site</h3>
-                            <ul className="space-y-3">
-                                {deploySteps.map((step) => (
-                                    <li key={step.id} className="flex items-center gap-3">
-                                        {step.status === 'done' && (
-                                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
-                                                <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                </svg>
-                                            </span>
-                                        )}
-                                        {step.status === 'in_progress' && (
-                                            <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
-                                                <svg className="animate-spin w-5 h-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                                </svg>
-                                            </span>
-                                        )}
-                                        {step.status === 'pending' && (
-                                            <span className="flex-shrink-0 w-6 h-6 rounded-full border-2 border-gray-300" />
-                                        )}
-                                        {step.status === 'skipped' && (
-                                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center">
-                                                <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
-                                                </svg>
-                                            </span>
-                                        )}
-                                        {step.status === 'error' && (
-                                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-red-100 flex items-center justify-center">
-                                                <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </span>
-                                        )}
-                                        <span className={`text-sm font-medium ${step.status === 'done' ? 'text-green-700' : step.status === 'in_progress' ? 'text-blue-700' : step.status === 'error' ? 'text-red-700' : step.status === 'skipped' ? 'text-gray-400' : 'text-gray-500'}`}>
-                                            {step.label}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-
-                            {deployResult && (
-                                <div className="mt-5 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
-                                    <p className="font-semibold mb-1">Deployment Complete!</p>
-                                    <p>DB: {deployResult.db_name} | User: {deployResult.db_user}</p>
-                                </div>
-                            )}
-
-                            {!siteDeploying && (
-                                <button
-                                    onClick={() => { setDeploySteps([]); setDeployResult(null) }}
-                                    className="mt-5 w-full py-2 text-sm font-medium text-white rounded-lg transition-opacity hover:opacity-90"
-                                    style={{ backgroundColor: 'var(--button-primary)' }}
-                                >
-                                    Close
-                                </button>
-                            )}
-                        </div>
-                    </div>
+                    <DeployProgress
+                        steps={deploySteps}
+                        running={siteDeploying}
+                        startedAt={deployStartedAt}
+                        error={deployError}
+                        success={deployResult ? (
+                            <>
+                                <p className="font-semibold mb-1">Deployment Complete!</p>
+                                <p>DB: {deployResult.db_name} | User: {deployResult.db_user}</p>
+                            </>
+                        ) : undefined}
+                        onClose={() => { setDeploySteps([]); setDeployResult(null); setDeployError('') }}
+                    />
                 )}
 
                 <div className="bg-white p-6 rounded-lg shadow border border-gray-100">

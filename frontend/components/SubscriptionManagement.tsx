@@ -6,6 +6,9 @@ import axios from 'axios'
 import { getAuthToken } from '@/lib/auth'
 import DateField from '@/components/DateField'
 import { API_URL } from '@/lib/config';
+import DeployProgress, {
+    SITE_DEPLOY_STEPS, applyDeployEvent, failRunningStep, finishAllSteps, initialDeploySteps, type DeployStepState
+} from '@/components/DeployProgress'
 
 interface Subscription {
     id: number
@@ -48,25 +51,13 @@ interface CloudPanelSiteRecord {
     created_at: string
 }
 
-interface DeployStep {
-    id: string
-    label: string
-    status: 'pending' | 'done' | 'skipped' | 'error' | 'in_progress'
-}
 
 interface SubscriptionManagementProps {
     organizationId: number
 }
 
-const DEPLOY_STEPS = [
-    { id: 'creating_site', label: 'Creating Site' },
-    { id: 'creating_ssl', label: 'Creating SSL' },
-    { id: 'deploying_files', label: 'Deploying Template Files' },
-    { id: 'copying_logo', label: 'Copying Company Logo' },
-    { id: 'running_script', label: 'Running Auto Script' },
-    { id: 'creating_database', label: 'Creating Database' },
-    { id: 'importing_database', label: 'Importing Database' },
-]
+// The site deployment's own steps, then the subscription saved for it.
+const DEPLOY_STEPS = [...SITE_DEPLOY_STEPS, { id: 'subscription_created', label: 'Saving Subscription' }]
 
 export default function SubscriptionManagement({ organizationId }: SubscriptionManagementProps) {
     const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
@@ -98,8 +89,9 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
     const [deployedSites, setDeployedSites] = useState<CloudPanelSiteRecord[]>([])
     const [selectedSiteId, setSelectedSiteId] = useState('')
     const [deploying, setDeploying] = useState(false)
-    const [deploySteps, setDeploySteps] = useState<DeployStep[]>([])
+    const [deploySteps, setDeploySteps] = useState<DeployStepState[]>([])
     const [deployError, setDeployError] = useState('')
+    const [deployStartedAt, setDeployStartedAt] = useState<number | null>(null)
     const [retryingSync, setRetryingSync] = useState<Set<number>>(new Set())
 
     useEffect(() => {
@@ -298,7 +290,9 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
 
             // Start deployment via SSE
             setDeploying(true)
-            setDeploySteps(DEPLOY_STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'in_progress' : 'pending' })))
+            setDeployError('')
+            setDeployStartedAt(Date.now())
+            setDeploySteps(initialDeploySteps(DEPLOY_STEPS))
 
             const formData = new FormData()
             formData.append('server_id', selectedServerId)
@@ -333,8 +327,9 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
             })
 
             if (!res.ok) {
-                const errData = await res.json()
+                const errData = await res.json().catch(() => ({}))
                 setDeployError(errData.detail || 'Failed to start deployment.')
+                setDeploySteps(prev => failRunningStep(prev))
                 setDeploying(false)
                 setSaving(false)
                 return
@@ -354,11 +349,12 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
 
                 for (const line of lines) {
                     if (!line.startsWith('data: ')) continue
-                    const eventData = JSON.parse(line.slice(6))
+                    let eventData: any
+                    try { eventData = JSON.parse(line.slice(6)) } catch { continue }
 
                     if (eventData.step === 'error') {
                         setDeployError(eventData.message || 'Deployment failed.')
-                        setDeploySteps(prev => prev.map(s => s.status === 'in_progress' ? { ...s, status: 'error' } : s))
+                        setDeploySteps(prev => failRunningStep(prev))
                         setDeploying(false)
                         setSaving(false)
                         return
@@ -366,34 +362,27 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
 
                     if (eventData.step === 'subscription_created') {
                         // Deployment + subscription creation succeeded
+                        setDeploySteps(prev => finishAllSteps(prev))
                         setDeploying(false)
                         setSaving(false)
                         fetchSubscriptions()
                         // Don't close modal yet — let user see the success state and close manually
                     } else if (eventData.step === 'complete') {
-                        // Site deployment complete, subscription creation follows
-                        setDeploySteps(prev => prev.map(s =>
-                            s.status === 'in_progress' ? { ...s, status: 'done' } : s
-                        ))
+                        // Site deployed; the subscription is saved next.
+                        setDeploySteps(prev => applyDeployEvent(prev, {
+                            step: 'subscription_created', status: 'progress', detail: 'Saving the subscription for this site',
+                        }))
                     } else {
-                        // Mark completed step and set next step as in_progress
-                        setDeploySteps(prev => {
-                            const updated = prev.map(s =>
-                                s.id === eventData.step ? { ...s, status: eventData.status as DeployStep['status'] } : s
-                            )
-                            const doneIdx = updated.findIndex(s => s.id === eventData.step)
-                            if (doneIdx >= 0 && doneIdx + 1 < updated.length && updated[doneIdx + 1].status === 'pending') {
-                                updated[doneIdx + 1] = { ...updated[doneIdx + 1], status: 'in_progress' }
-                            }
-                            return updated
-                        })
+                        // A finished step is ticked and the next one starts; a
+                        // progress event updates what the running step says.
+                        setDeploySteps(prev => applyDeployEvent(prev, eventData))
                     }
                 }
             }
         } catch (error) {
             console.error('Error saving subscription:', error)
             setDeployError('Network error during deployment.')
-            setDeploySteps(prev => prev.map(s => s.status === 'in_progress' ? { ...s, status: 'error' } : s))
+            setDeploySteps(prev => failRunningStep(prev))
         } finally {
             setDeploying(false)
             setSaving(false)
@@ -559,77 +548,14 @@ export default function SubscriptionManagement({ organizationId }: SubscriptionM
 
             {/* Deployment Progress Modal */}
             {deploySteps.length > 0 && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-                        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/30">
-                            <h3 className="text-lg font-bold text-gray-900 text-center">Deploying Site</h3>
-                        </div>
-                        <div className="p-6">
-                            <ul className="space-y-3">
-                                {deploySteps.map((step) => (
-                                    <li key={step.id} className="flex items-center gap-3">
-                                        {step.status === 'done' && (
-                                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
-                                                <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                </svg>
-                                            </span>
-                                        )}
-                                        {step.status === 'in_progress' && (
-                                            <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
-                                                <svg className="animate-spin w-5 h-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                                </svg>
-                                            </span>
-                                        )}
-                                        {step.status === 'pending' && (
-                                            <span className="flex-shrink-0 w-6 h-6 rounded-full border-2 border-gray-300" />
-                                        )}
-                                        {step.status === 'skipped' && (
-                                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center">
-                                                <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
-                                                </svg>
-                                            </span>
-                                        )}
-                                        {step.status === 'error' && (
-                                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-red-100 flex items-center justify-center">
-                                                <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </span>
-                                        )}
-                                        <span className={`text-sm font-medium ${step.status === 'done' ? 'text-green-700' : step.status === 'in_progress' ? 'text-blue-700' : step.status === 'error' ? 'text-red-700' : step.status === 'skipped' ? 'text-gray-400' : 'text-gray-500'}`}>
-                                            {step.label}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-
-                            {deployError && (
-                                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                                    {deployError}
-                                </div>
-                            )}
-
-                            {!deploying && !deployError && deploySteps.every(s => s.status === 'done' || s.status === 'skipped') && (
-                                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
-                                    <p className="font-semibold">Site deployed & subscription created successfully!</p>
-                                </div>
-                            )}
-
-                            {!deploying && (
-                                <button
-                                    onClick={() => { setDeploySteps([]); setDeployError(''); setIsModalOpen(false) }}
-                                    className="mt-5 w-full py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
-                                >
-                                    Close
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <DeployProgress
+                    steps={deploySteps}
+                    running={deploying}
+                    startedAt={deployStartedAt}
+                    error={deployError}
+                    success={<p className="font-semibold">Site deployed & subscription created successfully!</p>}
+                    onClose={() => { setDeploySteps([]); setDeployError(''); setIsModalOpen(false) }}
+                />
             )}
 
             {/* Subscription Modal */}

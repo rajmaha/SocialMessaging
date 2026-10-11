@@ -157,6 +157,12 @@ class CloudPanelService:
 
         Each yield is: {"step": "step_id", "status": "done"|"skipped"|"error", ...}
         The final yield includes the full result with status "success".
+
+        A step may also yield {"step": id, "status": "progress", "detail": text,
+        "current": n, "total": m} while it is still running -- uploading files
+        and importing the database take minutes, and the deploy screens show
+        how far along they are instead of a spinner with nothing under it.
+        current/total are left out where there is nothing to count.
         """
         db_name = data.dbName
         db_user = data.dbUser
@@ -185,6 +191,8 @@ class CloudPanelService:
         remote_dir = f"/home/{sys_user}/htdocs/{data.domainName}"
 
         # --- Step 1: Create site ---
+        yield {"step": "creating_site", "status": "progress",
+               "detail": f"Adding {data.domainName} on CloudPanel"}
         cmd_site = (
             f"clpctl site:add:php --domainName={data.domainName} "
             f"--phpVersion={data.phpVersion} --vhostTemplate={data.vhostTemplate} "
@@ -232,6 +240,8 @@ class CloudPanelService:
 
             elif data.issue_ssl:
                 logger.info("Issuing Let's Encrypt SSL...")
+                yield {"step": "creating_ssl", "status": "progress",
+                       "detail": "Asking Let's Encrypt for a certificate"}
                 cmd_ssl = f"clpctl lets-encrypt:install:certificate --domainName={data.domainName}"
                 if data.is_wildcard_ssl:
                     parts = data.domainName.split('.')
@@ -253,6 +263,8 @@ class CloudPanelService:
         # CloudPanel versions, wiping any files already deployed there.
         # Running it here — after site + SSL but before uploading files —
         # ensures CloudPanel finishes all its own initialization steps first.
+        yield {"step": "creating_database", "status": "progress",
+               "detail": f"Creating database {db_name}"}
         cmd_db = f"clpctl db:add --domainName={data.domainName} --databaseName={db_name} --databaseUserName={db_user} --databaseUserPassword='{db_pass}'"
         self._execute(cmd_db)
 
@@ -267,6 +279,17 @@ class CloudPanelService:
         has_sql = False
         skip_dirs = {'__MACOSX'}
         skip_files = {'.DS_Store'}
+
+        # Counted first so the screen can say "120 of 980" while uploading.
+        total_files = 0
+        if os.path.exists(template_dir):
+            for _dp, _dn, _fn in os.walk(template_dir):
+                _dn[:] = [d for d in _dn if d not in skip_dirs]
+                total_files += sum(1 for f in _fn if f not in skip_files)
+        sent_files = 0
+        report_every = max(1, total_files // 50)
+        yield {"step": "deploying_files", "status": "progress",
+               "detail": f"Uploading {total_files} files", "current": 0, "total": total_files}
 
         if os.path.exists(template_dir):
             for dirpath, dirnames, filenames in os.walk(template_dir):
@@ -302,7 +325,16 @@ class CloudPanelService:
                     if filename == "default.sql" and rel_dir == "database":
                         has_sql = True
 
+                    sent_files += 1
+                    if sent_files % report_every == 0 or sent_files == total_files:
+                        yield {"step": "deploying_files", "status": "progress",
+                               "detail": f"Uploaded {sent_files} of {total_files} files",
+                               "current": sent_files, "total": total_files}
+
         sftp.close()
+
+        yield {"step": "deploying_files", "status": "progress",
+               "detail": "Setting file ownership", "current": total_files, "total": total_files}
 
         self._execute(f"chown -R {sys_user}:{sys_user} {remote_dir}")
         logger.info(f"Template files uploaded to {remote_dir}")
@@ -341,6 +373,8 @@ class CloudPanelService:
             self._execute(f"sed -i 's/\\[user\\]/{sys_user}/g' {script_path}")
             self._execute(f"sed -i 's/\\[usergroup\\]/{sys_user}/g' {script_path}")
             self._execute(f"chmod +x {script_path}")
+            yield {"step": "running_script", "status": "progress",
+                   "detail": "Running auto-run-script.sh"}
             self._execute(f"cd {remote_dir} && bash {script_path}")
             yield {"step": "running_script", "status": "done"}
         except Exception:
@@ -349,11 +383,8 @@ class CloudPanelService:
 
         # --- Step 5: Import database ---
         if has_sql:
-            sql_path = f"{remote_dir}/database/default.sql"
-            cmd_import = f"mysql -u {db_user} -p'{db_pass}' {db_name} < {sql_path}"
-            self._execute(cmd_import)
-
-            # Import migration files in ascending filename order
+            # Listed before default.sql is loaded, so the count is known from
+            # the start: default.sql is file 1 of (migrations + 1).
             migration_dir = f"{remote_dir}/database/migration"
             try:
                 migration_output = self._execute(
@@ -363,11 +394,27 @@ class CloudPanelService:
                     f.strip() for f in migration_output.strip().splitlines()
                     if f.strip().endswith(".sql")
                 ]
-                for mf in migration_files:
+            except Exception as e:
+                logger.info(f"No migration files or migration dir missing: {e}")
+                migration_files = []
+            total_sql = len(migration_files) + 1
+
+            sql_path = f"{remote_dir}/database/default.sql"
+            yield {"step": "importing_database", "status": "progress",
+                   "detail": "Loading default.sql", "current": 0, "total": total_sql}
+            cmd_import = f"mysql -u {db_user} -p'{db_pass}' {db_name} < {sql_path}"
+            self._execute(cmd_import)
+
+            # Import migration files in ascending filename order
+            try:
+                for i, mf in enumerate(migration_files, start=1):
+                    yield {"step": "importing_database", "status": "progress",
+                           "detail": f"Running {os.path.basename(mf)} ({i} of {len(migration_files)})",
+                           "current": i, "total": total_sql}
                     self._execute(f"mysql -u {db_user} -p'{db_pass}' {db_name} < {mf}")
                     logger.info(f"Imported migration: {mf}")
             except Exception as e:
-                logger.info(f"No migration files or migration dir missing: {e}")
+                logger.info(f"Migration import stopped: {e}")
 
             yield {"step": "importing_database", "status": "done"}
         else:
