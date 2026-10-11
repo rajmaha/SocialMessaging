@@ -781,6 +781,20 @@ def _expand_db_names(raw_names: list[str], server: Optional[CloudPanelServer],
 
 # ── Migration execution ───────────────────────────────────────────────────────
 
+def migration_sort_key(name: str):
+    """Order migration files the way `sort -V` does: numbers by value.
+
+    Plain byte order put `10-migration-bundle.sql` straight after
+    `1-all-...sql` and before bundles 2-9, because "10" < "2" as text. Here a
+    run of digits is compared as a number, so bundles go 1, 2, ... 9, 10 and
+    dated files (2026-10-11-1830-...) follow every bundle. Zero-padded dates
+    keep the order they always had. Site creation (cloudpanel_service) already
+    imports with `sort -V`; this makes Deploy agree with it.
+    """
+    return [(0, int(part), "") if part.isdigit() else (1, 0, part)
+            for part in re.split(r"(\d+)", name) if part != ""] + [(2, 0, name)]
+
+
 def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
                    server: Optional[CloudPanelServer] = None) -> list:
     database_dir = f"{repo.local_path}/database"
@@ -822,12 +836,13 @@ def run_migrations(repo: CICDRepo, deployment: CICDDeployment, db: Session,
         migration_dir = f"{database_dir}/migration" if rc == 0 else database_dir
         with _server_key_file(server) as kf:
             rc, out, _ = _ssh_run(server, f"ls '{migration_dir}'/*.sql 2>/dev/null | sort", kf)
-        sql_files = sorted([Path(f.strip()).name for f in out.splitlines() if f.strip()])
+        sql_files = sorted([Path(f.strip()).name for f in out.splitlines() if f.strip()],
+                           key=migration_sort_key)
     else:
         local_migration = Path(repo.local_path) / "database" / "migration"
         local_sql_dir = local_migration if local_migration.is_dir() else Path(repo.local_path) / "database"
         migration_dir = str(local_sql_dir)
-        sql_files = sorted([p.name for p in local_sql_dir.glob("*.sql")])
+        sql_files = sorted([p.name for p in local_sql_dir.glob("*.sql")], key=migration_sort_key)
 
     if not sql_files:
         return []
