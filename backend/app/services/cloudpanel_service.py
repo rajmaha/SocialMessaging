@@ -379,6 +379,30 @@ class CloudPanelService:
         cmd_db = f"clpctl db:add --domainName={data.domainName} --databaseName={db_name} --databaseUserName={db_user} --databaseUserPassword='{db_pass}'"
         self._execute(cmd_db)
 
+        # default.sql creates triggers, and it is loaded as the site's own
+        # database user. With binary logging on (MySQL 8's default) such a
+        # user may create a trigger only while log_bin_trust_function_creators
+        # is 1; otherwise MySQL refuses with ERROR 1419 and the load stops
+        # part way, leaving the site with a fraction of its tables. Asked
+        # here, before anything is uploaded, so the person is told what to
+        # change instead of getting a half-built site.
+        out = self._execute(
+            f"mysql -u {db_user} -p'{db_pass}' -N -B -e "
+            "\"SELECT @@log_bin, @@log_bin_trust_function_creators\" 2>/dev/null || true"
+        )
+        flags = out.split()
+        if len(flags) >= 2 and flags[0] == "1" and flags[1] == "0":
+            raise Exception(
+                "This server's MySQL has binary logging on and "
+                "log_bin_trust_function_creators off, so the site's database "
+                "user cannot create the triggers default.sql needs (ERROR 1419). "
+                "Add log_bin_trust_function_creators = 1 under [mysqld] in the "
+                "MySQL config and restart MySQL (or run SET GLOBAL "
+                "log_bin_trust_function_creators = 1 as root), then create the "
+                "site again. The site and its empty database were created; "
+                "delete them first."
+            )
+
         yield {"step": "creating_database", "status": "done"}
 
         # --- Step 4: Deploy template files ---
