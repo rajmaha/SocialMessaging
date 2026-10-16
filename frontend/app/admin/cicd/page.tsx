@@ -6,6 +6,7 @@ import MainHeader from '@/components/MainHeader'
 import AdminNav from '@/components/AdminNav'
 import { authAPI, getAuthToken } from '@/lib/auth'
 import { API_URL } from '@/lib/config'
+import { formatServerTime } from '@/lib/date-utils'
 
 interface CPServer {
   id: number
@@ -483,7 +484,7 @@ export default function CICDPage() {
                           : <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                        {repo.last_deployed_at ? new Date(repo.last_deployed_at).toLocaleString() : '—'}
+                        {formatServerTime(repo.last_deployed_at)}
                       </td>
                       <td className="px-4 py-3">{statusBadge(repo)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">

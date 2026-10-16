@@ -67,6 +67,7 @@ interface RunResult {
 }
 
 import { API_URL as API } from '@/lib/config'
+import { formatServerDate, formatServerTime } from '@/lib/date-utils'
 
 function authHeaders(): Record<string, string> {
     const token = getAuthToken() || ''
@@ -300,7 +301,7 @@ export default function MigrationsPage() {
     }
 
     async function restoreBackup(server_id: number, backup: Backup) {
-        const taken = new Date(backup.created_at + 'Z').toLocaleString()
+        const taken = formatServerTime(backup.created_at)
         if (!confirm(
             `Restore "${backup.database}" from ${taken}?\n\n` +
             `Everything currently in "${backup.database}" is dropped and replaced ` +
@@ -557,7 +558,7 @@ export default function MigrationsPage() {
                                                     : <span className="text-gray-500 text-xs whitespace-nowrap">Import only</span>}
                                             </td>
                                             <td className="py-2 pr-4 text-gray-400 text-xs">
-                                                {new Date(m.created_at).toLocaleDateString()}
+                                                {formatServerDate(m.created_at)}
                                             </td>
                                             <td className="py-2 flex gap-2 flex-wrap">
                                                 <button
@@ -648,7 +649,7 @@ export default function MigrationsPage() {
                                             <td className="py-2 pr-4 font-mono text-xs text-gray-400 break-all">{b.filename}</td>
                                             <td className="py-2 pr-4 text-xs whitespace-nowrap">{formatSize(b.size_bytes)}</td>
                                             <td className="py-2 pr-4 text-xs text-gray-400 whitespace-nowrap">
-                                                {new Date(b.created_at + 'Z').toLocaleString()}
+                                                {formatServerTime(b.created_at)}
                                             </td>
                                             <td className="py-2 flex gap-2">
                                                 <button
@@ -760,7 +761,7 @@ export default function MigrationsPage() {
                                                 )}
                                             </td>
                                             <td className="py-2 text-xs text-gray-400">
-                                                {new Date(log.executed_at).toLocaleString()}
+                                                {formatServerTime(log.executed_at)}
                                             </td>
                                         </tr>
                                     ))}
@@ -989,7 +990,7 @@ function ScheduleRow({ schedule, onSave, onNotify, notifying }: {
                         )}
                         {schedule.last_run_at && (
                             <span className="text-xs text-gray-500">
-                                Last run: {new Date(schedule.last_run_at).toLocaleString()}
+                                Last run: {formatServerTime(schedule.last_run_at)}
                             </span>
                         )}
                     </div>

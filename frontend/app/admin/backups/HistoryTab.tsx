@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { getBackupRuns, getBackupJobs, restoreBackupRun } from '@/lib/api';
+import { formatServerTime } from '@/lib/date-utils'
 
 function formatBytes(bytes: number | null) {
   if (!bytes) return '—';
@@ -121,7 +122,7 @@ export default function BackupHistoryTab() {
                   onClick={() => setExpanded(expanded === run.id ? null : run.id)}
                 >
                   <td className="px-4 py-3 font-medium text-gray-900">{jobName(run.job_id)}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{new Date(run.started_at).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{formatServerTime(run.started_at)}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{formatDuration(run.started_at, run.finished_at)}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{formatBytes(run.file_size_bytes)}</td>
                   <td className="px-4 py-3">

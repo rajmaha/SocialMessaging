@@ -5,6 +5,7 @@ import MainHeader from "@/components/MainHeader"
 import AdminNav from '@/components/AdminNav'
 import { authAPI, getAuthToken } from "@/lib/auth"
 import { API_URL } from "@/lib/config"
+import { formatServerDate } from '@/lib/date-utils'
 
 interface CloudPanelSite {
     id: number
@@ -280,7 +281,7 @@ export default function CloudPanelSitesPage() {
                                             <td className="px-4 py-3 text-gray-600">{site.template_name || '-'}</td>
                                             <td className="px-4 py-3 text-gray-600">{site.created_by_name || '-'}</td>
                                             <td className="px-4 py-3 text-gray-500 text-xs">
-                                                {new Date(site.created_at).toLocaleDateString()}
+                                                {formatServerDate(site.created_at)}
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 {deleteConfirmId === site.id ? (

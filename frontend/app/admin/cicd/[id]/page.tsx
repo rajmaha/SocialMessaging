@@ -6,6 +6,7 @@ import MainHeader from '@/components/MainHeader'
 import AdminNav from '@/components/AdminNav'
 import { authAPI, getAuthToken } from '@/lib/auth'
 import { API_URL } from '@/lib/config'
+import { formatServerTime } from '@/lib/date-utils'
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -427,7 +428,7 @@ export default function CICDDetailPage() {
               <div>
                 <span className="text-gray-400 text-xs">Last Deployed</span>
                 <div className="text-xs mt-0.5">
-                  {repo.last_deployed_at ? new Date(repo.last_deployed_at).toLocaleString() : 'Never'}
+                  {formatServerTime(repo.last_deployed_at, 'Never')}
                 </div>
               </div>
               <div>
@@ -484,7 +485,7 @@ export default function CICDDetailPage() {
                             )}
                           </td>
                           <td className="px-5 py-3 text-gray-500 capitalize text-xs">{dep.triggered_by}</td>
-                          <td className="px-5 py-3 text-gray-500 text-xs">{dep.started_at ? new Date(dep.started_at).toLocaleString() : '—'}</td>
+                          <td className="px-5 py-3 text-gray-500 text-xs">{formatServerTime(dep.started_at)}</td>
                           <td className="px-5 py-3 text-gray-400 text-xs">{fmtDuration(dep.started_at, dep.finished_at)}</td>
                           <td className="px-5 py-3">
                             <button onClick={() => loadDepDetail(dep.id)} className="text-xs text-blue-600 hover:underline">
@@ -583,7 +584,7 @@ export default function CICDDetailPage() {
                           <td className="px-5 py-3 font-mono text-gray-800 text-xs">{s.script_filename}</td>
                           <td className="px-5 py-3"><ExitCodeBadge code={s.exit_code} /></td>
                           <td className="px-5 py-3 text-gray-400 text-xs">#{s.deployment_id}</td>
-                          <td className="px-5 py-3 text-gray-400 text-xs">{s.executed_at ? new Date(s.executed_at).toLocaleString() : '—'}</td>
+                          <td className="px-5 py-3 text-gray-400 text-xs">{formatServerTime(s.executed_at)}</td>
                           <td className="px-5 py-3">
                             {(s.stdout || s.stderr) && (
                               <button onClick={() => setExpandedScript(expandedScript === s.id ? null : s.id)}
@@ -645,7 +646,7 @@ export default function CICDDetailPage() {
                             <td className="px-5 py-3 font-mono text-xs text-gray-800">{m.sql_filename}</td>
                             <td className="px-5 py-3"><StatusBadge status={m.status} /></td>
                             <td className="px-5 py-3 text-gray-400 text-xs">#{m.deployment_id}</td>
-                            <td className="px-5 py-3 text-gray-400 text-xs">{m.executed_at ? new Date(m.executed_at).toLocaleString() : '—'}</td>
+                            <td className="px-5 py-3 text-gray-400 text-xs">{formatServerTime(m.executed_at)}</td>
                             <td className="px-5 py-3">
                               {m.error && (
                                 <button onClick={() => setExpandedMig(expandedMig === m.id ? null : m.id)}

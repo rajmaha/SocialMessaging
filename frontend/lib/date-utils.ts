@@ -198,3 +198,22 @@ export function convertToTimezone(
     return dateString
   }
 }
+
+/**
+ * Server times (deployments, backups, migrations) in Nepal time, labelled
+ * with the offset: "Oct 16, 2026, 14:15:05 GMT+5:45". The backend sends them
+ * as naive UTC; formatDateWithTimezone() reads them as UTC first, so the
+ * viewer's own browser zone never changes what is shown.
+ */
+export const SERVER_TIMEZONE = 'Asia/Kathmandu'
+
+export function formatServerTime(dateString: string | null | undefined, empty: string = '—'): string {
+  if (!dateString) return empty
+  return formatDateWithTimezone(dateString, SERVER_TIMEZONE, { hour12: false, timeZoneName: 'shortOffset' })
+}
+
+/** The date alone, in Nepal time. */
+export function formatServerDate(dateString: string | null | undefined, empty: string = '—'): string {
+  if (!dateString) return empty
+  return formatDateOnlyWithTimezone(dateString, SERVER_TIMEZONE)
+}
