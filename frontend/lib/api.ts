@@ -124,6 +124,14 @@ export const getJobBackupRuns = (jobId: number) =>
 export const restoreBackupRun = (runId: number) =>
   api.post(`/backups/runs/${runId}/restore`).then(r => r.data);
 
+// A signed link valid for a few minutes, opened by the browser directly so a
+// large backup streams to disk instead of into memory.
+export const getBackupDownloadUrl = (runId: number) =>
+  api.post(`/backups/runs/${runId}/download-link`).then(r => `${API_URL}${r.data.url}`);
+
+export const deleteBackupRun = (runId: number, force = false) =>
+  api.delete(`/backups/runs/${runId}`, { params: force ? { force: true } : {} }).then(r => r.data);
+
 // ── PMS ────────────────────────────────────────────────────────────────────
 
 export const pmsApi = {

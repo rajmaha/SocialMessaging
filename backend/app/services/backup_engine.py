@@ -32,26 +32,26 @@ class BackupEngine:
             destination_obj = db.query(BackupDestination).filter(BackupDestination.id == job.destination_id).first()
             plugin = get_destination(destination_obj.type, destination_obj.config)
 
+            # The trailing underscore matters: "job1" alone also matches job10, job11...
+            prefix = f"job{job.id}_"
             with tempfile.TemporaryDirectory() as tmpdir:
                 files = self._create_backup_files(job, db, tmpdir)
                 timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-                prefix = f"job{job.id}"
+                # One zip per run, so History holds the whole backup (database
+                # and files together) and Download hands back one file.
+                archive = self._zip(files, os.path.join(tmpdir, f"{prefix}{timestamp}.zip"))
+                remote_path = plugin.upload(archive, os.path.basename(archive))
+                total_size = os.path.getsize(archive)
 
-                total_size = 0
-                last_remote_path = None
-                for local_path in files:
-                    filename = f"{prefix}_{timestamp}_{os.path.basename(local_path)}"
-                    remote_path = plugin.upload(local_path, filename)
-                    last_remote_path = remote_path
-                    total_size += os.path.getsize(local_path)
-
-            self._apply_retention(job, plugin, prefix)
-
+            # Record the run before retention, so the new backup is never the
+            # one retention mistakes for an old file.
             run.status = "success"
             run.finished_at = datetime.now(timezone.utc)
             run.file_size_bytes = total_size
-            run.backup_file_path = last_remote_path
+            run.backup_file_path = remote_path
             db.commit()
+
+            self._apply_retention(job, plugin, prefix, db)
 
         except Exception as e:
             logger.error(f"Backup job {job.id} failed: {e}")
@@ -62,6 +62,21 @@ class BackupEngine:
             self._notify_failure(job, str(e))
 
         return run
+
+    def _zip(self, files: list[str], archive_path: str) -> str:
+        """Pack the run's files into one zip. Already-compressed members
+        (the .tar.gz of site files) are stored, not squeezed a second time."""
+        import zipfile
+        with zipfile.ZipFile(archive_path, "w", allowZip64=True) as zf:
+            for path in files:
+                packed = path.endswith((".gz", ".zip", ".tgz", ".bz2", ".xz"))
+                zf.write(
+                    path, arcname=os.path.basename(path),
+                    compress_type=zipfile.ZIP_STORED if packed else zipfile.ZIP_DEFLATED,
+                    compresslevel=None if packed else 6,
+                )
+                os.remove(path)  # free the disk as we go; the zip holds it now
+        return archive_path
 
     def _create_backup_files(self, job: BackupJob, db: Session, tmpdir: str) -> list[str]:
         if job.source_type == "local_app":
@@ -147,11 +162,15 @@ class BackupEngine:
             raise Exception(f"Command failed ({exit_code}): {err}")
         return out
 
-    def _apply_retention(self, job: BackupJob, plugin, prefix: str) -> None:
+    def _apply_retention(self, job: BackupJob, plugin, prefix: str, db: Session) -> None:
         if not job.retention_max_count and not job.retention_max_days:
             return
 
-        backups = plugin.list_backups(prefix)
+        try:
+            backups = plugin.list_backups(prefix)  # oldest first
+        except Exception as e:
+            logger.warning(f"Retention listing failed for job {job.id}: {e}")
+            return
 
         if job.retention_max_count and len(backups) > job.retention_max_count:
             to_delete = backups[: len(backups) - job.retention_max_count]
@@ -160,6 +179,14 @@ class BackupEngine:
                     plugin.delete(path)
                 except Exception as e:
                     logger.warning(f"Retention delete failed for {path}: {e}")
+                    continue
+                # The run stays in History, marked as having no file left.
+                db.query(BackupRun).filter(
+                    BackupRun.job_id == job.id,
+                    BackupRun.backup_file_path == path,
+                    BackupRun.file_deleted_at.is_(None),
+                ).update({BackupRun.file_deleted_at: datetime.now(timezone.utc)}, synchronize_session=False)
+            db.commit()
 
     def _notify_failure(self, job: BackupJob, error: str) -> None:
         """Send failure notification emails using the application SMTP config."""

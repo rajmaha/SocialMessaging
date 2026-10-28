@@ -40,8 +40,16 @@ class OneDriveDestination(BaseDestination):
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
-        items = resp.json().get("value", [])
-        return sorted([f"onedrive://{i['id']}" for i in items if i["name"].startswith(prefix)])
+        items = sorted((i for i in resp.json().get("value", []) if i["name"].startswith(prefix)), key=lambda i: i["name"])
+        return [f"onedrive://{i['id']}" for i in items]  # oldest first: names carry the timestamp
+
+    def download(self, remote_path: str, local_path: str) -> None:
+        item_id = remote_path.replace("onedrive://", "")
+        with requests.get(f"{GRAPH_API}/me/drive/items/{item_id}/content", headers=self._headers(), stream=True, timeout=60) as resp:
+            resp.raise_for_status()
+            with open(local_path, "wb") as f:
+                for chunk in resp.iter_content(1024 * 1024):
+                    f.write(chunk)
 
     def test_connection(self) -> bool:
         url = f"{GRAPH_API}/me/drive"

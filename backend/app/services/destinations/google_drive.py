@@ -114,17 +114,43 @@ class GoogleDriveDestination(BaseDestination):
         return f"gdrive://{file['id']}"
 
     def delete(self, remote_path: str) -> None:
+        from googleapiclient.errors import HttpError
         file_id = remote_path.replace("gdrive://", "")
-        self._call(lambda: self._get_service().files().delete(fileId=file_id).execute())
+
+        def go():
+            try:
+                self._get_service().files().delete(fileId=file_id).execute()
+            except HttpError as e:
+                if getattr(e.resp, "status", None) != 404:  # 404 = already gone
+                    raise
+
+        self._call(go)
+
+    def download(self, remote_path: str, local_path: str) -> None:
+        from googleapiclient.http import MediaIoBaseDownload
+        file_id = remote_path.replace("gdrive://", "")
+
+        def go():
+            request = self._get_service().files().get_media(fileId=file_id)
+            with open(local_path, "wb") as f:
+                downloader = MediaIoBaseDownload(f, request, chunksize=8 * 1024 * 1024)
+                done = False
+                while not done:
+                    _, done = downloader.next_chunk()
+
+        self._call(go)
 
     def list_backups(self, prefix: str) -> List[str]:
         def go():
             safe = prefix.replace("'", "\\'")
             query = f"'{self._folder()}' in parents and name contains '{safe}' and trashed=false"
-            return self._get_service().files().list(q=query, fields="files(id,name)").execute()
+            return self._get_service().files().list(
+                q=query, fields="files(id,name)", orderBy="createdTime", pageSize=1000
+            ).execute()
 
         resp = self._call(go)
-        return sorted([f"gdrive://{f['id']}" for f in resp.get("files", [])])
+        # Oldest first, as retention expects; Drive ids do not sort by date.
+        return [f"gdrive://{f['id']}" for f in resp.get("files", []) if f["name"].startswith(prefix)]
 
     def test_connection(self) -> bool:
         def go():

@@ -21,6 +21,14 @@ class BaseDestination(ABC):
         """List backup file paths for a given job prefix (for retention cleanup)."""
         raise NotImplementedError
 
+    def download(self, remote_path: str, local_path: str) -> None:
+        """Copy a stored backup back to local_path (History's Download)."""
+        raise NotImplementedError("Downloading is not available for this destination type.")
+
+    def is_local_file(self, remote_path: str) -> bool:
+        """True when remote_path is already a file on this server (served directly)."""
+        return False
+
     @abstractmethod
     def test_connection(self) -> bool:
         """Test that credentials/connection work. Raises on failure."""

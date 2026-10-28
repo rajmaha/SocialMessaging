@@ -15,9 +15,27 @@ class LocalDestination(BaseDestination):
         shutil.copy2(local_path, dest)
         return dest
 
+    def _inside(self, remote_path: str) -> str:
+        """remote_path, refused unless it lies in this destination's folder."""
+        root = os.path.realpath(self.path)
+        real = os.path.realpath(remote_path)
+        if os.path.commonpath([root, real]) != root:
+            raise ValueError("That backup is not in this destination's folder.")
+        return real
+
     def delete(self, remote_path: str) -> None:
-        if os.path.exists(remote_path):
-            os.remove(remote_path)
+        real = self._inside(remote_path)
+        if os.path.exists(real):
+            os.remove(real)
+
+    def download(self, remote_path: str, local_path: str) -> None:
+        shutil.copy2(self._inside(remote_path), local_path)
+
+    def is_local_file(self, remote_path: str) -> bool:
+        try:
+            return os.path.isfile(self._inside(remote_path))
+        except ValueError:
+            return False
 
     def list_backups(self, prefix: str) -> List[str]:
         if not os.path.exists(self.path):

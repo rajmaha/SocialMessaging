@@ -93,6 +93,7 @@ class BackupRunResponse(BaseModel):
     file_size_bytes: Optional[int]
     backup_file_path: Optional[str]
     error_message: Optional[str]
+    file_deleted_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

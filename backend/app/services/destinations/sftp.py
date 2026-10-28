@@ -45,7 +45,18 @@ class SftpDestination(BaseDestination):
     def delete(self, remote_path: str) -> None:
         sftp, ssh = self._get_client()
         try:
-            sftp.remove(remote_path)
+            try:
+                sftp.remove(remote_path)
+            except FileNotFoundError:
+                pass  # already gone
+        finally:
+            sftp.close()
+            ssh.close()
+
+    def download(self, remote_path: str, local_path: str) -> None:
+        sftp, ssh = self._get_client()
+        try:
+            sftp.get(remote_path, local_path)
         finally:
             sftp.close()
             ssh.close()

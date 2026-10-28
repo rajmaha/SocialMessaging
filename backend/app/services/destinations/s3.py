@@ -34,6 +34,10 @@ class S3Destination(BaseDestination):
         s3 = self._get_client()
         s3.delete_object(Bucket=self.bucket, Key=key)
 
+    def download(self, remote_path: str, local_path: str) -> None:
+        key = remote_path.replace(f"s3://{self.bucket}/", "")
+        self._get_client().download_file(self.bucket, key, local_path)
+
     def list_backups(self, prefix: str) -> List[str]:
         s3 = self._get_client()
         resp = s3.list_objects_v2(Bucket=self.bucket, Prefix=f"{self.prefix}/{prefix}")

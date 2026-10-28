@@ -1,6 +1,7 @@
 # backend/app/routes/backups.py
 from datetime import datetime, timezone, timedelta
 import html
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -210,3 +211,123 @@ def get_run(run_id: int, db: Session = Depends(get_db), admin: User = Depends(ge
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return run
+
+
+# ── Download and delete a run's backup ─────────────────────────────────────────
+#
+# The admin API authenticates with a Bearer header from localStorage, which a
+# plain browser download cannot send, and fetching a multi-gigabyte backup into
+# a JavaScript blob would hold all of it in memory. So the page asks for a
+# signed link valid for a few minutes and the browser downloads that directly.
+
+DOWNLOAD_LINK_SECONDS = 300
+
+
+def _download_sig(run_id: int, expires: int) -> str:
+    import hashlib
+    import hmac
+    from app.config import settings
+    msg = f"backup-download|{run_id}|{expires}".encode()
+    return hmac.new(settings.SECRET_KEY.encode(), msg, hashlib.sha256).hexdigest()
+
+
+def _run_with_file(run_id: int, db: Session) -> BackupRun:
+    run = db.query(BackupRun).filter(BackupRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Backup not found")
+    if run.status != "success" or not run.backup_file_path:
+        raise HTTPException(status_code=404, detail="This run has no backup file.")
+    if run.file_deleted_at:
+        raise HTTPException(status_code=410, detail="This backup's file was removed from the destination by retention.")
+    return run
+
+
+def _plugin_for(run: BackupRun, db: Session):
+    from app.services.destinations.base import get_destination
+    job = db.query(BackupJob).filter(BackupJob.id == run.job_id).first()
+    dest = job and db.query(BackupDestination).filter(BackupDestination.id == job.destination_id).first()
+    if not dest:
+        raise HTTPException(status_code=404, detail="The destination of this backup no longer exists.")
+    return get_destination(dest.type, dest.config), dest
+
+
+def _download_name(run: BackupRun, local_path: str) -> str:
+    """The file's own name where the path has one, else job + time + the
+    extension its first bytes show (Drive and OneDrive store ids)."""
+    base = os.path.basename(run.backup_file_path.rstrip("/"))
+    if base.startswith("job") and "." in base:
+        return base
+    with open(local_path, "rb") as f:
+        head = f.read(4)
+    ext = ".zip" if head.startswith(b"PK\x03\x04") else ".tar.gz" if head.startswith(b"\x1f\x8b") else ".sql"
+    stamp = run.started_at.strftime("%Y%m%d_%H%M%S") if run.started_at else str(run.id)
+    return f"job{run.job_id}_{stamp}{ext}"
+
+
+@router.post("/runs/{run_id}/download-link")
+def backup_download_link(run_id: int, db: Session = Depends(get_db), admin: User = Depends(get_admin_user)):
+    import time
+    _run_with_file(run_id, db)
+    expires = int(time.time()) + DOWNLOAD_LINK_SECONDS
+    return {"url": f"/backups/runs/{run_id}/file?e={expires}&s={_download_sig(run_id, expires)}"}
+
+
+@router.get("/runs/{run_id}/file")
+def backup_download_file(run_id: int, e: int = 0, s: str = "", db: Session = Depends(get_db)):
+    """The backup file itself. No login: the signed link is the permission."""
+    import hmac
+    import tempfile
+    import time
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+
+    if e < time.time() or not hmac.compare_digest(s, _download_sig(run_id, e)):
+        raise HTTPException(status_code=403, detail="This download link has expired. Press Download again.")
+    run = _run_with_file(run_id, db)
+    plugin, dest = _plugin_for(run, db)
+    headers = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+
+    if plugin.is_local_file(run.backup_file_path):
+        path = os.path.realpath(run.backup_file_path)
+        return FileResponse(path, filename=_download_name(run, path), media_type="application/octet-stream", headers=headers)
+
+    fd, tmp = tempfile.mkstemp(prefix="backup_dl_")
+    os.close(fd)
+    try:
+        plugin.download(run.backup_file_path, tmp)
+    except Exception as ex:
+        os.remove(tmp)
+        raise HTTPException(status_code=502 if not isinstance(ex, (ValueError, NotImplementedError)) else 400,
+                            detail=f"Could not fetch the backup from {dest.name}: {ex}")
+    return FileResponse(tmp, filename=_download_name(run, tmp), media_type="application/octet-stream",
+                        headers=headers, background=BackgroundTask(os.remove, tmp))
+
+
+@router.delete("/runs/{run_id}")
+def delete_run(run_id: int, force: bool = False, db: Session = Depends(get_db), admin: User = Depends(get_admin_user)):
+    """
+    Delete a backup: its file at the destination, then the History row. When
+    the file cannot be deleted the row is kept and the reason answered (409);
+    force=true then removes the row anyway, leaving the file where it is.
+    """
+    run = db.query(BackupRun).filter(BackupRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Backup not found")
+    if run.status == "running":
+        raise HTTPException(status_code=400, detail="This backup is still running.")
+
+    file_note = None
+    if run.status == "success" and run.backup_file_path and not run.file_deleted_at:
+        try:
+            plugin, dest = _plugin_for(run, db)
+            plugin.delete(run.backup_file_path)
+            file_note = f"File deleted from {dest.name}."
+        except Exception as ex:
+            detail = ex.detail if isinstance(ex, HTTPException) else str(ex)
+            if not force:
+                raise HTTPException(status_code=409, detail=f"Could not delete the file: {detail}")
+            file_note = f"The file could not be deleted and was left in place: {detail}"
+
+    db.delete(run)
+    db.commit()
+    return {"ok": True, "message": file_note or "Removed from History."}

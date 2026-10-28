@@ -14,5 +14,8 @@ class BackupRun(Base):
     file_size_bytes = Column(BigInteger, nullable=True)
     backup_file_path = Column(String, nullable=True)
     error_message = Column(Text, nullable=True)
+    # Set when the file was removed from the destination (by retention); the
+    # run stays in History but has nothing left to download.
+    file_deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     job = relationship("BackupJob", foreign_keys=[job_id])

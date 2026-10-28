@@ -40,9 +40,20 @@ class ScpDestination(BaseDestination):
             ssh.close()
 
     def delete(self, remote_path: str) -> None:
+        import shlex
         ssh = self._get_ssh()
         try:
-            ssh.exec_command(f"rm -f {remote_path}")
+            stdin, stdout, stderr = ssh.exec_command(f"rm -f {shlex.quote(remote_path)}")
+            stdout.channel.recv_exit_status()
+        finally:
+            ssh.close()
+
+    def download(self, remote_path: str, local_path: str) -> None:
+        ssh = self._get_ssh()
+        try:
+            sftp = ssh.open_sftp()
+            sftp.get(remote_path, local_path)
+            sftp.close()
         finally:
             ssh.close()
 

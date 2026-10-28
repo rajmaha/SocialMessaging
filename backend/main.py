@@ -198,6 +198,7 @@ def _run_inline_migrations():
         "ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS db_user VARCHAR",
         "ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS db_password VARCHAR",
         "ALTER TABLE cicd_deployments ADD COLUMN IF NOT EXISTS stage VARCHAR",
+        "ALTER TABLE backup_runs ADD COLUMN IF NOT EXISTS file_deleted_at TIMESTAMPTZ",
     ):
         try:
             with engine.begin() as ddl_conn:
