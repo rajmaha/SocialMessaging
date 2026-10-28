@@ -97,6 +97,9 @@ export const deleteBackupDestination = (id: number) =>
 export const testBackupDestination = (data: any) =>
   api.post('/backups/destinations/test', data).then(r => r.data);
 
+export const getGoogleDriveAuthUrl = (nonce: string) =>
+  api.get('/backups/google/connect', { params: { nonce } }).then(r => r.data);
+
 export const getBackupJobs = () =>
   api.get('/backups/jobs').then(r => r.data);
 

@@ -1,6 +1,8 @@
 # backend/app/routes/backups.py
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException
+import html
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
@@ -47,6 +49,55 @@ def test_destination(data: DestinationTestRequest, admin: User = Depends(get_adm
         return {"ok": True, "message": "Connection successful"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/google/connect")
+def google_drive_connect(nonce: str = Query(..., min_length=8, max_length=64), admin: User = Depends(get_admin_user)):
+    """The Google sign-in link the destination form opens in a popup."""
+    from app.services import google_drive_auth
+    try:
+        return {"auth_url": google_drive_auth.auth_url(admin.id, nonce)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/google/callback", response_class=HTMLResponse)
+def google_drive_callback(code: str = "", state: str = "", error: str = ""):
+    """
+    Google sends the popup here. No login: the signed state proves an admin
+    asked for it. The page hands the result to the form that opened it (only
+    to FRONTEND_URL) and closes.
+    """
+    import json as _json
+    from app.config import settings
+    from app.services import google_drive_auth
+
+    nonce = ""
+    try:
+        nonce = google_drive_auth.read_state(state)["n"]
+        if error:
+            raise ValueError("Google sign-in was cancelled." if error == "access_denied" else f"Google sign-in failed ({error}).")
+        if not code:
+            raise ValueError("Google sent no sign-in code.")
+        message = {"type": "gdrive-connected", "nonce": nonce, "token": google_drive_auth.exchange_code(code)}
+        text = "Google Drive is connected. You can close this window."
+    except ValueError as e:
+        message = {"type": "gdrive-connected", "nonce": nonce, "error": str(e)}
+        text = str(e)
+    except Exception:
+        message = {"type": "gdrive-connected", "nonce": nonce, "error": "Connecting Google Drive failed. Try again."}
+        text = message["error"]
+
+    payload = _json.dumps(message).replace("<", "\\u003c")
+    origin = _json.dumps(settings.FRONTEND_URL.rstrip("/"))
+    safe_text = html.escape(text)
+    return HTMLResponse(f"""<!doctype html><html><head><meta charset="utf-8"><title>Google Drive</title></head>
+<body style="font-family:system-ui,sans-serif;padding:32px;color:#374151">
+<p>{safe_text}</p>
+<script>
+  try {{ if (window.opener) {{ window.opener.postMessage({payload}, {origin}); window.close(); }} }} catch (e) {{}}
+</script>
+</body></html>""", headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 
 @router.post("/destinations", response_model=BackupDestinationResponse)

@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import {
   getBackupDestinations, createBackupDestination,
-  updateBackupDestination, deleteBackupDestination, testBackupDestination
+  updateBackupDestination, deleteBackupDestination, testBackupDestination,
+  getGoogleDriveAuthUrl
 } from '@/lib/api';
 
 const DEST_TYPES = ['local', 'sftp', 'scp', 's3', 'google_drive', 'onedrive'];
@@ -13,7 +14,7 @@ const defaultConfig: Record<string, any> = {
   sftp: { host: '', port: 22, username: '', password: '', ssh_key: '', remote_path: '/backups' },
   scp: { host: '', port: 22, username: '', password: '', ssh_key: '', remote_path: '/backups' },
   s3: { bucket: '', region: 'us-east-1', access_key: '', secret_key: '', endpoint_url: '', prefix: 'backups' },
-  google_drive: { folder_id: '' },
+  google_drive: { folder_id: '', oauth_token: null },
   onedrive: { folder_path: '/backups' },
 };
 
@@ -25,6 +26,8 @@ export default function BackupDestinationsTab() {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   const load = async () => {
     const data = await getBackupDestinations();
@@ -54,6 +57,46 @@ export default function BackupDestinationsTab() {
   const handleConfigChange = (key: string, val: any) => {
     setForm(f => ({ ...f, config: { ...f.config, [key]: val } }));
   };
+
+  // Google Drive: a popup signs in, and the backend's callback page posts the
+  // token back here. The nonce ties the answer to this click.
+  const connectGoogleDrive = async () => {
+    setConnectError(null);
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+    const popup = window.open('', 'gdrive-connect', 'width=520,height=640');
+    setConnecting(true);
+    try {
+      const { auth_url } = await getGoogleDriveAuthUrl(nonce);
+      if (!popup) { window.location.href = auth_url; return; }
+      popup.location.href = auth_url;
+    } catch (e: any) {
+      popup?.close();
+      setConnecting(false);
+      setConnectError(e.response?.data?.detail || 'Could not start Google sign-in');
+      return;
+    }
+    const onMessage = (ev: MessageEvent) => {
+      const d = ev.data;
+      if (!d || d.type !== 'gdrive-connected' || d.nonce !== nonce) return;
+      window.removeEventListener('message', onMessage);
+      clearInterval(watch);
+      setConnecting(false);
+      if (d.error) { setConnectError(d.error); return; }
+      setTestResult(null);
+      setForm(f => ({ ...f, config: { ...f.config, oauth_token: d.token } }));
+    };
+    window.addEventListener('message', onMessage);
+    const watch = setInterval(() => {
+      if (popup.closed) { clearInterval(watch); window.removeEventListener('message', onMessage); setConnecting(false); }
+    }, 500);
+  };
+
+  const driveToken = (() => {
+    const t = form.config?.oauth_token;
+    if (!t) return null;
+    if (typeof t === 'string') { try { return JSON.parse(t); } catch { return null; } }
+    return t;
+  })();
 
   const handleTest = async () => {
     setTesting(true);
@@ -149,7 +192,26 @@ export default function BackupDestinationsTab() {
                 </select>
               </div>
 
-              {Object.entries(form.config).map(([key, val]) => (
+              {form.type === 'google_drive' && (
+                <div className="rounded-lg border border-gray-200 px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm">
+                      {driveToken?.refresh_token ? (
+                        <span className="text-green-700">✓ Connected{driveToken.email ? ` as ${driveToken.email}` : ''}</span>
+                      ) : (
+                        <span className="text-gray-500">Not connected to Google Drive</span>
+                      )}
+                    </div>
+                    <button type="button" onClick={connectGoogleDrive} disabled={connecting}
+                      className="border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap">
+                      {connecting ? 'Waiting for Google…' : driveToken?.refresh_token ? 'Reconnect' : 'Connect Google Drive'}
+                    </button>
+                  </div>
+                  {connectError && <div className="mt-2 text-sm text-red-600">{connectError}</div>}
+                </div>
+              )}
+
+              {Object.entries(form.config).filter(([key]) => key !== 'oauth_token').map(([key, val]) => (
                 <div key={key}>
                   <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">{key.replace(/_/g, ' ')}</label>
                   {key === 'ssh_key' ? (
@@ -158,9 +220,15 @@ export default function BackupDestinationsTab() {
                     <input
                       className="w-full border rounded-lg px-3 py-2 text-sm"
                       type={key.includes('password') || key.includes('secret') || (key.includes('key') && key !== 'ssh_key') ? 'password' : 'text'}
-                      value={val as string}
+                      value={(val as string) ?? ''}
                       onChange={e => handleConfigChange(key, e.target.value)}
                     />
+                  )}
+                  {form.type === 'google_drive' && key === 'folder_id' && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Leave blank: backups go to a &quot;SocialMessaging Backups&quot; folder the app makes in your Drive.
+                      A folder you made yourself in Drive can&apos;t be used — the app only sees folders it created.
+                    </p>
                   )}
                 </div>
               ))}
