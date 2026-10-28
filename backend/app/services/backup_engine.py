@@ -1,5 +1,7 @@
 # backend/app/services/backup_engine.py
 import os
+import re
+import shlex
 import logging
 import tempfile
 import subprocess
@@ -14,6 +16,16 @@ from app.services.destinations.base import get_destination
 from app.services.migration_service import resolve_mysql_auth
 
 logger = logging.getLogger(__name__)
+
+# MySQL's own databases, never part of a server backup (see _backup_mysql).
+SYSTEM_DATABASES = {"mysql", "sys", "information_schema", "performance_schema"}
+# Accounts MySQL and MariaDB keep for themselves; left out of grants.sql.
+INTERNAL_ACCOUNTS = {"mysql.sys", "mysql.session", "mysql.infoschema", "mariadb.sys"}
+
+
+def _sql_string(value: str) -> str:
+    """A MySQL string literal."""
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
 class BackupEngine:
@@ -117,27 +129,7 @@ class BackupEngine:
         files = []
         try:
             if scope in ("db", "both"):
-                # `mysqldump -u root` with no password only works when the SSH user is
-                # root and root has a defaults file; elsewhere it dies with "Access
-                # denied for user 'root'@'localhost' (using password: NO)". Probe for a
-                # login that actually connects, same as DB migrations do.
-                auth, auth_err = resolve_mysql_auth(ssh)
-                if auth is None:
-                    raise Exception(auth_err)
-
-                remote_db = f"/tmp/backup_db_{server.id}.sql"
-                dump = auth.binary("mysqldump", "--all-databases")
-                # The redirect runs inside auth.shell() so that, under sudo, the dump
-                # file is written with the same privileges as mysqldump itself.
-                self._exec(ssh, auth.shell(f"{dump} > {remote_db}"))
-                local_db = os.path.join(tmpdir, f"db_{server.id}.sql")
-                sftp = ssh.open_sftp()
-                sftp.get(remote_db, local_db)
-                sftp.close()
-                # Also wrapped: /tmp is sticky, so a non-root SSH user cannot unlink a
-                # dump that sudo'd mysqldump created.
-                self._exec(ssh, auth.shell(f"rm -f {remote_db}"))
-                files.append(local_db)
+                files += self._backup_mysql(ssh, server.id, tmpdir)
 
             if scope in ("files", "both"):
                 remote_tar = f"/tmp/backup_files_{server.id}.tar.gz"
@@ -152,6 +144,131 @@ class BackupEngine:
             ssh.close()
 
         return files
+
+    def _backup_mysql(self, ssh, server_id: int, tmpdir: str) -> list[str]:
+        """
+        One gzipped dump per site database, plus grants.sql listing the logins.
+
+        MySQL's own databases are left out: information_schema and
+        performance_schema are views of the running server, sys is rebuilt by
+        MySQL itself, and restoring `mysql` would overwrite every login on the
+        target (root and CloudPanel's own included) and can stop a server of
+        another version from starting. A site needs its database and a user
+        CloudPanel makes when the database is added; grants.sql is there to read
+        while rebuilding, not to run as a whole.
+        """
+        # `mysqldump -u root` with no password only works when the SSH user is
+        # root and root has a defaults file; elsewhere it dies with "Access
+        # denied for user 'root'@'localhost' (using password: NO)". Probe for a
+        # login that actually connects, same as DB migrations do.
+        auth, auth_err = resolve_mysql_auth(ssh)
+        if auth is None:
+            raise Exception(auth_err)
+
+        out = self._exec(ssh, auth.shell(auth.binary("mysql", "-N -B -e 'SHOW DATABASES'")))
+        names = [n.strip() for n in out.splitlines() if n.strip()]
+        databases = []
+        for name in names:
+            if name.lower() in SYSTEM_DATABASES:
+                continue
+            if name.startswith("-"):  # would be read as an option
+                logger.warning(f"Backup of server {server_id}: skipped database {name!r}")
+                continue
+            databases.append(name)
+        if not databases:
+            raise Exception("No databases found on this server besides MySQL's own.")
+
+        files = []
+        used = set()
+        sftp = ssh.open_sftp()
+        try:
+            for i, name in enumerate(databases):
+                remote = f"/tmp/backup_{server_id}_{i}.sql"
+                dump = auth.binary(
+                    "mysqldump",
+                    "--single-transaction --routines --triggers --events --no-tablespaces "
+                    f"--default-character-set=utf8mb4 {shlex.quote(name)}",
+                )
+                try:
+                    # Chained with && so a failed dump never reaches gzip. Inside
+                    # auth.shell() so that, under sudo, the file is written with
+                    # mysqldump's own privileges -- and removed with them: /tmp is
+                    # sticky, so a non-root SSH user cannot unlink it.
+                    self._exec(ssh, auth.shell(f"{dump} > {remote} && gzip -f {remote}"))
+                    local = os.path.join(tmpdir, self._dump_name(name, used))
+                    sftp.get(f"{remote}.gz", local)
+                except Exception as e:
+                    raise Exception(f"Dumping database {name} failed: {e}")
+                finally:
+                    try:
+                        self._exec(ssh, auth.shell(f"rm -f {remote} {remote}.gz"))
+                    except Exception:
+                        pass
+                files.append(local)
+        finally:
+            sftp.close()
+
+        files.append(self._write_grants(ssh, auth, server_id, tmpdir))
+        return files
+
+    @staticmethod
+    def _dump_name(name: str, used: set) -> str:
+        """db_<name>.sql.gz, made safe as a file name and unique within the zip."""
+        base = "db_" + (re.sub(r"[^A-Za-z0-9_.$-]", "_", name) or "unnamed")
+        candidate, n = base, 2
+        while candidate.lower() in used:
+            candidate, n = f"{base}_{n}", n + 1
+        used.add(candidate.lower())
+        return f"{candidate}.sql.gz"
+
+    def _write_grants(self, ssh, auth, server_id: int, tmpdir: str) -> str:
+        """
+        grants.sql: CREATE USER and GRANT for every login but MySQL's internal
+        ones. Best effort -- a server that will not answer gets a note in the
+        file rather than a failed backup, since the databases are what matter.
+        """
+        path = os.path.join(tmpdir, "grants.sql")
+        lines = [
+            "-- MySQL logins on this server when it was backed up.",
+            "-- For reference while rebuilding: run only the lines for the site you",
+            "-- are restoring, after CloudPanel has created its database. Running the",
+            "-- whole file would also change root and CloudPanel's own logins.",
+            "",
+        ]
+        try:
+            out = self._exec(ssh, auth.shell(auth.binary("mysql", "-N -B -e 'SELECT user, host FROM mysql.user'")))
+            statements = ["SET SESSION print_identified_with_as_hex = ON;"]  # MySQL 8: hashes are binary
+            for row in out.splitlines():
+                user, _, host = row.partition("\t")
+                if not user or user in INTERNAL_ACCOUNTS:
+                    continue
+                account = f"{_sql_string(user)}@{_sql_string(host)}"
+                statements.append(f"SHOW CREATE USER {account};")
+                statements.append(f"SHOW GRANTS FOR {account};")
+            # --force: one account the server cannot describe does not stop the rest.
+            out = self._exec_stdin(ssh, auth.shell(auth.binary("mysql", "-N -B --force")),
+                                   "\n".join(statements) + "\n")
+            lines += [f"{line};" for line in out.splitlines() if line.strip()]
+        except Exception as e:
+            logger.warning(f"Backup of server {server_id}: could not read the logins: {e}")
+            lines.append(f"-- Could not read the logins: {e}")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        return path
+
+    def _exec_stdin(self, ssh, command: str, data: str) -> str:
+        """Like _exec, with `data` sent on the command's stdin."""
+        stdin, stdout, stderr = ssh.exec_command(command)
+        stdin.write(data)
+        stdin.channel.shutdown_write()
+        out = stdout.read().decode("utf-8", errors="replace")
+        exit_code = stdout.channel.recv_exit_status()
+        err = stderr.read().decode("utf-8", errors="replace")
+        # --force carries on past a failed statement and still exits non-zero;
+        # what did answer is kept.
+        if exit_code != 0 and not out.strip():
+            raise Exception(f"Command failed ({exit_code}): {err}")
+        return out
 
     def _exec(self, ssh, command: str) -> str:
         stdin, stdout, stderr = ssh.exec_command(command)
