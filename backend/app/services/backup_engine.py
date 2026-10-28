@@ -132,14 +132,7 @@ class BackupEngine:
                 files += self._backup_mysql(ssh, server.id, tmpdir)
 
             if scope in ("files", "both"):
-                remote_tar = f"/tmp/backup_files_{server.id}.tar.gz"
-                self._exec(ssh, f"tar -czf {remote_tar} /home/*/htdocs/ 2>/dev/null || true")
-                local_tar = os.path.join(tmpdir, f"files_{server.id}.tar.gz")
-                sftp = ssh.open_sftp()
-                sftp.get(remote_tar, local_tar)
-                sftp.close()
-                self._exec(ssh, f"rm -f {remote_tar}")
-                files.append(local_tar)
+                files += self._backup_site_files(ssh, server.id, tmpdir)
         finally:
             ssh.close()
 
@@ -195,7 +188,7 @@ class BackupEngine:
                     # mysqldump's own privileges -- and removed with them: /tmp is
                     # sticky, so a non-root SSH user cannot unlink it.
                     self._exec(ssh, auth.shell(f"{dump} > {remote} && gzip -f {remote}"))
-                    local = os.path.join(tmpdir, self._dump_name(name, used))
+                    local = os.path.join(tmpdir, self._unique_name("db_", name, ".sql.gz", used))
                     sftp.get(f"{remote}.gz", local)
                 except Exception as e:
                     raise Exception(f"Dumping database {name} failed: {e}")
@@ -212,14 +205,146 @@ class BackupEngine:
         return files
 
     @staticmethod
-    def _dump_name(name: str, used: set) -> str:
-        """db_<name>.sql.gz, made safe as a file name and unique within the zip."""
-        base = "db_" + (re.sub(r"[^A-Za-z0-9_.$-]", "_", name) or "unnamed")
+    def _unique_name(prefix: str, name: str, ext: str, used: set) -> str:
+        """<prefix><name><ext>, made safe as a file name and unique within the zip."""
+        base = prefix + (re.sub(r"[^A-Za-z0-9_.$-]", "_", name) or "unnamed")
         candidate, n = base, 2
         while candidate.lower() in used:
             candidate, n = f"{base}_{n}", n + 1
         used.add(candidate.lower())
-        return f"{candidate}.sql.gz"
+        return f"{candidate}{ext}"
+
+    def _backup_site_files(self, ssh, server_id: int, tmpdir: str) -> list[str]:
+        """
+        One files_<site>.tar.gz per /home/<user>/htdocs/<site>, the shared app
+        folder once (shared.tar.gz), and the nginx site configs for reference.
+
+        Anything mounted inside a site is left out. OMS sites bind-mount the
+        shared app code and assets from /home/shared into every site, so without
+        this each site carried its own copy of ~600 MB of the same code. That
+        code is archived once instead, from /home/shared. tar's
+        --one-file-system would not do it: a bind mount from the same disk has
+        the same device number, so tar walks straight into it.
+
+        tar streams over SSH into the local file -- nothing is staged on the
+        server's disk -- and runs under sudo when the SSH user is not root and
+        may, so one user's site is not skipped for another's permissions.
+        """
+        wrap = self._file_wrapper(ssh)
+        # A home the SSH user cannot open hides its sites from the listing, so it
+        # is reported rather than quietly leaving a site out of the backup.
+        out = self._exec(ssh, wrap(
+            'for h in /home/*/; do [ -r "$h" ] && [ -x "$h" ] || printf "LOCKED %s\\n" "${h%/}"; done; '
+            'for d in /home/*/htdocs/*/; do [ -d "$d" ] && printf "SITE %s\\n" "${d%/}"; done; exit 0'
+        ))
+        locked = [line[7:] for line in out.splitlines() if line.startswith("LOCKED /home/")]
+        if locked:
+            raise Exception(
+                "Cannot read " + ", ".join(locked) + " as the SSH user, so sites there would be "
+                "left out. Connect as root or give the SSH user passwordless sudo."
+            )
+        sites = [line[5:] for line in out.splitlines() if line.startswith("SITE /home/")]
+        if not sites:
+            raise Exception("No sites found under /home/*/htdocs on this server.")
+        mounts = self._mount_points(ssh)
+
+        files, used = [], set()
+        for site in sites:
+            label = os.path.basename(site)
+            local = os.path.join(tmpdir, self._unique_name("files_", label, ".tar.gz", used))
+            self._tar(ssh, wrap, ["/", site], mounts, local, f"site {label}")
+            files.append(local)
+
+        code, _out, _err = self._run(ssh, wrap("test -d /home/shared"))
+        if code == 0:
+            local = os.path.join(tmpdir, "shared.tar.gz")
+            self._tar(ssh, wrap, ["/", "/home/shared"], mounts, local, "/home/shared")
+            files.append(local)
+
+        # Reference only, like grants.sql: CloudPanel writes a plain config when
+        # a site is added, so custom rules have to be put back by hand. -h keeps
+        # what sites-enabled links to rather than the links themselves.
+        local = os.path.join(tmpdir, "nginx_sites.tar.gz")
+        try:
+            self._tar(ssh, wrap, ["/etc/nginx", "sites-enabled"], [], local, "nginx site configs", deref=True)
+            files.append(local)
+        except Exception as e:
+            logger.warning(f"Backup of server {server_id}: nginx site configs not saved: {e}")
+            if os.path.exists(local):
+                os.remove(local)
+        return files
+
+    def _file_wrapper(self, ssh):
+        """How to run a command that reads every site: as is for root, under
+        passwordless sudo when there is one, otherwise as the SSH user -- in
+        which case a site it cannot read fails the backup instead of being skipped."""
+        code, out, _err = self._run(ssh, "id -u")
+        if code == 0 and out.strip() == "0":
+            return lambda cmd: cmd
+        code, _out, _err = self._run(ssh, "sudo -n true")
+        if code == 0:
+            return lambda cmd: "sudo -n sh -c " + shlex.quote(cmd)
+        return lambda cmd: cmd
+
+    def _mount_points(self, ssh) -> list[str]:
+        """Every mount point on the server, from /proc/self/mounts."""
+        code, out, _err = self._run(ssh, "cat /proc/self/mounts")
+        if code != 0:
+            return []
+        points = []
+        for line in out.splitlines():
+            fields = line.split()
+            if len(fields) > 1:
+                # Spaces and the like are written as octal escapes (\040).
+                points.append(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), fields[1]))
+        return points
+
+    def _tar(self, ssh, wrap, where: list, mounts: list, local_path: str, label: str,
+             deref: bool = False) -> None:
+        """Stream `tar -C <where[0]> -czf - <where[1]>` into local_path,
+        leaving out anything mounted inside it. GNU tar's exit 1 only means a
+        file changed while it was read (a live site); 2 and up is a failure."""
+        base, member = where
+        root = member if member.startswith("/") else os.path.join(base, member)
+        rel = os.path.relpath(member, base) if member.startswith("/") else member
+        excludes = [
+            "--exclude=" + shlex.quote(os.path.relpath(m, base))
+            for m in mounts if m.startswith(root.rstrip("/") + "/")
+        ]
+        # Options before the member: GNU tar ignores an --exclude given after it.
+        # --no-wildcards: a folder named with * or [ is still only itself.
+        parts = ["tar", "-C", shlex.quote(base), "-czf", "-"] + (["-h"] if deref else []) + (["--no-wildcards"] if excludes else []) + excludes + ["--", shlex.quote(rel)]
+        code, err = self._exec_to_file(ssh, wrap(" ".join(parts)), local_path)
+        err = err.strip()
+        if code not in (0, 1) or not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+            raise Exception(f"Archiving {label} failed: {err[-500:] or f'tar exited {code}'}")
+        if code == 1:
+            logger.info(f"Archiving {label}: files changed while being read: {err[-300:]}")
+
+    def _exec_to_file(self, ssh, command: str, local_path: str) -> tuple:
+        """Run `command`, writing its stdout to local_path as it arrives.
+        stderr is read alongside, so a chatty command cannot stall the stream."""
+        import threading
+        _stdin, stdout, stderr = ssh.exec_command(command)
+        errors = []
+        reader = threading.Thread(target=lambda: errors.append(stderr.read()), daemon=True)
+        reader.start()
+        with open(local_path, "wb") as f:
+            while True:
+                chunk = stdout.read(1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+        code = stdout.channel.recv_exit_status()
+        reader.join(timeout=30)
+        return code, b"".join(errors).decode("utf-8", errors="replace")
+
+    def _run(self, ssh, command: str) -> tuple:
+        """(exit code, stdout, stderr) without raising."""
+        _stdin, stdout, stderr = ssh.exec_command(command)
+        out = stdout.read().decode("utf-8", errors="replace")
+        code = stdout.channel.recv_exit_status()
+        return code, out, stderr.read().decode("utf-8", errors="replace")
 
     def _write_grants(self, ssh, auth, server_id: int, tmpdir: str) -> str:
         """
