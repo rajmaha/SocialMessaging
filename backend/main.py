@@ -2944,6 +2944,10 @@ async def startup_event():
         scheduler.add_job(unsnooze_emails, 'interval', minutes=1, id='unsnooze_emails')
         # Auto-retry failed outbox emails every 5 minutes
         scheduler.add_job(retry_outbox_emails, 'interval', minutes=5, id='retry_outbox_emails')
+        # Support desk: tell support sites about replies and status changes (signed webhooks)
+        from app.services import support_webhooks as _support_webhooks
+        scheduler.add_job(_support_webhooks.run_job, 'interval', minutes=1, id='support_webhooks',
+                          max_instances=1, coalesce=True)
         # Sync FreePBX CDR call records every 5 minutes
         def sync_freepbx_cdr():
             db = SessionLocal()
