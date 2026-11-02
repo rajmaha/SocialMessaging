@@ -7,6 +7,7 @@ from app.models.user import User
 from app.models.platform_settings import PlatformSettings
 from app.models.email import UserEmailAccount
 from app.routes.auth import get_password_hash, verify_password
+from app.auth_tokens import user_from_token, bearer_value
 from app.schemas.email import EmailAccountCreate, EmailAccountUpdate, EmailAccountResponse, EmailAccountFullResponse, TestEmailCredentialsRequest
 from app.schemas.role import UserRoleUpdate
 from app.models.role import Role
@@ -19,75 +20,26 @@ import os
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)) -> dict:
-    """Extract current user from Authorization header"""
+    """The signed-in user from `Authorization: Bearer <token>` (a token issued
+    at sign-in; never a bare user id or JSON)."""
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header required"
         )
-    
-    try:
-        # Authorization: Bearer <user_json_or_id>
-        parts = authorization.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authorization header format"
-            )
-        
-        token = parts[1]
-        
-        # Try to parse as user_id first
-        try:
-            user_id = int(token)
-            user = db.query(User).filter(User.id == user_id).first()
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User not found"
-                )
-            return {
-                "user_id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "role": user.role,
-                "is_active": user.is_active
-            }
-        except ValueError:
-            # Try to parse as JSON
-            try:
-                user_data = json.loads(token)
-                if "user_id" not in user_data:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid token format"
-                    )
-                # Verify user exists in database
-                user = db.query(User).filter(User.id == user_data["user_id"]).first()
-                if not user:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="User not found"
-                    )
-                return {
-                    "user_id": user.id,
-                    "username": user.username,
-                    "email": user.email,
-                    "role": user.role,
-                    "is_active": user.is_active
-                }
-            except json.JSONDecodeError:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token"
-                )
-    except HTTPException:
-        raise
-    except Exception as e:
+    user = user_from_token(bearer_value(authorization), db)
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
+            detail="Your session has ended. Please sign in again."
         )
+    return {
+        "user_id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "is_active": user.is_active
+    }
 
 def verify_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """Verify user is admin"""

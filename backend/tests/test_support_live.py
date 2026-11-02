@@ -315,6 +315,22 @@ def test_deny_from_the_customer(env):
 
 # --- the relay ----------------------------------------------------------------------------
 
+def tok(env, name):
+    """A real sign-in token for one of the fixture's agents."""
+    from app.auth_tokens import issue_token
+    from app.models.user import User
+    with env["Session"]() as s:
+        return issue_token(s.get(User, env["ids"][name]))
+
+
+def test_agent_socket_refuses_a_bare_user_id(env):
+    c = env["client"]
+    lid = c.post(f"/api/tickets/{env['ids']['t1']}/live", json={"kind": "screen"}).json()["live"]["id"]
+    with pytest.raises(WebSocketDisconnect):
+        with c.websocket_connect(f"/api/tickets/live/ws/{lid}?token={env['ids']['ram']}") as ws:
+            ws.receive_json()
+
+
 def test_relay_carries_signalling_and_ends_on_leave(env):
     c = env["client"]
     t1 = env["ids"]["t1"]
@@ -322,10 +338,10 @@ def test_relay_carries_signalling_and_ends_on_leave(env):
     lid = c.post(f"/api/tickets/{t1}/live", json={"kind": "screen"}).json()["live"]["id"]
 
     with pytest.raises(WebSocketDisconnect):                    # not the agent who asked
-        with c.websocket_connect(f"/api/tickets/live/ws/{lid}?token={env['ids']['gita']}") as ws:
+        with c.websocket_connect(f"/api/tickets/live/ws/{lid}?token={tok(env, 'gita')}") as ws:
             ws.receive_json()
 
-    with c.websocket_connect(f"/api/tickets/live/ws/{lid}?token={ram_id}") as agent:
+    with c.websocket_connect(f"/api/tickets/live/ws/{lid}?token={tok(env, 'ram')}") as agent:
         hello = agent.receive_json()
         assert hello["type"] == "hello" and hello["role"] == "agent" and hello["ice_servers"]
 
@@ -373,7 +389,7 @@ def test_failed_from_a_peer_is_recorded(env):
     c = env["client"]
     t1 = env["ids"]["t1"]
     lid = c.post(f"/api/tickets/{t1}/live", json={"kind": "talk"}).json()["live"]["id"]
-    with c.websocket_connect(f"/api/tickets/live/ws/{lid}?token={env['ids']['ram']}") as agent:
+    with c.websocket_connect(f"/api/tickets/live/ws/{lid}?token={tok(env, 'ram')}") as agent:
         agent.receive_json()
         token = c.post(f"/api/support/v1/live/{lid}/accept", json={}, headers=_customer()).json()["pass"]
         agent.receive_json()

@@ -5,6 +5,7 @@ import MainHeader from '@/components/MainHeader'
 import AdminNav from '@/components/AdminNav'
 import { authAPI } from '@/lib/auth'
 import { API_URL } from '@/lib/config';
+import { getAuthToken } from '@/lib/auth'
 
 const API = API_URL
 
@@ -52,7 +53,7 @@ const CALL_STATUS_COLORS: Record<string, string> = {
 }
 
 function authHeader() {
-    const token = localStorage.getItem('token') || ''
+    const token = getAuthToken() || ''
     return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 }
 

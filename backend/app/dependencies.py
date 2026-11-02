@@ -4,7 +4,6 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.models.user import User
 from app.database import SessionLocal
-import json
 
 def get_db():
     db = SessionLocal()
@@ -22,72 +21,29 @@ class TokenData(BaseModel):
 oauth2_scheme = None  # Will be set in auth.py
 
 async def verify_token(token: str) -> User:
-    """Verify token and return user (for WebSocket use)"""
-    user_id = None
-    
-    try:
-        # Try to parse as user_id (integer)
-        try:
-            user_id = int(token)
-        except ValueError:
-            # Try to parse as JSON
-            user_data = json.loads(token)
-            user_id = user_data.get("user_id")
-        
-        if user_id is None:
-            return None
-        
-        db = SessionLocal()
-        user = db.query(User).filter(User.id == user_id).first()
-        db.close()
-        
-        return user
-    except Exception as e:
-        return None
+    """The user a signed sign-in token names, or None (for WebSocket use).
 
-async def get_current_user(token: str = Depends(HTTPBearer())) -> User:
-    """Get current user from bearer token (user_id or JSON)"""
-    from app.database import SessionLocal
-    import json
-    
-    token_str = token.credentials
-    user_id = None
-    
+    Only a token issued at sign-in (app.auth_tokens) is accepted -- never a
+    bare user id or JSON, which anybody can write.
+    """
+    from app.auth_tokens import user_from_token
+
+    db = SessionLocal()
     try:
-        # Try to parse as user_id (integer)
-        try:
-            user_id = int(token_str)
-        except ValueError:
-            # Try to parse as JSON
-            user_data = json.loads(token_str)
-            user_id = user_data.get("user_id")
-        
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token format",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        db = SessionLocal()
-        user = db.query(User).filter(User.id == user_id).first()
+        return user_from_token(token, db)
+    finally:
         db.close()
-        
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found"
-            )
-        
-        return user
-    except HTTPException:
-        raise
-    except Exception as e:
+
+async def get_current_user(token=Depends(HTTPBearer())) -> User:
+    """The signed-in agent or admin, from `Authorization: Bearer <token>`."""
+    user = await verify_token(token.credentials)
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {str(e)}",
+            detail="Your session has ended. Please sign in again.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    return user
 
 async def get_admin_user(current_user: User = Depends(get_current_user)):
     """Verify current user is an admin"""

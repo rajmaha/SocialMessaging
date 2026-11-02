@@ -6,6 +6,7 @@ import { API_URL } from '@/lib/config'
 import { useCurrencySymbol } from '@/lib/branding-context'
 import MainHeader from '@/components/MainHeader'
 import AdminNav from '@/components/AdminNav'
+import { getAuthToken } from '@/lib/auth'
 
 export default function ReportsPage() {
   const user = authAPI.getUser()
@@ -28,7 +29,7 @@ export default function ReportsPage() {
   const downloadCSV = (type: string) => {
     const url = `${API_URL}/crm/reports/export?type=${type}`
     const token = typeof window !== 'undefined'
-      ? (localStorage.getItem('auth_token') || localStorage.getItem('token') || '')
+      ? (getAuthToken() || '')
       : ''
     fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.blob())

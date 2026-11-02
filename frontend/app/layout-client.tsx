@@ -11,6 +11,8 @@ import MobileBottomNav from '@/components/MobileBottomNav'
 import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { getAuthToken } from '@/lib/auth'
+import { installSessionGuard } from '@/lib/session-guard'
+import { api } from '@/lib/api'
 import { fetchMyPermissions } from '@/lib/permissions'
 
 export function LayoutClient({ children }: { children: React.ReactNode }) {
@@ -27,6 +29,10 @@ export function LayoutClient({ children }: { children: React.ReactNode }) {
 }
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
+  // Before any page's effects run: a session the backend has ended sends the
+  // person to /login once rather than leaving every request failing.
+  installSessionGuard([api])
+
   useEffect(() => {
     const token = getAuthToken()
     if (!token) return

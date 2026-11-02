@@ -1,7 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
-import { useAuth } from './auth'
+import { endSession, useAuth } from './auth'
 
 // In Docker/Coolify: WS_URL is empty → uses same origin (window.location.host)
 // Locally: WS_URL = ws://localhost:8000 → connects to backend directly
@@ -92,9 +92,11 @@ export function EventsProvider({ children }: { children: React.ReactNode }) {
         setConnected(false)
       }
 
-      websocketRef.current.onclose = () => {
+      websocketRef.current.onclose = (ev) => {
         console.log('WebSocket disconnected')
         setConnected(false)
+        // 1008: the backend refused the token -- the session has ended.
+        if (ev.code === 1008) { endSession(); return }
         
         // Attempt to reconnect after 3 seconds
         reconnectTimeoutRef.current = setTimeout(connect, 3000)

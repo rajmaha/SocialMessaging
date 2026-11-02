@@ -7,6 +7,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { useBranding } from '@/lib/branding-context'
 import { API_URL } from '@/lib/config';
+import { getAuthToken } from '@/lib/auth'
 
 interface EmailAccount {
   id: number
@@ -69,7 +70,7 @@ export default function EmailPage() {
 
   const fetchAccount = async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = getAuthToken()
       const response = await axios.get(`${API_URL}/email/account`, {
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -87,7 +88,7 @@ export default function EmailPage() {
     if (!account) return
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = getAuthToken()
       const response = await axios.get(`${API_URL}/email/inbox?limit=50`, {
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -118,7 +119,7 @@ export default function EmailPage() {
 
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = getAuthToken()
       await axios.post(`${API_URL}/email/account/sync`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -268,7 +269,7 @@ function ComposeEmail({ account, branding, onClose, onSent }: any) {
 
     try {
       setSending(true)
-      const token = localStorage.getItem('token')
+      const token = getAuthToken()
       await axios.post(`${API_URL}/email/send/${account.id}`, {
         to_address: to,
         subject,
@@ -413,7 +414,7 @@ function AddAccountModal({ branding, onClose, onAdded }: any) {
 
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = getAuthToken()
       await axios.post(`${API_URL}/email/accounts`, formData, {
         headers: { Authorization: `Bearer ${token}` }
       })

@@ -896,27 +896,13 @@ async def _get_user_bearer_or_token(
     token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """Authenticate via Bearer header OR ?token= query param (for inline <img> tags)."""
-    # Try Bearer header first
-    from fastapi import Request
-    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-    import json as _json
+    """Authenticate via ?token= query param (for inline <img> tags): a signed
+    sign-in token only, never a bare user id or JSON."""
+    from app.auth_tokens import user_from_token
 
-    # Try query-param token
-    if token:
-        try:
-            uid = int(token)
-            user = db.query(User).filter(User.id == uid).first()
-            if user:
-                return user
-        except ValueError:
-            try:
-                data = _json.loads(token)
-                user = db.query(User).filter(User.id == data.get("user_id")).first()
-                if user:
-                    return user
-            except Exception:
-                pass
+    user = user_from_token(token, db)
+    if user:
+        return user
     raise HTTPException(status_code=401, detail="Authentication required")
 
 

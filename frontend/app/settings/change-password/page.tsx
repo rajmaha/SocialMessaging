@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getAuthToken } from '@/lib/auth';
+import { authAPI, getAuthToken } from '@/lib/auth';
 import { API_URL } from '@/lib/config';
 
 export default function ChangePasswordPage() {
@@ -76,6 +76,9 @@ export default function ChangePasswordPage() {
         const data = await response.json();
         throw new Error(data.detail || 'Failed to change password');
       }
+      // The new password ended the old token; keep the one handed back.
+      const done = await response.json();
+      if (done?.token) authAPI.replaceToken(done.token);
 
       setSuccess(true);
       setFormData({

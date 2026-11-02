@@ -12,6 +12,7 @@ import os
 from app.services.email_service import email_service
 from app.log_database import LogSessionLocal as _LogSessionLocal
 from app.services.log_service import log_audit as _log_audit
+from app.auth_tokens import issue_token, user_from_token, bearer_value
 
 AVATAR_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'avatar_storage')
 os.makedirs(AVATAR_DIR, exist_ok=True)
@@ -199,11 +200,17 @@ def verify_otp(request: VerifyOTPRequest, db: Session = Depends(get_db)):
     if request.context == "register":
         user.is_verified = True
 
+    try:
+        token = issue_token(user)
+    except RuntimeError as e:                       # SECRET_KEY unset or a placeholder
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+
     db.commit()
 
     return {
         "status": "success",
         "message": "Verified successfully",
+        "token": token,
         "user_id": user.id,
         "username": user.username,
         "email": user.email,
@@ -247,25 +254,12 @@ def resend_otp(request: ResendOTPRequest, db: Session = Depends(get_db)):
 
 
 def _get_user_from_token(authorization: Optional[str], db: Session) -> User:
-    """Parse Bearer token → User or raise 401"""
+    """The signed-in user from `Authorization: Bearer <token>`, or 401."""
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header required")
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization header format")
-    token = parts[1]
-    try:
-        user_id = int(token)
-    except ValueError:
-        import json
-        try:
-            user_data = json.loads(token)
-            user_id = user_data.get("user_id")
-        except Exception:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user = db.query(User).filter(User.id == user_id).first()
+    user = user_from_token(bearer_value(authorization), db)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Your session has ended. Please sign in again.")
     return user
 
 
@@ -389,41 +383,15 @@ class ForgotPasswordRequest(BaseModel):
 def change_password(
     credentials: ChangePasswordRequest,
     db: Session = Depends(get_db),
-    authorization: str = None
+    authorization: Optional[str] = Header(default=None),
 ):
-    """Change user password - requires old password verification"""
-    from fastapi import Header
-    
-    # Extract user_id from Authorization header
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header required"
-        )
-    
+    """Change user password - requires old password verification.
+
+    The new password ends every earlier token, this one included, so the
+    answer carries a fresh token for the browser to keep.
+    """
+    user = _get_user_from_token(authorization, db)
     try:
-        parts = authorization.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authorization header format"
-            )
-        
-        token = parts[1]
-        try:
-            user_id = int(token)
-        except ValueError:
-            import json
-            user_data = json.loads(token)
-            user_id = user_data.get("user_id")
-        
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found"
-            )
-        
         # Verify old password
         if not verify_password(credentials.old_password, user.password_hash):
             raise HTTPException(
@@ -452,7 +420,8 @@ def change_password(
         
         return {
             "status": "success",
-            "message": "Password changed successfully"
+            "message": "Password changed successfully",
+            "token": issue_token(user),
         }
     
     except HTTPException:

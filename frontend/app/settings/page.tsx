@@ -401,7 +401,7 @@ function SettingsPage() {
         return
       }
 
-      await axios.post(
+      const done = await axios.post(
         `${API_URL}/auth/change-password`,
         {
           old_password: changePasswordForm.oldPassword,
@@ -416,6 +416,8 @@ function SettingsPage() {
         }
       )
 
+      // The new password ended the old token; keep the one handed back.
+      if (done.data?.token) authAPI.replaceToken(done.data.token)
       setChangePasswordSuccess('✓ Password changed successfully!')
       setChangePasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' })
 

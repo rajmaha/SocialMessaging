@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { authAPI } from '@/lib/auth'
@@ -13,6 +13,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  // Sent here because the session ended (endSession() in lib/auth.ts).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('session') === 'ended') {
+      setError('Your session has ended. Please sign in again.')
+    }
+  }, [])
 
   // Step: 'form' | 'otp'
   const [step, setStep] = useState<'form' | 'otp'>('form')

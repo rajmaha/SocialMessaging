@@ -122,6 +122,27 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - Bearer token sessions (JWT, HS256)
 - RBAC: `admin` and `agent` roles
 
+**Agent and admin tokens: `app/auth_tokens.py`, and nothing else.** `verify-otp`
+issues the token (`issue_token()`, 30 days, `SECRET_KEY`); every check --
+`dependencies.get_current_user` / `verify_token`, `admin.get_current_user`,
+`auth._get_user_from_token`, the events and live-help sockets (`?token=`) --
+goes through `user_from_token()`. Until 2026-11-02 every one of them took the
+bearer value as a user id (or JSON the browser wrote), so `Bearer 1` acted as
+user 1. **Never parse a bearer value yourself; a new check calls
+`user_from_token()`.**
+
+- A token ends when it expires, when the user is deactivated, and when their
+  password changes (it carries a fingerprint of the password hash);
+  `change-password` answers a fresh token for the browser to keep.
+- `SECRET_KEY` unset or a placeholder (`your-secret-key-change-in-production`,
+  `your_secret_key_here`): nobody can sign in (`verify-otp` answers 503 saying
+  so) and every token is refused. Changing it signs everybody out once.
+- Browser: the token is `token` inside localStorage `user`; `getAuthToken()`
+  returns it and never the id. A stored user without one (signed in before
+  tokens) is cleared and sent to `/login` once (`endSession()` in `lib/auth.ts`);
+  `lib/session-guard.ts` does the same when the backend answers 401 "Your
+  session has ended" to fetch or axios, and `events-context` on a 1008 close.
+
 ## Background Jobs (APScheduler in main.py)
 
 | Job | Interval |
