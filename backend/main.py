@@ -1975,12 +1975,21 @@ def _run_inline_migrations():
             ALTER TABLE telephony_settings
                 ADD COLUMN IF NOT EXISTS ami_port INTEGER DEFAULT 5038
         """))
-        # Migrate existing port values to ami_port if ami_port is still default
-        conn.execute(text("""
-            UPDATE telephony_settings
-               SET ami_port = port
-             WHERE port IS NOT NULL AND port != 443 AND ami_port = 5038
-        """))
+        # Migrate existing port values to ami_port if ami_port is still default.
+        # Only an older install has the legacy `port` column: a new database is
+        # made by create_all() without it, and the UPDATE would fail there --
+        # aborting this whole transaction and every statement after it on every
+        # fresh install. So it runs only where the column exists.
+        if conn.execute(text("""
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = current_schema()
+               AND table_name = 'telephony_settings' AND column_name = 'port'
+        """)).first():
+            conn.execute(text("""
+                UPDATE telephony_settings
+                   SET ami_port = port
+                 WHERE port IS NOT NULL AND port != 443 AND ami_port = 5038
+            """))
         # Add dedicated FreePBX API HTTPS port column
         conn.execute(text("""
             ALTER TABLE telephony_settings
