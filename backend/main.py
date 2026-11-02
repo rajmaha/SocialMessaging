@@ -2921,6 +2921,8 @@ async def startup_event():
     global scheduler, _event_loop
     import asyncio
     _event_loop = asyncio.get_event_loop()
+    from app.services import support_service as _support_service
+    _support_service.set_event_loop(_event_loop)
     try:
         scheduler = BackgroundScheduler()
         # Run auto-sync every 5 minutes
