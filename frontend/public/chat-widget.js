@@ -4,11 +4,23 @@
  *   <script src="https://your-domain.com/chat-widget.js" data-key="your-widget-key-here"></script>
  *
  * Optional config (set before the script tag):
- *   window.SocialChatConfig = { serverUrl: 'https://your-domain.com' }
+ *   window.SocialChatConfig = {
+ *     serverUrl: 'https://your-domain.com',
+ *     identity: '<token>',          // the site's signed-in user, signed on the site's server
+ *     identityUrl: '/support/identity'  // same-origin URL answering {token} when it expires
+ *   }
+ *
+ * Support (where the widget domain has it on): a Support tab, its own iframe at
+ * /widget/support. The identity token is handed to that iframe by postMessage --
+ * never in a URL. window.SocialChat.open('support', {screen, url}) opens it
+ * with a new request started.
  */
 ;(function () {
   var config = window.SocialChatConfig || {}
   var SERVER = config.serverUrl || window.location.origin
+  var SERVER_ORIGIN = (function () { try { return new URL(SERVER, window.location.href).origin } catch (e) { return '' } })()
+  var identity = typeof config.identity === 'string' ? config.identity : ''
+  var IDENTITY_URL = typeof config.identityUrl === 'string' ? config.identityUrl : ''
   var WIDGET_URL = SERVER + '/widget'
   var BRANDING_URL = SERVER + '/api/webchat/branding'  // proxied via Next.js if needed
 
@@ -152,6 +164,7 @@
   var chatTab = createTab('Chat', true)
   var menuTab = createTab('Menu', false)
   var channelsTab = createTab('Channels', false)
+  var supportTab = createTab('Support', false)   // appended once the support iframe says support is on
   tabBar.appendChild(chatTab)
   tabBar.appendChild(menuTab)
   // channelsTab appended only when channels are available
@@ -169,6 +182,43 @@
     flex: '1',
   })
   container.appendChild(iframe)
+
+  // ── Support iframe (hidden until it reports that support is on) ──────
+  var supportFrame = null
+  var supportReady = false
+  var pendingOpen = null
+  if (WIDGET_KEY) {
+    supportFrame = document.createElement('iframe')
+    supportFrame.src = SERVER + '/widget/support?widget_key=' + encodeURIComponent(WIDGET_KEY)
+    supportFrame.title = 'Support'
+    Object.assign(supportFrame.style, {
+      width: '100%', height: '100%', border: 'none', borderRadius: '0 0 16px 16px', flex: '1', display: 'none',
+    })
+    container.appendChild(supportFrame)
+  }
+
+  function toSupport(msg) {
+    if (supportFrame && supportFrame.contentWindow && SERVER_ORIGIN) {
+      supportFrame.contentWindow.postMessage(msg, SERVER_ORIGIN)
+    }
+  }
+
+  function giveIdentity() {
+    toSupport(identity ? { type: 'sc:identity', token: identity } : { type: 'sc:no-identity' })
+  }
+
+  function renewIdentity() {
+    if (!IDENTITY_URL) return
+    fetch(IDENTITY_URL, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .then(function (d) {
+        if (d && typeof d.token === 'string' && d.token) {
+          identity = d.token
+          toSupport({ type: 'sc:identity', token: identity })
+        }
+      })
+      .catch(function () {})
+  }
 
   // ── Menu panel ───────────────────────────────────────────────────────
   var menuPanel = document.createElement('div')
@@ -286,7 +336,7 @@
   var channelsData = []
 
   function setTabActive(btn) {
-    ;[chatTab, menuTab, channelsTab].forEach(function (t) {
+    ;[chatTab, menuTab, channelsTab, supportTab].forEach(function (t) {
       t.style.background = '#f9fafb'
       t.style.color = '#6b7280'
       t.style.borderBottom = '2px solid transparent'
@@ -301,7 +351,11 @@
     iframe.style.display = 'none'
     menuPanel.style.display = 'none'
     channelsPanel.style.display = 'none'
-    if (tab === 'chat') {
+    if (supportFrame) supportFrame.style.display = 'none'
+    if (tab === 'support' && supportFrame) {
+      supportFrame.style.display = 'block'
+      setTabActive(supportTab)
+    } else if (tab === 'chat') {
       iframe.style.display = 'block'
       setTabActive(chatTab)
     } else if (tab === 'menu') {
@@ -318,6 +372,7 @@
   chatTab.addEventListener('click', function () { switchTab('chat') })
   menuTab.addEventListener('click', function () { switchTab('menu') })
   channelsTab.addEventListener('click', function () { switchTab('channels') })
+  supportTab.addEventListener('click', function () { switchTab('support') })
 
   function renderMenu() {
     menuPanel.innerHTML = ''
@@ -449,6 +504,43 @@
   launcher.addEventListener('click', function () {
     open ? closeChat() : openChat()
   })
+
+  // Messages from the support iframe: only from that frame, only from the server's origin
+  window.addEventListener('message', function (ev) {
+    if (!supportFrame || ev.source !== supportFrame.contentWindow || ev.origin !== SERVER_ORIGIN) return
+    var d = ev.data || {}
+    if (d.type === 'sc:support-ready') {
+      giveIdentity()
+      if (!d.enabled) return
+      supportReady = true
+      tabBar.appendChild(supportTab)
+      _showTabBar()
+      if (d.chat_enabled === false) {
+        // support only: no Chat tab, and the panel opens on Support
+        chatTab.style.display = 'none'
+        if (activeTab === 'chat') switchTab('support')
+      }
+      if (pendingOpen) { toSupport(pendingOpen); pendingOpen = null }
+    } else if (d.type === 'sc:identity-expired') {
+      renewIdentity()
+    }
+  })
+
+  // window.SocialChat.open('support', {screen, url}) -- e.g. a site's own Help link
+  window.SocialChat = {
+    open: function (tab, opts) {
+      openChat()
+      if (tab === 'support' && supportFrame) {
+        switchTab('support')
+        var msg = { type: 'sc:open', screen: (opts && opts.screen) || '', url: (opts && opts.url) || window.location.href }
+        if (supportReady) toSupport(msg)
+        else pendingOpen = msg
+      } else {
+        switchTab('chat')
+      }
+    },
+    close: function () { closeChat() },
+  }
 
   // Listen for new-message events from the iframe so we can show the badge + play sound
   window.addEventListener('message', function (ev) {
