@@ -52,6 +52,15 @@ class Ticket(Base):
     email_id = Column(Integer, ForeignKey("emails.id", ondelete="SET NULL"), nullable=True)
     source = Column(String, nullable=False, server_default="call")
 
+    # Support desk (app/support_schema.py adds these on existing databases)
+    support_site_id = Column(Integer, ForeignKey("widget_domains.id", ondelete="SET NULL"), nullable=True, index=True)
+    support_user_id = Column(Integer, ForeignKey("support_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    support_subject = Column(String, nullable=True)
+    support_screen = Column(String, nullable=True)
+    support_url = Column(String, nullable=True)
+    solved_at = Column(DateTime(timezone=True), nullable=True)
+    last_author = Column(String, nullable=True)   # customer | agent: who wrote last in the thread
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
@@ -66,3 +75,8 @@ class Ticket(Base):
     @property
     def parent_ticket_number(self) -> str | None:
         return self.parent_ticket.ticket_number if self.parent_ticket else None
+
+
+# Ticket.support_user_id points at support_users: register that table whenever
+# Ticket is imported, so metadata (create_all, flushes) can always resolve it.
+from app.models import support as _support_models  # noqa: E402,F401

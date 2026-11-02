@@ -50,6 +50,7 @@ from app.models.widget_domain import WidgetDomain  # noqa: F401
 from app.models.daily_ops import StandupEntry, DailyPlannerItem, CommandCenterConfig  # noqa: F401
 from app.models.domain_account import DomainAccount  # noqa: F401
 from app.models.domain_agent import DomainAgent  # noqa: F401
+from app.models.support import SupportUser, SupportMessage, SupportWebhook, SupportAttempt  # noqa: F401
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -2186,6 +2187,15 @@ try:
 except Exception as _mig_err:
     import logging as _log
     _log.getLogger(__name__).warning("Inline migration skipped: %s", _mig_err)
+
+# Support desk columns on widget_domains and tickets. Each statement commits on
+# its own, so one failure cannot roll the others back.
+try:
+    from app.support_schema import apply_support_schema
+    apply_support_schema(engine)
+except Exception as _sup_err:
+    import logging as _log
+    _log.getLogger(__name__).warning("Support schema skipped: %s", _sup_err)
 
 def _fix_call_recording_timestamps():
     """

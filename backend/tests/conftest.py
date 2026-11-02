@@ -46,3 +46,25 @@ def test_engine():
     engine = create_engine(url, pool_pre_ping=True)
     yield engine
     engine.dispose()
+
+
+def _import_all_models():
+    """Every model module, so Base.metadata knows every table."""
+    import importlib
+    import pkgutil
+    import app.models as models_pkg
+    for mod in pkgutil.iter_modules(models_pkg.__path__):
+        importlib.import_module(f"app.models.{mod.name}")
+
+
+@pytest.fixture
+def fresh_schema(test_engine):
+    """An empty public schema with every table create_all() makes, as on a new install."""
+    from sqlalchemy import text
+    from app.database import Base
+    _import_all_models()
+    with test_engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    Base.metadata.create_all(bind=test_engine)
+    return test_engine
