@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import date, datetime, timedelta
 import io
 from app.database import get_db
-from app.dependencies import get_current_user, require_module
+from app.dependencies import get_current_user, get_current_user_or_query_token, require_module
 from app.models.user import User
 from app.models.call_records import CallRecording
 from app.schemas.call_records import CallRecordingCreate, CallRecordingResponse
@@ -235,11 +235,13 @@ def get_recording_stats(
 def stream_recording_audio(
     recording_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_or_query_token)
 ):
     """
     Stream a call recording audio file from FreePBX through this backend.
     Agents can only stream their own recordings. Admins can stream any.
+    The pages play it with `<audio src="...?token=">`, which sends no header,
+    so the signed token is also taken from the query string.
     """
     rec = db.query(CallRecording).filter(CallRecording.id == recording_id).first()
     if not rec:

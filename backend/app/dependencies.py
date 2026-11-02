@@ -1,4 +1,6 @@
-from fastapi import Depends, HTTPException, status
+from typing import Optional
+
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -37,6 +39,25 @@ async def verify_token(token: str) -> User:
 async def get_current_user(token=Depends(HTTPBearer())) -> User:
     """The signed-in agent or admin, from `Authorization: Bearer <token>`."""
     user = await verify_token(token.credentials)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your session has ended. Please sign in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+async def get_current_user_or_query_token(
+    token: Optional[str] = Query(default=None),
+    bearer=Depends(HTTPBearer(auto_error=False)),
+) -> User:
+    """The signed-in user from the Bearer header, or from `?token=`.
+
+    Only for links a browser opens itself, such as `<audio src>`, which cannot
+    send a header. The value is the same signed token either way.
+    """
+    value = bearer.credentials if bearer else token
+    user = await verify_token(value) if value else None
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

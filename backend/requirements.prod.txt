@@ -51,5 +51,6 @@ websockets==16.0
 yarl==1.22.0
 paramiko==4.0.0
 PyJWT==2.11.0
+bcrypt==5.0.0
 pyttsx3==2.99
 gunicorn==23.0.0

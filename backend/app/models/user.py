@@ -22,6 +22,7 @@ class User(Base):
     otp_code = Column(String, nullable=True)  # Email OTP code
     otp_expires = Column(DateTime, nullable=True)  # OTP expiration
     otp_context = Column(String, nullable=True)  # 'register' or 'login'
+    otp_attempts = Column(Integer, nullable=False, default=0, server_default="0")  # wrong codes for the current one
     is_verified = Column(Boolean, default=False)  # Email verified
 
     # Profile fields

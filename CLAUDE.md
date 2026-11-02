@@ -142,6 +142,21 @@ user 1. **Never parse a bearer value yourself; a new check calls
   tokens) is cleared and sent to `/login` once (`endSession()` in `lib/auth.ts`);
   `lib/session-guard.ts` does the same when the backend answers 401 "Your
   session has ended" to fetch or axios, and `events-context` on a 1008 close.
+- **Sign-in codes allow 5 wrong tries, then are voided** (`users.otp_attempts`,
+  429 "request a new one"); every new code resets the count. One address may
+  make 20 wrong tries across all accounts per 15 minutes (`support_attempts`
+  kind `agent_otp_ip`, through `services/rate_limit.py`). Codes come from
+  `secrets`, compared with `hmac.compare_digest`.
+- **Passwords are bcrypt** (`auth.hash_password()` / `verify_password()`; never
+  compare hashes yourself). An older unsalted sha256 hash is still accepted and
+  replaced at the next successful `login`; that rewrites `password_hash`, so
+  the user's earlier tokens end once -- verify-otp issues the new one from the
+  new hash straight after. bcrypt reads 72 bytes; longer passwords are cut there.
+- `GET /auth/user/{id}` needs a token and answers only the user themself or an admin.
+- A link the browser opens itself (`<audio src>`) cannot send a header, so it
+  carries `?token=` and its route uses `dependencies.get_current_user_or_query_token`
+  (today only `/calls/recordings/{id}/stream`). Such a URL can end up in access
+  logs; use it only where a header is impossible.
 
 ## Background Jobs (APScheduler in main.py)
 

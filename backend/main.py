@@ -203,6 +203,8 @@ def _run_inline_migrations():
         "ALTER TABLE cicd_repos ADD COLUMN IF NOT EXISTS db_password VARCHAR",
         "ALTER TABLE cicd_deployments ADD COLUMN IF NOT EXISTS stage VARCHAR",
         "ALTER TABLE backup_runs ADD COLUMN IF NOT EXISTS file_deleted_at TIMESTAMPTZ",
+        # wrong sign-in codes for the current code (auth.verify_otp voids it after 5)
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_attempts INTEGER NOT NULL DEFAULT 0",
     ):
         try:
             with engine.begin() as ddl_conn:
