@@ -15,7 +15,7 @@ Visitors are identified permanently by their email address.
 The same email always resumes the same conversation with full history.
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query, UploadFile, File, Request
 import os
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 import uuid
 import re
 import random
+import secrets
 import ipaddress
 import socket
 import hmac
@@ -42,6 +43,7 @@ from app.models.user import User
 from app.models.branding import BrandingSettings
 from app.models.bot import BotSettings, BotQA
 from app.models.webchat_otp import WebchatOtp
+from app.services import rate_limit
 from app.services.bot_service import handle_incoming, handle_bot_selection, bot_suggest
 from app.services.ai_service import ai_reply as _ai_reply
 from app.services.webchat_service import webchat_service
@@ -57,10 +59,21 @@ router = APIRouter(prefix="/webchat", tags=["webchat"])
 # (stateless — works with any number of workers)
 # ─────────────────────────────────────────
 
-def _sign_otp_token(email: str, otp: str, name: str) -> str:
-    """Return a tamper-proof token containing email + OTP + name + expiry (10 min)."""
+# The code is never in the token: the token goes back to the browser, and
+# anyone can ask for a code for any address. It carries a keyed hash of the
+# code instead, which the browser cannot reverse or forge without SECRET_KEY.
+OTP_REQUESTS_PER_EMAIL = 5      # an hour
+OTP_REQUESTS_PER_IP = 20        # an hour
+OTP_WRONG_PER_EMAIL = 5         # every 15 minutes
+
+def _otp_hash(email: str, otp: str) -> str:
     from app.config import settings
-    payload = json.dumps({"e": email, "o": otp, "n": name, "x": time.time() + 600}, separators=(',', ':'))
+    return hmac.new(settings.SECRET_KEY.encode(), f"webchat-otp|{email}|{otp}".encode(), hashlib.sha256).hexdigest()
+
+def _sign_otp_token(email: str, otp: str, name: str) -> str:
+    """Return a tamper-proof token for email + name + expiry (10 min) that does not reveal the OTP."""
+    from app.config import settings
+    payload = json.dumps({"e": email, "h": _otp_hash(email, otp), "n": name, "x": time.time() + 600}, separators=(',', ':'))
     b64 = base64.urlsafe_b64encode(payload.encode()).decode()
     sig = hmac.new(settings.SECRET_KEY.encode(), b64.encode(), hashlib.sha256).hexdigest()
     return f"{b64}.{sig}"
@@ -74,7 +87,9 @@ def _decode_otp_token(token: str, email: str, otp: str):
         if not hmac.compare_digest(sig, expected):
             return None
         payload = json.loads(base64.urlsafe_b64decode(b64).decode())
-        if payload.get('e') != email or payload.get('o') != otp or time.time() >= payload.get('x', 0):
+        if payload.get('e') != email or time.time() >= payload.get('x', 0):
+            return None
+        if not hmac.compare_digest(str(payload.get('h') or ''), _otp_hash(email, otp)):
             return None
         return payload
     except Exception:
@@ -199,7 +214,7 @@ class OtpVerify(BaseModel):
 
 
 @router.post("/request-otp")
-def request_otp(req: OtpRequest, db: Session = Depends(get_db)):
+def request_otp(req: OtpRequest, request: Request, db: Session = Depends(get_db)):
     """Send a 6-digit OTP to the visitor's email. Call this before /verify-otp."""
     from app.services.email_service import email_service
 
@@ -207,8 +222,15 @@ def request_otp(req: OtpRequest, db: Session = Depends(get_db)):
     if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
         raise HTTPException(status_code=400, detail="Invalid email address.")
 
+    ip = rate_limit.client_ip(request)
+    if (rate_limit.count(db, "otp_request_email", email, 60) >= OTP_REQUESTS_PER_EMAIL
+            or rate_limit.count(db, "otp_request_ip", ip, 60) >= OTP_REQUESTS_PER_IP):
+        raise HTTPException(status_code=429, detail="Too many codes asked for. Try again in an hour.")
+    rate_limit.hit(db, "otp_request_email", email, commit=False)
+    rate_limit.hit(db, "otp_request_ip", ip, commit=False)
+
     name = req.name.strip() or email.split("@")[0]
-    otp = str(random.randint(100000, 999999))
+    otp = f"{secrets.randbelow(1_000_000):06d}"
 
     token = _sign_otp_token(email, otp, name)
 
@@ -241,10 +263,22 @@ def verify_otp(req: OtpVerify, db: Session = Depends(get_db)):
     otp = req.otp.strip()
     visitor_name = email.split('@')[0]  # default fallback
 
+    # Five wrong codes for an address in 15 minutes stop further tries; one
+    # million codes could otherwise be tried without limit.
+    if rate_limit.count(db, "otp_wrong", email, 15) >= OTP_WRONG_PER_EMAIL:
+        raise HTTPException(status_code=429, detail="Too many wrong codes. Wait 15 minutes and ask for a new code.")
+
+    def _wrong(detail: str):
+        rate_limit.hit(db, "otp_wrong", email)
+        raise HTTPException(status_code=400, detail=detail)
+
     # Primary: verify via HMAC-signed token (stateless, works with multiple workers)
     token_payload = _decode_otp_token(req.token, email, otp) if req.token else None
     if token_payload:
         visitor_name = token_payload.get('n') or visitor_name
+        # the code is used up: it must not work again through the database copy
+        db.query(WebchatOtp).filter(WebchatOtp.email == email).delete()
+        db.commit()
     else:
         # Fallback: DB lookup (covers clients without token)
         record = db.query(WebchatOtp).filter(WebchatOtp.email == email).order_by(WebchatOtp.id.desc()).first()
@@ -257,8 +291,8 @@ def verify_otp(req: OtpVerify, db: Session = Depends(get_db)):
             db.delete(record)
             db.commit()
             raise HTTPException(status_code=400, detail="Code has expired. Please request a new one.")
-        if record.otp != otp:
-            raise HTTPException(status_code=400, detail="Incorrect code. Please try again.")
+        if not hmac.compare_digest(str(record.otp), otp):
+            _wrong("Incorrect code. Please try again.")
         visitor_name = record.name
         db.delete(record)
         db.commit()
