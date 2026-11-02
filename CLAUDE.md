@@ -171,3 +171,30 @@ plain.
 - The chat widget (`public/chat-widget.js`) connects via WebSocket to `/webchat/ws/{session_id}`
 - Visitor identity uses email + OTP verification
 - AI bot supports OpenAI and Ollama (configurable in admin panel)
+
+## Support desk
+
+Support requests from any site's widget (and, later, apps): a widget domain is a
+support site (Admin -> Widget Domains -> Support). Site-facing guide:
+`docs/support-desk.md`. Design and plan: the OMS repo,
+`docs/plans/2026-11-02-support-desk-design.md` and `...-phase1-plan.md`.
+
+| piece | where |
+|---|---|
+| Every rule (raise, reply, reopen, status, views) | `app/services/support_service.py` |
+| Signed identity, the person | `app/services/support_identity.py` |
+| Webhook outbox and sender (job `support_webhooks`, every minute) | `app/services/support_webhooks.py` |
+| Public API `/api/support/v1` | `app/routes/support_public.py` |
+| Service API for subscription servers (`SUPPORT_SERVICE_KEYS`) | `app/routes/support_admin.py` |
+| Agent routes (queue, take, conversation, resend) | end of `app/routes/tickets.py` |
+| Tables, columns on existing tables | `app/models/support.py`, `app/support_schema.py` |
+| Widget Support tab | `public/chat-widget.js`, `app/widget/support/page.tsx` |
+| Workspace | `components/SupportConversation.tsx`, `components/WidgetDomainSupport.tsx` |
+
+- A support request is a `Ticket` with `source` `support_widget` / `support_app`;
+  the customer's thread is `support_messages`. Ticket notes (`FLW-` children)
+  stay internal.
+- A support ticket's status must change through `support_service.set_status()`
+  (the PUT and notes routes do), or the customer and their site are not told.
+- `TicketResponse.source` lists the support sources: leaving one out fails every
+  ticket list.
