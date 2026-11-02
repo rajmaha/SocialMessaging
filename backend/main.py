@@ -16,6 +16,7 @@ from app.routes import worklog as worklog_routes
 from app.routes import roles as roles_routes
 from app.routes import platform_accounts
 from app.routes import widget_domains
+from app.routes.support_public import router as support_public_router
 from app.routes import daily_ops as daily_ops_routes
 from app.routes.api_servers import router as api_servers_router, user_router as user_api_creds_router
 from app.routes.forms import admin_router as forms_admin_router, public_router as forms_public_router
@@ -2576,6 +2577,7 @@ app.include_router(ci_cd_router)
 app.include_router(visitors_router)
 app.include_router(platform_accounts.router)
 app.include_router(widget_domains.router)
+app.include_router(support_public_router)
 app.include_router(daily_ops_routes.router)
 
 # Serve uploaded avatars
