@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     MICROSOFT_TENANT_ID: Optional[str] = "common"
     BACKEND_URL: str = "http://localhost:8000"
 
+    # Support desk service API (/api/support/v1/admin): the subscription servers'
+    # keys, "label:key" pairs separated by commas, e.g. "subscription:...,nrp:...".
+    # Each label is named in the audit log; drop one pair to withdraw that server.
+    SUPPORT_SERVICE_KEYS: Optional[str] = None
+    # The address sites load chat-widget.js and the support API from. Unset:
+    # FRONTEND_URL (nginx serves both from one host).
+    SUPPORT_PUBLIC_URL: Optional[str] = None
+
     class Config:
         env_file = ".env"
 
