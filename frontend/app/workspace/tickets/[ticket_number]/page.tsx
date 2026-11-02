@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import MainHeader from "@/components/MainHeader";
 import TicketHistory from "@/components/TicketHistory";
 import SupportConversation from "@/components/SupportConversation";
+import SupportLiveHelp from "@/components/SupportLiveHelp";
 import { authAPI, getAuthToken } from "@/lib/auth";
 import { ArrowLeft, Save, Phone, Hand } from 'lucide-react';
 import { API_URL } from '@/lib/config';
@@ -236,7 +237,10 @@ function TicketFollowUp() {
                             </div>
                         )}
                     </div>
-                    {hasPhone && <div className="p-4 border-t border-gray-100 bg-gray-50 mt-auto">
+                    {isSupport && <div className="p-4 border-t border-gray-100 mt-auto">
+                        <SupportLiveHelp ticketNumber={ticket.ticket_number} onPhone={initiateCall} />
+                    </div>}
+                    {!isSupport && hasPhone && <div className="p-4 border-t border-gray-100 bg-gray-50 mt-auto">
                         <button
                             onClick={() => initiateCall(ticket.phone_number)}
                             className="w-full px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 border border-indigo-200 shadow-sm"

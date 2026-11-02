@@ -184,6 +184,8 @@ def test_unused_pass_fails_after_two_minutes(env):
         assert live.claim_pass(s, token, late) is None
         s.refresh(row)
         assert row.status == "failed" and "never connected" in row.reason
+        lines = [m.body for m in s.query(SupportMessage).filter(SupportMessage.ticket_id == t1.id).all()]
+        assert any("could not connect" in (b or "") for b in lines)
 
 
 def test_finish_writes_the_thread_line_and_tells_the_site(env):

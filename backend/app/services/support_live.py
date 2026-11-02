@@ -106,8 +106,8 @@ def refresh(db: Session, row: Optional[SupportLiveSession], now: Optional[dateti
         row.status, row.ended_at, changed = "expired", row.expires_at, True
     elif (row.status == "accepted" and row.pass_used_at is None
           and row.pass_expires_at and now >= row.pass_expires_at):
-        row.status, row.ended_at, changed = "failed", row.pass_expires_at, True
-        row.reason = "The customer accepted but never connected."
+        # ended like any other failure: a line on the thread, and the site told
+        return finish(db, row, "failed", "The customer accepted but never connected.", now=row.pass_expires_at)
     if changed:
         db.commit()
     return row

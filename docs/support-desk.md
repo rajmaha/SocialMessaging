@@ -22,6 +22,7 @@ On **Admin -> Widget Domains**, find (or add) the site's domain, press
 | Categories | one per line; none = the customer types their own |
 | Organization | requests from this site are filed under it |
 | Webhook address | optional; told of every reply and status change (section 4) |
+| Live help | on = the agent holding a request can ask to talk to the person or see their screen (section 7) |
 | Identity secret | **Make secret**, shown once. Needed to sign in the site's own users and to check webhooks |
 
 Tick the agents who handle this site under **Agents**: new requests reach them
@@ -135,7 +136,7 @@ when the status changes, and when a request is raised:
 ```
 POST <webhook address>
 Content-Type: application/json
-X-Support-Event: reply                      request_created | reply | status
+X-Support-Event: reply                      request_created | reply | status | live_request | live_ended
 X-Support-Event-Id: 6f1c...                 the same on every retry of this event
 X-Support-Signature: sha256=<hex HMAC-SHA256 of the raw body, keyed with the identity secret>
 
@@ -147,6 +148,10 @@ X-Support-Signature: sha256=<hex HMAC-SHA256 of the raw body, keyed with the ide
 ```
 
 - `uid` is the signed person's id; `email` is set instead for an anonymous visitor.
+- `live_request` and `live_ended` carry `"live": {"id", "kind": "talk"|"screen",
+  "status", "agent", "expires_at", "ended_at"}` and no `message`. Tell the person
+  on `live_request`, by a push to their phone, for instance: the widget shows the
+  request only while it is open on a page. `live_ended` is for the record.
 - `status` is `waiting`, `replied` or `solved`, as the customer sees it.
 - Check the signature over the **raw body**, before parsing it, and compare in
   constant time. Ignore an `event_id` already handled: a retry repeats it.
@@ -202,6 +207,12 @@ The widget uses this API; a phone app or a site's own pages can too. Base
 | `GET requests/{no}/changes?after=<message id>` | new messages and the status, for a thread that is open |
 | `POST requests/{no}/messages` | multipart: `body`, `request_id`, `files`; replying within 7 days of Solved reopens it |
 | `GET files/{message id}/{index}` | an attachment; the links in an answer work for an hour without headers |
+| `GET live` | `{"live": ...}`: an agent's request to talk or see the screen, waiting for this person's answer (any of their requests), or null |
+| `POST live/{id}/accept` | JSON `{"screen_ok": true|false}` (whether this device can share its screen); answers a one-time `pass`, `ice_servers`, `ws_path` |
+| `POST live/{id}/deny` | says no |
+| `WS live/ws?pass=<pass>` | the call's signalling (section 7) |
+
+`requests/{no}` and `changes` also carry `live` while one of that request's is waiting.
 
 `request_id` (8-64 letters, digits, `-` or `_`, new for each press) makes a
 double press one request or message. A refusal answers JSON `{"detail": "<a
@@ -234,3 +245,43 @@ to the client site and do not keep it. Calling it again changes nothing that
 was not asked for. `GET /api/support/v1/admin/domains?domain=...` reports the
 set-up without the secret. Every call is in the audit log under the key's
 label; ten wrong keys an hour from one address are refused.
+
+## 7. Live help: talking, and seeing the screen
+
+With **Live help** on for the domain, the agent holding a request has a **Live
+help** card on the ticket: **Call phone** (the softphone; the call's record is
+stamped with the ticket number), **Ask to talk**, **Ask to see screen**.
+
+- Only the agent holding the request can ask; three asks per request in ten
+  minutes; one live session per request at a time.
+- The person has **60 seconds** to accept or say no. The widget asks every 15
+  seconds while it is on a page, opens on Support by itself and shows the
+  request; the site's webhook hears `live_request` so it can tell them
+  elsewhere (an app push).
+- **Accept** answers a one-time pass, good for **2 minutes** and for one
+  connection. In a browser the widget opens a small window
+  (`/widget/live`) for the call, so it survives the site's own page loads.
+- The call is WebRTC, peer to peer, through the STUN / TURN servers set under
+  Telephony; the server only passes the signalling along. **Nothing is
+  recorded.** The agent watches; they never control anything.
+- Not connected within 20 seconds of both being in: both sides read "Could not
+  connect. Try a phone call." An accepted pass never used counts as failed.
+- When it ends, the thread gets a line ("Screen shared 14:02-14:15 with Ram",
+  "Talked ...", or "could not connect") and the webhook hears `live_ended`.
+
+An app does the person's side itself:
+
+1. `POST live/{id}/accept` with `screen_ok` false where it cannot share (an
+   iPhone app without a broadcast extension): the agent is told it is a voice
+   call.
+2. Open `WS <server>/api/support/v1/live/ws?pass=<pass>`. The server says
+   `{"type": "hello", "ice_servers": [...], "live": {...}, "screen_ok": ...}`,
+   then `{"type": "ready"}` once the agent is in too.
+3. On `ready` the person's side **offers**: send `{"type": "offer", "sdp":
+   ...}`, take `{"type": "answer", "sdp": ...}`, and trade `{"type": "ice",
+   "candidate": {...}}` both ways.
+4. `{"type": "bye"}` ends it; `{"type": "failed", "reason": "..."}` reports a
+   failure; `{"type": "state", "muted": true}` / `{"sharing": false}` are
+   passed on to the agent. Send `{"type": "ping"}` every 25 seconds to keep
+   the socket open. A pass that has been used, or has lapsed, is closed with
+   code 4401.

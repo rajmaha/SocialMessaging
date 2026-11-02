@@ -46,6 +46,7 @@ class SupportSettings(BaseModel):
     support_enabled: bool = False
     chat_enabled: bool = True
     allow_anonymous: bool = True
+    live_help_enabled: Optional[bool] = None     # None (an older screen) keeps what is saved
     support_categories: List[str] = []
     webhook_url: Optional[str] = None
     organization_id: Optional[int] = None
@@ -305,6 +306,7 @@ def _support_view(d: WidgetDomain) -> dict:
         "support_enabled": bool(d.support_enabled),
         "chat_enabled": bool(d.chat_enabled if d.chat_enabled is not None else 1),
         "allow_anonymous": bool(d.allow_anonymous if d.allow_anonymous is not None else 1),
+        "live_help_enabled": bool(d.live_help_enabled),
         "support_categories": [c for c in (d.support_categories or []) if isinstance(c, str)],
         "webhook_url": d.webhook_url,
         "organization_id": d.organization_id,
@@ -351,6 +353,8 @@ async def update_support_settings(
     wd.support_enabled = 1 if body.support_enabled else 0
     wd.chat_enabled = 1 if body.chat_enabled else 0
     wd.allow_anonymous = 1 if body.allow_anonymous else 0
+    if body.live_help_enabled is not None:
+        wd.live_help_enabled = 1 if body.live_help_enabled else 0
     wd.support_categories = categories or None
     wd.webhook_url = webhook
     wd.organization_id = body.organization_id

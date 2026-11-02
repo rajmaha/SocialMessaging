@@ -523,6 +523,10 @@
       if (pendingOpen) { toSupport(pendingOpen); pendingOpen = null }
     } else if (d.type === 'sc:identity-expired') {
       renewIdentity()
+    } else if (d.type === 'sc:live-request') {
+      // an agent asks to talk or to see the screen: the answer is on the Support tab
+      openChat()
+      switchTab('support')
     }
   })
 

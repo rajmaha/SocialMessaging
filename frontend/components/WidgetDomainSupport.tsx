@@ -17,6 +17,7 @@ export interface DomainSupport {
     support_enabled: boolean;
     chat_enabled: boolean;
     allow_anonymous: boolean;
+    live_help_enabled?: boolean;
     support_categories: string[];
     webhook_url: string | null;
     organization_id: number | null;
@@ -29,6 +30,7 @@ export default function WidgetDomainSupport({ domain, onSaved }: { domain: Domai
     const [enabled, setEnabled] = useState(domain.support_enabled);
     const [chat, setChat] = useState(domain.chat_enabled);
     const [anonymous, setAnonymous] = useState(domain.allow_anonymous);
+    const [liveHelp, setLiveHelp] = useState(!!domain.live_help_enabled);
     const [categories, setCategories] = useState((domain.support_categories || []).join('\n'));
     const [webhook, setWebhook] = useState(domain.webhook_url || '');
     const [orgId, setOrgId] = useState<string>(domain.organization_id ? String(domain.organization_id) : '');
@@ -59,6 +61,7 @@ export default function WidgetDomainSupport({ domain, onSaved }: { domain: Domai
                     support_enabled: enabled,
                     chat_enabled: chat,
                     allow_anonymous: anonymous,
+                    live_help_enabled: liveHelp,
                     support_categories: categories.split('\n').map(c => c.trim()).filter(Boolean),
                     webhook_url: webhook.trim() || null,
                     organization_id: orgId ? Number(orgId) : null,
@@ -113,6 +116,10 @@ export default function WidgetDomainSupport({ domain, onSaved }: { domain: Domai
                 <label className="flex items-center gap-2 text-sm text-gray-800">
                     <input type="checkbox" checked={anonymous} onChange={e => setAnonymous(e.target.checked)} className="rounded border-gray-300" />
                     Visitors without a site login may ask (they verify an email)
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                    <input type="checkbox" checked={liveHelp} onChange={e => setLiveHelp(e.target.checked)} className="rounded border-gray-300" />
+                    Live help: the agent holding a request may ask to talk or to see the screen (the customer accepts or denies)
                 </label>
             </div>
 

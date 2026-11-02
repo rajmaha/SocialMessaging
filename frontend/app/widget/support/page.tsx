@@ -29,7 +29,11 @@ const POLL_MS = 8000
 type Config = {
   name: string; primary_color: string | null; categories: string[]; priorities: string[]
   allow_anonymous: boolean; chat_enabled: boolean; max_files: number; max_file_mb: number; file_types: string[]
+  live_help?: boolean
 }
+/** An agent asking to talk or to see the screen (app/services/support_live.py customer_view). */
+type LiveAsk = { id: number; ticket_no: string; kind: 'talk' | 'screen'; status: string; agent: string; seconds_left: number | null }
+const LIVE_POLL_MS = 15000
 type Attachment = { index: number; name: string; size: number; url: string }
 type Message = { id: number; author_type: 'customer' | 'agent' | 'system'; author_name: string; body: string; attachments: Attachment[]; created_at: string }
 type Request = {
@@ -63,6 +67,11 @@ function SupportWidget() {
   const [current, setCurrent] = useState<Request | null>(null)
   const [error, setError] = useState('')
   const [prefill, setPrefill] = useState<{ screen: string; url: string }>({ screen: '', url: '' })
+  const [asking, setAsking] = useState<LiveAsk | null>(null)
+  const [askLeft, setAskLeft] = useState(0)
+  const [liveLink, setLiveLink] = useState('')       // the live window's address, when the browser blocked opening it
+  const [liveBusy, setLiveBusy] = useState(false)
+  const seenAsk = useRef(0)
   const tokenRef = useRef('')
   const tokenWaiters = useRef<((t: string) => void)[]>([])
 
@@ -147,6 +156,7 @@ function SupportWidget() {
       const last = current.messages?.length ? current.messages[current.messages.length - 1].id : 0
       try {
         const ch = await call(`/requests/${encodeURIComponent(current.ticket_no)}/changes?after=${last}`)
+        if (ch.live) showAsk(ch.live)
         if (ch.messages.length || ch.status !== current.status) {
           setCurrent(c => c ? { ...c, ...ch, messages: [...(c.messages || []), ...ch.messages] } : c)
         }
@@ -154,6 +164,83 @@ function SupportWidget() {
     }, POLL_MS)
     return () => clearInterval(timer)
   }, [view, current, call])
+
+  // ── live help: an agent asking to talk or to see the screen ──────────────
+  const showAsk = useCallback((a: LiveAsk | null) => {
+    if (a && a.status === 'requested') {
+      setAsking(a)
+      setAskLeft(Math.max(0, a.seconds_left ?? 60))
+      if (seenAsk.current !== a.id) {
+        seenAsk.current = a.id
+        setLiveLink('')
+        toParent({ type: 'sc:live-request', kind: a.kind, agent: a.agent })   // the widget opens on Support
+      }
+    } else {
+      setAsking(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!config?.live_help || waitingForToken || !known) return
+    const look = async () => { try { showAsk((await call('/live')).live) } catch {} }
+    look()
+    const timer = setInterval(look, LIVE_POLL_MS)
+    return () => clearInterval(timer)
+  }, [config, waitingForToken, known, call, showAsk])
+
+  useEffect(() => {
+    if (!asking) return
+    if (askLeft <= 0) { setAsking(null); return }
+    const t = setTimeout(() => setAskLeft(s => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [asking, askLeft])
+
+  const acceptLive = async () => {
+    if (!asking) return
+    setLiveBusy(true); setError('')
+    // opened now, while the click still counts, then sent to its address once the pass is here
+    const win = window.open('', 'sc_live_help', 'width=440,height=600')
+    try { if (win) win.document.body.innerHTML = '<p style="font-family:sans-serif;padding:24px;color:#555">Connecting...</p>' } catch {}
+    const screenOk = !!(navigator.mediaDevices && (navigator.mediaDevices as any).getDisplayMedia) && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
+    try {
+      const d = await call(`/live/${asking.id}/accept`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ screen_ok: screenOk }),
+      })
+      const hash = new URLSearchParams({ pass: d.pass, kind: asking.kind, agent: asking.agent || 'Support', screen: screenOk ? '1' : '0' })
+      const url = `${window.location.origin}/widget/live#${hash.toString()}`
+      if (win && !win.closed) win.location.href = url
+      else setLiveLink(url)
+      setAsking(null)
+    } catch (e: any) {
+      try { win?.close() } catch {}
+      setError(e.message); setAsking(null)
+    } finally {
+      setLiveBusy(false)
+    }
+  }
+
+  const denyLive = async () => {
+    if (!asking) return
+    setLiveBusy(true)
+    try { await call(`/live/${asking.id}/deny`, { method: 'POST' }) } catch {}
+    setAsking(null); setLiveBusy(false)
+  }
+
+  const liveBanner = (asking || liveLink) ? (
+    <div className="m-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm space-y-2">
+      {asking ? <>
+        <p><span className="font-semibold">{asking.agent || 'Support'}</span> {asking.kind === 'screen' ? 'wants to see your screen and talk to you' : 'wants to talk to you'} about {asking.ticket_no}.</p>
+        <p className="text-[11px] text-gray-500">{asking.kind === 'screen' ? 'They can only watch, never use your computer. ' : ''}Nothing is recorded. ({askLeft} s)</p>
+        <div className="flex gap-2">
+          <button onClick={acceptLive} disabled={liveBusy} className="flex-1 py-2 rounded-lg text-white font-semibold disabled:opacity-50" style={{ background: color }}>Accept</button>
+          <button onClick={denyLive} disabled={liveBusy} className="flex-1 py-2 rounded-lg border border-gray-300 bg-white font-semibold disabled:opacity-50">No, thanks</button>
+        </div>
+      </> : <>
+        <p>Your browser kept the live help window from opening.</p>
+        <a href={liveLink} target="_blank" rel="noopener" onClick={() => setLiveLink('')} className="block text-center py-2 rounded-lg text-white font-semibold" style={{ background: color }}>Open live help</a>
+      </>}
+    </div>
+  ) : null
 
   // ── what is shown ─────────────────────────────────────────────────────────
   if (unavailable) return <Shell color={color} title="Support"><p className="p-6 text-sm text-gray-600 text-center">{unavailable}</p></Shell>
@@ -171,6 +258,7 @@ function SupportWidget() {
   return (
     <Shell color={color} title={config.name} subtitle={me ? `${me.name || me.email}${me.signed ? '' : ' (verified email)'}` : ''}
            onBack={view !== 'list' ? () => { setView('list'); setCurrent(null); loadList() } : undefined}>
+      {liveBanner}
       {error && <p className="px-4 pt-3 text-xs text-red-600">{error}</p>}
       {view === 'list' && (
         <RequestList color={color} items={list} onOpen={openThread} onNew={() => setView('new')} />

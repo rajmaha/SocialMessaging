@@ -21,6 +21,7 @@ interface WidgetDomain {
     support_enabled?: boolean;
     chat_enabled?: boolean;
     allow_anonymous?: boolean;
+    live_help_enabled?: boolean;
     support_categories?: string[];
     webhook_url?: string | null;
     organization_id?: number | null;
@@ -580,6 +581,7 @@ export default function WidgetDomainsPage() {
                                                             support_enabled: !!domain.support_enabled,
                                                             chat_enabled: domain.chat_enabled !== false,
                                                             allow_anonymous: domain.allow_anonymous !== false,
+                                                            live_help_enabled: !!domain.live_help_enabled,
                                                             support_categories: domain.support_categories || [],
                                                             webhook_url: domain.webhook_url ?? null,
                                                             organization_id: domain.organization_id ?? null,

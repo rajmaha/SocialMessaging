@@ -190,6 +190,8 @@ support site (Admin -> Widget Domains -> Support). Site-facing guide:
 | Tables, columns on existing tables | `app/models/support.py`, `app/support_schema.py` |
 | Widget Support tab | `public/chat-widget.js`, `app/widget/support/page.tsx` |
 | Workspace | `components/SupportConversation.tsx`, `components/WidgetDomainSupport.tsx` |
+| Live help: rules, relay | `app/services/support_live.py`, `app/services/support_live_relay.py` |
+| Live help: browser side | `lib/live-help.ts`, `components/SupportLiveHelp.tsx`, `app/widget/live/page.tsx` |
 
 - A support request is a `Ticket` with `source` `support_widget` / `support_app`;
   the customer's thread is `support_messages`. Ticket notes (`FLW-` children)
@@ -198,3 +200,32 @@ support site (Admin -> Widget Domains -> Support). Site-facing guide:
   (the PUT and notes routes do), or the customer and their site are not told.
 - `TicketResponse.source` lists the support sources: leaving one out fails every
   ticket list.
+
+### Live help (talk, see the screen)
+
+Design: the OMS repo's `docs/plans/2026-11-02-support-desk-phase3-plan.md`;
+site guide: `docs/support-desk.md` section 7.
+
+- **The relay is in memory** (`support_live_relay.hub`): right only while the
+  backend runs ONE worker, as the Dockerfile does. Two workers would put the
+  agent and the customer in different processes and nothing would connect.
+- **Expiry is worked out on read** (`support_live.refresh()`): a request past
+  60 s is `expired`, an accepted session whose pass lapsed unused is `failed`
+  (through `finish()`, so the thread line and webhook go too). No job runs.
+- **The customer offers, the agent answers**: the customer holds the screen.
+  The offer decides what flows, so an agent with no microphone can still watch.
+- **The pass is single use** (`claim_pass()`, guarded on `pass_used_at IS
+  NULL`) and only its sha256 is stored.
+- **The agent's socket takes the token in the query** (`?token=`) on its own
+  router, `tickets.live_socket_router`: a browser WebSocket cannot send a
+  Bearer header, and the tickets router's `require_page()` reads one.
+- **The customer's call runs in a window of its own** (`/widget/live`): a
+  site's menu click reloads the page, which would end a share in the widget.
+  The widget opens it inside the Accept click (blank first, then pointed at
+  the pass) so a pop-up blocker allows it; if it is blocked anyway the widget
+  shows an Open live help link.
+- **Call phone** stamps the next outbound call from that agent to that number
+  within 30 minutes with the ticket number (`support_call_links`, read by the
+  FreePBX CDR sync).
+- Tested end to end with two headless Chrome windows with fake media devices
+  (talk and screen); not yet on real devices or across networks through TURN.
