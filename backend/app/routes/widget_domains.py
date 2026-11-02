@@ -3,6 +3,7 @@ CRUD endpoints for managing widget domains (multi-domain widget support).
 Each domain gets its own widget_key, branding overrides, and assigned
 platform accounts + agents.
 """
+import secrets
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -19,6 +20,10 @@ from app.models.domain_agent import DomainAgent
 from app.models.platform_account import PlatformAccount
 from app.models.user import User
 from app.models.widget_domain import WidgetDomain
+from app.models.organization import Organization
+from app.models.ticket import Ticket
+from app.services import secret_box
+from app.services.support_webhooks import address_problem
 
 router = APIRouter(prefix="/admin/widget-domains", tags=["widget-domains"])
 
@@ -35,6 +40,15 @@ class WidgetDomainUpdate(BaseModel):
     domain: Optional[str] = None
     display_name: Optional[str] = None
     branding_overrides: Optional[dict] = None
+
+
+class SupportSettings(BaseModel):
+    support_enabled: bool = False
+    chat_enabled: bool = True
+    allow_anonymous: bool = True
+    support_categories: List[str] = []
+    webhook_url: Optional[str] = None
+    organization_id: Optional[int] = None
 
 
 class DomainAccountsReplace(BaseModel):
@@ -75,6 +89,7 @@ async def list_widget_domains(
             "display_name": d.display_name,
             "is_active": d.is_active,
             "branding_overrides": d.branding_overrides,
+            **_support_view(d),
             "account_count": account_counts.get(d.id, 0),
             "agent_count": agent_counts.get(d.id, 0),
             "created_at": d.created_at.isoformat() if d.created_at else None,
@@ -144,6 +159,12 @@ async def delete_widget_domain(
     wd = db.query(WidgetDomain).filter(WidgetDomain.id == domain_id).first()
     if not wd:
         raise HTTPException(status_code=404, detail="Domain not found")
+    # Its support requests would lose their site and stop being reachable by
+    # the customer; switching the domain off keeps them.
+    held = db.query(func.count(Ticket.id)).filter(Ticket.support_site_id == domain_id).scalar() or 0
+    if held:
+        raise HTTPException(status_code=409,
+                            detail=f"This domain has {held} support request(s). Disable it instead of deleting it.")
 
     # Cascade associations
     db.query(DomainAccount).filter(DomainAccount.widget_domain_id == domain_id).delete()
@@ -270,3 +291,93 @@ async def replace_domain_agents(
 
     db.commit()
     return {"message": "Domain agents updated", "count": len(body.user_ids)}
+
+
+# -- Support desk ----------------------------------------------------------------
+
+MAX_CATEGORIES = 20
+CATEGORY_MAX = 60
+
+
+def _support_view(d: WidgetDomain) -> dict:
+    """A domain's support settings for the admin screen. The secret itself is never sent back."""
+    return {
+        "support_enabled": bool(d.support_enabled),
+        "chat_enabled": bool(d.chat_enabled if d.chat_enabled is not None else 1),
+        "allow_anonymous": bool(d.allow_anonymous if d.allow_anonymous is not None else 1),
+        "support_categories": [c for c in (d.support_categories or []) if isinstance(c, str)],
+        "webhook_url": d.webhook_url,
+        "organization_id": d.organization_id,
+        "has_identity_secret": bool(d.identity_secret),
+    }
+
+
+@router.put("/{domain_id}/support")
+async def update_support_settings(
+    domain_id: int,
+    body: SupportSettings,
+    current_user: dict = Depends(check_permission("feature_manage_messenger_config")),
+    db: Session = Depends(get_db),
+):
+    """Switch support on or off for a domain and set its categories, webhook and organization."""
+    wd = db.query(WidgetDomain).filter(WidgetDomain.id == domain_id).first()
+    if not wd:
+        raise HTTPException(status_code=404, detail="Domain not found")
+
+    categories, seen = [], set()
+    for c in body.support_categories:
+        c = (c or "").strip()
+        if not c or c.lower() in seen:
+            continue
+        if len(c) > CATEGORY_MAX:
+            raise HTTPException(status_code=422, detail=f"A category may be at most {CATEGORY_MAX} characters: {c[:20]}...")
+        seen.add(c.lower())
+        categories.append(c)
+    if len(categories) > MAX_CATEGORIES:
+        raise HTTPException(status_code=422, detail=f"At most {MAX_CATEGORIES} categories.")
+
+    webhook = (body.webhook_url or "").strip() or None
+    if webhook:
+        problem = address_problem(webhook)
+        if problem:
+            raise HTTPException(status_code=422, detail=problem[0].upper() + problem[1:] + ".")
+    if body.organization_id is not None and not db.get(Organization, body.organization_id):
+        raise HTTPException(status_code=422, detail="That organization does not exist.")
+    if body.support_enabled and not body.allow_anonymous and not wd.identity_secret:
+        raise HTTPException(status_code=422, detail=(
+            "With anonymous visitors off, people can only be signed in by the site. "
+            "Make a secret first and give it to the site."))
+
+    wd.support_enabled = 1 if body.support_enabled else 0
+    wd.chat_enabled = 1 if body.chat_enabled else 0
+    wd.allow_anonymous = 1 if body.allow_anonymous else 0
+    wd.support_categories = categories or None
+    wd.webhook_url = webhook
+    wd.organization_id = body.organization_id
+    wd.updated_at = datetime.utcnow()
+    db.commit()
+    return {"message": "Support settings saved", **_support_view(wd)}
+
+
+@router.post("/{domain_id}/support-secret")
+async def make_support_secret(
+    domain_id: int,
+    current_user: dict = Depends(check_permission("feature_manage_messenger_config")),
+    db: Session = Depends(get_db),
+):
+    """
+    A new identity secret for the domain, answered this once. The site signs its
+    users and checks webhooks with it. The old secret stops working at once.
+    """
+    wd = db.query(WidgetDomain).filter(WidgetDomain.id == domain_id).first()
+    if not wd:
+        raise HTTPException(status_code=404, detail="Domain not found")
+    secret = secrets.token_urlsafe(32)
+    try:
+        wd.identity_secret = secret_box.seal(secret)
+    except RuntimeError as err:
+        raise HTTPException(status_code=500, detail=str(err))
+    wd.updated_at = datetime.utcnow()
+    db.commit()
+    return {"secret": secret, "widget_key": wd.widget_key,
+            "message": "Copy it now: it is not shown again. The previous secret no longer works."}

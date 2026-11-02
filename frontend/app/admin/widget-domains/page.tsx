@@ -6,6 +6,7 @@ import { authAPI, getAuthToken } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import AdminNav from '@/components/AdminNav';
 import { API_URL } from '@/lib/config';
+import WidgetDomainSupport, { DomainSupport } from '@/components/WidgetDomainSupport';
 
 interface WidgetDomain {
     id: number;
@@ -16,6 +17,14 @@ interface WidgetDomain {
     branding_overrides: Record<string, any> | null;
     created_at: string;
     updated_at: string;
+    // support desk (absent from an older backend)
+    support_enabled?: boolean;
+    chat_enabled?: boolean;
+    allow_anonymous?: boolean;
+    support_categories?: string[];
+    webhook_url?: string | null;
+    organization_id?: number | null;
+    has_identity_secret?: boolean;
 }
 
 interface PlatformAccount {
@@ -63,6 +72,9 @@ export default function WidgetDomainsPage() {
     const [agents, setAgents] = useState<User[]>([]);
     const [expandedAgents, setExpandedAgents] = useState<number | null>(null);
     const [domainAgents, setDomainAgents] = useState<Record<number, number[]>>({});
+
+    // Support settings
+    const [expandedSupport, setExpandedSupport] = useState<number | null>(null);
 
     const getToken = () => {
         const token = getAuthToken();
@@ -487,6 +499,12 @@ export default function WidgetDomainsPage() {
                                                         Accounts
                                                     </button>
                                                     <button
+                                                        onClick={() => setExpandedSupport(expandedSupport === domain.id ? null : domain.id)}
+                                                        className={`px-3 py-1 text-xs font-medium rounded border ${expandedSupport === domain.id ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                                                    >
+                                                        Support{domain.support_enabled ? ' (on)' : ''}
+                                                    </button>
+                                                    <button
                                                         onClick={() => toggleAgentsPanel(domain.id)}
                                                         className={`px-3 py-1 text-xs font-medium rounded border ${expandedAgents === domain.id ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
                                                     >
@@ -544,6 +562,31 @@ export default function WidgetDomainsPage() {
                                                             </div>
                                                         )}
                                                     </div>
+                                                </td>
+                                            </tr>
+                                        )}
+
+                                        {/* Expanded support panel */}
+                                        {expandedSupport === domain.id && (
+                                            <tr>
+                                                <td colSpan={5} className="px-4 py-4 bg-gray-50 border-t">
+                                                    <h4 className="text-sm font-medium text-gray-700 mb-3">Support desk</h4>
+                                                    <WidgetDomainSupport
+                                                        key={domain.id}
+                                                        domain={{
+                                                            id: domain.id,
+                                                            domain: domain.domain,
+                                                            widget_key: domain.widget_key,
+                                                            support_enabled: !!domain.support_enabled,
+                                                            chat_enabled: domain.chat_enabled !== false,
+                                                            allow_anonymous: domain.allow_anonymous !== false,
+                                                            support_categories: domain.support_categories || [],
+                                                            webhook_url: domain.webhook_url ?? null,
+                                                            organization_id: domain.organization_id ?? null,
+                                                            has_identity_secret: !!domain.has_identity_secret,
+                                                        } as DomainSupport}
+                                                        onSaved={fetchDomains}
+                                                    />
                                                 </td>
                                             </tr>
                                         )}
