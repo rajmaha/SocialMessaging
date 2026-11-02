@@ -634,3 +634,96 @@ def support_webhook_resend(ticket_number: str, db: Session = Depends(get_db),
     if row is None:
         raise HTTPException(status_code=409, detail="There is no failed notice to send again.")
     return {"status": "queued", "event": row.event}
+
+
+# --- live help: Call phone, Ask to talk, Ask to see screen (app/services/support_live.py) ---
+
+from fastapi import Body, Query, WebSocket  # noqa: E402
+from app.database import SessionLocal  # noqa: E402
+from app.dependencies import verify_token  # noqa: E402
+from app.models.widget_domain import WidgetDomain as _WidgetDomain  # noqa: E402
+from app.services import support_live as _live  # noqa: E402
+from app.services import support_live_relay as _relay  # noqa: E402
+
+
+def _live_error(err: _SupportError):
+    raise HTTPException(status_code=err.status_code, detail=err.message)
+
+
+@router.get("/{ticket_number}/live")
+def support_live_state(ticket_number: str, db: Session = Depends(get_db),
+                       current_user: User = Depends(get_current_user)):
+    """The ticket's live help: the open session (or the last one), and whether the site allows it."""
+    t = _support_ticket(db, ticket_number)
+    domain = db.get(_WidgetDomain, t.support_site_id)
+    row = _live.current(db, t) or _live.latest(db, t)
+    return {
+        "enabled": bool(domain and domain.live_help_enabled),
+        "holder": t.assigned_to == current_user.id,
+        "phone": t.phone_number if t.phone_number and t.phone_number != "-" else None,
+        "live": _live.agent_view(row),
+        "ice_servers": _live.ice_servers(db),
+    }
+
+
+@router.post("/{ticket_number}/live")
+def support_live_ask(ticket_number: str, body: dict = Body(default_factory=dict), db: Session = Depends(get_db),
+                     current_user: User = Depends(get_current_user)):
+    """Ask the customer to talk ({"kind": "talk"}) or to show their screen ({"kind": "screen"})."""
+    t = _support_ticket(db, ticket_number)
+    try:
+        row = _live.ask(db, t, current_user, (body or {}).get("kind") if isinstance(body, dict) else None)
+    except _SupportError as err:
+        _live_error(err)
+    return {"live": _live.agent_view(row)}
+
+
+@router.post("/{ticket_number}/live/{live_id}/cancel")
+async def support_live_cancel(ticket_number: str, live_id: int, db: Session = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
+    """Call a request off, or end a session under way."""
+    t = _support_ticket(db, ticket_number)
+    try:
+        row = _live.for_agent(db, t, live_id)
+    except _SupportError as err:
+        _live_error(err)
+    if row.requested_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the agent who asked can end this live help.")
+    row = _live.cancel(db, row, current_user)
+    await _relay.hub.send(row.id, "customer", {"type": "bye"})
+    return {"live": _live.agent_view(row)}
+
+
+@router.post("/{ticket_number}/call-link")
+def support_call_link(ticket_number: str, body: dict = Body(default_factory=dict), db: Session = Depends(get_db),
+                      current_user: User = Depends(get_current_user)):
+    """Call phone: the next call this agent places to that number takes the ticket number."""
+    t = _support_ticket(db, ticket_number)
+    phone = (body or {}).get("phone") if isinstance(body, dict) else None
+    try:
+        _live.call_link(db, t, current_user, phone or t.phone_number)
+    except _SupportError as err:
+        _live_error(err)
+    return {"status": "ok"}
+
+
+# Its own router: the tickets router's require_page() reads a Bearer header, which a
+# browser's WebSocket cannot send. The token rides in the query instead.
+live_socket_router = APIRouter(prefix="/api/tickets", tags=["tickets"])
+
+
+@live_socket_router.websocket("/live/ws/{live_id}")
+async def support_live_socket(websocket: WebSocket, live_id: int, token: str = Query("")):
+    """The agent's signalling socket: open from the moment they ask, so they hear the answer at once."""
+    await websocket.accept()
+    agent = await verify_token(token)
+    db = SessionLocal()
+    try:
+        row = db.get(_live.SupportLiveSession, live_id)
+        if row is None or not _live.agent_may_join(db, row, agent):
+            await websocket.close(code=4403, reason="Not your live help session.")
+            return
+        hello = {"role": "agent", "live": _live.agent_view(row), "ice_servers": _live.ice_servers(db)}
+    finally:
+        db.close()
+    await _relay.run(websocket, live_id, "agent", hello)

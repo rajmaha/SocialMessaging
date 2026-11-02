@@ -52,7 +52,8 @@ from app.models.widget_domain import WidgetDomain  # noqa: F401
 from app.models.daily_ops import StandupEntry, DailyPlannerItem, CommandCenterConfig  # noqa: F401
 from app.models.domain_account import DomainAccount  # noqa: F401
 from app.models.domain_agent import DomainAgent  # noqa: F401
-from app.models.support import SupportUser, SupportMessage, SupportWebhook, SupportAttempt  # noqa: F401
+from app.models.support import (SupportUser, SupportMessage, SupportWebhook, SupportAttempt,  # noqa: F401
+                                SupportLiveSession, SupportCallLink)
 from app.services.email_service import email_service
 from app.services.freepbx_cdr_service import freepbx_cdr_service
 from datetime import datetime
@@ -2546,6 +2547,7 @@ app.include_router(agent_workspace.router)
 app.include_router(reminders.router)
 app.include_router(notifications.router)
 app.include_router(tickets.router)
+app.include_router(tickets.live_socket_router)   # live help: the agent's signalling socket
 app.include_router(dynamic_fields.router)
 app.include_router(organizations.router)
 app.include_router(cloudpanel.router)

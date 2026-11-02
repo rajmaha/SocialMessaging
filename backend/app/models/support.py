@@ -86,3 +86,51 @@ class SupportAttempt(Base):
     kind = Column(String(20), nullable=False)    # request_user | request_ip | reply_user
     key = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SupportLiveSession(Base):
+    """Live help on a support ticket: the agent asks to talk or to see the screen; the customer answers.
+
+    status: requested -> accepted -> connected -> ended, or denied | expired | cancelled | failed.
+    A request unanswered after 60 seconds reads as expired, and an accepted one whose
+    one-time pass ran out unused as failed (app/services/support_live.py works both out on read).
+    """
+    __tablename__ = "support_live_sessions"
+    __table_args__ = (
+        Index("ix_support_live_ticket_requested", "ticket_id", "requested_at"),
+        Index("ix_support_live_person_status", "support_user_id", "status"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticket_id = Column(Integer, ForeignKey("tickets.id", ondelete="CASCADE"), nullable=False)
+    widget_domain_id = Column(Integer, ForeignKey("widget_domains.id", ondelete="CASCADE"), nullable=False)
+    support_user_id = Column(Integer, ForeignKey("support_users.id", ondelete="CASCADE"), nullable=False)
+    kind = Column(String(10), nullable=False)                  # talk | screen
+    status = Column(String(12), nullable=False, default="requested")
+    requested_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    agent_name = Column(String(200), nullable=True)            # as the customer is told it
+    screen_ok = Column(Integer, nullable=True)                 # 1 = the customer's device shares its screen
+    requested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)              # unanswered after this = expired
+    answered_at = Column(DateTime, nullable=True)
+    connected_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    reason = Column(String(300), nullable=True)                # why it failed / was cancelled
+    pass_hash = Column(String(64), nullable=True)              # sha256 of the one-time pass
+    pass_expires_at = Column(DateTime, nullable=True)
+    pass_used_at = Column(DateTime, nullable=True)
+
+
+class SupportCallLink(Base):
+    """An agent is about to phone a support ticket's contact: the call's record takes the ticket number."""
+    __tablename__ = "support_call_links"
+    __table_args__ = (
+        Index("ix_support_call_links_lookup", "agent_id", "phone", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    ticket_number = Column(String(40), nullable=False)
+    agent_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    phone = Column(String(30), nullable=False)                 # digits only
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    used_at = Column(DateTime, nullable=True)

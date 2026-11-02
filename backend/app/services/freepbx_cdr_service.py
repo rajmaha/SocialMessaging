@@ -526,7 +526,18 @@ class FreePBXCDRService:
                                 organization_id = org.id
                                 break
 
+                    # Call phone on a support ticket: an outbound call the agent placed just
+                    # after it takes that ticket's number (app/services/support_live.py)
+                    linked_ticket = None
+                    if rec_data["direction"] == "outbound":
+                        try:
+                            from app.services.support_live import linked_ticket as _linked_ticket
+                            linked_ticket = _linked_ticket(db, rec_data["agent_id"], phone_number, call_dt)
+                        except Exception as link_err:
+                            logger.warning(f"Support call link lookup failed: {link_err}")
+
                     record = CallRecording(
+                        ticket_number=linked_ticket,
                         agent_id=rec_data["agent_id"],
                         agent_name=rec_data["agent_name"],
                         phone_number=phone_number or "unknown",

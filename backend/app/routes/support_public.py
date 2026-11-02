@@ -21,6 +21,12 @@ domain with support switched on). A call about a person also carries one of:
 | POST requests/{no}/messages         | multipart: body, request_id, files[]             |
 | GET  files/{message}/{index}        | an attachment: ?exp=&sig= (as handed out) or the |
 |                                     |   person's own headers                           |
+| GET  live                           | live help an agent is asking this person for     |
+| POST live/{id}/accept               | JSON {screen_ok}: a one-time pass for the socket |
+| POST live/{id}/deny                 |                                                  |
+| WS   live/ws?pass=                  | the signalling socket (support_live_relay.py)    |
+
+Live help rules are app/services/support_live.py.
 
 Every rule is app/services/support_service.py; this file only reads the call
 and answers.
@@ -31,7 +37,8 @@ import hmac
 import time
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import (APIRouter, Body, Depends, File, Form, HTTPException, Query, Request, UploadFile,
+                     WebSocket)
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -41,7 +48,10 @@ from app.models.conversation import Conversation
 from app.models.support import SupportMessage, SupportUser
 from app.models.ticket import Ticket
 from app.models.widget_domain import WidgetDomain
+from app.database import SessionLocal
 from app.services import rate_limit, support_identity
+from app.services import support_live as live
+from app.services import support_live_relay as relay
 from app.services import support_service as svc
 from app.services.support_service import SupportError, SupportFile
 
@@ -145,6 +155,7 @@ def config(request: Request, db: Session = Depends(get_db)):
         "max_files": svc.MAX_FILES,
         "max_file_mb": svc.MAX_FILE_BYTES // (1024 * 1024),
         "file_types": sorted(svc.ALLOWED_EXTENSIONS),
+        "live_help": bool(domain.live_help_enabled),
     }
 
 
@@ -208,7 +219,15 @@ def _own(request: Request, db: Session, ticket_no: str):
 @router.get("/requests/{ticket_no}")
 def get_request(ticket_no: str, request: Request, db: Session = Depends(get_db)):
     _, _, ticket = _own(request, db, ticket_no)
-    return _with_links(svc.customer_view(db, ticket))
+    view = _with_links(svc.customer_view(db, ticket))
+    view["live"] = _asking(db, ticket)
+    return view
+
+
+def _asking(db: Session, ticket: Ticket) -> Optional[dict]:
+    """The live help request waiting on this ticket for the customer's answer, if any."""
+    row = live.current(db, ticket)
+    return live.customer_view(db, row) if row is not None and row.status == "requested" else None
 
 
 @router.get("/requests/{ticket_no}/changes")
@@ -217,7 +236,9 @@ def changes(ticket_no: str, request: Request, after: int = Query(0, ge=0), db: S
     _, _, ticket = _own(request, db, ticket_no)
     view = _with_links(svc.customer_view(db, ticket))
     view["messages"] = [m for m in view["messages"] if m["id"] > after]
-    return {k: view[k] for k in ("ticket_no", "status", "status_label", "can_reply", "updated_at", "messages")}
+    out = {k: view[k] for k in ("ticket_no", "status", "status_label", "can_reply", "updated_at", "messages")}
+    out["live"] = _asking(db, ticket)
+    return out
 
 
 @router.post("/requests/{ticket_no}/messages")
@@ -273,3 +294,70 @@ def get_file(message_id: int, index: int, request: Request,
         headers={"Content-Security-Policy": "sandbox", "Cache-Control": "private, max-age=300",
                  "X-Content-Type-Options": "nosniff"},
     )
+
+
+# --- live help ----------------------------------------------------------------------------
+
+def _live_row(request: Request, db: Session, live_id: int):
+    domain = _domain(request, db)
+    person = _person(request, db, domain)
+    try:
+        return live.for_customer(db, domain, person, live_id)
+    except SupportError as err:
+        _fail(err)
+
+
+@router.get("/live")
+def live_pending(request: Request, db: Session = Depends(get_db)):
+    """Live help an agent is asking this person for, on any of their requests; null when none."""
+    domain = _domain(request, db)
+    person = _person(request, db, domain)
+    if not domain.live_help_enabled:
+        return {"live": None}
+    row = live.pending_for(db, domain, person)
+    return {"live": live.customer_view(db, row) if row is not None else None}
+
+
+@router.post("/live/{live_id}/accept")
+async def live_accept(live_id: int, request: Request, body: dict = Body(default_factory=dict),
+                      db: Session = Depends(get_db)):
+    """Yes: a one-time pass (2 minutes, single use) for the socket, and the ICE servers to use.
+
+    screen_ok false: this device cannot share its screen (an iPhone), so a screen
+    request becomes a talk; the agent is told.
+    """
+    row = _live_row(request, db, live_id)
+    screen_ok = bool((body or {}).get("screen_ok", True)) if isinstance(body, dict) else True
+    try:
+        row, token = live.accept(db, row, screen_ok)
+    except SupportError as err:
+        _fail(err)
+    await relay.tell_agent(row.id)
+    return {"live": live.customer_view(db, row), "pass": token, "ice_servers": live.ice_servers(db),
+            "ws_path": "/api/support/v1/live/ws", "pass_seconds": live.PASS_SECONDS}
+
+
+@router.post("/live/{live_id}/deny")
+async def live_deny(live_id: int, request: Request, db: Session = Depends(get_db)):
+    row = live.deny(db, _live_row(request, db, live_id))
+    await relay.tell_agent(row.id)
+    return {"live": live.customer_view(db, row)}
+
+
+@router.websocket("/live/ws")
+async def live_socket(websocket: WebSocket, pass_: str = Query("", alias="pass")):
+    """The customer's signalling socket. The pass is used up the moment it connects."""
+    await websocket.accept()
+    db = SessionLocal()
+    try:
+        row = live.claim_pass(db, pass_)
+        if row is None:
+            await websocket.close(code=4401, reason="This live help link has expired.")
+            return
+        hello = {"role": "customer", "live": live.customer_view(db, row), "screen_ok": bool(row.screen_ok),
+                 "ice_servers": live.ice_servers(db)}
+        live_id = row.id
+    finally:
+        db.close()
+    await relay.tell_agent(live_id)
+    await relay.run(websocket, live_id, "customer", hello)

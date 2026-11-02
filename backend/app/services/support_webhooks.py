@@ -37,11 +37,12 @@ from app.services import secret_box
 
 log = logging.getLogger(__name__)
 
-EVENTS = ("request_created", "reply", "status")
+EVENTS = ("request_created", "reply", "status", "live_request", "live_ended")
 
 
 def queue(db: Session, domain: WidgetDomain, ticket: Ticket, event: str,
-          suser: Optional[SupportUser], status_word: str, message: Optional[dict] = None) -> Optional[SupportWebhook]:
+          suser: Optional[SupportUser], status_word: str, message: Optional[dict] = None,
+          live: Optional[dict] = None) -> Optional[SupportWebhook]:
     """A delivery for this change when the domain has a webhook address; None when it has none."""
     if event not in EVENTS:
         raise ValueError(f"unknown support webhook event {event!r}")
@@ -58,6 +59,8 @@ def queue(db: Session, domain: WidgetDomain, ticket: Ticket, event: str,
         "status": status_word,
         "message": message,
     }
+    if live is not None:
+        payload["live"] = live
     row = SupportWebhook(widget_domain_id=domain.id, ticket_id=ticket.id, event_id=event_id,
                          event=event, payload=payload, status="pending", tries=0,
                          next_try_at=datetime.utcnow())
