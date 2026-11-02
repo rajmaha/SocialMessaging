@@ -131,9 +131,33 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 | Un-snooze emails | 1 min |
 | Retry failed outbox emails | 5 min |
 
-## No Test Framework
+## Tests
 
-There is no pytest/Jest setup. `client.py` in the root is a manual Python API test client. Use the Swagger UI at `/docs` for interactive testing.
+Backend pytest, from `backend/` (`requirements-dev.txt` adds pytest; production
+installs `requirements.prod.txt` only):
+
+```bash
+venv/bin/python -m pytest
+```
+
+Tests that need a database ask for the `test_engine` fixture (`tests/conftest.py`)
+and run only when `TEST_DATABASE_URL` names a throwaway PostgreSQL database whose
+name contains "test" -- never the real one; otherwise they are skipped:
+
+```bash
+docker run -d --name sm_test_pg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=sm_test -p 55499:5432 postgres:16-alpine
+TEST_DATABASE_URL=postgresql://postgres:test@localhost:55499/sm_test venv/bin/python -m pytest
+```
+
+No frontend tests. `client.py` in the root is a manual API client; Swagger is at `/docs`.
+
+## Stored secrets
+
+`app/services/secret_box.py` seals a secret the server must read back (Fernet,
+key derived from `SECRET_KEY` with a label) and refuses the placeholder
+`SECRET_KEY`. Changing `SECRET_KEY` makes sealed values unreadable (`open_()`
+answers None). Older secrets (TURN credential, API server keys) are still stored
+plain.
 
 ## File Storage
 

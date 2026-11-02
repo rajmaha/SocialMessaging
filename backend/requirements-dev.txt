@@ -1,0 +1,3 @@
+# Test tools, never installed in production (the Dockerfile uses requirements.prod.txt).
+-r requirements.txt
+pytest==9.2.0

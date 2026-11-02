@@ -21,3 +21,4 @@
 **/*.log
 .worktrees/
 docker-compose.override.yml
+**/.pytest_cache
