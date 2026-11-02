@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -319,10 +319,15 @@ def update_ticket(
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     update_data = ticket_update.model_dump(exclude_unset=True)
+    # A support request's status is changed by support_service.set_status, which
+    # adds the line to the customer's thread, emails them and tells their site.
+    new_support_status = update_data.pop("status", None) if ticket.support_site_id else None
     for key, value in update_data.items():
         setattr(ticket, key, value)
-        
+
     db.commit()
+    if new_support_status is not None:
+        _support_status(db, ticket, new_support_status, current_user)
     db.refresh(ticket)
     return ticket
 
@@ -350,7 +355,9 @@ def add_ticket_note(
         raise HTTPException(status_code=404, detail="Parent ticket not found")
 
     # 1. Update Parent Ticket if status/priority changed
-    if note_data.status and note_data.status != parent_ticket.status:
+    if note_data.status and parent_ticket.support_site_id:
+        _support_status(db, parent_ticket, note_data.status, current_user)
+    elif note_data.status and note_data.status != parent_ticket.status:
         parent_ticket.status = note_data.status
     if note_data.priority and note_data.priority != parent_ticket.priority:
         parent_ticket.priority = note_data.priority
@@ -495,12 +502,9 @@ def list_tickets(
     # Scope for non-admin users: only own tickets
     if current_user.role != "admin":
         from sqlalchemy import or_
-        query = query.filter(
-            or_(
-                Ticket.created_by == current_user.id,
-                Ticket.assigned_to == current_user.id,
-            )
-        )
+        # Ticket has no created_by column (referencing it raised on every
+        # non-admin call); a new ticket is assigned to whoever creates it.
+        query = query.filter(Ticket.assigned_to == current_user.id)
 
     if status:
         query = query.filter(Ticket.status == status)
@@ -511,3 +515,122 @@ def list_tickets(
 
     return query.order_by(Ticket.created_at.desc()).offset(skip).limit(limit).all()
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Support desk: tickets raised from a site's widget or app (source support_*).
+# Every rule is app/services/support_service.py.
+# ─────────────────────────────────────────────────────────────────────────────
+
+from app.models.domain_agent import DomainAgent  # noqa: E402
+from app.services import support_service as _support  # noqa: E402
+from app.services import support_webhooks as _support_webhooks  # noqa: E402
+from app.services.support_service import SupportError as _SupportError, SupportFile as _SupportFile  # noqa: E402
+
+
+def _support_status(db: Session, ticket: Ticket, status, agent: User) -> None:
+    try:
+        _support.set_status(db, ticket, status, agent)
+    except _SupportError as err:
+        raise HTTPException(status_code=err.status_code, detail=err.message)
+
+
+def _support_ticket(db: Session, ticket_number: str) -> Ticket:
+    t = db.query(Ticket).filter(Ticket.ticket_number == ticket_number).first()
+    if t is None or not t.support_site_id:
+        raise HTTPException(status_code=404, detail="Support request not found")
+    return t
+
+
+def _linked_domain_ids(db: Session, user: User) -> Optional[List[int]]:
+    """The widget domains an agent is linked to; None for an admin (every domain)."""
+    if user.role == "admin":
+        return None
+    return [r.widget_domain_id for r in db.query(DomainAgent).filter(DomainAgent.user_id == user.id)]
+
+
+@router.get("/support-queue", response_model=List[TicketResponse])
+def support_queue(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Open support requests nobody has taken, on the sites this agent is linked to (an admin: all)."""
+    q = db.query(Ticket).filter(
+        Ticket.support_site_id.isnot(None),
+        Ticket.assigned_to.is_(None),
+        Ticket.status.in_([TicketStatus.PENDING, TicketStatus.FORWARDED]),
+    )
+    ids = _linked_domain_ids(db, current_user)
+    if ids is not None:
+        if not ids:
+            return []
+        q = q.filter(Ticket.support_site_id.in_(ids))
+    return q.order_by(Ticket.created_at.asc()).limit(200).all()
+
+
+@router.post("/{ticket_number}/take", response_model=TicketResponse)
+def take_support_ticket(ticket_number: str, db: Session = Depends(get_db),
+                        current_user: User = Depends(get_current_user)):
+    """Take a request from the shared queue. Two agents pressing at once: one gets it."""
+    t = _support_ticket(db, ticket_number)
+    taken = (db.query(Ticket)
+             .filter(Ticket.id == t.id, Ticket.assigned_to.is_(None))
+             .update({Ticket.assigned_to: current_user.id}, synchronize_session=False))
+    db.commit()
+    db.refresh(t)
+    if not taken and t.assigned_to != current_user.id:
+        holder = t.assignee_name or "another agent"
+        raise HTTPException(status_code=409, detail=f"{holder} has already taken this request.")
+    return t
+
+
+@router.get("/{ticket_number}/conversation")
+def support_conversation(ticket_number: str, db: Session = Depends(get_db),
+                         current_user: User = Depends(get_current_user)):
+    """The customer's thread, the site, the customer, and whether the site was told of the last change."""
+    from app.routes.support_public import file_link
+    t = _support_ticket(db, ticket_number)
+    view = _support.agent_conversation(db, t)
+    for m in view["messages"]:
+        for a in m["attachments"]:
+            a["url"] = file_link(m["id"], a["index"])
+    last = _support_webhooks.last_delivery(db, t)
+    view["delivery"] = ({"status": last.status, "event": last.event, "error": last.last_error,
+                         "tries": last.tries, "sent_at": last.sent_at.isoformat() if last.sent_at else None}
+                        if last else None)
+    view["assigned_to"] = t.assigned_to
+    view["assignee_name"] = t.assignee_name
+    return view
+
+
+@router.post("/{ticket_number}/conversation")
+async def support_reply(
+    ticket_number: str,
+    body: str = Form(""),
+    request_id: str = Form(""),
+    files: Optional[List[UploadFile]] = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """An agent's reply to the customer: they are emailed and their site is told."""
+    t = _support_ticket(db, ticket_number)
+    uploads = []
+    for up in files or []:
+        if up is None or not up.filename:
+            continue
+        if len(uploads) >= _support.MAX_FILES:
+            raise HTTPException(status_code=422, detail=f"Attach at most {_support.MAX_FILES} files.")
+        uploads.append(_SupportFile(up.filename, await up.read(_support.MAX_FILE_BYTES + 1), up.content_type or ""))
+    try:
+        _support.reply(db, t, body, uploads, agent=current_user, request_id=request_id or None)
+    except _SupportError as err:
+        raise HTTPException(status_code=err.status_code, detail=err.message)
+    return support_conversation(ticket_number, db, current_user)
+
+
+@router.post("/{ticket_number}/webhook-resend")
+def support_webhook_resend(ticket_number: str, db: Session = Depends(get_db),
+                           current_user: User = Depends(get_current_user)):
+    """Send the latest failed notice to the customer's site again."""
+    t = _support_ticket(db, ticket_number)
+    row = _support_webhooks.resend(db, t)
+    if row is None:
+        raise HTTPException(status_code=409, detail="There is no failed notice to send again.")
+    return {"status": "queued", "event": row.event}

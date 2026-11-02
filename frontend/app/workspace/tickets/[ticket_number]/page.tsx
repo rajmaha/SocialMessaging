@@ -1,24 +1,27 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import MainHeader from "@/components/MainHeader";
 import TicketHistory from "@/components/TicketHistory";
+import SupportConversation from "@/components/SupportConversation";
 import { authAPI, getAuthToken } from "@/lib/auth";
-import { ArrowLeft, Save, Phone } from 'lucide-react';
+import { ArrowLeft, Save, Phone, Hand } from 'lucide-react';
 import { API_URL } from '@/lib/config';
 import { useSoftphone } from '@/lib/softphone-context';
 
-export default function TicketFollowUpWrapper({ params }: { params: { ticket_number: string } }) {
+export default function TicketFollowUpWrapper() {
     return (
         <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div></div>}>
-            <TicketFollowUp params={params} />
+            <TicketFollowUp />
         </Suspense>
     )
 }
 
-function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
-    const { ticket_number } = params;
+function TicketFollowUp() {
+    // Next.js 16 hands a page its params as a Promise; reading params.ticket_number
+    // directly gave undefined and the page asked for find?number=undefined.
+    const { ticket_number } = useParams<{ ticket_number: string }>();
     const router = useRouter();
     const searchParams = useSearchParams();
     const user = authAPI.getUser();
@@ -45,6 +48,9 @@ function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
     const [status, setStatus] = useState('');
     const [priority, setPriority] = useState('');
     const [reloadHistory, setReloadHistory] = useState(0);
+    // Support requests (source support_*) open on the customer's thread
+    const [tab, setTab] = useState<'conversation' | 'note'>('conversation');
+    const [takeError, setTakeError] = useState('');
 
     useEffect(() => {
         if (!user) { router.push('/login'); return; }
@@ -104,6 +110,18 @@ function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
         }
     };
 
+    const isSupport = typeof ticket?.source === 'string' && ticket.source.startsWith('support_');
+    const hasPhone = !!ticket?.phone_number && ticket.phone_number !== '-';
+
+    const takeTicket = async () => {
+        setTakeError('');
+        const res = await fetch(`${API_URL}/api/tickets/${ticket_number}/take`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+        });
+        if (res.ok) { fetchTicket(); return; }
+        setTakeError((await res.json().catch(() => ({}))).detail || 'Could not take this request.');
+    };
+
     const initiateCall = (phone: string) => {
         // Use the softphone's direct SIP.js dial instead of the AMI originate endpoint.
         // AMI originate creates a two-leg call (rings the agent first, then bridges),
@@ -128,7 +146,7 @@ function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
                 </button>
                 <div>
                     <h1 className="text-xl font-bold text-gray-900 flex items-center gap-3">
-                        Follow-Up: #{ticket.ticket_number}
+                        {isSupport ? 'Support request' : 'Follow-Up'}: #{ticket.ticket_number}
                         <span className={`text-xs px-2.5 py-1 rounded-md font-bold uppercase tracking-wide ${ticket.status === 'solved' ? 'bg-green-100 text-green-800' :
                             ticket.status === 'forwarded' ? 'bg-orange-100 text-orange-800' :
                                 ticket.status === 'closed' ? 'bg-gray-100 text-gray-800' :
@@ -150,15 +168,36 @@ function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
                         <div>
                             <p className="text-xs font-bold text-gray-700 uppercase">Customer</p>
                             <p className="text-sm font-medium text-gray-900 mt-1">{ticket.customer_name || 'N/A'}</p>
-                            <button
+                            {ticket.customer_email && <p className="text-xs text-gray-500 mt-0.5 break-all">{ticket.customer_email}</p>}
+                            {hasPhone && <button
                                 onClick={() => initiateCall(ticket.phone_number)}
                                 className="text-sm text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1.5 font-mono mt-1 transition-colors text-left"
                                 title="Click to call"
                             >
                                 <Phone className="w-3.5 h-3.5 shrink-0" />
                                 {ticket.phone_number}
-                            </button>
+                            </button>}
                         </div>
+                        {isSupport && (
+                            <div>
+                                <p className="text-xs font-bold text-gray-700 uppercase">Site</p>
+                                <p className="text-sm text-gray-900 mt-1">{ticket.support_site_name || '-'}</p>
+                            </div>
+                        )}
+                        {isSupport && (
+                            <div>
+                                <p className="text-xs font-bold text-gray-700 uppercase">Handled by</p>
+                                {ticket.assigned_to ? (
+                                    <p className="text-sm text-gray-900 mt-1">{ticket.assignee_name || 'An agent'}</p>
+                                ) : (
+                                    <button onClick={takeTicket}
+                                            className="mt-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5">
+                                        <Hand className="w-3.5 h-3.5" /> Take this request
+                                    </button>
+                                )}
+                                {takeError && <p className="text-xs text-red-600 mt-1">{takeError}</p>}
+                            </div>
+                        )}
                         {ticket.organization_name && (
                             <div>
                                 <p className="text-xs font-bold text-gray-700 uppercase">Organization</p>
@@ -197,20 +236,37 @@ function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
                             </div>
                         )}
                     </div>
-                    <div className="p-4 border-t border-gray-100 bg-gray-50 mt-auto">
+                    {hasPhone && <div className="p-4 border-t border-gray-100 bg-gray-50 mt-auto">
                         <button
                             onClick={() => initiateCall(ticket.phone_number)}
                             className="w-full px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 border border-indigo-200 shadow-sm"
                         >
                             <Phone className="w-4 h-4" /> Call Now
                         </button>
-                    </div>
+                    </div>}
                 </div>
 
                 {/* MIDDLE: Follow-Up Form */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-5 flex flex-col">
-                    <div className="p-4 border-b border-gray-100 bg-gray-50 font-bold text-gray-700">Update Ticket</div>
+                    {isSupport ? (
+                        <div className="px-4 pt-3 border-b border-gray-100 bg-gray-50 flex gap-1">
+                            {(['conversation', 'note'] as const).map(t => (
+                                <button key={t} type="button" onClick={() => setTab(t)}
+                                        className={`px-4 py-2 text-sm font-bold rounded-t-lg border-b-2 -mb-px ${tab === t ? 'border-indigo-600 text-indigo-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                                    {t === 'conversation' ? 'Conversation' : 'Internal note'}
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="p-4 border-b border-gray-100 bg-gray-50 font-bold text-gray-700">Update Ticket</div>
+                    )}
+                    {isSupport && tab === 'conversation' ? (
+                        <SupportConversation ticketNumber={ticket.ticket_number} onChanged={fetchTicket} />
+                    ) : (
                     <form onSubmit={handleSave} className="p-6 flex flex-col gap-5 flex-1 overflow-y-auto">
+                        {isSupport && (
+                            <p className="text-xs text-gray-500 -mt-1">Notes stay inside the team; the customer never sees them. A change of status is shown to the customer.</p>
+                        )}
 
                         <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -271,12 +327,14 @@ function TicketFollowUp({ params }: { params: { ticket_number: string } }) {
                             </button>
                         </div>
                     </form>
+                    )}
                 </div>
 
                 {/* RIGHT: Ticket History */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-4 flex flex-col">
                     <TicketHistory
                         activeNumber={ticket.phone_number}
+                        ticketId={isSupport ? ticket.id : undefined}
                         reloadKey={reloadHistory}
                         onFollowUpClick={() => { }}
                     />

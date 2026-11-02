@@ -67,6 +67,7 @@ class Ticket(Base):
     # Relationships
     parent_ticket = relationship("Ticket", remote_side=[id], backref="child_tickets")
     assignee = relationship("User", backref="assigned_tickets")
+    support_site = relationship("WidgetDomain", foreign_keys=[support_site_id])
 
     @property
     def assignee_name(self) -> str | None:
@@ -75,6 +76,10 @@ class Ticket(Base):
     @property
     def parent_ticket_number(self) -> str | None:
         return self.parent_ticket.ticket_number if self.parent_ticket else None
+
+    @property
+    def support_site_name(self) -> str | None:
+        return self.support_site.display_name if self.support_site else None
 
 
 # Ticket.support_user_id points at support_users: register that table whenever

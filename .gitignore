@@ -22,3 +22,6 @@
 .worktrees/
 docker-compose.override.yml
 **/.pytest_cache
+
+# Support desk uploads: customer files, never committed
+backend/attachment_storage/support/

@@ -50,6 +50,14 @@ class TicketResponse(TicketBase):
     parent_ticket_number: Optional[str] = None
     conversation_id: Optional[int] = None
     email_id: Optional[int] = None
-    source: Optional[Literal["call", "messaging", "email", "manual"]] = None
+    # support_widget / support_app come from the support desk (app/services/support_service.py);
+    # leaving them out of this list made every ticket list fail once one support ticket existed.
+    source: Optional[Literal["call", "messaging", "email", "manual", "support_widget", "support_app"]] = None
+    support_site_id: Optional[int] = None
+    support_site_name: Optional[str] = None
+    support_subject: Optional[str] = None
+    support_screen: Optional[str] = None
+    support_url: Optional[str] = None
+    last_author: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

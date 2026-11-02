@@ -40,7 +40,10 @@ export default function Workspace() {
     const [parentTicketId, setParentTicketId] = useState<number | null>(null);
     const [myTickets, setMyTickets] = useState<any[]>([]);
     const [simulateNumber, setSimulateNumber] = useState('');
-    const [filterType, setFilterType] = useState<'all' | 'forwarded'>('all');
+    const [filterType, setFilterType] = useState<'all' | 'forwarded' | 'support'>('all');
+    // Support requests nobody has taken yet, on the sites this agent is linked to
+    const [supportQueue, setSupportQueue] = useState<any[]>([]);
+    const [takeMessage, setTakeMessage] = useState('');
     const [quickTicketOpen, setQuickTicketOpen] = useState(false)
     const [recentCalls, setRecentCalls] = useState<any[]>([])
     const [callTab, setCallTab] = useState<'all' | 'inbound' | 'outbound' | 'missed'>('all')
@@ -54,6 +57,7 @@ export default function Workspace() {
             fetchStats();
             fetchAppType();
             fetchMyTickets();
+            fetchSupportQueue();
             fetchRecentCalls();
         } else {
             router.push('/login');
@@ -80,6 +84,38 @@ export default function Workspace() {
         } catch (e) {
             console.error(e);
         }
+    };
+
+    const fetchSupportQueue = async () => {
+        try {
+            const res = await fetch(`${API_URL}/api/tickets/support-queue`, {
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            });
+            if (res.ok) setSupportQueue(await res.json());
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    // the shared queue fills from sites at any time: look again every 30 seconds
+    useEffect(() => {
+        const timer = setInterval(() => {
+            if (document.visibilityState === 'visible') fetchSupportQueue();
+        }, 30000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const takeSupport = async (ticketNumber: string) => {
+        setTakeMessage('');
+        const res = await fetch(`${API_URL}/api/tickets/${ticketNumber}/take`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+        });
+        if (res.ok) {
+            router.push(`/workspace/tickets/${ticketNumber}?from=workspace`);
+            return;
+        }
+        setTakeMessage((await res.json().catch(() => ({}))).detail || 'Could not take that request.');
+        fetchSupportQueue();
     };
 
     const fetchRecentCalls = async () => {
@@ -320,8 +356,68 @@ export default function Workspace() {
                                 >
                                     Forwarded to Me
                                 </button>
+                                <button
+                                    onClick={() => { setFilterType('support'); fetchSupportQueue(); }}
+                                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${filterType === 'support' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'}`}
+                                >
+                                    Support queue{supportQueue.length > 0 ? ` (${supportQueue.length})` : ''}
+                                </button>
                             </div>
                         </div>
+                        {filterType === 'support' ? (
+                        <div className="p-0">
+                            {takeMessage && <p className="px-6 pt-3 text-xs text-red-600">{takeMessage}</p>}
+                            {supportQueue.length === 0 ? (
+                                <div className="p-8 text-center text-gray-500 text-sm">
+                                    No support requests are waiting to be taken.
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm text-gray-600">
+                                        <thead className="bg-gray-50 border-b">
+                                            <tr>
+                                                <th className="px-6 py-3 font-medium text-gray-900">Request</th>
+                                                <th className="px-6 py-3 font-medium text-gray-900">Site and customer</th>
+                                                <th className="px-6 py-3 font-medium text-gray-900">Priority</th>
+                                                <th className="px-6 py-3 font-medium text-gray-900">Raised</th>
+                                                <th className="px-6 py-3 font-medium text-gray-900 text-right">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {supportQueue.map(ticket => (
+                                                <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
+                                                    <td className="px-6 py-4">
+                                                        <div className="font-medium text-indigo-600">{ticket.ticket_number}</div>
+                                                        <div className="text-xs text-gray-700 mt-0.5 max-w-[260px] truncate" title={ticket.support_subject || ''}>{ticket.support_subject}</div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="font-medium text-gray-900">{ticket.support_site_name || '-'}</div>
+                                                        <div className="text-xs text-gray-500">{ticket.customer_name}</div>
+                                                    </td>
+                                                    <td className="px-6 py-4 capitalize">{ticket.priority}</td>
+                                                    <td className="px-6 py-4 text-xs text-gray-500 whitespace-nowrap">{new Date(ticket.created_at).toLocaleString()}</td>
+                                                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                                                        <button
+                                                            onClick={() => router.push(`/workspace/tickets/${ticket.ticket_number}?from=workspace`)}
+                                                            className="px-3 py-1.5 mr-2 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 rounded-lg text-xs font-semibold transition-colors"
+                                                        >
+                                                            Open
+                                                        </button>
+                                                        <button
+                                                            onClick={() => takeSupport(ticket.ticket_number)}
+                                                            className="px-3 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-xs font-semibold transition-colors"
+                                                        >
+                                                            Take
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                        ) : (
                         <div className="p-0">
                             {myTickets.length === 0 ? (
                                 <div className="p-8 text-center text-gray-500 text-sm">
@@ -346,6 +442,12 @@ export default function Workspace() {
                                                     <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
                                                         <td className="px-6 py-4 font-medium text-indigo-600">
                                                             {ticket.ticket_number}
+                                                            {typeof ticket.source === 'string' && ticket.source.startsWith('support_') && (
+                                                                <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-bold uppercase align-middle" title={ticket.support_site_name || ''}>Support</span>
+                                                            )}
+                                                            {ticket.support_subject && (
+                                                                <div className="text-xs text-gray-600 font-normal mt-0.5 max-w-[240px] truncate">{ticket.support_subject}</div>
+                                                            )}
                                                             {ticket.parent_ticket_id && (
                                                                 <span title={`Follow up to #${ticket.parent_ticket_id}`} className="ml-2 inline-block w-2 h-2 rounded-full bg-blue-400"></span>
                                                             )}
@@ -388,6 +490,7 @@ export default function Workspace() {
                                 </div>
                             )}
                         </div>
+                        )}
                     </div>
 
                 </div>
