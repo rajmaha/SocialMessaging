@@ -18,10 +18,8 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from app.config import settings
+from app.config import PLACEHOLDER_SECRET_KEYS, settings
 
-# The placeholder in config.py. Sealing under it would protect nothing.
-_DEFAULT_KEY = "your-secret-key-change-in-production"
 
 
 def _fernet(secret_key: Optional[str] = None, label: str = "support-secret") -> Fernet:
@@ -38,7 +36,7 @@ def _fernet(secret_key: Optional[str] = None, label: str = "support-secret") -> 
 def seal(text: str, *, secret_key: Optional[str] = None, label: str = "support-secret") -> str:
     """The encrypted form of text, safe to store. Refuses the placeholder SECRET_KEY."""
     key = secret_key if secret_key is not None else settings.SECRET_KEY
-    if not key or key == _DEFAULT_KEY:
+    if not key or key in PLACEHOLDER_SECRET_KEYS:
         raise RuntimeError("SECRET_KEY is not set in .env, so secrets cannot be stored safely.")
     return _fernet(key, label).encrypt(text.encode("utf-8")).decode("ascii")
 

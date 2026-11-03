@@ -20,19 +20,16 @@ from typing import Optional
 import jwt
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.config import PLACEHOLDER_SECRET_KEYS, settings
 from app.models.user import User
 
 TOKEN_TTL_DAYS = 30
 _AUDIENCE = "sm-agent"
-# The config default and the .env.example value: both are public, so a token
-# signed with either is a token anybody can make.
-_PLACEHOLDER_SECRETS = {"your-secret-key-change-in-production", "your_secret_key_here"}
 
 
 def _secret() -> str:
     key = settings.SECRET_KEY or ""
-    if not key or key in _PLACEHOLDER_SECRETS:
+    if not key or key in PLACEHOLDER_SECRET_KEYS:
         raise RuntimeError("SECRET_KEY is not set in .env, so sign-in tokens cannot be issued or checked.")
     return key
 

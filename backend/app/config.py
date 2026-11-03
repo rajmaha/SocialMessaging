@@ -45,3 +45,12 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
+
+# Stand-in SECRET_KEY values published in this repository: the default above,
+# the one in .env.example and docker-compose.yml's fallback. A key anybody can
+# read protects nothing, so sign-in tokens and sealed secrets refuse them.
+PLACEHOLDER_SECRET_KEYS = frozenset({
+    "your-secret-key-change-in-production",
+    "your_secret_key_here",
+    "change-me-in-production",
+})

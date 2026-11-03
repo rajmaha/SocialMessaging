@@ -176,7 +176,8 @@ def test_placeholder_secret_never_signs(monkeypatch, env):
             auth_tokens.issue_token(s.get(User, env["ids"]["boss"]))
 
 
-@pytest.mark.parametrize("placeholder", ["your-secret-key-change-in-production", "your_secret_key_here"])
+@pytest.mark.parametrize("placeholder", ["your-secret-key-change-in-production", "your_secret_key_here",
+                                         "change-me-in-production"])
 def test_sign_in_says_so_when_secret_key_is_a_placeholder(monkeypatch, env, placeholder):
     from app.config import settings
     good = _sign_in(env, "boss@agents.test")
