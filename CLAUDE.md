@@ -176,7 +176,8 @@ plain.
 
 Support requests from any site's widget (and, later, apps): a widget domain is a
 support site (Admin -> Widget Domains -> Support). Site-facing guide:
-`docs/support-desk.md`. Design and plan: the OMS repo,
+`docs/support-desk.md`; setup manual: `docs/support-desk-setup.md`
+(`SECRET_KEY`: `docs/secret-key-setup.md`). Design and plan: the OMS repo,
 `docs/plans/2026-11-02-support-desk-design.md` and `...-phase1-plan.md`.
 
 | piece | where |

@@ -9,6 +9,9 @@ signed webhook.
 This guide is for whoever adds support to a site. Admin set-up is on
 **Admin -> Widget Domains -> Support**.
 
+Setting the whole system up (SocialMessaging, the subscription server, each
+OMS site, the phone app) is [support-desk-setup.md](support-desk-setup.md).
+
 ## 1. Switch it on for the domain
 
 On **Admin -> Widget Domains**, find (or add) the site's domain, press
