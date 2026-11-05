@@ -29,6 +29,10 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       ALGORITHM: HS256
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      # Support desk (docs/support-desk-setup.md). A variable set in the deploy
+      # panel reaches the container only when it is named here.
+      SUPPORT_SERVICE_KEYS: ${SUPPORT_SERVICE_KEYS:-}
+      SUPPORT_PUBLIC_URL: ${SUPPORT_PUBLIC_URL:-}
     expose:
       - "8000"
     depends_on:

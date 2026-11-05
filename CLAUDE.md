@@ -194,6 +194,11 @@ support site (Admin -> Widget Domains -> Support). Site-facing guide:
 | Live help: rules, relay | `app/services/support_live.py`, `app/services/support_live_relay.py` |
 | Live help: browser side | `lib/live-help.ts`, `components/SupportLiveHelp.tsx`, `app/widget/live/page.tsx` |
 
+- **`SUPPORT_SERVICE_KEYS` and `SUPPORT_PUBLIC_URL` must be named in
+  `docker-compose.yml`'s backend `environment:`.** The deploy panel builds
+  from the compose file and hands a container only the variables named there;
+  set in the panel alone they never reached the backend (2026-11-05). A new
+  backend setting needs the same line.
 - A support request is a `Ticket` with `source` `support_widget` / `support_app`;
   the customer's thread is `support_messages`. Ticket notes (`FLW-` children)
   stay internal.
