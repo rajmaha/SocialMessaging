@@ -36,6 +36,11 @@ SUPPORT_STATEMENTS = (
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS support_url VARCHAR",
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS solved_at TIMESTAMPTZ",
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS last_author VARCHAR",
+    # telephony_settings: which TURN relay live help and the softphone use
+    "ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS turn_provider VARCHAR",
+    "ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS cloudflare_turn_key_id VARCHAR",
+    "ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS cloudflare_turn_token VARCHAR",
+    "ALTER TABLE telephony_settings ADD COLUMN IF NOT EXISTS cloudflare_turn_ttl INTEGER",
     "CREATE INDEX IF NOT EXISTS ix_tickets_support_site_id ON tickets (support_site_id)",
     "CREATE INDEX IF NOT EXISTS ix_tickets_support_user_id ON tickets (support_user_id)",
 )

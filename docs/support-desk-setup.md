@@ -51,7 +51,15 @@ openssl rand -hex 32
 
 **2. Agents.** Under Admin, then Users, make sure everyone who will answer has a login. Note their email addresses for Part B.
 
-**3. Live help (talk, see the screen), optional.** Under Admin, then Telephony, fill in the STUN and TURN server, username and credential. Without TURN, calls between some networks will not connect.
+**3. Live help (talk, see the screen), optional.** Under Admin, then Telephony, choose the **TURN Relay**, then press **Save & Test TURN**. Without TURN, calls between some networks will not connect. It can be switched at any time; both relays' settings are kept.
+
+| TURN Relay | Fill in |
+|---|---|
+| Own TURN server (coturn) | TURN Server `turn:host:3478`, username, password. To run one in Docker: `deploy/coturn/README.md` |
+| Cloudflare TURN | In the Cloudflare dashboard, Realtime, TURN Server, make a TURN key; paste its **key id** and **API token** (shown once). Each call gets credentials Cloudflare makes for it, kept for half the credential lifetime (default 24 hours) |
+| None | STUN only |
+
+STUN servers (comma-separated) are used with either relay; blank is Google's. `stun:stun.cloudflare.com:3478` and `stun:stun.l.google.com:19302` are both free. If Cloudflare cannot be reached, calls fall back to a set of credentials still in date, else to STUN only.
 
 **4. Keep the backend on one worker**, as its Dockerfile runs it. Live help passes the call between agent and customer inside one process; two workers would never connect them.
 
@@ -157,4 +165,4 @@ Never change `SECRET_KEY` on SocialMessaging without planning the Re-key round s
 | Get help opens a plain page, no widget | The widget script did not load from SocialMessaging | Check `SUPPORT_PUBLIC_URL` and that SocialMessaging is up |
 | Replies never reach the client site's bell | The webhook is refused or unreachable | The ticket shows "site not told" with Resend. The site must be `https://` and reachable from SocialMessaging |
 | Phone app: Support closes at once | The user lacks the Support tick (403) or support is not set up (503) | Part C steps 2 and 3 |
-| Live help: "Could not connect. Try a phone call." | No TURN server, or a network blocks it | Fill in TURN under Admin, Telephony |
+| Live help: "Could not connect. Try a phone call." | No TURN relay, or a network blocks it | Admin, Telephony: choose a TURN Relay and press Save & Test TURN; the message says what is wrong |

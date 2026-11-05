@@ -228,5 +228,13 @@ site guide: `docs/support-desk.md` section 7.
 - **Call phone** stamps the next outbound call from that agent to that number
   within 30 minutes with the ticket number (`support_call_links`, read by the
   FreePBX CDR sync).
+- **The STUN / TURN list is `app/services/ice_config.py`** (live help and the
+  softphone): Telephony's `turn_provider` is `none`, `coturn` (fixed URL,
+  username, password) or `cloudflare` (credentials generated per key, cached
+  for half their lifetime, the API token sealed with secret_box label
+  `cloudflare-turn`, never sent back). A row with no provider reads as coturn
+  when a TURN URL is set. Save & Test TURN (`/admin/telephony/test-turn`,
+  `app/services/turn_check.py`) does a real TURN Allocate with the credentials
+  a call would get. Running coturn: `deploy/coturn/`.
 - Tested end to end with two headless Chrome windows with fake media devices
   (talk and screen); not yet on real devices or across networks through TURN.

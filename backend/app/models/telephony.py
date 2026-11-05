@@ -18,6 +18,10 @@ class TelephonySettings(Base):
     turn_server = Column(String, nullable=True)           # TURN server URL, e.g. turn:turn.example.com:3478
     turn_username = Column(String, nullable=True)
     turn_credential = Column(String, nullable=True)
+    turn_provider = Column(String, nullable=True)            # none | coturn | cloudflare (NULL: coturn if turn_server set)
+    cloudflare_turn_key_id = Column(String, nullable=True)
+    cloudflare_turn_token = Column(String, nullable=True)    # sealed by secret_box (label cloudflare-turn), never sent back
+    cloudflare_turn_ttl = Column(Integer, nullable=True)     # seconds a Cloudflare credential lives; NULL = a day
     ssh_host = Column(String, nullable=True)                      # SSH host/IP (if different from PBX host)
     ssh_port = Column(Integer, nullable=True, default=22)       # SSH port for direct MySQL + fwconsole
     ssh_username = Column(String, nullable=True)                 # SSH login user (usually root)
@@ -25,3 +29,7 @@ class TelephonySettings(Base):
     is_active = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+    @property
+    def cloudflare_turn_token_set(self) -> bool:
+        return bool(self.cloudflare_turn_token)

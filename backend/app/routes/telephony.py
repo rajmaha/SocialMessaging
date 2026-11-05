@@ -73,6 +73,10 @@ def update_telephony_settings(
         settings.turn_username = settings_update.turn_username
     if settings_update.turn_credential is not None:
         settings.turn_credential = settings_update.turn_credential
+    turn_problem = _apply_turn_settings(settings, settings_update)
+    if turn_problem:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=turn_problem)
     if settings_update.ssh_host is not None:
         settings.ssh_host = settings_update.ssh_host
     if settings_update.ssh_port is not None:
@@ -87,6 +91,61 @@ def update_telephony_settings(
     db.commit()
     db.refresh(settings)
     return settings
+
+
+def _apply_turn_settings(settings: TelephonySettings, upd: TelephonySettingsUpdate):
+    """The TURN relay choice and Cloudflare's key; answers a sentence when it cannot work."""
+    from app.services import ice_config, secret_box
+    if upd.turn_provider is not None:
+        provider = upd.turn_provider.strip().lower()
+        if provider not in ice_config.PROVIDERS:
+            return "TURN relay must be none, coturn or cloudflare."
+        settings.turn_provider = provider
+    if upd.cloudflare_turn_key_id is not None:
+        settings.cloudflare_turn_key_id = upd.cloudflare_turn_key_id.strip() or None
+    if upd.cloudflare_turn_ttl is not None:
+        settings.cloudflare_turn_ttl = ice_config.clamp_ttl(upd.cloudflare_turn_ttl)
+    token = (upd.cloudflare_turn_token or "").strip()
+    if token:                                    # blank keeps the saved token
+        try:
+            settings.cloudflare_turn_token = secret_box.seal(token, label=ice_config.TOKEN_LABEL)
+        except RuntimeError as err:
+            return str(err)
+    provider = ice_config.provider_of(settings)
+    if provider == "coturn":
+        if not (settings.turn_server or "").strip().startswith(("turn:", "turns:")):
+            return "Own TURN server: the TURN Server must start with turn: (e.g. turn:turn.example.com:3478)."
+    if provider == "cloudflare":
+        if not settings.cloudflare_turn_key_id or not settings.cloudflare_turn_token:
+            return "Cloudflare TURN: fill in the TURN key id and its API token."
+    ice_config.clear_cache()                     # a changed key or provider takes effect on the next call
+    return None
+
+
+@router.post("/test-turn")
+def test_turn_relay(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_telephony)
+):
+    """Ask the chosen TURN relay for a relay address with the credentials a call would get."""
+    from app.services import ice_config, turn_check
+    settings = db.query(TelephonySettings).first()
+    provider = ice_config.provider_of(settings)
+    if provider == "none":
+        return {"status": "error", "provider": provider,
+                "message": "No TURN relay is chosen: calls get STUN only. Choose Own TURN server or Cloudflare."}
+    if provider == "cloudflare":
+        try:
+            servers = ice_config.fetch_cloudflare(settings.cloudflare_turn_key_id,
+                                                  ice_config.cloudflare_token(settings) or "",
+                                                  ice_config.CLOUDFLARE_TTL_MIN)
+        except ice_config.TurnConfigError as err:
+            return {"status": "error", "provider": provider, "message": str(err)}
+    else:
+        servers = ice_config.build_ice_servers(settings)
+    result = turn_check.check_servers(servers)
+    return {"status": "success" if result["ok"] else "error", "provider": provider,
+            "message": result["message"], "url": result.get("url"), "relay": result.get("relay")}
 
 
 @router.post("/test-freepbx")

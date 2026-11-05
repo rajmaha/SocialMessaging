@@ -68,30 +68,9 @@ def _hash(token: str) -> str:
 # --- what the clients connect with ---------------------------------------------------------
 
 def ice_servers(db: Session) -> List[dict]:
-    """STUN and TURN from Telephony settings, as RTCPeerConnection takes them (Google STUN if none)."""
-    from app.models.telephony import TelephonySettings
-    settings = db.query(TelephonySettings).first()
-    out: List[dict] = []
-    if settings and settings.stun_servers:
-        for url in settings.stun_servers.split(","):
-            url = url.strip()
-            if url:
-                out.append({"urls": url})
-    if settings and settings.turn_server:
-        turn = settings.turn_server.strip()
-        entry: dict = {"urls": turn}
-        if settings.turn_username:
-            entry["username"] = settings.turn_username
-        if settings.turn_credential:
-            entry["credential"] = settings.turn_credential
-        out.append(entry)
-        if turn.startswith("turn:"):                 # the TLS variant, for networks that block UDP
-            tls = dict(entry)
-            tls["urls"] = turn.replace("turn:", "turns:", 1).replace(":3478", ":5349")
-            out.append(tls)
-    if not out:
-        out = [{"urls": "stun:stun.l.google.com:19302"}, {"urls": "stun:stun1.l.google.com:19302"}]
-    return out
+    """STUN and TURN for the chosen relay (Telephony settings); see ice_config."""
+    from app.services.ice_config import ice_servers as _ice
+    return _ice(db)
 
 
 # --- reading -----------------------------------------------------------------------------

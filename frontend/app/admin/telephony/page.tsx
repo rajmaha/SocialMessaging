@@ -17,6 +17,9 @@ export default function TelephonySettings() {
     const [testing, setTesting] = useState(false);
     const [testingAmi, setTestingAmi] = useState(false);
     const [testingSsh, setTestingSsh] = useState(false);
+    const [testingTurn, setTestingTurn] = useState(false);
+    const [turnTestResult, setTurnTestResult] = useState<{ status: string; message: string } | null>(null);
+    const [cfTokenSet, setCfTokenSet] = useState(false);
     const [sshTestResult, setSshTestResult] = useState<{ status: string; message: string } | null>(null);
     const [message, setMessage] = useState({ type: '', text: '' });
     const [testResult, setTestResult] = useState<{ status: string; message: string; diagnostics?: string[]; help?: string; method?: string; instructions?: string[] } | null>(null);
@@ -41,6 +44,10 @@ export default function TelephonySettings() {
         turn_server: '',
         turn_username: '',
         turn_credential: '',
+        turn_provider: 'none',
+        cloudflare_turn_key_id: '',
+        cloudflare_turn_token: '',
+        cloudflare_turn_ttl: 86400,
         ssh_host: '',
         ssh_port: 22,
         ssh_username: '',
@@ -77,12 +84,18 @@ export default function TelephonySettings() {
                     turn_server: data.turn_server || '',
                     turn_username: data.turn_username || '',
                     turn_credential: data.turn_credential || '',
+                    // an older row with no choice: own server when a TURN URL was filled in
+                    turn_provider: data.turn_provider || (data.turn_server ? 'coturn' : 'none'),
+                    cloudflare_turn_key_id: data.cloudflare_turn_key_id || '',
+                    cloudflare_turn_token: '',
+                    cloudflare_turn_ttl: data.cloudflare_turn_ttl || 86400,
                     ssh_host: data.ssh_host || '',
                     ssh_port: data.ssh_port || 22,
                     ssh_username: data.ssh_username || '',
                     ssh_password: data.ssh_password || '',
                     is_active: data.is_active || false
                 });
+                setCfTokenSet(!!data.cloudflare_turn_token_set);
             }
         } catch (error) {
             console.error('Failed to fetch telephony settings:', error);
@@ -107,11 +120,17 @@ export default function TelephonySettings() {
                 body: JSON.stringify(settings)
             });
 
-            if (!response.ok) throw new Error('Failed to save telephony settings');
+            if (!response.ok) {
+                const err = await response.json().catch(() => null);
+                throw new Error(typeof err?.detail === 'string' ? err.detail : 'Error saving settings. Please try again.');
+            }
+            const saved = await response.json().catch(() => null);
+            if (saved) setCfTokenSet(!!saved.cloudflare_turn_token_set);
+            setSettings(prev => ({ ...prev, cloudflare_turn_token: '' }));
             setMessage({ type: 'success', text: '✅ Telephony settings saved successfully.' });
             setTimeout(() => setMessage({ type: '', text: '' }), 4000);
         } catch (error) {
-            setMessage({ type: 'error', text: '❌ Error saving settings. Please try again.' });
+            setMessage({ type: 'error', text: `❌ ${error instanceof Error ? error.message : 'Error saving settings. Please try again.'}` });
         } finally {
             setSaving(false);
         }
@@ -192,6 +211,38 @@ export default function TelephonySettings() {
             setSshTestResult({ status: 'error', message: `❌ SSH test failed: ${error instanceof Error ? error.message : 'Check settings.'}` });
         } finally {
             setTestingSsh(false);
+        }
+    };
+
+    const testTurn = async () => {
+        setTestingTurn(true);
+        setTurnTestResult(null);
+        try {
+            const token = getAuthToken();
+            // Save first so the test uses the relay and credentials on screen
+            const saved = await fetch(`${API_URL}/admin/telephony/settings`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings),
+            });
+            if (!saved.ok) {
+                const err = await saved.json().catch(() => null);
+                setTurnTestResult({ status: 'error', message: typeof err?.detail === 'string' ? err.detail : 'Could not save the settings.' });
+                return;
+            }
+            const body = await saved.json().catch(() => null);
+            if (body) setCfTokenSet(!!body.cloudflare_turn_token_set);
+            setSettings(prev => ({ ...prev, cloudflare_turn_token: '' }));
+            const response = await fetch(`${API_URL}/admin/telephony/test-turn`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const result = await response.json();
+            setTurnTestResult(response.ok ? result : { status: 'error', message: result.detail || 'Request failed.' });
+        } catch (error) {
+            setTurnTestResult({ status: 'error', message: `TURN test failed: ${error instanceof Error ? error.message : 'check the settings.'}` });
+        } finally {
+            setTestingTurn(false);
         }
     };
 
@@ -510,43 +561,142 @@ export default function TelephonySettings() {
                                                 Comma-separated STUN server URLs. Leave empty to use Google STUN (default).
                                             </p>
                                         </div>
-                                        <div>
-                                            <label className={labelClass}>TURN Server</label>
-                                            <input
-                                                type="text"
-                                                value={settings.turn_server}
-                                                onChange={(e) => setSettings({ ...settings, turn_server: e.target.value })}
-                                                className={inputClass}
-                                                placeholder="turn:turn.yourdomain.com:3478"
-                                            />
+                                        <div className="md:col-span-2">
+                                            <label className={labelClass}>TURN Relay</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {[
+                                                    { v: 'none', l: 'None (STUN only)' },
+                                                    { v: 'coturn', l: 'Own TURN server (coturn)' },
+                                                    { v: 'cloudflare', l: 'Cloudflare TURN' },
+                                                ].map(o => (
+                                                    <button
+                                                        key={o.v}
+                                                        type="button"
+                                                        onClick={() => { setSettings({ ...settings, turn_provider: o.v }); setTurnTestResult(null); }}
+                                                        className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${settings.turn_provider === o.v
+                                                            ? 'bg-indigo-600 text-white border-indigo-600'
+                                                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                                                    >
+                                                        {o.l}
+                                                    </button>
+                                                ))}
+                                            </div>
                                             <p className="mt-1 text-xs text-gray-500">
-                                                Optional. Only needed if agents connect from behind strict firewalls.
+                                                Used by live help (talk, see the screen) and the softphone. Switch at any time; the next call uses the new choice.
+                                                Both relays' settings are kept, so switching back needs nothing typed again.
                                             </p>
                                         </div>
-                                        <div>
-                                            <label className={labelClass}>TURN Username</label>
-                                            <input
-                                                type="text"
-                                                value={settings.turn_username}
-                                                onChange={(e) => setSettings({ ...settings, turn_username: e.target.value })}
-                                                className={inputClass}
-                                                placeholder="webrtc"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className={labelClass}>TURN Password</label>
-                                            <div className="relative">
-                                                <input
-                                                    type={showPasswords.turn ? "text" : "password"}
-                                                    value={settings.turn_credential}
-                                                    onChange={(e) => setSettings({ ...settings, turn_credential: e.target.value })}
-                                                    className={inputClass + " pr-10"}
-                                                    placeholder="••••••••"
-                                                />
-                                                <button type="button" onClick={() => togglePassword('turn')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                                                    {showPasswords.turn ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                                </button>
+
+                                        {settings.turn_provider === 'none' && (
+                                            <div className="md:col-span-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                                Without a TURN relay, calls between some networks (strict office firewalls, some mobile carriers) cannot connect.
                                             </div>
+                                        )}
+
+                                        {/* Hidden, never removed: the values stay in the form and are saved, so switching back keeps them */}
+                                        <div className={settings.turn_provider === 'coturn' ? 'md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4' : 'hidden'}>
+                                            <div>
+                                                <label className={labelClass}>TURN Server</label>
+                                                <input
+                                                    type="text"
+                                                    value={settings.turn_server}
+                                                    onChange={(e) => setSettings({ ...settings, turn_server: e.target.value })}
+                                                    className={inputClass}
+                                                    placeholder="turn:turn.yourdomain.com:3478"
+                                                />
+                                                <p className="mt-1 text-xs text-gray-500">
+                                                    turn:host:port. Calls are also offered the same server over TCP and TLS (turns:, port 5349).
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>TURN Username</label>
+                                                <input
+                                                    type="text"
+                                                    value={settings.turn_username}
+                                                    onChange={(e) => setSettings({ ...settings, turn_username: e.target.value })}
+                                                    className={inputClass}
+                                                    placeholder="webrtc"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>TURN Password</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type={showPasswords.turn ? "text" : "password"}
+                                                        value={settings.turn_credential}
+                                                        onChange={(e) => setSettings({ ...settings, turn_credential: e.target.value })}
+                                                        className={inputClass + " pr-10"}
+                                                        placeholder="••••••••"
+                                                    />
+                                                    <button type="button" onClick={() => togglePassword('turn')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                                        {showPasswords.turn ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className={settings.turn_provider === 'cloudflare' ? 'md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4' : 'hidden'}>
+                                            <div>
+                                                <label className={labelClass}>TURN Key ID</label>
+                                                <input
+                                                    type="text"
+                                                    value={settings.cloudflare_turn_key_id}
+                                                    onChange={(e) => setSettings({ ...settings, cloudflare_turn_key_id: e.target.value })}
+                                                    className={inputClass}
+                                                    placeholder="Cloudflare dashboard → Realtime → TURN Server"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>API Token</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type={showPasswords.cfturn ? "text" : "password"}
+                                                        value={settings.cloudflare_turn_token}
+                                                        onChange={(e) => setSettings({ ...settings, cloudflare_turn_token: e.target.value })}
+                                                        className={inputClass + " pr-10"}
+                                                        placeholder={cfTokenSet ? 'saved - leave blank to keep' : 'shown once when the key is made'}
+                                                        autoComplete="new-password"
+                                                    />
+                                                    <button type="button" onClick={() => togglePassword('cfturn')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                                        {showPasswords.cfturn ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                    </button>
+                                                </div>
+                                                <p className="mt-1 text-xs text-gray-500">Stored encrypted and never shown again.</p>
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Credential lifetime (hours)</label>
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    max={48}
+                                                    value={Math.round((settings.cloudflare_turn_ttl || 86400) / 3600)}
+                                                    onChange={(e) => setSettings({ ...settings, cloudflare_turn_ttl: Math.max(1, Math.min(48, parseInt(e.target.value || '24', 10))) * 3600 })}
+                                                    className={inputClass}
+                                                />
+                                                <p className="mt-1 text-xs text-gray-500">
+                                                    Each call gets credentials with at least half of this left. 24 is right for most; longer than the longest call.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="md:col-span-2">
+                                            <button
+                                                type="button"
+                                                onClick={testTurn}
+                                                disabled={testingTurn || settings.turn_provider === 'none'}
+                                                className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+                                            >
+                                                <Wifi className="w-4 h-4" />
+                                                {testingTurn ? 'Testing...' : 'Save & Test TURN'}
+                                            </button>
+                                            {turnTestResult && (
+                                                <div className={`mt-2 flex items-start gap-2 text-sm rounded-lg p-3 border ${turnTestResult.status === 'success'
+                                                    ? 'bg-green-50 border-green-200 text-green-800'
+                                                    : 'bg-red-50 border-red-200 text-red-800'}`}>
+                                                    {turnTestResult.status === 'success' ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" /> : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />}
+                                                    <span>{turnTestResult.message}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

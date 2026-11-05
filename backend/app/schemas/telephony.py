@@ -16,6 +16,9 @@ class TelephonySettingsBase(BaseModel):
     turn_server: Optional[str] = None
     turn_username: Optional[str] = None
     turn_credential: Optional[str] = None
+    turn_provider: Optional[str] = None            # none | coturn | cloudflare
+    cloudflare_turn_key_id: Optional[str] = None
+    cloudflare_turn_ttl: Optional[int] = None
     ssh_host: Optional[str] = None
     ssh_port: Optional[int] = 22
     ssh_username: Optional[str] = None
@@ -29,9 +32,12 @@ class TelephonySettingsUpdate(TelephonySettingsBase):
     # Make all fields optional for partial updates
     pbx_type: Optional[str] = None
     is_active: Optional[bool] = None
+    # write-only: blank keeps the saved token, never sent back
+    cloudflare_turn_token: Optional[str] = None
 
 class TelephonySettingsResponse(TelephonySettingsBase):
     id: int
+    cloudflare_turn_token_set: bool = False
     created_at: datetime
     updated_at: datetime
 
