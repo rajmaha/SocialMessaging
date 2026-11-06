@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAuthToken } from '@/lib/auth';
 import { API_URL } from '@/lib/config';
 import { LiveCall, LivePhase, socketUrl } from '@/lib/live-help';
-import { Phone, Mic, MicOff, Monitor, PhoneOff, Headphones } from 'lucide-react';
+import { Phone, Mic, MicOff, Monitor, PhoneOff, Headphones, Maximize2, Minimize2, Expand } from 'lucide-react';
 
 type LiveView = {
     id: number;
@@ -26,6 +26,28 @@ type LiveView = {
 type LiveState = { enabled: boolean; holder: boolean; phone: string | null; live: LiveView | null };
 
 const OPEN = ['requested', 'accepted', 'connected'];
+
+// The shared screen's floating panel: where it was and how big, remembered per browser.
+type Box = { x: number; y: number; w: number; h: number };
+const BOX_KEY = 'sm_live_screen_box';
+const BAR = 36;                       // the panel's title bar
+function defaultBox(): Box {
+    const w = Math.min(1100, Math.round(window.innerWidth * 0.7));
+    const h = Math.min(Math.round(window.innerHeight * 0.75), Math.round(w * 0.625) + BAR);
+    return { x: Math.max(16, window.innerWidth - w - 24), y: 72, w, h };
+}
+function fitBox(b: Box): Box {
+    const w = Math.max(320, Math.min(b.w, window.innerWidth - 16));
+    const h = Math.max(220, Math.min(b.h, window.innerHeight - 16));
+    return { w, h, x: Math.max(8, Math.min(b.x, window.innerWidth - w - 8)), y: Math.max(8, Math.min(b.y, window.innerHeight - h - 8)) };
+}
+function savedBox(): Box {
+    try {
+        const v = JSON.parse(localStorage.getItem(BOX_KEY) || 'null');
+        if (v && [v.x, v.y, v.w, v.h].every((n: any) => typeof n === 'number')) return fitBox(v);
+    } catch { /* storage blocked: the default */ }
+    return fitBox(defaultBox());
+}
 
 const CLOSED_WORDS: Record<string, string> = {
     denied: 'The customer said no.',
@@ -48,6 +70,69 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
     const [noMic, setNoMic] = useState(false);
     const call = useRef<LiveCall | null>(null);
     const media = useRef<HTMLVideoElement>(null);
+    // the screen opens in a floating panel that can be moved, resized and docked back
+    const [big, setBig] = useState(true);
+    const [box, setBox] = useState<Box | null>(null);
+    const panel = useRef<HTMLDivElement>(null);
+    const drag = useRef<{ dx: number; dy: number } | null>(null);
+
+    const showVideo = hasVideo && phase === 'live';
+    const floating = big && showVideo && box !== null;
+
+    useEffect(() => { if (showVideo && !box) setBox(savedBox()); }, [showVideo, box]);
+    useEffect(() => { if (!showVideo) setBig(true); }, [showVideo]);   // the next share opens large again
+
+    const keepBox = (b: Box) => { setBox(b); try { localStorage.setItem(BOX_KEY, JSON.stringify(b)); } catch { /* ignore */ } };
+
+    // the panel's own corner resizes it (CSS resize): keep the size it was given
+    useEffect(() => {
+        if (!floating || !panel.current || typeof ResizeObserver === 'undefined') return;
+        const el = panel.current;
+        const ro = new ResizeObserver(() => {
+            const r = el.getBoundingClientRect();
+            setBox((b) => {
+                if (!b || (Math.abs(b.w - r.width) < 2 && Math.abs(b.h - r.height) < 2)) return b;
+                const nb = { ...b, w: Math.round(r.width), h: Math.round(r.height) };
+                try { localStorage.setItem(BOX_KEY, JSON.stringify(nb)); } catch { /* ignore */ }
+                return nb;
+            });
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [floating]);
+
+    // dragged by its title bar
+    const startDrag = (e: React.PointerEvent) => {
+        if (!box || (e.target as HTMLElement).closest('button')) return;
+        e.preventDefault();
+        drag.current = { dx: e.clientX - box.x, dy: e.clientY - box.y };
+        const move = (ev: PointerEvent) => {
+            if (!drag.current) return;
+            setBox((b) => b ? fitBox({ ...b, x: ev.clientX - drag.current!.dx, y: ev.clientY - drag.current!.dy }) : b);
+        };
+        const up = () => {
+            drag.current = null;
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            setBox((b) => { if (b) { try { localStorage.setItem(BOX_KEY, JSON.stringify(b)); } catch { /* ignore */ } } return b; });
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+    };
+
+    const fullScreen = () => {
+        const v: any = media.current;
+        if (!v) return;
+        (v.requestFullscreen || v.webkitRequestFullscreen || v.webkitEnterFullscreen)?.call(v);
+    };
+
+    // keep the panel on screen when the window shrinks
+    useEffect(() => {
+        if (!floating) return;
+        const onResize = () => setBox((b) => (b ? fitBox(b) : b));
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, [floating]);
 
     const auth = () => ({ Authorization: `Bearer ${getAuthToken()}` });
     const base = `${API_URL}/api/tickets/${encodeURIComponent(ticketNumber)}`;
@@ -255,9 +340,39 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
                 </div>
             )}
 
-            {/* their voice always plays through this element; their screen shows in it when shared */}
-            <video ref={media} autoPlay playsInline
-                   className={hasVideo && phase === 'live' ? 'mt-3 w-full rounded-lg bg-black max-h-[70vh]' : 'hidden'} />
+            {/* Their voice always plays through this one video element; their screen shows in it
+                when shared. The element is never re-created (that would drop the stream): only its
+                wrapper changes between the card and the floating panel. */}
+            <div ref={panel}
+                 className={floating ? 'fixed z-[1000] bg-gray-900 rounded-xl shadow-2xl border border-gray-700 flex flex-col' : (showVideo ? 'mt-3' : '')}
+                 style={floating && box ? { left: box.x, top: box.y, width: box.w, height: box.h, resize: 'both', overflow: 'hidden', minWidth: 320, minHeight: 220 } : undefined}>
+                {floating && (
+                    <div onPointerDown={startDrag} title="Drag to move; drag the bottom-right corner to resize"
+                         className="flex items-center gap-2 px-3 text-white text-xs font-semibold cursor-move select-none shrink-0"
+                         style={{ height: BAR }}>
+                        <Monitor size={14} /> <span className="flex-1 truncate">Their screen</span>
+                        <button onClick={fullScreen} title="Full screen" className="p-1 rounded hover:bg-white/15"><Expand size={14} /></button>
+                        <button onClick={() => keepBox(fitBox(defaultBox()))} title="Default size" className="p-1 rounded hover:bg-white/15"><Maximize2 size={14} /></button>
+                        <button onClick={() => setBig(false)} title="Put back in the ticket" className="p-1 rounded hover:bg-white/15"><Minimize2 size={14} /></button>
+                    </div>
+                )}
+                <video ref={media} autoPlay playsInline onDoubleClick={fullScreen}
+                       className={floating ? 'w-full bg-black rounded-b-xl object-contain flex-1 min-h-0' : (showVideo ? 'w-full rounded-lg bg-black max-h-[70vh] cursor-zoom-in' : 'hidden')}
+                       onClick={() => { if (!floating && showVideo) setBig(true); }}
+                       title={floating ? 'Double-click for full screen' : (showVideo ? 'Click to open large' : undefined)} />
+                {!floating && showVideo && (
+                    <div className="flex gap-2 mt-2">
+                        <button onClick={() => setBig(true)}
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 flex items-center gap-1.5">
+                            <Maximize2 size={13} /> Open large
+                        </button>
+                        <button onClick={fullScreen}
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 flex items-center gap-1.5">
+                            <Expand size={13} /> Full screen
+                        </button>
+                    </div>
+                )}
+            </div>
 
             {notice && !open && <p className="text-sm text-gray-600 mt-3">{notice}</p>}
             {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
