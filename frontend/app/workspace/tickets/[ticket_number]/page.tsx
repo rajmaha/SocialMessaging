@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import MainHeader from "@/components/MainHeader";
 import TicketHistory from "@/components/TicketHistory";
@@ -58,6 +58,12 @@ function TicketFollowUp() {
     const [forwardTo, setForwardTo] = useState('');
     const [forwardReason, setForwardReason] = useState('');
     const [saveError, setSaveError] = useState('');
+    const noteBox = useRef<HTMLTextAreaElement>(null);
+    // Start follow-up thread (the thread column): the Internal note, ready to type
+    const startFollowUp = () => {
+        setTab('note');
+        setTimeout(() => { noteBox.current?.focus(); noteBox.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 50);
+    };
     useEffect(() => {
         if (status !== 'forwarded' || agents.length) return;
         fetch(`${API_URL}/conversations/agents`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } })
@@ -360,6 +366,7 @@ function TicketFollowUp() {
                             <div className="flex-1 flex flex-col">
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">Follow-Up Note</label>
                                 <textarea
+                                    ref={noteBox}
                                     value={note}
                                     onChange={e => setNote(e.target.value)}
                                     placeholder="Type your follow-up notes here..."
@@ -397,7 +404,7 @@ function TicketFollowUp() {
                         activeNumber={ticket.phone_number}
                         ticketId={isSupport ? ticket.id : undefined}
                         reloadKey={reloadHistory}
-                        onFollowUpClick={() => { }}
+                        onFollowUpClick={startFollowUp}
                     />
                 </div>
 
