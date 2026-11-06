@@ -18,7 +18,36 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Custom scheme: socialinbox://dashboard?tab=messaging -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="socialinbox" />
+            </intent-filter>
+
+            <!-- App Links: https://workspace.saraloms.com/... opens in the app.
+                 Needs /.well-known/assetlinks.json on that host to verify;
+                 until then Android shows the usual "open with" chooser. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="workspace.saraloms.com" />
+            </intent-filter>
         </activity>
+
+        <!-- Notification appearance for FCM pushes delivered while the app is
+             not running (Capacitor cannot style those from JS). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_icon_config_sample"
+        />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/colorPrimary"
+        />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -32,4 +61,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Android 13+: the user must grant notifications at runtime -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

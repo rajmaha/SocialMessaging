@@ -33,6 +33,12 @@ services:
       # panel reaches the container only when it is named here.
       SUPPORT_SERVICE_KEYS: ${SUPPORT_SERVICE_KEYS:-}
       SUPPORT_PUBLIC_URL: ${SUPPORT_PUBLIC_URL:-}
+      # Mobile push notifications. The Firebase service-account JSON, inline.
+      # Unset: the app still gets notifications while it is running (over the
+      # WebSocket), just not while it is closed. Same rule as above -- a
+      # variable set only in the deploy panel never reaches the container.
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
     expose:
       - "8000"
     depends_on:

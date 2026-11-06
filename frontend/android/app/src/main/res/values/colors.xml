@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand blue. Same value as the primary-color CSS variable in the web
+         app's globals.css; used to tint push notifications. -->
+    <color name="colorPrimary">#2563EB</color>
+    <color name="colorPrimaryDark">#1E40AF</color>
+    <color name="colorAccent">#3B82F6</color>
+</resources>

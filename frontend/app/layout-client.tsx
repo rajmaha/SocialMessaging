@@ -8,6 +8,7 @@ import { EmailComposeProvider } from '@/lib/email-compose-context'
 import Softphone from '@/components/Softphone'
 import EmailComposePopover from '@/components/EmailComposePopover'
 import MobileBottomNav from '@/components/MobileBottomNav'
+import NativeShell from '@/components/NativeShell'
 import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { getAuthToken } from '@/lib/auth'
@@ -52,6 +53,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       <EventsProvider>
         <SoftphoneProvider>
           <EmailComposeProvider>
+            <NativeShell />
             <EventNotifications />
             {children}
             <Softphone />

@@ -172,6 +172,43 @@ plain.
 - Visitor identity uses email + OTP verification
 - AI bot supports OpenAI and Ollama (configurable in admin panel)
 
+## Mobile and desktop apps
+
+The same Next.js frontend, wrapped three ways: Android and iOS with Capacitor
+8 (`frontend/android`, `frontend/ios`), Windows and macOS with Electron
+(`desktop/`). All three load the **hosted** frontend rather than bundling it,
+so a frontend fix reaches every platform without a store release. Full guide:
+`docs/mobile-desktop-apps.md`.
+
+| piece | where |
+|---|---|
+| Platform detection, status bar, keyboard, safe areas, haptics | `frontend/lib/native.ts` |
+| Boot, hardware back, resume, deep links, notification routing | `frontend/components/NativeShell.tsx` |
+| Push registration, device token, local notifications | `frontend/lib/push.ts` |
+| Unread counts (mobile badges and desktop dock badge) | `frontend/lib/use-unread.ts` |
+| FCM sender, device rows, registration routes | `app/services/push_service.py`, `app/models/device_token.py`, `app/routes/devices.py` |
+| Electron main process, tray, badge, deep links | `desktop/src/main.js` |
+| The page's entire Electron bridge | `desktop/src/preload.js` |
+
+- **Safe areas are redefined utilities, not edited pages.** `lib/native.ts`
+  publishes `--sa-top` / `--sa-bottom` and tags `<html>`; `globals.css` then
+  changes what `pt-14`, `top-14` and `pb-16` mean inside the app only. Use
+  those existing classes on a new page and the insets come for free.
+- **A new full-screen overlay must listen for the cancelable `nativeback`
+  event** and `preventDefault()`, or Android's back button navigates away
+  instead of closing it (the chat pane and the More drawer both do this).
+- **Push hangs off `EventsService.broadcast_to_user()`**: no open socket means
+  the app is closed, so that is where the FCM fallback lives. Only event types
+  in `PUSHABLE_EVENTS` are pushed, and their wording mirrors
+  `components/EventNotifications.tsx`.
+- **`FCM_SERVICE_ACCOUNT_JSON` / `FCM_SERVICE_ACCOUNT_FILE` must be named in
+  `docker-compose.yml`'s backend `environment:`** — the same rule as
+  `SUPPORT_SERVICE_KEYS`. Unset, push is a silent no-op and the apps still
+  notify while running, over the WebSocket.
+- **Android needs JDK 21** (`brew install openjdk@21`). Gradle 8.14.3 rejects
+  the system JDK 26 and Android Studio's bundled 25.
+- Desktop builds are unsigned, and `dist:win` needs a Windows machine or CI.
+
 ## Support desk
 
 Support requests from any site's widget (and, later, apps): a widget domain is a

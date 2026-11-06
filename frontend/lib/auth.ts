@@ -87,6 +87,12 @@ export const authAPI = {
   },
 
   logout: () => {
+    // Tell the server to stop pushing to this device before the token the
+    // request needs is cleared. Fire-and-forget: sign-out must not wait on
+    // the network, and the server also prunes tokens FCM reports as dead.
+    try {
+      import('./push').then((m) => m.unregisterDevice()).catch(() => {})
+    } catch {}
     try { localStorage.removeItem('user') } catch {}
     try { localStorage.removeItem('user_pages') } catch {}
     if (typeof document !== 'undefined') {

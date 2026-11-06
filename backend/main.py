@@ -14,6 +14,7 @@ from app.routes.backups import router as backups_router
 from app.routes import pms as pms_routes
 from app.routes import worklog as worklog_routes
 from app.routes import roles as roles_routes
+from app.routes import devices as devices_routes
 from app.routes import platform_accounts
 from app.routes import widget_domains
 from app.routes.support_public import router as support_public_router
@@ -2522,6 +2523,7 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 # Include routes
 app.include_router(auth.router)
+app.include_router(devices_routes.router)   # mobile push device registration
 app.include_router(accounts.router)
 app.include_router(messages.router)
 app.include_router(conversations.router)

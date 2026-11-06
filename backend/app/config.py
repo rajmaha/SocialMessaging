@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     # FRONTEND_URL (nginx serves both from one host).
     SUPPORT_PUBLIC_URL: Optional[str] = None
 
+    # Mobile push notifications (FCM, covering Android and iOS-via-APNs).
+    # Give the Firebase service-account JSON either inline or as a file path;
+    # with neither set, background push is a silent no-op and the app falls
+    # back to local notifications raised from the WebSocket stream.
+    # Must also be named in docker-compose.yml's backend environment: block.
+    FCM_SERVICE_ACCOUNT_JSON: Optional[str] = None
+    FCM_SERVICE_ACCOUNT_FILE: Optional[str] = None
+
     class Config:
         env_file = ".env"
 

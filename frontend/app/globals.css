@@ -242,7 +242,11 @@ body {
 }
 
 .safe-area-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--sa-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+.safe-area-top {
+  padding-top: var(--sa-top, env(safe-area-inset-top, 0px));
 }
 
 body.mobile-chat-open .mobile-bottom-nav { display: none !important; }
@@ -347,4 +351,153 @@ body.mobile-chat-open .mobile-bottom-nav { display: none !important; }
   padding: 0.1em 0.25em;
   border-radius: 0.2em;
   font-family: monospace;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Packaged app shell (Capacitor mobile / Electron desktop)
+   ──────────────────────────────────────────────────────────────────────────
+   `lib/native.ts` tags <html> with .native-app / .native-ios / .native-android
+   / .desktop-app and publishes the real safe-area insets as --sa-top and
+   --sa-bottom.  Everything below is scoped to those classes so the plain web
+   build is untouched.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Overwritten at boot by applySafeAreaInsets(); these are the web defaults. */
+  --sa-top: 0px;
+  --sa-bottom: 0px;
+  --keyboard-height: 0px;
+  --topbar-height: 3.5rem;   /* matches the h-14 fixed header */
+  --bottomnav-height: 4rem;  /* matches the pb-16 content offset */
+}
+
+/* ── Status bar / notch ──────────────────────────────────────────────────── */
+
+/* The fixed top bar grows into the status bar instead of hiding under it. */
+html.native-app .app-topbar {
+  height: calc(var(--topbar-height) + var(--sa-top));
+  padding-top: var(--sa-top);
+}
+
+/* Every page offsets the fixed header with `pt-14` and sticky rails with
+   `top-14`.  Redefining those two utilities inside the app is far less
+   invasive than editing ~40 page files. */
+html.native-app .pt-14 {
+  padding-top: calc(var(--topbar-height) + var(--sa-top));
+}
+html.native-app .top-14 {
+  top: calc(var(--topbar-height) + var(--sa-top));
+}
+
+/* ── Home indicator / navigation bar ─────────────────────────────────────── */
+
+/* Pages offset the bottom tab bar with `pb-16 md:pb-0`.  Only extend it while
+   the tab bar is actually on screen (below md), so tablets are unaffected. */
+@media (max-width: 767px) {
+  html.native-app .pb-16 {
+    padding-bottom: calc(var(--bottomnav-height) + var(--sa-bottom));
+  }
+}
+
+/* ── Keyboard ────────────────────────────────────────────────────────────── */
+
+/* With the native resize mode the WebView shrinks, so the tab bar would sit
+   directly on the keyboard. Hide it and drop the inset while typing. */
+body.keyboard-open .mobile-bottom-nav {
+  display: none !important;
+}
+body.keyboard-open {
+  --sa-bottom: 0px;
+}
+
+/* ── App-like touch behaviour ────────────────────────────────────────────── */
+
+html.native-app,
+html.native-app body {
+  /* Kill the rubber-band / pull-to-refresh bounce that gives away a WebView. */
+  overscroll-behavior: none;
+}
+
+html.native-app body {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* Chrome (buttons, nav, headers) should not be text-selectable on long press,
+   but message bodies and inputs must stay selectable and copyable. */
+html.native-app button,
+html.native-app nav,
+html.native-app header,
+html.native-app label {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* iOS zooms the page when focusing an input whose text is under 16px. */
+html.native-ios input,
+html.native-ios textarea,
+html.native-ios select {
+  font-size: max(16px, 1em);
+}
+
+/* Momentum scrolling inside the app's scroll panes. */
+html.native-app .overflow-y-auto,
+html.native-app .overflow-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Bottom tab bar ──────────────────────────────────────────────────────── */
+
+.mobile-bottom-nav {
+  /* Frosted bar reads as native on both platforms. */
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+.mobile-bottom-nav .tab-badge {
+  position: absolute;
+  top: 0.25rem;
+  right: 50%;
+  transform: translateX(1.1rem);
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.625rem;
+  line-height: 1.05rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Pressed state — mobile has no hover, so feedback has to be on :active. */
+.mobile-bottom-nav button:active {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* ── "Press back again to exit" hint ─────────────────────────────────────── */
+
+.back-exit-hint {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--bottomnav-height) + var(--sa-bottom) + 1rem);
+  z-index: 90;
+  background: rgba(17, 24, 39, 0.92);
+  color: #fff;
+  font-size: 0.8125rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+/* ── Electron desktop ────────────────────────────────────────────────────── */
+
+/* The desktop window uses the OS title bar, so no inset is needed, but the
+   bottom tab bar is mobile-only chrome and must never appear. */
+html.desktop-app .mobile-bottom-nav {
+  display: none !important;
 }

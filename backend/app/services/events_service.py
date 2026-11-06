@@ -2,15 +2,59 @@
 Real-time events service for WebSocket connections
 """
 
+import asyncio
 import json
 import logging
-from typing import Set, Dict, Callable
+from typing import Set, Dict, Callable, Optional, Tuple
 from datetime import datetime
 from fastapi import WebSocket
 from sqlalchemy.orm import Session
 from app.models.branding import BrandingSettings
 
 logger = logging.getLogger(__name__)
+
+
+# Events worth waking a phone for, and how to word the notification. Anything
+# not listed here (typing indicators, status changes, read receipts) is noise
+# on a lock screen and is skipped.
+#
+# The wording deliberately mirrors components/EventNotifications.tsx so the
+# banner and the in-app toast read the same.
+def _message_body(d: dict) -> str:
+    who = d.get("visitor_name") or d.get("sender_name") or "Unknown"
+    text = (d.get("message_text") or d.get("text") or "").strip()
+    return f"{who}: {text[:120]}" if text else f"New message from {who}"
+
+
+PUSHABLE_EVENTS: Dict[str, Tuple[str, Callable[[dict], str]]] = {
+    "message_received": ("New message", _message_body),
+    "email_received": (
+        "New email",
+        lambda d: f"From {d['sender']}" if d.get("sender") else "You have new mail",
+    ),
+    "conversation_assigned": (
+        "Conversation assigned to you",
+        lambda d: (
+            f"{d.get('assigned_by_name') or 'A teammate'} forwarded "
+            f"{d.get('contact_name') or 'a chat'} to you"
+        ),
+    ),
+    "pms_task_assigned": (
+        "Task assigned",
+        lambda d: (
+            f"{d.get('assigned_by') or 'Someone'} assigned "
+            f"\"{d.get('task_title') or 'a task'}\" to you"
+        ),
+    ),
+    "support_ticket_raised": (
+        "New support request",
+        lambda d: d.get("support_subject") or d.get("subject") or "A customer raised a request",
+    ),
+}
+
+# Keys the mobile app reads to decide which screen to open on tap
+# (routeForNotification in components/NativeShell.tsx).
+_ROUTING_KEYS = ("conversation_id", "ticket_number", "email_id", "route")
 
 class EventsService:
     """Service for managing real-time events and WebSocket connections"""
@@ -47,8 +91,16 @@ class EventsService:
             del self.user_ids[websocket]
     
     async def broadcast_to_user(self, user_id: int, event: dict):
-        """Broadcast an event to all connections of a specific user"""
+        """
+        Broadcast an event to all connections of a specific user.
+
+        With no open connection the agent's app is closed or swapped out, so
+        the event is sent as a push notification instead. This is the one
+        place that knows an agent is unreachable in real time, which is why
+        the fallback lives here rather than at each call site.
+        """
         if user_id not in self.active_connections:
+            await self._push_fallback(user_id, event)
             return
         
         disconnected_sockets = set()
@@ -80,6 +132,47 @@ class EventsService:
         for socket in disconnected_sockets:
             self.disconnect(socket)
     
+    async def _push_fallback(self, user_id: int, event: dict) -> None:
+        """
+        Sends `event` to the agent's phones via FCM.
+
+        Never raises and never blocks the event loop: push_service uses
+        `requests` (sync), so the send runs in a worker thread. A failure here
+        must not affect the action that produced the event.
+        """
+        try:
+            wording = PUSHABLE_EVENTS.get(event.get("type", ""))
+            if not wording:
+                return
+
+            from app.services import push_service
+
+            if not push_service.is_configured():
+                return
+
+            title, build_body = wording
+            data = event.get("data") or {}
+            body = build_body(data)
+
+            payload = {k: data[k] for k in _ROUTING_KEYS if data.get(k) is not None}
+            payload["event_type"] = event.get("type", "")
+
+            await asyncio.to_thread(self._send_push_sync, user_id, title, body, payload)
+        except Exception as err:
+            logger.warning("Push fallback failed for user %s: %s", user_id, err)
+
+    @staticmethod
+    def _send_push_sync(user_id: int, title: str, body: str, data: dict) -> None:
+        """Worker-thread half of _push_fallback: owns its own DB session."""
+        from app.database import SessionLocal
+        from app.services import push_service
+
+        db = SessionLocal()
+        try:
+            push_service.notify_user(db, user_id, title, body, data)
+        finally:
+            db.close()
+
     def get_connected_user_count(self) -> int:
         """Return number of distinct users with active connections"""
         return len(self.active_connections)

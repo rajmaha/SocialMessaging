@@ -227,7 +227,7 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
     }
 
     return (
-        <header className="border-b border-gray-200 flex items-center justify-between px-3 md:px-6 h-14 fixed top-0 left-0 right-0 z-[60]"
+        <header className="app-topbar border-b border-gray-200 flex items-center justify-between px-3 md:px-6 h-14 fixed top-0 left-0 right-0 z-[60]"
             style={{ backgroundColor: 'var(--header-bg)' }}
         >
             {/* Left: brand + tabs */}

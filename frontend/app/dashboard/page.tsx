@@ -198,6 +198,33 @@ function DashboardPage() {
     return () => document.body.classList.remove('mobile-chat-open')
   }, [mobileShowChat])
 
+  // Android hardware back: when the chat pane is open on mobile it should go
+  // back to the conversation list, the same as the on-screen arrow. Consuming
+  // the event (preventDefault) stops NativeShell from unwinding history.
+  useEffect(() => {
+    if (!mobileShowChat) return
+    const onBack = (e: Event) => {
+      e.preventDefault()
+      setMobileShowChat(false)
+    }
+    window.addEventListener('nativeback', onBack)
+    return () => window.removeEventListener('nativeback', onBack)
+  }, [mobileShowChat])
+
+  // A push/local notification tap (or a deep link) carries ?conversation=<id>.
+  // Open that thread once the list has loaded.
+  useEffect(() => {
+    const wanted = searchParams.get('conversation')
+    if (!wanted || conversations.length === 0) return
+    const match = conversations.find((c) => String(c.id) === wanted)
+    if (match && selectedConversation?.id !== match.id) {
+      setSelectedConversation(match)
+      selectedConvRef.current = match
+      if (window.innerWidth < 768) setMobileShowChat(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, conversations])
+
   // Track which webchat visitors are currently online
   useEffect(() => {
     const unsubOn = subscribe('webchat_visitor_online', (ev) => {
@@ -439,16 +466,25 @@ function DashboardPage() {
             {/* Chat */}
             <div className={`${mobileShowChat ? 'flex' : 'hidden'} md:flex flex-1 flex-col`}>
               {mobileShowChat && (
-                <div className="flex md:hidden items-center gap-2 px-3 py-2 border-b bg-white">
+                <div className="flex md:hidden items-center gap-2 px-3 py-2 border-b bg-white sticky top-0 z-10">
                   <button
                     onClick={() => { setMobileShowChat(false) }}
-                    className="p-2 -ml-2 rounded-lg hover:bg-gray-100"
+                    className="p-2 -ml-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                    aria-label="Back to conversations"
                   >
                     <FiArrowLeft size={20} />
                   </button>
-                  <span className="font-semibold truncate">
-                    {selectedConversation?.contact_name || 'Chat'}
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold truncate leading-tight">
+                      {selectedConversation?.contact_name || 'Chat'}
+                    </div>
+                    {selectedConversation?.platform && (
+                      <div className="text-[11px] text-gray-500 capitalize leading-tight">
+                        {selectedConversation.platform}
+                        {activeConvIds.has(selectedConversation.id) && ' · online'}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               <ChatWindow
