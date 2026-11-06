@@ -300,6 +300,13 @@ export default function LiveHelpWindow() {
   }
   const toggleMute = () => setMute(!mutedRef.current)
 
+  // the call is over: this window has done its job and closes itself (a failure stays, to be read)
+  useEffect(() => {
+    if (phase !== 'ended') return
+    const t = setTimeout(() => { try { window.close() } catch { /* left open: the button closes it */ } }, 2000)
+    return () => clearTimeout(t)
+  }, [phase])
+
   // connected: this window shrinks to a corner (the page's call bar has Mute and Stop too).
   // A browser may refuse (a window opened full screen, or in a full-screen space): it is
   // tried again whenever the window comes back to the front, and the card stays small.
@@ -406,6 +413,7 @@ export default function LiveHelpWindow() {
 
   return box(<>
     <p className="font-semibold">Live help has ended.</p>
+    <p className="text-xs text-gray-500">This window closes by itself.</p>
     <button onClick={() => window.close()} className="text-sm text-gray-600 underline">Close this window</button>
   </>)
 }

@@ -255,8 +255,13 @@ site guide: `docs/support-desk.md` section 7.
   every command carries the share's `s` (displaySurface): a **tab** maps exactly;
   a **window** or **whole screen** is placed by the page from its own
   screenX/Y and outer-less-inner size (`ctlPoint()`), which is close but not
-  exact (zoom, a second screen, a docked developer panel). A point off the
-  page hides the pointer and refuses the click.
+  exact (zoom, a dock or menu bar, a docked developer panel; the screen's start
+  is `screen.availLeft/availTop`). A point off the page hides the pointer and
+  refuses the click. **Line up pointer** (agent, on a screen or window share)
+  sends the arrow to the middle; the agent clicks its tip and every later point
+  is moved by that difference (`off` in SupportLiveHelp), reset when the share
+  changes or the call ends.
+- The live window closes itself 2 s after the call ends (a failure stays).
   The pointer needs no consent; clicks, scrolling and keys only while the state
   is `on`, which the live window sets solely from the customer's Allow on their
   page (an agent's message cannot set it). The page shows a bottom-left banner

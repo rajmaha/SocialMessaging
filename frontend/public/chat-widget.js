@@ -639,8 +639,11 @@
     } else if (cmd.s === 'monitor') {
       var sc = window.screen
       var sw = sc.width || W, sh = sc.height || H
-      // the screen's own top left: a second screen starts where the first ends
-      var ox = Math.floor((window.screenX + 1) / sw) * sw, oy = Math.floor((window.screenY + 1) / sh) * sh
+      // The screen's own top left. Chrome gives screen.availLeft / availTop: where the screen this
+      // window is on starts (a second screen starts where the first ends, whatever their sizes).
+      // A menu bar or a dock on that edge moves them a little; the agent's Line up corrects it.
+      var ox = typeof sc.availLeft === 'number' ? sc.availLeft : Math.floor((window.screenX + 1) / sw) * sw
+      var oy = typeof sc.availTop === 'number' ? sc.availTop - Math.max(0, Math.min(40, sc.availTop - Math.floor(sc.availTop / sh) * sh)) : Math.floor((window.screenY + 1) / sh) * sh
       px = x * sw - (window.screenX - ox) - chromeX
       py = y * sh - (window.screenY - oy) - chromeY
     } else {

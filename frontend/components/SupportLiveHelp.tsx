@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAuthToken } from '@/lib/auth';
 import { API_URL } from '@/lib/config';
 import { LiveCall, LivePhase, socketUrl } from '@/lib/live-help';
-import { Phone, Mic, MicOff, Monitor, PhoneOff, Headphones, Maximize2, Minimize2, Expand, MousePointer2, Hand } from 'lucide-react';
+import { Phone, Mic, MicOff, Monitor, PhoneOff, Headphones, Maximize2, Minimize2, Expand, MousePointer2, Hand, Crosshair } from 'lucide-react';
 
 type LiveView = {
     id: number;
@@ -85,6 +85,12 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
     const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastPtr = useRef(0);
     const wheel = useRef({ dx: 0, dy: 0, x: 0, y: 0, t: null as ReturnType<typeof setTimeout> | null });
+    // Line up: on a whole-screen or window share the page can only estimate where it sits, so
+    // the agent clicks once on the red arrow sent to the middle and every point is moved by the
+    // difference from then on (0..1 of the picture).
+    const off = useRef({ x: 0, y: 0 });
+    const [aligning, setAligning] = useState(false);
+    const [aligned, setAligned] = useState(false);
 
     const showVideo = hasVideo && phase === 'live';
     const floating = big && showVideo && box !== null;
@@ -182,6 +188,25 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
     // Never disabled: a dim button on the drag bar read as covered. When control cannot be
     // asked for, the reason shows on the panel's bottom line; the customer's side still
     // looks for their page once more (it may have been missed) before it answers.
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const adjust = (p: { x: number; y: number }) => ({ x: clamp01(p.x - off.current.x), y: clamp01(p.y - off.current.y) });
+
+    const startAlign = () => {
+        if (aligning) { setAligning(false); return; }
+        off.current = { x: 0, y: 0 };
+        setAligned(false);
+        setAligning(true);
+        sendCtl({ t: 'ptr', x: 0.5, y: 0.5 });
+    };
+    // while lining up, the red arrow stays in the middle of the picture (it hides after 5 s)
+    useEffect(() => {
+        if (!aligning) return;
+        const t = setInterval(() => sendCtl({ t: 'ptr', x: 0.5, y: 0.5 }), 2000);
+        return () => clearInterval(t);
+    }, [aligning]);
+    // another share, or the end of the call: what was lined up no longer holds
+    useEffect(() => { off.current = { x: 0, y: 0 }; setAligned(false); setAligning(false); }, [pinfo?.surface, ctlOpen]);
+
     const askControl = () => {
         if (ctl !== 'off') { sendCtl({ t: 'ctl-stop' }); setCtl('off'); return; }
         if (!ctlOpen) { flashNote('Pointer and control are not available on their device.'); return; }
@@ -195,20 +220,28 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
     };
 
     const onVideoMove = (e: React.MouseEvent) => {
-        if (!canPoint) return;
+        if (!canPoint || aligning) return;
         const now = Date.now();
         if (now - lastPtr.current < 40) return;
         lastPtr.current = now;
         const p = toPicture(e.clientX, e.clientY);
-        sendCtl(p ? { t: 'ptr', ...p } : { t: 'ptr-hide' });
+        sendCtl(p ? { t: 'ptr', ...adjust(p) } : { t: 'ptr-hide' });
     };
     const onVideoClick = (e: React.MouseEvent) => {
         if (!floating) { if (showVideo) setBig(true); return; }
         if (!canPoint) return;
         const p = toPicture(e.clientX, e.clientY);
         if (!p) return;
-        if (controlling) { sendCtl({ t: 'click', ...p }); panel.current?.focus(); }
-        else sendCtl({ t: 'tap', ...p });
+        if (aligning) {
+            off.current = { x: p.x - 0.5, y: p.y - 0.5 };
+            setAligning(false);
+            setAligned(true);
+            flashNote('Lined up: the red arrow now lands under your mouse.');
+            sendCtl({ t: 'ptr', ...adjust(p) });
+            return;
+        }
+        if (controlling) { sendCtl({ t: 'click', ...adjust(p) }); panel.current?.focus(); }
+        else sendCtl({ t: 'tap', ...adjust(p) });
     };
     const onPanelKey = (e: React.KeyboardEvent) => {
         if (!controlling || !floating) return;
@@ -235,7 +268,8 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
             if (!p) return;
             e.preventDefault();
             const w = wheel.current;
-            w.dx += e.deltaX; w.dy += e.deltaY; w.x = p.x; w.y = p.y;
+            const a = adjust(p);
+            w.dx += e.deltaX; w.dy += e.deltaY; w.x = a.x; w.y = a.y;
             if (!w.t) w.t = setTimeout(() => {
                 sendCtl({ t: 'wheel', x: w.x, y: w.y, dx: Math.round(w.dx), dy: Math.round(w.dy) });
                 w.dx = 0; w.dy = 0; w.t = null;
@@ -246,6 +280,7 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
     }, [controlling, floating]);
 
     const ctlStatus = (() => {
+        if (aligning) return 'Line up: click the tip of the red arrow in the picture. If you cannot see it, their page is not in the middle of what they share: ask them to share the tab with the page.';
         if (ctlNote) return ctlNote;
         if (!showVideo) return '';
         if (!ctlOpen) return 'Pointer and control are not available on their device.';
@@ -507,6 +542,13 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
                                         className={`px-2 py-1 rounded flex items-center gap-1 ${pointerOn ? 'bg-white/20' : 'hover:bg-white/15'}`}>
                                     <MousePointer2 size={13} /> Pointer
                                 </button>
+                                {(!onTab || aligned) && (
+                                    <button onClick={startAlign}
+                                            title="Their whole screen or window is shared: click the red arrow once so your pointer lands where your mouse is"
+                                            className={`px-2 py-1 rounded flex items-center gap-1 ${aligning ? 'bg-amber-500' : aligned ? 'bg-white/20' : 'hover:bg-white/15'}`}>
+                                        <Crosshair size={13} /> {aligning ? 'Click the arrow' : aligned ? 'Lined up' : 'Line up pointer'}
+                                    </button>
+                                )}
                                 <button onClick={askControl}
                                         title={ctl === 'on' ? 'Stop controlling their page' : ctl === 'asked' ? 'Call off the request' : 'Ask to click and type on their page'}
                                         className={`px-2 py-1 rounded flex items-center gap-1 ${ctl === 'on' ? 'bg-red-600 hover:bg-red-700' : ctl === 'asked' ? 'bg-amber-500' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
