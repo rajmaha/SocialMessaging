@@ -264,8 +264,11 @@ site guide: `docs/support-desk.md` section 7.
   clicks the widget's own controls, and looks through its own banner when
   finding what was clicked. Synthetic input cannot open file pickers or native
   select lists (lists move with the arrow keys). BroadcastChannel is partitioned
-  for a site on another domain than SocialMessaging; there it works only until
-  that page reloads (postMessage between the opener iframe and the window).
+  in some browsers even between subdomains, so the live window also keeps the
+  site's TAB (`window.opener.top`, which outlives page reloads, unlike the
+  opener iframe) and posts to its frames -- only the Support iframe (our origin)
+  takes it -- asking `who` every 3 s; each side answers whoever wrote
+  (`LiveBus` peers). Before this, control was lost on the first page load.
 - **The call bar.** Once connected the live window shrinks to a corner
   (`resizeTo` / `moveTo`, which a browser may refuse) and sends `call {live,
   muted, mic, sharing}` on the same bus; the page shows a bottom-left bar with

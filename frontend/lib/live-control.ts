@@ -10,8 +10,11 @@
  * so the page it talks to changes. Every Support iframe joins a BroadcastChannel
  * (same origin as the live window) and announces itself while its page is visible;
  * the live window addresses commands to the latest one. Where a browser keeps that
- * channel apart (a site on another domain, under storage partitioning) the windows
- * fall back to postMessage between the iframe that opened the live window and it.
+ * channel apart (storage partitioning) the windows talk by postMessage instead: the live
+ * window keeps the site TAB (window.opener.top), which outlives the page's reloads, and
+ * writes to its frames; only the Support iframe (this origin) takes the message. The live
+ * window asks 'who' every few seconds, so a reloaded page's iframe answers, and each
+ * side answers whoever wrote to it.
  *
  * Messages on the bus: {ch, n, kind, ...}
  *   live window -> pages: who | cmd {to, cmd} | state {to, state, agent}
@@ -31,9 +34,15 @@ function nonce() {
 export class LiveBus {
   private bc: BroadcastChannel | null = null
   private seen: string[] = []
+  private peers: Window[] = []             // windows that wrote to us: they hear our answers too
   private onWindow = (ev: MessageEvent) => {
     if (ev.origin !== window.location.origin) return
-    this.take(ev.data)
+    const d = ev.data
+    if (d && typeof d === 'object' && d.ch === BUS && ev.source && ev.source !== window) {
+      const w = ev.source as Window
+      if (!this.peers.includes(w)) this.peers.push(w)
+    }
+    this.take(d)
   }
 
   constructor(private onMsg: (m: any) => void, private windows: () => Window[] = () => []) {
@@ -58,7 +67,9 @@ export class LiveBus {
     const d = { ...m, ch: BUS, n: nonce() }
     this.seen.push(d.n)
     try { this.bc?.postMessage(d) } catch { /* closed */ }
-    for (const w of this.windows()) {
+    this.peers = this.peers.filter((w) => { try { return !w.closed } catch { return false } })
+    const targets = this.windows().concat(this.peers.filter((w) => !this.windows().includes(w)))
+    for (const w of targets) {
       try { if (w && !w.closed) w.postMessage(d, window.location.origin) } catch { /* gone */ }
     }
   }

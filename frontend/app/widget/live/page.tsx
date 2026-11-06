@@ -83,6 +83,9 @@ export default function LiveHelpWindow() {
   // pointer and control (lib/live-control.ts): the page they are on, and whether they let the agent act on it
   const screenRef = useRef<MediaStreamTrack | null>(null)
   const bus = useRef<LiveBus | null>(null)
+  // the site's tab: the opener (the Support iframe) is replaced on every page load, its tab is not
+  const siteTop = useRef<Window | null>(null)
+  const whoTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const host = useRef<{ id: string; vw: number; vh: number } | null>(null)
   const ctlRef = useRef<Ctl>('off')
   // the call bar on their page (Mute / Stop there, so this window can stay small and out of the way)
@@ -171,6 +174,7 @@ export default function LiveHelpWindow() {
     sendCall(false)
     if (ctlRef.current !== 'off') setCtl('off')
     toHost({ t: 'ptr-hide' })
+    if (whoTimer.current) { clearInterval(whoTimer.current); whoTimer.current = null }
     bus.current?.close()
     bus.current = null
   }
@@ -259,8 +263,20 @@ export default function LiveHelpWindow() {
     }
     setSharing(!!screenTrack)
     call.current = c
-    bus.current = new LiveBus(fromPage, () => (window.opener && !window.opener.closed ? [window.opener] : []))
+    try { siteTop.current = window.opener ? window.opener.top : null } catch { siteTop.current = null }
+    bus.current = new LiveBus(fromPage, () => {
+      const out: Window[] = []
+      try { if (window.opener && !window.opener.closed) out.push(window.opener) } catch { /* gone */ }
+      // the frames of their tab, whatever page it is on now: only our own iframe takes the message
+      const t = siteTop.current
+      try {
+        if (t && !t.closed) for (let i = 0; i < Math.min(t.frames.length, 20); i++) out.push(t.frames[i])
+      } catch { /* the tab was closed */ }
+      return out
+    })
     bus.current.send({ kind: 'who' })
+    // a reloaded page's iframe announces itself when asked
+    whoTimer.current = setInterval(() => bus.current?.send({ kind: 'who' }), 3000)
     c.start()
   }
 
@@ -284,17 +300,28 @@ export default function LiveHelpWindow() {
   }
   const toggleMute = () => setMute(!mutedRef.current)
 
-  // connected: this window shrinks to a corner (the page's call bar has Mute and Stop too)
+  // connected: this window shrinks to a corner (the page's call bar has Mute and Stop too).
+  // A browser may refuse (a window opened full screen, or in a full-screen space): it is
+  // tried again whenever the window comes back to the front, and the card stays small.
+  const [big, setBig] = useState(false)
   useEffect(() => {
     if (phase !== 'live') return
     liveRef.current = true
     sendCall(true)
-    try {
-      const w = 340, h = 240
-      window.resizeTo(w, h)
-      const sc: any = window.screen
-      window.moveTo((sc.availLeft || 0) + sc.availWidth - w - 16, (sc.availTop || 0) + sc.availHeight - h - 16)
-    } catch { /* a browser may refuse; the window simply stays where it is */ }
+    const shrink = () => {
+      try {
+        const w = 340, h = 260
+        if (window.outerWidth > w + 40 || window.outerHeight > h + 40) {
+          window.resizeTo(w, h)
+          const sc: any = window.screen
+          window.moveTo((sc.availLeft || 0) + sc.availWidth - w - 16, (sc.availTop || 0) + sc.availHeight - h - 16)
+        }
+      } catch { /* refused: the window stays as it is */ }
+      setTimeout(() => setBig(window.outerWidth > 600 || window.outerHeight > 500), 300)
+    }
+    shrink()
+    window.addEventListener('focus', shrink)
+    return () => window.removeEventListener('focus', shrink)
   }, [phase])
 
   const box = (children: React.ReactNode) => (
@@ -342,9 +369,11 @@ export default function LiveHelpWindow() {
   }
 
   if (phase === 'live') {
+    // a small card in the middle, whatever size the window is (a browser may refuse to shrink it)
     return (
-      <div className="h-screen flex flex-col justify-center gap-2 bg-white px-4 text-gray-900"
+      <div className="h-screen flex items-center justify-center bg-gray-50 p-3 text-gray-900"
            style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+      <div className="w-full max-w-[320px] bg-white rounded-xl shadow p-4 flex flex-col gap-2">
         <p className="text-sm font-semibold text-green-700 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
           {sharing ? `Sharing with ${info.agent}` : `Talking with ${info.agent}`}
@@ -361,7 +390,9 @@ export default function LiveHelpWindow() {
         )}
         {ctl === 'asked' && <p className="text-[11px] text-indigo-700">{info.agent} asked to control your page: answer on your page.</p>}
         <p className="text-[11px] text-gray-500">You can go back to your page: Mute and Stop are there too. Closing this window ends the call.</p>
+        {big && <p className="text-[11px] text-gray-400">You can make this window smaller or move it aside.</p>}
         <audio ref={audioRef} autoPlay />
+      </div>
       </div>
     )
   }
