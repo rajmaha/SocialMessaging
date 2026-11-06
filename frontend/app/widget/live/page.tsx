@@ -14,6 +14,31 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { LiveCall, LivePhase, socketUrl } from '@/lib/live-help'
+import { LiveBus } from '@/lib/live-control'
+
+type Ctl = 'off' | 'asked' | 'on'
+const clamp01 = (v: any) => Math.max(0, Math.min(1, Number(v) || 0))
+const KEYS = new Set(['Enter', 'Backspace', 'Delete', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'])
+
+/** An agent's command as it may go to the page: only known fields, numbers in range. */
+function cleanCommand(m: any): any | null {
+  switch (m && m.t) {
+    case 'ptr': case 'tap': case 'click':
+      return { t: m.t, x: clamp01(m.x), y: clamp01(m.y) }
+    case 'ptr-hide':
+      return { t: 'ptr-hide' }
+    case 'wheel':
+      return { t: 'wheel', x: clamp01(m.x), y: clamp01(m.y),
+               dx: Math.max(-2000, Math.min(2000, Number(m.dx) || 0)), dy: Math.max(-2000, Math.min(2000, Number(m.dy) || 0)) }
+    case 'key': {
+      const key = typeof m.key === 'string' ? m.key : ''
+      if (!(key.length === 1 || KEYS.has(key) || key === 'a')) return null
+      return { t: 'key', key, code: typeof m.code === 'string' ? m.code.slice(0, 30) : '',
+               ctrl: !!m.ctrl, shift: !!m.shift, alt: !!m.alt, meta: !!m.meta }
+    }
+  }
+  return null
+}
 
 type Info = { pass: string; kind: 'talk' | 'screen'; agent: string; screen: boolean }
 
@@ -40,6 +65,12 @@ export default function LiveHelpWindow() {
   const [error, setError] = useState('')
   const call = useRef<LiveCall | null>(null)
   const audio = useRef<HTMLAudioElement>(null)
+  // pointer and control (lib/live-control.ts): the page they are on, and whether they let the agent act on it
+  const screenRef = useRef<MediaStreamTrack | null>(null)
+  const bus = useRef<LiveBus | null>(null)
+  const host = useRef<{ id: string; vw: number; vh: number } | null>(null)
+  const ctlRef = useRef<Ctl>('off')
+  const [ctl, setCtlShown] = useState<Ctl>('off')
 
   useEffect(() => {
     const i = readHash()
@@ -47,10 +78,63 @@ export default function LiveHelpWindow() {
     setInfo(i)
     try { history.replaceState(null, '', window.location.pathname) } catch {}
     document.title = 'Live help'
-    const bye = () => { call.current?.end() }
+    const bye = () => { stopControlAll(); call.current?.end() }
     window.addEventListener('pagehide', bye)
     return () => window.removeEventListener('pagehide', bye)
   }, [])
+
+  const surface = () => {
+    try { return String((screenRef.current?.getSettings() as any)?.displaySurface || '') } catch { return '' }
+  }
+  const tellAgent = (m: any) => { call.current?.control(m) }
+  const sendInfo = () => tellAgent({ t: 'info', surface: surface(), host: !!host.current, vw: host.current?.vw || 0, vh: host.current?.vh || 0 })
+  const setCtl = (state: Ctl, why = '') => {
+    ctlRef.current = state
+    setCtlShown(state)
+    if (host.current) bus.current?.send({ kind: 'state', to: host.current.id, state, agent: info?.agent || 'Support' })
+    tellAgent({ t: 'ctl', state, why })
+  }
+  const toHost = (cmd: any) => { if (host.current && cmd) bus.current?.send({ kind: 'cmd', to: host.current.id, cmd }) }
+
+  /** What the agent sends: the pointer always (it only points), the rest only while control is allowed. */
+  const fromAgent = (m: any) => {
+    if (!m || typeof m !== 'object') return
+    const onTab = surface() === 'browser'
+    if (m.t === 'ptr' || m.t === 'ptr-hide' || m.t === 'tap') {
+      if (onTab) toHost(cleanCommand(m))
+    } else if (m.t === 'click' || m.t === 'wheel' || m.t === 'key') {
+      if (ctlRef.current === 'on' && onTab) toHost(cleanCommand(m))
+    } else if (m.t === 'ctl-ask') {
+      if (ctlRef.current === 'on') return
+      if (!host.current) tellAgent({ t: 'note', text: 'Their site page is not open in this browser.' })
+      else if (!onTab) tellAgent({ t: 'note', text: 'They are not sharing a browser tab: control needs them to share the tab with the page.' })
+      else setCtl('asked')
+    } else if (m.t === 'ctl-stop') {
+      setCtl('off')
+    }
+  }
+
+  /** What the site page says: it is there (after every page load), or the customer's answer. */
+  const fromPage = (m: any) => {
+    if (m.kind === 'host' && typeof m.id === 'string') {
+      host.current = { id: m.id, vw: Number(m.vw) || 0, vh: Number(m.vh) || 0 }
+      sendInfo()
+      // the banner (or the question) follows them onto the next page
+      bus.current?.send({ kind: 'state', to: m.id, state: ctlRef.current, agent: info?.agent || 'Support' })
+    } else if (m.kind === 'reply' && host.current && m.id === host.current.id) {
+      const r = m.msg || {}
+      if (r.t === 'ctl-answer' && ctlRef.current === 'asked') setCtl(r.allow ? 'on' : 'off', r.allow ? '' : 'denied')
+      else if (r.t === 'ctl-stop' && ctlRef.current !== 'off') setCtl('off', 'stopped')
+      else if (r.t === 'note' && typeof r.text === 'string') tellAgent({ t: 'note', text: r.text.slice(0, 200) })
+    }
+  }
+
+  const stopControlAll = () => {
+    if (ctlRef.current !== 'off') setCtl('off')
+    toHost({ t: 'ptr-hide' })
+    bus.current?.close()
+    bus.current = null
+  }
 
   const start = async (withScreen: boolean) => {
     if (!info) return
@@ -66,7 +150,7 @@ export default function LiveHelpWindow() {
         // picked "this window" and the agent saw only the live help box. Browsers that do
         // not know these hints ignore them.
         const display = await navigator.mediaDevices.getDisplayMedia({
-          video: { displaySurface: 'monitor' } as any,
+          video: { displaySurface: 'browser' } as any,
           audio: false,
           selfBrowserSurface: 'exclude',
           surfaceSwitching: 'include',
@@ -110,8 +194,11 @@ export default function LiveHelpWindow() {
       return
     }
     const local = new MediaStream(tracks)
+    screenRef.current = screenTrack
     const c = new LiveCall('customer', socketUrl(`/api/support/v1/live/ws?pass=${encodeURIComponent(info.pass)}`), local, {
-      onPhase: (p, w) => { setPhase(p); if (w) setWhy(w) },
+      onPhase: (p, w) => { setPhase(p); if (w) setWhy(w); if (p === 'ended' || p === 'failed') stopControlAll() },
+      onControl: fromAgent,
+      onControlOpen: (open) => { if (open) { sendInfo(); tellAgent({ t: 'ctl', state: ctlRef.current }) } },
       onRemoteStream: (stream) => { if (audio.current) audio.current.srcObject = stream },
       onMessage: (msg) => {
         if (msg.type === 'ready') c.send({ type: 'state', sharing: !!screenTrack })
@@ -123,10 +210,25 @@ export default function LiveHelpWindow() {
     }
     setSharing(!!screenTrack)
     call.current = c
+    if (screenTrack) {
+      bus.current = new LiveBus(fromPage, () => (window.opener && !window.opener.closed ? [window.opener] : []))
+      bus.current.send({ kind: 'who' })
+    }
     c.start()
   }
 
-  const stop = () => { call.current?.end(); setSharing(false) }
+  // a share switched to another tab or screen (Chrome's "Share this tab instead"): tell the agent
+  useEffect(() => {
+    if (!sharing) return
+    let last = ''
+    const t = setInterval(() => {
+      const now = surface()
+      if (now !== last) { last = now; sendInfo(); if (now !== 'browser' && ctlRef.current !== 'off') setCtl('off') }
+    }, 2000)
+    return () => clearInterval(t)
+  }, [sharing])
+
+  const stop = () => { stopControlAll(); call.current?.end(); setSharing(false) }
   const toggleMute = () => { call.current?.setEnabled('audio', muted); setMuted(!muted) }
 
   const box = (children: React.ReactNode) => (
@@ -151,8 +253,9 @@ export default function LiveHelpWindow() {
       {canShare ? (
         <>
           <p className="text-xs text-gray-700 bg-indigo-50 rounded-lg p-2 text-left">
-            In the box that opens, choose <b>Entire screen</b> (or the tab with the page you need help on),
-            then press <b>Share</b>. Not this small window: {info.agent} would see only this box.
+            In the box that opens, choose the <b>tab with the page you need help on</b> (then {info.agent} can also
+            point and, if you allow it, click for you), or <b>Entire screen</b>, then press <b>Share</b>.
+            Not this small window: {info.agent} would see only this box.
           </p>
           <button onClick={() => start(true)} disabled={phase === 'asking'}
                   className="w-full py-2.5 rounded-lg bg-indigo-600 text-white font-semibold disabled:opacity-50">Share my screen</button>
@@ -180,6 +283,13 @@ export default function LiveHelpWindow() {
         <button onClick={stop} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold">{sharing ? 'Stop' : 'End'}</button>
       </div>
       {noMic && <p className="text-xs text-amber-700">Your microphone is off: {info.agent} can see your screen but cannot hear you.</p>}
+      {ctl === 'asked' && <p className="text-xs text-indigo-700">{info.agent} asked to control your page: answer on your page.</p>}
+      {ctl === 'on' && (
+        <div className="text-xs text-red-700 bg-red-50 rounded-lg p-2 space-y-1">
+          <p>{info.agent} is controlling your page.</p>
+          <button onClick={() => setCtl('off', 'stopped')} className="px-3 py-1 rounded bg-red-600 text-white font-semibold">Stop control</button>
+        </div>
+      )}
       {sharing && <p className="text-xs text-gray-600">Now go back to your page: {info.agent} sees what you see. If they say they see only this box, press Stop, accept again and choose Entire screen.</p>}
       <p className="text-[11px] text-gray-400">Keep this window open. Closing it ends the call.</p>
     </>)

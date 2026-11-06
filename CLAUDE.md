@@ -246,6 +246,23 @@ site guide: `docs/support-desk.md` section 7.
   The widget opens it inside the Accept click (blank first, then pointed at
   the pass) so a pop-up blocker allows it; if it is blocked anyway the widget
   shows an Open live help link.
+- **Pointer and control** (`lib/live-control.ts` has the whole route): the
+  agent's pointer, clicks, scrolling and keys go over a WebRTC data channel
+  `ctl` (made by the customer, the offerer) to the live window, which passes
+  them on a BroadcastChannel to the Support iframe of the page being shown (the
+  latest visible one announces itself after every page load), which hands them
+  to `chat-widget.js` to draw or repeat. Coordinates are 0..1 of the picture, so
+  they map only when the customer shares the **browser tab**; the live window
+  sends `info.surface` and refuses everything else on a screen or window share.
+  The pointer needs no consent; clicks, scrolling and keys only while the state
+  is `on`, which the live window sets solely from the customer's Allow on their
+  page (an agent's message cannot set it). The page shows a bottom-left banner
+  with Stop control, never types into password / PIN / card / OTP fields, never
+  clicks the widget's own controls, and looks through its own banner when
+  finding what was clicked. Synthetic input cannot open file pickers or native
+  select lists (lists move with the arrow keys). BroadcastChannel is partitioned
+  for a site on another domain than SocialMessaging; there it works only until
+  that page reloads (postMessage between the opener iframe and the window).
 - **Call phone** stamps the next outbound call from that agent to that number
   within 30 minutes with the ticket number (`support_call_links`, read by the
   FreePBX CDR sync).

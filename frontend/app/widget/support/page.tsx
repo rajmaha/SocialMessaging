@@ -14,7 +14,9 @@
  * Messages to and from the host page (window.parent):
  *  out: sc:support-ready {enabled, chat_enabled}   sc:identity-expired
  *       sc:support-unread {count, increased}  -- the widget's badge and chime
+ *       sc:ctl {kind: cmd|state, cmd, state, agent}  -- live help pointer and control
  *  in:  sc:identity {token}   sc:open {screen, url}   sc:shown {shown}
+ *       sc:ctl-host {vw, vh, visible}   sc:ctl-reply {msg}   (lib/live-control.ts)
  *
  * Unread: a request whose last word is support's (from_support) and whose
  * updated_at differs from the one this browser saw when the thread was open on
@@ -26,6 +28,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { API_URL } from '@/lib/config'
+import { LiveBus, newHostId } from '@/lib/live-control'
 
 const SESSION_KEY = 'webchat_session_id'
 const NAME_KEY = 'webchat_visitor_name'
@@ -86,6 +89,11 @@ function SupportWidget() {
   const listRef = useRef<Request[]>([])
   const currentRef = useRef<Request | null>(null)
   const lastUnread = useRef(-1)
+  // live help pointer and control: this page on the bus to the live window
+  const hostId = useRef(newHostId())
+  const hostView = useRef<{ vw: number; vh: number; visible: boolean }>({ vw: 0, vh: 0, visible: false })
+  const liveBus = useRef<LiveBus | null>(null)
+  const liveWin = useRef<Window | null>(null)
 
   const color = config?.primary_color || '#4f46e5'
   const signedIn = !!token
@@ -104,6 +112,11 @@ function SupportWidget() {
         tokenWaiters.current.splice(0).forEach(fn => fn(ev.data.token))
       } else if (ev.data.type === 'sc:no-identity') {
         setWaitingForToken(false)
+      } else if (ev.data.type === 'sc:ctl-host') {
+        hostView.current = { vw: Number(ev.data.vw) || 0, vh: Number(ev.data.vh) || 0, visible: !!ev.data.visible }
+        if (hostView.current.visible) liveBus.current?.send({ kind: 'host', id: hostId.current, vw: hostView.current.vw, vh: hostView.current.vh })
+      } else if (ev.data.type === 'sc:ctl-reply') {
+        liveBus.current?.send({ kind: 'reply', id: hostId.current, msg: ev.data.msg })
       } else if (ev.data.type === 'sc:shown') {
         shownRef.current = !!ev.data.shown
         const c = currentRef.current
@@ -120,6 +133,20 @@ function SupportWidget() {
     // a page with no identity to give answers sc:no-identity; an old host page never answers
     const t = setTimeout(() => setWaitingForToken(false), 1500)
     return () => { window.removeEventListener('message', onMessage); clearTimeout(t) }
+  }, [])
+
+  // the bus to a live help window (this browser's): commands for this page go to the widget
+  useEffect(() => {
+    const bus = new LiveBus((m) => {
+      if (m.kind === 'who') {
+        if (hostView.current.visible) bus.send({ kind: 'host', id: hostId.current, vw: hostView.current.vw, vh: hostView.current.vh })
+      } else if ((m.kind === 'cmd' || m.kind === 'state') && m.to === hostId.current) {
+        toParent({ type: 'sc:ctl', kind: m.kind, cmd: m.cmd, state: m.state, agent: typeof m.agent === 'string' ? m.agent.slice(0, 80) : '' })
+      }
+    }, () => (liveWin.current && !liveWin.current.closed ? [liveWin.current] : []))
+    liveBus.current = bus
+    toParent({ type: 'sc:ctl-ready' })       // the widget answers with this page's size
+    return () => { bus.close(); liveBus.current = null }
   }, [])
 
   /** A fresh token from the host page, after the one we had expired. */
@@ -292,6 +319,7 @@ function SupportWidget() {
     setLiveBusy(true); setError('')
     // opened now, while the click still counts, then sent to its address once the pass is here
     const win = window.open('', 'sc_live_help', 'width=440,height=600')
+    liveWin.current = win
     try { if (win) win.document.body.innerHTML = '<p style="font-family:sans-serif;padding:24px;color:#555">Connecting...</p>' } catch {}
     const screenOk = !!(navigator.mediaDevices && (navigator.mediaDevices as any).getDisplayMedia) && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
     try {

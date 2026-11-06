@@ -21,6 +21,10 @@ export interface LiveCallbacks {
     onPhase?: (phase: LivePhase, why?: string) => void;
     onRemoteStream?: (stream: MediaStream) => void;
     onMessage?: (msg: any) => void;          // the relay's own messages (hello, status, state...)
+    /** The pointer-and-control channel (a WebRTC data channel, peer to peer): a message from the other side. */
+    onControl?: (msg: any) => void;
+    /** The control channel opened (true) or closed (false). */
+    onControlOpen?: (open: boolean) => void;
 }
 
 /** ws:// or wss:// address of a backend path, wherever the backend is reached from. */
@@ -38,6 +42,7 @@ export class LiveCall {
     private pendingIce: RTCIceCandidateInit[] = [];
     private ice: RTCIceServer[] = [];
     private finished = false;
+    private ctl: RTCDataChannel | null = null;
     phase: LivePhase = 'connecting';
 
     constructor(
@@ -145,6 +150,9 @@ export class LiveCall {
         if (this.role === 'customer' && this.local.getAudioTracks().length === 0) {
             pc.addTransceiver('audio', { direction: 'recvonly' });   // still hear the agent
         }
+        // the pointer-and-control channel: made by the offerer (the customer), so it is in the offer
+        if (this.role === 'customer') this.useControl(pc.createDataChannel('ctl', { ordered: true }));
+        else pc.ondatachannel = (ev) => { if (ev.channel.label === 'ctl') this.useControl(ev.channel); };
         pc.onicecandidate = (ev) => { if (ev.candidate) this.send({ type: 'ice', candidate: ev.candidate.toJSON() }); };
         pc.ontrack = (ev) => {
             const stream = ev.streams[0] || new MediaStream([ev.track]);
@@ -161,6 +169,26 @@ export class LiveCall {
                 // often comes back by itself; a lasting break turns into failed above
             }
         };
+    }
+
+    private useControl(ch: RTCDataChannel) {
+        this.ctl = ch;
+        ch.onopen = () => this.cb.onControlOpen?.(true);
+        ch.onclose = () => this.cb.onControlOpen?.(false);
+        ch.onmessage = (ev) => {
+            if (typeof ev.data !== 'string' || ev.data.length > 4000) return;
+            let msg: any;
+            try { msg = JSON.parse(ev.data); } catch { return; }
+            if (msg && typeof msg === 'object') this.cb.onControl?.(msg);
+        };
+    }
+
+    /** Sends on the pointer-and-control channel; answers whether it went. */
+    control(msg: any): boolean {
+        if (this.ctl && this.ctl.readyState === 'open') {
+            try { this.ctl.send(JSON.stringify(msg)); return true; } catch { return false; }
+        }
+        return false;
     }
 
     /** Stop sending (or start again) one kind of track, without ending the call. */

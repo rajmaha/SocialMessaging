@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAuthToken } from '@/lib/auth';
 import { API_URL } from '@/lib/config';
 import { LiveCall, LivePhase, socketUrl } from '@/lib/live-help';
-import { Phone, Mic, MicOff, Monitor, PhoneOff, Headphones, Maximize2, Minimize2, Expand } from 'lucide-react';
+import { Phone, Mic, MicOff, Monitor, PhoneOff, Headphones, Maximize2, Minimize2, Expand, MousePointer2, Hand } from 'lucide-react';
 
 type LiveView = {
     id: number;
@@ -75,6 +75,16 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
     const [box, setBox] = useState<Box | null>(null);
     const panel = useRef<HTMLDivElement>(null);
     const drag = useRef<{ dx: number; dy: number } | null>(null);
+    // pointer and control (lib/live-control.ts): what the customer shares, and whether they let us act
+    const [ctlOpen, setCtlOpen] = useState(false);
+    const [pinfo, setPinfo] = useState<{ surface: string; host: boolean; vw: number; vh: number } | null>(null);
+    const [ctl, setCtl] = useState<'off' | 'asked' | 'on'>('off');
+    const [ctlNote, setCtlNote] = useState('');
+    const [pointerOn, setPointerOn] = useState(true);
+    const [vdim, setVdim] = useState({ w: 0, h: 0 });
+    const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastPtr = useRef(0);
+    const wheel = useRef({ dx: 0, dy: 0, x: 0, y: 0, t: null as ReturnType<typeof setTimeout> | null });
 
     const showVideo = hasVideo && phase === 'live';
     const floating = big && showVideo && box !== null;
@@ -120,11 +130,106 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
         window.addEventListener('pointerup', up);
     };
 
+    // the panel goes full screen (not the video alone), so its bar and the keyboard keep working
     const fullScreen = () => {
-        const v: any = media.current;
-        if (!v) return;
-        (v.requestFullscreen || v.webkitRequestFullscreen || v.webkitEnterFullscreen)?.call(v);
+        const go = () => {
+            const el: any = panel.current || media.current;
+            if (!el) return;
+            (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+        };
+        if (!floating) { setBig(true); setTimeout(go, 60); } else go();
     };
+
+    const flashNote = (text: string) => {
+        setCtlNote(text);
+        if (noteTimer.current) clearTimeout(noteTimer.current);
+        noteTimer.current = setTimeout(() => setCtlNote(''), 7000);
+    };
+    const sendCtl = (m: any) => call.current?.control(m);
+
+    /** Where the pointer is on the shared picture, 0..1 each way (object-contain leaves bars). */
+    const toPicture = (clientX: number, clientY: number) => {
+        const v = media.current;
+        if (!v || !v.videoWidth || !v.videoHeight) return null;
+        const r = v.getBoundingClientRect();
+        const k = Math.min(r.width / v.videoWidth, r.height / v.videoHeight);
+        const w = v.videoWidth * k, h = v.videoHeight * k;
+        const x = (clientX - (r.left + (r.width - w) / 2)) / w;
+        const y = (clientY - (r.top + (r.height - h) / 2)) / h;
+        return x < 0 || x > 1 || y < 0 || y > 1 ? null : { x, y };
+    };
+
+    const onTab = pinfo?.surface === 'browser';
+    const pageThere = !!pinfo?.host;
+    const mismatch = !!(onTab && pinfo && pinfo.vw && pinfo.vh && vdim.w && vdim.h
+        && Math.abs((vdim.w / vdim.h) / (pinfo.vw / pinfo.vh) - 1) > 0.05);
+    const controlling = ctl === 'on' && ctlOpen;
+    const canPoint = floating && ctlOpen && onTab && pageThere && (pointerOn || controlling);
+
+    const askControl = () => {
+        if (ctl === 'off') { setCtl('asked'); sendCtl({ t: 'ctl-ask' }); }
+        else { sendCtl({ t: 'ctl-stop' }); setCtl('off'); }
+    };
+    const togglePointer = () => {
+        if (pointerOn) sendCtl({ t: 'ptr-hide' });
+        setPointerOn(!pointerOn);
+    };
+
+    const onVideoMove = (e: React.MouseEvent) => {
+        if (!canPoint) return;
+        const now = Date.now();
+        if (now - lastPtr.current < 40) return;
+        lastPtr.current = now;
+        const p = toPicture(e.clientX, e.clientY);
+        sendCtl(p ? { t: 'ptr', ...p } : { t: 'ptr-hide' });
+    };
+    const onVideoClick = (e: React.MouseEvent) => {
+        if (!floating) { if (showVideo) setBig(true); return; }
+        if (!canPoint) return;
+        const p = toPicture(e.clientX, e.clientY);
+        if (!p) return;
+        if (controlling) { sendCtl({ t: 'click', ...p }); panel.current?.focus(); }
+        else sendCtl({ t: 'tap', ...p });
+    };
+    const onPanelKey = (e: React.KeyboardEvent) => {
+        if (!controlling || !floating) return;
+        if ((e.target as HTMLElement).closest('button')) return;
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() !== 'a') return;   // the agent's own shortcuts
+        e.preventDefault();
+        sendCtl({ t: 'key', key: e.key, code: e.code, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey });
+    };
+
+    // scrolling over the picture scrolls their page while controlling (a passive React handler cannot stop the page's own)
+    useEffect(() => {
+        const v = media.current;
+        if (!v || !controlling || !floating) return;
+        const onWheel = (e: WheelEvent) => {
+            const p = toPicture(e.clientX, e.clientY);
+            if (!p) return;
+            e.preventDefault();
+            const w = wheel.current;
+            w.dx += e.deltaX; w.dy += e.deltaY; w.x = p.x; w.y = p.y;
+            if (!w.t) w.t = setTimeout(() => {
+                sendCtl({ t: 'wheel', x: w.x, y: w.y, dx: Math.round(w.dx), dy: Math.round(w.dy) });
+                w.dx = 0; w.dy = 0; w.t = null;
+            }, 50);
+        };
+        v.addEventListener('wheel', onWheel, { passive: false });
+        return () => v.removeEventListener('wheel', onWheel);
+    }, [controlling, floating]);
+
+    const ctlStatus = (() => {
+        if (ctlNote) return ctlNote;
+        if (!showVideo) return '';
+        if (!ctlOpen) return 'Pointer and control are not available on their device.';
+        if (!pinfo) return '';
+        if (!onTab) return 'They are sharing a whole screen or a window: to point or control, ask them to share the browser tab with the page.';
+        if (!pageThere) return 'Their page with the support button is not open in that browser.';
+        if (mismatch) return 'The picture does not match their page: ask them to share the tab with the page.';
+        if (ctl === 'on') return 'You are controlling their page: click, scroll and type in the picture. Passwords and PINs are theirs to type.';
+        if (ctl === 'asked') return 'Waiting for the customer to allow control...';
+        return pointerOn ? 'They see your pointer. Click in the picture to show them where.' : 'Your pointer is hidden.';
+    })();
 
     // keep the panel on screen when the window shrinks
     useEffect(() => {
@@ -183,12 +288,26 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
             onPhase: (p, why) => {
                 setPhase(p);
                 if (p === 'failed') setNotice(why || 'Could not connect. Try a phone call.');
-                if (p === 'ended' || p === 'failed') { call.current = null; setHasVideo(false); setTimeout(load, 500); }
+                if (p === 'ended' || p === 'failed') {
+                    call.current = null; setHasVideo(false); setTimeout(load, 500);
+                    setCtlOpen(false); setPinfo(null); setCtl('off');
+                }
             },
             onRemoteStream: (stream) => {
                 if (media.current) media.current.srcObject = stream;
                 setHasVideo(stream.getVideoTracks().length > 0);
                 stream.onaddtrack = () => setHasVideo(stream.getVideoTracks().length > 0);
+            },
+            onControlOpen: (o) => { setCtlOpen(o); if (!o) { setCtl('off'); setPinfo(null); } },
+            onControl: (m) => {
+                if (m.t === 'info') setPinfo({ surface: String(m.surface || ''), host: !!m.host, vw: Number(m.vw) || 0, vh: Number(m.vh) || 0 });
+                else if (m.t === 'ctl') {
+                    const st = m.state === 'on' || m.state === 'asked' ? m.state : 'off';
+                    setCtl(st);
+                    if (st === 'on') flashNote('The customer allowed control.');
+                    else if (st === 'off' && m.why === 'denied') flashNote('The customer said no to control.');
+                    else if (st === 'off' && m.why === 'stopped') flashNote('The customer stopped control.');
+                } else if (m.t === 'note' && typeof m.text === 'string') flashNote(m.text.slice(0, 200));
             },
             onMessage: (msg) => {
                 if (msg.type === 'status' && msg.live) { setLive(msg.live); setLeft(msg.live.seconds_left); }
@@ -343,23 +462,47 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
             {/* Their voice always plays through this one video element; their screen shows in it
                 when shared. The element is never re-created (that would drop the stream): only its
                 wrapper changes between the card and the floating panel. */}
-            <div ref={panel}
-                 className={floating ? 'fixed z-[1000] bg-gray-900 rounded-xl shadow-2xl border border-gray-700 flex flex-col' : (showVideo ? 'mt-3' : '')}
+            <div ref={panel} tabIndex={controlling && floating ? 0 : undefined} onKeyDown={onPanelKey}
+                 className={floating ? `fixed z-[1000] outline-none ${controlling ? 'ring-4 ring-red-500' : ''} bg-gray-900 rounded-xl shadow-2xl border border-gray-700 flex flex-col` : (showVideo ? 'mt-3' : '')}
                  style={floating && box ? { left: box.x, top: box.y, width: box.w, height: box.h, resize: 'both', overflow: 'hidden', minWidth: 320, minHeight: 220 } : undefined}>
                 {floating && (
                     <div onPointerDown={startDrag} title="Drag to move; drag the bottom-right corner to resize"
                          className="flex items-center gap-2 px-3 text-white text-xs font-semibold cursor-move select-none shrink-0"
                          style={{ height: BAR }}>
                         <Monitor size={14} /> <span className="flex-1 truncate">Their screen</span>
+                        {ctlOpen && (
+                            <>
+                                <button onClick={togglePointer} disabled={!onTab || !pageThere}
+                                        title={pointerOn ? 'Hide my pointer' : 'Show my pointer on their page'}
+                                        className={`px-2 py-1 rounded flex items-center gap-1 disabled:opacity-40 ${pointerOn ? 'bg-white/20' : 'hover:bg-white/15'}`}>
+                                    <MousePointer2 size={13} /> Pointer
+                                </button>
+                                <button onClick={askControl} disabled={ctl === 'off' && (!onTab || !pageThere)}
+                                        title={ctl === 'on' ? 'Stop controlling their page' : ctl === 'asked' ? 'Call off the request' : 'Ask to click and type on their page'}
+                                        className={`px-2 py-1 rounded flex items-center gap-1 disabled:opacity-40 ${ctl === 'on' ? 'bg-red-600 hover:bg-red-700' : ctl === 'asked' ? 'bg-amber-500' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                                    <Hand size={13} /> {ctl === 'on' ? 'Stop control' : ctl === 'asked' ? 'Asking...' : 'Ask for control'}
+                                </button>
+                            </>
+                        )}
                         <button onClick={fullScreen} title="Full screen" className="p-1 rounded hover:bg-white/15"><Expand size={14} /></button>
                         <button onClick={() => keepBox(fitBox(defaultBox()))} title="Default size" className="p-1 rounded hover:bg-white/15"><Maximize2 size={14} /></button>
                         <button onClick={() => setBig(false)} title="Put back in the ticket" className="p-1 rounded hover:bg-white/15"><Minimize2 size={14} /></button>
                     </div>
                 )}
-                <video ref={media} autoPlay playsInline onDoubleClick={fullScreen}
-                       className={floating ? 'w-full bg-black rounded-b-xl object-contain flex-1 min-h-0' : (showVideo ? 'w-full rounded-lg bg-black max-h-[70vh] cursor-zoom-in' : 'hidden')}
-                       onClick={() => { if (!floating && showVideo) setBig(true); }}
-                       title={floating ? 'Double-click for full screen' : (showVideo ? 'Click to open large' : undefined)} />
+                <video ref={media} autoPlay playsInline
+                       onDoubleClick={() => { if (!controlling) fullScreen(); }}
+                       onClick={onVideoClick} onMouseMove={onVideoMove}
+                       onMouseLeave={() => { if (canPoint) sendCtl({ t: 'ptr-hide' }); }}
+                       onLoadedMetadata={(e) => setVdim({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })}
+                       onResize={(e) => setVdim({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })}
+                       className={floating ? `w-full bg-black object-contain flex-1 min-h-0 ${canPoint ? 'cursor-crosshair' : ''}` : (showVideo ? 'w-full rounded-lg bg-black max-h-[70vh] cursor-zoom-in' : 'hidden')}
+                       title={floating ? (controlling ? undefined : 'Double-click for full screen') : (showVideo ? 'Click to open large' : undefined)} />
+                {floating && ctlStatus && (
+                    <div className={`px-3 py-1.5 text-[11px] shrink-0 rounded-b-xl ${controlling ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-200'}`}>{ctlStatus}</div>
+                )}
+                {!floating && showVideo && ctlOpen && (
+                    <p className="text-[11px] text-gray-500 mt-1">Open large to point at or control their page.</p>
+                )}
                 {!floating && showVideo && (
                     <div className="flex gap-2 mt-2">
                         <button onClick={() => setBig(true)}
