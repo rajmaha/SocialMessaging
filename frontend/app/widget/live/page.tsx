@@ -55,6 +55,32 @@ export default function LiveHelpWindow() {
   const start = async (withScreen: boolean) => {
     if (!info) return
     setError(''); setPhase('asking')
+    // The screen first, straight from the click: a browser opens its screen picker only
+    // within a few seconds of a click, and answering the microphone question first used
+    // that time up -- the share then failed without a word and the call went ahead as
+    // voice only.
+    let screenTrack: MediaStreamTrack | null = null
+    if (withScreen) {
+      try {
+        const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+        screenTrack = display.getVideoTracks()[0] || null
+      } catch (e: any) {
+        setPhase('start')
+        const msg = String((e && e.message) || '')
+        setError(/system/i.test(msg)
+          // macOS answers this when the browser has not been allowed to record the screen
+          ? 'Your computer did not let the browser share the screen. On a Mac: System Settings, Privacy & Security, Screen Recording, switch your browser on, reopen it, then try again.'
+          : e && e.name === 'NotAllowedError'
+            ? 'Your screen was not shared. Press Share my screen and choose a screen or window, or press Talk only.'
+            : 'This browser could not share your screen. Press Share my screen to try again, or Talk only.')
+        return
+      }
+      if (!screenTrack) {
+        setPhase('start')
+        setError('No screen was chosen. Press Share my screen to try again, or Talk only.')
+        return
+      }
+    }
     let mic: MediaStream | null = null
     try {
       mic = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -68,16 +94,7 @@ export default function LiveHelpWindow() {
     }
     setNoMic(!mic)
     const tracks: MediaStreamTrack[] = mic ? [...mic.getAudioTracks()] : []
-    let screenTrack: MediaStreamTrack | null = null
-    if (withScreen && navigator.mediaDevices.getDisplayMedia) {
-      try {
-        const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
-        screenTrack = display.getVideoTracks()[0] || null
-        if (screenTrack) tracks.push(screenTrack)
-      } catch {
-        // they chose not to share after all: carry on as a voice call
-      }
-    }
+    if (screenTrack) tracks.push(screenTrack)
     if (tracks.length === 0) {
       setPhase('start')
       setError('Allow this window to use your microphone or your screen, then try again.')
