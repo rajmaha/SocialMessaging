@@ -48,7 +48,9 @@ function routeForNotification(data: Record<string, any>): string | null {
   if (!data) return null
   if (data.route) return String(data.route)
   if (data.conversation_id) return `/dashboard?tab=messaging&conversation=${data.conversation_id}`
-  if (data.ticket_number) return `/workspace/tickets?ticket=${data.ticket_number}`
+  if (data.ticket_number) {
+    return `/workspace/tickets/${encodeURIComponent(String(data.ticket_number))}?from=workspace`
+  }
   if (data.email_id) return `/dashboard?tab=email&email=${data.email_id}`
   // ── Desktop (Electron) ────────────────────────────────────────────────────
 
@@ -234,6 +236,14 @@ export default function NativeShell() {
       subscribe(
         'pms_task_assigned',
         notify('Task assigned', (d) => `${d.assigned_by || 'Someone'} assigned "${d.task_title || 'a task'}" to you`)
+      ),
+      subscribe(
+        'support_ticket',
+        notify('Support request', (d) => {
+          const who = d.customer || 'A customer'
+          const line = d.subject ? `${who}: "${d.subject}"` : who
+          return d.ticket_number ? `${line} (${d.ticket_number})` : line
+        })
       ),
     ]
 
