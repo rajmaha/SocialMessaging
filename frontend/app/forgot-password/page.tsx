@@ -1,16 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import Link from 'next/link'
-import { useBranding } from '@/lib/branding-context'
-import { API_URL } from '@/lib/config';
+import { API_URL } from '@/lib/config'
+import AuthLayout, {
+  AuthLabel,
+  AuthInput,
+  AuthButton,
+  AuthLinkButton,
+  AuthNotice,
+} from '@/components/AuthLayout'
 
 export default function ForgotPassword() {
-  const _router = useRouter()
-  const { branding } = useBranding()
   const [email, setEmail] = useState('')
+  const [sentTo, setSentTo] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
@@ -19,22 +23,22 @@ export default function ForgotPassword() {
     e.preventDefault()
     setError('')
 
-    if (!email) {
+    const trimmed = email.trim()
+    if (!trimmed) {
       setError('Please enter your email address')
       return
     }
-
-    if (!email.includes('@')) {
+    if (!trimmed.includes('@')) {
       setError('Please enter a valid email address')
       return
     }
 
     setLoading(true)
     try {
-      await axios.post(`${API_URL}/auth/forgot-password`, {
-        email: email,
-      })
-
+      await axios.post(`${API_URL}/auth/forgot-password`, { email: trimmed })
+      // Keep the address so the confirmation can name it — people mistype,
+      // and seeing it back is how they notice.
+      setSentTo(trimmed)
       setSuccess(true)
       setEmail('')
     } catch (err: any) {
@@ -44,103 +48,80 @@ export default function ForgotPassword() {
     }
   }
 
+  if (success) {
+    return (
+      <AuthLayout
+        title="Check your email"
+        subtitle={
+          <>
+            We sent a reset link to <span className="font-medium text-gray-700">{sentTo}</span>.
+            It expires in one hour.
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <AuthLinkButton href="/login">Back to sign in</AuthLinkButton>
+          <AuthButton
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              setSuccess(false)
+              setSentTo('')
+            }}
+          >
+            Use a different address
+          </AuthButton>
+        </div>
+
+        <p className="mt-6 text-xs text-gray-400 text-center leading-relaxed">
+          Nothing arrived? Check your spam folder before trying again.
+        </p>
+      </AuthLayout>
+    )
+  }
+
   return (
-    <div
-      className="min-h-screen flex items-center justify-center px-4"
-      style={{
-        background: `linear-gradient(135deg, ${branding?.primary_color} 0%, ${branding?.secondary_color} 100%)`,
-      }}
+    <AuthLayout
+      title="Reset your password"
+      subtitle="Enter your email address and we'll send you a link to set a new one."
+      footer={
+        <>
+          Remember your password?{' '}
+          <Link href="/login" className="font-semibold text-white hover:underline">
+            Sign in
+          </Link>
+        </>
+      }
     >
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-xl p-8">
-          <h1 className="text-3xl font-bold mb-2 text-center" style={{ color: branding?.primary_color }}>
-            Reset Password
-          </h1>
-          <p className="text-gray-600 text-center mb-6">
-            Enter your email address and we&apos;ll send you a link to reset your password
-          </p>
+      <form onSubmit={handleSubmit} noValidate>
+        {error && <AuthNotice tone="error">{error}</AuthNotice>}
 
-          {error && (
-            <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
-              {error}
-            </div>
-          )}
-
-          {success ? (
-            <div className="text-center">
-              <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
-                ✓ Check your email for a password reset link. The link will expire in 1 hour.
-              </div>
-              <p className="text-gray-600 mb-4">
-                Didn&apos;t receive the email? Check your spam folder or try again with a different email.
-              </p>
-              <div className="flex gap-4 justify-center">
-                <Link
-                  href="/login"
-                  className="px-6 py-2 text-white rounded-lg hover:opacity-90 font-medium transition-colors"
-                  style={{ backgroundColor: branding?.primary_color }}
-                >
-                  Back to Login
-                </Link>
-                <button
-                  onClick={() => setSuccess(false)}
-                  className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition-colors"
-                >
-                  Try Another Email
-                </button>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your.email@example.com"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 transition"
-                  style={{ focusRingColor: branding?.primary_color } as any}
-                  disabled={loading}
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full text-white py-2 rounded-lg hover:opacity-90 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                style={{ backgroundColor: branding?.primary_color }}
-              >
-                {loading ? 'Sending...' : 'Send Reset Link'}
-              </button>
-
-              <div className="text-center pt-4 border-t border-gray-200">
-                <p className="text-gray-600">
-                  Remember your password?{' '}
-                  <Link
-                    href="/login"
-                    className="font-medium hover:opacity-80 transition"
-                    style={{ color: branding?.primary_color }}
-                  >
-                    Back to Login
-                  </Link>
-                </p>
-              </div>
-            </form>
-          )}
+        <div className="mb-5">
+          <AuthLabel htmlFor="email">Email address</AuthLabel>
+          <AuthInput
+            id="email"
+            name="email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@company.com"
+            disabled={loading}
+            autoFocus
+          />
         </div>
 
-        <div className="mt-6 text-center">
-          <p className="text-white text-sm">
-            Don&apos;t have an account?{' '}
-            <Link href="/login" className="font-medium hover:underline">
-              Sign up instead
-            </Link>
-          </p>
-        </div>
-      </div>
-    </div>
+        <AuthButton type="submit" disabled={loading}>
+          {loading ? 'Sending…' : 'Send reset link'}
+        </AuthButton>
+      </form>
+
+      <p className="mt-5 text-xs text-gray-400 text-center">
+        You&apos;ll get a link that works once, for one hour.
+      </p>
+    </AuthLayout>
   )
 }

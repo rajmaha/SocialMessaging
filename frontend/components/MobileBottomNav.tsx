@@ -71,9 +71,12 @@ export default function MobileBottomNav() {
     return () => window.removeEventListener('nativeback', onBack)
   }, [drawerOpen])
 
-  // Hide on login/register/widget pages, inside an iframe, or on desktop
-  if (isIframe || isDesktop || pathname.startsWith('/login') || pathname.startsWith('/register') ||
-      pathname.startsWith('/widget') || pathname.startsWith('/reset')) {
+  // Signed-out screens: the tab bar navigates to pages the visitor cannot
+  // open yet, so it must not appear on any of them. /forgot-password was
+  // missing from this list and the bar showed through on it.
+  const signedOut = ['/login', '/register', '/forgot-password', '/reset-password',
+                     '/reset', '/widget', '/portal', '/unauthorized']
+  if (isIframe || isDesktop || signedOut.some((r) => pathname.startsWith(r))) {
     return null
   }
 
