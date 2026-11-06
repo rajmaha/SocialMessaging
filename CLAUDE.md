@@ -207,7 +207,12 @@ so a frontend fix reaches every platform without a store release. Full guide:
   notify while running, over the WebSocket.
 - **Android needs JDK 21** (`brew install openjdk@21`). Gradle 8.14.3 rejects
   the system JDK 26 and Android Studio's bundled 25.
-- Desktop builds are unsigned, and `dist:win` needs a Windows machine or CI.
+- Desktop builds are unsigned. macOS builds locally (`npm run dist:mac`);
+  **Windows is built by GitHub Actions**
+  (`.github/workflows/desktop-windows.yml`) because electron-builder cannot
+  target Windows from macOS without Wine. Publish a GitHub Release to get an
+  installer attached to it. Desktop assets live in `desktop/resources/`, not
+  `build/`, which the root `.gitignore` excludes.
 
 ## Support desk
 

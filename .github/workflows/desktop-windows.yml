@@ -1,0 +1,127 @@
+# Builds the Windows desktop installer.
+#
+# This exists because electron-builder cannot produce a Windows target from
+# macOS without Wine, and the project is developed on a Mac. The macOS targets
+# are built locally with `npm run dist:mac`; only Windows needs a runner.
+#
+# Three ways in:
+#   • publish a GitHub Release  -> builds and attaches the installer to it
+#   • Actions -> Run workflow   -> builds and leaves a downloadable artifact
+#   • touching desktop/** on a main branch or in a PR
+#                               -> build-only, to catch breakage early
+#
+# Releases are deliberately driven by the `release` event rather than a tag
+# push: combining a tag filter with a `paths` filter on `push` makes GitHub
+# evaluate the paths against an empty commit range, and the build silently
+# never runs.
+#
+# The installers are UNSIGNED. Windows SmartScreen will warn on first run.
+# To sign, add WIN_CSC_LINK (base64 .pfx) and WIN_CSC_KEY_PASSWORD as repo
+# secrets; electron-builder picks them up with no change here.
+
+name: Desktop (Windows)
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  push:
+    branches:
+      - main
+      - production
+      - development
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-windows.yml'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-windows.yml'
+
+# A second push to the same branch makes the first build pointless.
+concurrency:
+  group: desktop-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: write   # needed only by the release-upload step
+
+    defaults:
+      run:
+        working-directory: desktop
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      # electron-builder downloads the Electron binary, NSIS and winCodeSign
+      # on every cold run; they are large and version-stable.
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ runner.os }}-electron-${{ hashFiles('desktop/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-electron-
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The release tag is the source of truth for a release build, so the
+      # installer filename matches the tag rather than whatever package.json
+      # was last committed with. Accepts `desktop-v1.2.0`, `v1.2.0` or `1.2.0`.
+      - name: Set version from release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          TAG='${{ github.event.release.tag_name }}'
+          VERSION="${TAG#desktop-}"
+          VERSION="${VERSION#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Release tag '$TAG' does not contain a semver version."
+            exit 1
+          fi
+          echo "Building version $VERSION"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Build installer
+        run: npm run dist:win
+        env:
+          # Nothing to discover on a runner, and leaving it on makes
+          # electron-builder emit a confusing signing warning.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          # Lets electron-builder report GitHub rate-limit errors usefully.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: socialmedia-inbox-windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.blockmap
+            desktop/dist/latest.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach installer to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/dist/*.exe
+            desktop/dist/*.blockmap
+            desktop/dist/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

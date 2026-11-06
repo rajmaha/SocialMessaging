@@ -200,14 +200,31 @@ npm run dist:win      # NSIS installer + portable .exe
 
 Output goes to `desktop/dist/`.
 
-Note that **`npm run dist:win` cannot run on macOS without Wine**; build the
-Windows target on a Windows machine or in CI (`electron-builder --win` on a
-windows-latest runner). The macOS targets build natively here.
+The macOS targets build natively here. **`npm run dist:win` cannot run on
+macOS without Wine**, so Windows is built by GitHub Actions:
+`.github/workflows/desktop-windows.yml`.
+
+| how | what you get |
+|---|---|
+| Publish a GitHub Release | installer built and attached to that release |
+| Actions → Desktop (Windows) → Run workflow | installer as a downloadable artifact |
+| Push to `main` / `production` / `development` touching `desktop/**`, or a PR | build-only, to catch breakage |
+
+A release build takes its version from the tag (`desktop-v1.2.0`, `v1.2.0` or
+`1.2.0` all work), so the installer filename matches the release rather than
+whatever `desktop/package.json` was last committed with.
+
+Releases use the `release` event rather than a tag push on purpose: combining
+a tag filter with a `paths` filter on `push` makes GitHub evaluate the paths
+against an empty commit range, and the build silently never runs.
 
 Builds are unsigned. macOS will quarantine an unsigned `.dmg`
 ("app is damaged"); for distribution set `CSC_LINK`/`CSC_KEY_PASSWORD` for
 signing and notarize, or tell testers to run
-`xattr -cr "/Applications/SocialMedia Inbox.app"`.
+`xattr -cr "/Applications/SocialMedia Inbox.app"`. Windows SmartScreen warns
+on first run; to sign there, add `WIN_CSC_LINK` (base64 `.pfx`) and
+`WIN_CSC_KEY_PASSWORD` as repository secrets and the workflow picks them up
+unchanged.
 
 ### Pointing an app at a different server
 
@@ -238,8 +255,11 @@ npx @capacitor/assets generate \
   --android --ios
 ```
 
-The desktop icon is `desktop/build/icon.png`; electron-builder derives the
-`.icns` and `.ico` from it.
+The desktop icon is `desktop/resources/icon.png`; electron-builder derives the
+`.icns` and `.ico` from it. That folder is `resources/` rather than
+electron-builder's conventional `build/` because the repo's root `.gitignore`
+excludes `**/build/`, which would have left the icon and the macOS
+entitlements untracked.
 
 ---
 
