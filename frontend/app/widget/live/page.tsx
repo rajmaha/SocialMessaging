@@ -54,6 +54,15 @@ function readHash(): Info | null {
   }
 }
 
+/** A captured window of this window's own size (within a few per cent) is taken to be this window. */
+function looksLikeThisWindow(w: number, h: number) {
+  if (!w || !h) return false
+  const dpr = window.devicePixelRatio || 1
+  const near = (a: number, b: number) => b > 0 && Math.abs(a - b) / b < 0.06
+  return (near(w, window.outerWidth * dpr) && near(h, window.outerHeight * dpr))
+      || (near(w, window.outerWidth) && near(h, window.outerHeight))
+}
+
 export default function LiveHelpWindow() {
   const [info, setInfo] = useState<Info | null>(null)
   const [missing, setMissing] = useState(false)
@@ -87,7 +96,8 @@ export default function LiveHelpWindow() {
     if (!i) { setMissing(true); return }
     setInfo(i)
     try { history.replaceState(null, '', window.location.pathname) } catch {}
-    document.title = 'Live help'
+    // the share box's Window list shows this title: say plainly it is not the one to pick
+    document.title = 'Live help (do not share this window)'
     const bye = () => { stopControlAll(); call.current?.end() }
     window.addEventListener('pagehide', bye)
     return () => window.removeEventListener('pagehide', bye)
@@ -202,6 +212,15 @@ export default function LiveHelpWindow() {
         setError('No screen was chosen. Press Share my screen to try again, or Talk only.')
         return
       }
+      // A browser lists every window, this one too, and people picked it: the agent then
+      // saw only this box. A window share whose picture is this window's size is this window.
+      const st: any = screenTrack.getSettings ? screenTrack.getSettings() : {}
+      if (st.displaySurface === 'window' && looksLikeThisWindow(Number(st.width) || 0, Number(st.height) || 0)) {
+        screenTrack.stop()
+        setPhase('start')
+        setError(`You chose this small live help window, so ${info.agent} would see only this box. Press Share my screen again and choose the tab with your page, or Entire screen.`)
+        return
+      }
     }
     let mic: MediaStream | null = null
     try {
@@ -302,7 +321,7 @@ export default function LiveHelpWindow() {
           <p className="text-xs text-gray-700 bg-indigo-50 rounded-lg p-2 text-left">
             In the box that opens, choose the <b>tab with the page you need help on</b> (then {info.agent} can also
             point and, if you allow it, click for you), or <b>Entire screen</b>, then press <b>Share</b>.
-            Not this small window: {info.agent} would see only this box.
+            Not &quot;Live help&quot; (this small window): {info.agent} would see only this box.
           </p>
           <button onClick={() => start(true)} disabled={phase === 'asking'}
                   className="w-full py-2.5 rounded-lg bg-indigo-600 text-white font-semibold disabled:opacity-50">Share my screen</button>
