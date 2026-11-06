@@ -5,7 +5,7 @@ Real-time events service for WebSocket connections
 import asyncio
 import json
 import logging
-from typing import Set, Dict, Callable, Optional, Tuple
+from typing import Set, Dict, Callable, Optional, Tuple, Union
 from datetime import datetime
 from fastapi import WebSocket
 from sqlalchemy.orm import Session
@@ -26,7 +26,30 @@ def _message_body(d: dict) -> str:
     return f"{who}: {text[:120]}" if text else f"New message from {who}"
 
 
-PUSHABLE_EVENTS: Dict[str, Tuple[str, Callable[[dict], str]]] = {
+# One support event covers several situations, so its title is worked out from
+# the payload; the other events have a fixed title.
+_SUPPORT_TITLES = {
+    "created": "New support request",
+    "reply": "New reply on a support request",
+    "reopened": "Support request reopened",
+}
+
+
+def _support_title(d: dict) -> str:
+    return _SUPPORT_TITLES.get(d.get("what", ""), "Support request")
+
+
+def _support_body(d: dict) -> str:
+    who = d.get("customer") or "A customer"
+    subject = d.get("subject") or d.get("support_subject")
+    number = d.get("ticket_number")
+    line = f'{who}: "{subject}"' if subject else who
+    return f"{line} ({number})" if number else line
+
+
+PushTitle = Union[str, Callable[[dict], str]]
+
+PUSHABLE_EVENTS: Dict[str, Tuple[PushTitle, Callable[[dict], str]]] = {
     "message_received": ("New message", _message_body),
     "email_received": (
         "New email",
@@ -46,10 +69,7 @@ PUSHABLE_EVENTS: Dict[str, Tuple[str, Callable[[dict], str]]] = {
             f"\"{d.get('task_title') or 'a task'}\" to you"
         ),
     ),
-    "support_ticket_raised": (
-        "New support request",
-        lambda d: d.get("support_subject") or d.get("subject") or "A customer raised a request",
-    ),
+    "support_ticket": (_support_title, _support_body),
 }
 
 # Keys the mobile app reads to decide which screen to open on tap
@@ -152,6 +172,7 @@ class EventsService:
 
             title, build_body = wording
             data = event.get("data") or {}
+            title = title(data) if callable(title) else title
             body = build_body(data)
 
             payload = {k: data[k] for k in _ROUTING_KEYS if data.get(k) is not None}
