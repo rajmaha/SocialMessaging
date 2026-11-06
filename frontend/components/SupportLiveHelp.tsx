@@ -92,6 +92,17 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
     useEffect(() => { if (showVideo && !box) setBox(savedBox()); }, [showVideo, box]);
     useEffect(() => { if (!showVideo) setBig(true); }, [showVideo]);   // the next share opens large again
 
+    // The share ended (or the panel was docked) while it was full screen: leave full screen,
+    // or the browser keeps showing an empty full-screen panel -- an all-black screen.
+    useEffect(() => {
+        if (floating) return;
+        const d: any = document;
+        const fs = d.fullscreenElement || d.webkitFullscreenElement;
+        if (fs && panel.current && (fs === panel.current || panel.current.contains(fs) || fs === media.current)) {
+            (d.exitFullscreen || d.webkitExitFullscreen)?.call(d)?.catch?.(() => undefined);
+        }
+    }, [floating]);
+
     const keepBox = (b: Box) => { setBox(b); try { localStorage.setItem(BOX_KEY, JSON.stringify(b)); } catch { /* ignore */ } };
 
     // the panel's own corner resizes it (CSS resize): keep the size it was given
