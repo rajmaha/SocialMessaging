@@ -323,6 +323,8 @@ def customer_requests(db: Session, domain: WidgetDomain, suser: SupportUser, pag
             "status_label": STATUS_LABELS[word],
             "updated_at": _iso(t.updated_at),
             "last_message": (last.body[:140] if last else ""),
+            # support wrote last: the widget counts it as unread until the person opens it
+            "from_support": t.last_author == "agent",
         })
     return {"items": items, "page": page, "has_more": page * per_page < total, "total": total}
 
@@ -334,12 +336,15 @@ def _new_ticket_number() -> str:
 
 
 def _agents_for(db: Session, ticket: Ticket) -> List[int]:
-    """Who hears about a customer's write: the assignee, else the domain's linked agents."""
+    """Who hears about a customer's write: the assignee, else the domain's linked agents and
+    every admin (an admin's Support queue lists every site, so they must hear of it too)."""
     if ticket.assigned_to:
         return [ticket.assigned_to]
     if not ticket.support_site_id:
         return []
-    return [r.user_id for r in db.query(DomainAgent).filter(DomainAgent.widget_domain_id == ticket.support_site_id)]
+    ids = [r.user_id for r in db.query(DomainAgent).filter(DomainAgent.widget_domain_id == ticket.support_site_id)]
+    ids += [u.id for u in db.query(User.id).filter(User.role == "admin", User.is_active.isnot(False))]
+    return list(dict.fromkeys(ids))
 
 
 def _tell_agents(db: Session, ticket: Ticket, what: str) -> None:

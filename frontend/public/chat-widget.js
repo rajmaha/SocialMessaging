@@ -348,6 +348,7 @@
 
   function switchTab(tab) {
     activeTab = tab
+    tellSupportShown(open && tab === 'support')
     iframe.style.display = 'none'
     menuPanel.style.display = 'none'
     channelsPanel.style.display = 'none'
@@ -458,7 +459,47 @@
     .catch(function () {})
 
   var open = false
-  var unread = 0
+  var unread = 0          // chat messages while the panel was shut
+  var supportUnread = 0   // support replies the person has not read (counted by the Support iframe)
+
+  /** The launcher's red count: unread chat plus unread support replies. */
+  function renderBadge() {
+    var n = unread + supportUnread
+    if (n > 0) {
+      badge.textContent = n > 9 ? '9+' : String(n)
+      badge.style.display = 'block'
+    } else {
+      badge.style.display = 'none'
+    }
+    // the launcher's icon is replaced on open/close; keep the badge on it
+    if (badge.parentNode !== launcher) launcher.appendChild(badge)
+  }
+
+  /** The Support iframe marks a reply read only while the person can see it. */
+  function tellSupportShown(shown) {
+    if (supportReady) toSupport({ type: 'sc:shown', shown: !!shown })
+  }
+
+  /** Three rising notes: a support reply, told apart from a chat message. */
+  function playSupportChime() {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)()
+      ;[660, 880, 1175].forEach(function (f, i) {
+        var t = ctx.currentTime + i * 0.14
+        var osc = ctx.createOscillator()
+        var gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(f, t)
+        gain.gain.setValueAtTime(0.0001, t)
+        gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22)
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start(t)
+        osc.stop(t + 0.24)
+      })
+    } catch (e) {}
+  }
 
   function playNotificationSound() {
     try {
@@ -485,9 +526,10 @@
       container.style.opacity = '1'
     })
     unread = 0
-    badge.style.display = 'none'
+    tellSupportShown(activeTab === 'support')
     launcher.innerHTML =
       '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'
+    renderBadge()
   }
 
   function closeChat() {
@@ -499,6 +541,8 @@
     }, 220)
     launcher.innerHTML =
       '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
+    tellSupportShown(false)
+    renderBadge()
   }
 
   launcher.addEventListener('click', function () {
@@ -521,14 +565,404 @@
         if (activeTab === 'chat') switchTab('support')
       }
       if (pendingOpen) { toSupport(pendingOpen); pendingOpen = null }
+      tellSupportShown(open && activeTab === 'support')
     } else if (d.type === 'sc:identity-expired') {
       renewIdentity()
+    } else if (d.type === 'sc:ctl-ready') {
+      ctlReport()
+    } else if (d.type === 'sc:ctl') {
+      ctlHandle(d)
+    } else if (d.type === 'sc:support-unread') {
+      supportUnread = Math.max(0, parseInt(d.count, 10) || 0)
+      renderBadge()
+      if (d.increased && !(open && activeTab === 'support')) playSupportChime()
+      // the host page may show its own count (OMS: next to Get help)
+      window.SocialChat && (window.SocialChat.supportUnread = supportUnread)
+      try {
+        window.dispatchEvent(new CustomEvent('socialchat:support-unread', {
+          detail: { count: supportUnread, increased: !!d.increased },
+        }))
+      } catch (e) {}
     } else if (d.type === 'sc:live-request') {
       // an agent asks to talk or to see the screen: the answer is on the Support tab
       openChat()
       switchTab('support')
     }
   })
+
+
+  // ── Live help: the agent's pointer, and control of this page once the customer allows it ──
+  // Commands come from the agent through the live help window and the Support iframe
+  // (lib/live-control.ts). x and y are 0..1 of the shared picture, which is this page's
+  // viewport when the customer shares this tab. Pointing needs no consent; clicking,
+  // scrolling and typing only while state is 'on' -- set by the live window from the
+  // customer's own Allow, shown here as a banner with Stop control. Password, PIN and
+  // card fields are never typed into; the widget's own controls are never clicked.
+  var ctlState = 'off'
+  var ctlAgent = 'Support'
+  var ctlPtr = null, ctlPtrTimer = null, ctlBanner = null, ctlAsk = null, ctlEdited = null
+  // the call bar: Mute and Stop on the page itself, so the small live window can stay out of the way
+  var callBar = null, callInfo = { live: false, muted: false, mic: true, sharing: false }
+  var Z = '2147483646'
+
+  function ctlReply(msg) { toSupport({ type: 'sc:ctl-reply', msg: msg }) }
+  function ctlNote(text) { ctlReply({ t: 'note', text: text }) }
+  function ctlReport() {
+    toSupport({ type: 'sc:ctl-host', vw: window.innerWidth, vh: window.innerHeight, visible: document.visibilityState === 'visible' })
+  }
+  var ctlResizeT = null
+  window.addEventListener('resize', function () { clearTimeout(ctlResizeT); ctlResizeT = setTimeout(ctlReport, 300) })
+  document.addEventListener('visibilitychange', ctlReport)
+  window.addEventListener('focus', ctlReport)
+
+  /**
+   * Where a point of the shared picture is on this page, or null when it is off the page.
+   *   browser (a shared tab): the picture IS the page.
+   *   window: the picture is the browser window; the page sits at its bottom, below the
+   *     toolbars (outer less inner size).
+   *   monitor (a whole screen): the window sits on the screen at screenX/Y. The screen this
+   *     window is on is assumed to be the one shared; Mac and Windows place the toolbars at
+   *     the top, so the page starts outerHeight - innerHeight below the window's top.
+   * Approximate for a window and a screen (zoom, a docked developer panel), exact for a tab.
+   */
+  function ctlPoint(cmd) {
+    var x = Math.max(0, Math.min(1, +cmd.x || 0))
+    var y = Math.max(0, Math.min(1, +cmd.y || 0))
+    var W = window.innerWidth, H = window.innerHeight
+    // side borders are split between left and right; a wide gap is a panel docked on the right
+    var extraX = Math.max(0, window.outerWidth - W)
+    var chromeX = extraX < 40 ? extraX / 2 : 0, chromeY = Math.max(0, window.outerHeight - H)
+    var px, py
+    if (cmd.s === 'window') {
+      px = x * window.outerWidth - chromeX
+      py = y * window.outerHeight - chromeY
+    } else if (cmd.s === 'monitor') {
+      var sc = window.screen
+      var sw = sc.width || W, sh = sc.height || H
+      // The screen's own top left. Chrome gives screen.availLeft / availTop: where the screen this
+      // window is on starts (a second screen starts where the first ends, whatever their sizes).
+      // A menu bar or a dock on that edge moves them a little; the agent's Line up corrects it.
+      var ox = typeof sc.availLeft === 'number' ? sc.availLeft : Math.floor((window.screenX + 1) / sw) * sw
+      var oy = typeof sc.availTop === 'number' ? sc.availTop - Math.max(0, Math.min(40, sc.availTop - Math.floor(sc.availTop / sh) * sh)) : Math.floor((window.screenY + 1) / sh) * sh
+      px = x * sw - (window.screenX - ox) - chromeX
+      py = y * sh - (window.screenY - oy) - chromeY
+    } else {
+      px = x * W
+      py = y * H
+    }
+    if (px < 0 || py < 0 || px > W || py > H) return null
+    return { x: Math.round(px), y: Math.round(py) }
+  }
+
+  function ctlShowPointer(p) {
+    if (!ctlPtr) {
+      ctlPtr = document.createElement('div')
+      ctlPtr.setAttribute('aria-hidden', 'true')
+      Object.assign(ctlPtr.style, { position: 'fixed', left: '0', top: '0', zIndex: Z, pointerEvents: 'none', transition: 'transform 60ms linear' })
+      ctlPtr.innerHTML = '<svg width="26" height="26" viewBox="0 0 24 24"><path d="M3 2l7 19 2.5-7.5L20 11z" fill="#ef4444" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>' +
+        '<span style="position:absolute;left:22px;top:20px;background:#ef4444;color:#fff;font:600 11px -apple-system,Segoe UI,sans-serif;padding:2px 6px;border-radius:8px;white-space:nowrap"></span>'
+      document.body.appendChild(ctlPtr)
+    }
+    ctlPtr.lastChild.textContent = ctlAgent
+    ctlPtr.style.display = 'block'
+    ctlPtr.style.transform = 'translate(' + (p.x - 3) + 'px,' + (p.y - 2) + 'px)'
+    clearTimeout(ctlPtrTimer)
+    ctlPtrTimer = setTimeout(function () { if (ctlPtr) ctlPtr.style.display = 'none' }, 5000)
+  }
+
+  function ctlRipple(p) {
+    var r = document.createElement('div')
+    Object.assign(r.style, { position: 'fixed', left: (p.x - 18) + 'px', top: (p.y - 18) + 'px', width: '36px', height: '36px', borderRadius: '50%',
+      border: '3px solid #ef4444', zIndex: Z, pointerEvents: 'none', transition: 'transform .6s ease-out, opacity .6s ease-out', opacity: '1' })
+    document.body.appendChild(r)
+    requestAnimationFrame(function () { r.style.transform = 'scale(1.8)'; r.style.opacity = '0' })
+    setTimeout(function () { if (r.parentNode) r.parentNode.removeChild(r) }, 700)
+  }
+
+  function ctlIsOurs(el) {
+    for (var n = el; n; n = n.parentNode) {
+      if (n === container || n === launcher || n === ctlBanner || n === ctlAsk || n === ctlPtr || n === callBar) return true
+    }
+    return false
+  }
+
+  /** A field the customer types into themselves: passwords, PINs, codes, cards. */
+  function ctlSensitive(el) {
+    if (!el || !el.tagName) return false
+    if (el.tagName === 'INPUT' && /^(password|file)$/i.test(el.type || '')) return true
+    var hint = [(el.getAttribute && el.getAttribute('autocomplete')) || '', el.name || '', el.id || '', (el.getAttribute && el.getAttribute('placeholder')) || ''].join(' ')
+    return /(^|[^a-z])(cc-|one-time-code|current-password|new-password)|pass(word|wd)?|\bpin\b|pin_|_pin|cvv|cvc|card|otp|secret/i.test(hint)
+  }
+
+  function ctlButton(label, bg, color, onClick) {
+    var b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = label
+    Object.assign(b.style, { background: bg, color: color, border: '0', borderRadius: '8px', padding: '7px 14px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', marginLeft: '8px' })
+    b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); onClick() })
+    return b
+  }
+
+  function ctlRender() {
+    if (ctlState === 'asked') {
+      if (!ctlAsk) {
+        ctlAsk = document.createElement('div')
+        ctlAsk.setAttribute('role', 'dialog')
+        Object.assign(ctlAsk.style, { position: 'fixed', left: '50%', bottom: '28px', transform: 'translateX(-50%)', zIndex: Z, background: '#fff',
+          border: '2px solid #4f46e5', borderRadius: '12px', boxShadow: '0 12px 30px rgba(0,0,0,.25)', padding: '14px 16px', maxWidth: '460px',
+          font: '14px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif', color: '#111827' })
+        var t = document.createElement('div')
+        t.style.marginBottom = '10px'
+        ctlAsk.appendChild(t)
+        var row = document.createElement('div')
+        row.style.textAlign = 'right'
+        row.appendChild(ctlButton('No', '#f3f4f6', '#374151', function () { ctlReply({ t: 'ctl-answer', allow: false }); ctlState = 'off'; ctlRender() }))
+        row.appendChild(ctlButton('Allow', '#4f46e5', '#fff', function () { ctlReply({ t: 'ctl-answer', allow: true }) }))
+        ctlAsk.appendChild(row)
+        document.body.appendChild(ctlAsk)
+      }
+      ctlAsk.firstChild.textContent = ctlAgent + ' from Support asks to control this page: to click, scroll and type here for you. ' +
+        'They cannot type passwords or PINs, and you can stop at any time.'
+    } else if (ctlAsk) {
+      ctlAsk.parentNode && ctlAsk.parentNode.removeChild(ctlAsk)
+      ctlAsk = null
+    }
+    if (ctlState === 'on') {
+      if (!ctlBanner) {
+        ctlBanner = document.createElement('div')
+        ctlBanner.setAttribute('role', 'status')
+        // bottom left: the site's own menu and buttons along the top stay uncovered
+        Object.assign(ctlBanner.style, { position: 'fixed', bottom: '16px', left: '16px', zIndex: Z, background: '#dc2626', color: '#fff',
+          borderRadius: '999px', padding: '6px 6px 6px 16px', boxShadow: '0 6px 18px rgba(0,0,0,.25)', display: 'flex', alignItems: 'center',
+          font: '600 13px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' })
+        ctlBanner.appendChild(document.createElement('span'))
+        ctlBanner.appendChild(ctlButton('Stop control', '#fff', '#dc2626', function () { ctlReply({ t: 'ctl-stop' }); ctlState = 'off'; ctlRender() }))
+        document.body.appendChild(ctlBanner)
+      }
+      ctlBanner.firstChild.textContent = ctlAgent + ' from Support is controlling this page'
+      ctlBanner.style.bottom = callBar ? '68px' : '16px'
+    } else if (ctlBanner) {
+      ctlBanner.parentNode && ctlBanner.parentNode.removeChild(ctlBanner)
+      ctlBanner = null
+    }
+  }
+
+  function callRender() {
+    if (!callInfo.live) {
+      if (callBar && callBar.parentNode) callBar.parentNode.removeChild(callBar)
+      callBar = null
+      if (ctlBanner) ctlBanner.style.bottom = '16px'
+      return
+    }
+    if (!callBar) {
+      callBar = document.createElement('div')
+      callBar.setAttribute('role', 'status')
+      Object.assign(callBar.style, { position: 'fixed', bottom: '16px', left: '16px', zIndex: Z, background: '#111827', color: '#fff',
+        borderRadius: '999px', padding: '6px 6px 6px 14px', boxShadow: '0 6px 18px rgba(0,0,0,.3)', display: 'flex', alignItems: 'center',
+        font: '600 13px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' })
+      var dot = document.createElement('span')
+      Object.assign(dot.style, { width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', marginRight: '8px', display: 'inline-block' })
+      callBar.appendChild(dot)
+      callBar.appendChild(document.createElement('span'))
+      callBar.appendChild(ctlButton('Mute', '#374151', '#fff', function () {
+        callInfo.muted = !callInfo.muted
+        ctlReply({ t: 'call-mute', mute: callInfo.muted })
+        callRender()
+      }))
+      callBar.appendChild(ctlButton('Stop', '#dc2626', '#fff', function () {
+        ctlReply({ t: 'call-end' })
+        callInfo.live = false
+        callRender()
+      }))
+      document.body.appendChild(callBar)
+    }
+    callBar.childNodes[1].textContent = (callInfo.sharing ? 'Sharing your screen with ' : 'Talking with ') + ctlAgent
+    var mute = callBar.childNodes[2]
+    mute.style.display = callInfo.mic ? '' : 'none'
+    mute.textContent = callInfo.muted ? 'Unmute' : 'Mute'
+    callBar.childNodes[3].textContent = callInfo.sharing ? 'Stop sharing' : 'End call'
+    if (ctlBanner) ctlBanner.style.bottom = '68px'
+  }
+
+  function ctlMouse(el, type, p, buttons) {
+    var o = { bubbles: true, cancelable: true, composed: true, view: window, clientX: p.x, clientY: p.y, button: 0, buttons: buttons }
+    try {
+      if (/^pointer/.test(type) && typeof PointerEvent === 'function') { el.dispatchEvent(new PointerEvent(type, Object.assign({ pointerId: 1, pointerType: 'mouse', isPrimary: true }, o))); return true }
+      return el.dispatchEvent(new MouseEvent(type, o))
+    } catch (e) { return true }
+  }
+
+  function ctlChanged() {
+    // a real edit fires change when the field is left; a repeated one has to say so itself
+    if (ctlEdited) {
+      try { ctlEdited.dispatchEvent(new Event('change', { bubbles: true })) } catch (e) {}
+      ctlEdited = null
+    }
+  }
+
+  function ctlClick(cmd) {
+    var p = ctlPoint(cmd)
+    if (!p) return ctlNote('That is outside their page: only the page can be clicked.')
+    ctlShowPointer(p)
+    ctlRipple(p)
+    var el = ctlElementAt(p)
+    if (!el) return
+    if (ctlIsOurs(el)) return ctlNote('That is the support widget itself: only the customer can use it.')
+    if (el.tagName === 'IFRAME') return ctlNote('That part of the page is a separate frame and cannot be clicked from here.')
+    if (el.tagName === 'INPUT' && /^file$/i.test(el.type || '')) return ctlNote('Choosing files is for the customer to do.')
+    if (ctlEdited && ctlEdited !== el) ctlChanged()
+    ctlMouse(el, 'pointerdown', p, 1)
+    ctlMouse(el, 'mousedown', p, 1)
+    var f = el.closest ? el.closest('input,textarea,select,[contenteditable=""],[contenteditable="true"],button,a,[tabindex]') : null
+    if (f && typeof f.focus === 'function') { try { f.focus({ preventScroll: true }) } catch (e) { f.focus() } }
+    ctlMouse(el, 'pointerup', p, 0)
+    ctlMouse(el, 'mouseup', p, 0)
+    ctlMouse(el, 'click', p, 0)
+    if (f && f.tagName === 'SELECT') ctlNote('A list is chosen from with the arrow keys.')
+  }
+
+  /** The page's element at a point, looking through the banner and the question (they are ours, not the page). */
+  function ctlElementAt(p) {
+    var mine = [ctlBanner, ctlAsk, callBar].filter(Boolean)
+    mine.forEach(function (n) { n.style.pointerEvents = 'none' })
+    var el = document.elementFromPoint(p.x, p.y)
+    mine.forEach(function (n) { n.style.pointerEvents = '' })
+    return el
+  }
+
+  function ctlScroll(cmd) {
+    var p = ctlPoint(cmd) || { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) }
+    var el = ctlElementAt(p)
+    for (var n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      var cs = window.getComputedStyle(n)
+      if ((/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight) || (/(auto|scroll)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth)) {
+        n.scrollBy({ top: cmd.dy, left: cmd.dx })
+        return
+      }
+    }
+    window.scrollBy({ top: cmd.dy, left: cmd.dx })
+  }
+
+  function ctlTextField(el) {
+    if (!el) return false
+    if (el.tagName === 'TEXTAREA') return true
+    return el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|image|file|range|color|hidden)$/i.test(el.type || 'text')
+  }
+
+  function ctlInsert(el, text) {
+    if (el.isContentEditable) { document.execCommand('insertText', false, text); return }
+    var start = null, end = null
+    try { start = el.selectionStart; end = el.selectionEnd } catch (e) {}
+    if (start === null || start === undefined) {
+      el.value = el.value + text                       // number, email, date: no caret to read
+    } else {
+      el.setRangeText(text, start, end, 'end')
+    }
+    try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text })) }
+    catch (e) { el.dispatchEvent(new Event('input', { bubbles: true })) }
+    ctlEdited = el
+  }
+
+  function ctlErase(el, forward) {
+    if (el.isContentEditable) { document.execCommand(forward ? 'forwardDelete' : 'delete'); return }
+    var start = null, end = null
+    try { start = el.selectionStart; end = el.selectionEnd } catch (e) {}
+    if (start === null || start === undefined) {
+      el.value = el.value.slice(0, -1)
+    } else if (start !== end) {
+      el.setRangeText('', start, end, 'end')
+    } else if (forward) {
+      el.setRangeText('', start, Math.min(el.value.length, start + 1), 'end')
+    } else if (start > 0) {
+      el.setRangeText('', start - 1, start, 'end')
+    }
+    try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: forward ? 'deleteContentForward' : 'deleteContentBackward' })) }
+    catch (e) { el.dispatchEvent(new Event('input', { bubbles: true })) }
+    ctlEdited = el
+  }
+
+  function ctlFocusables() {
+    return Array.prototype.filter.call(
+      document.querySelectorAll('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"]),[contenteditable="true"]'),
+      function (n) { return !n.disabled && n.type !== 'hidden' && n.offsetParent !== null && !ctlIsOurs(n) })
+  }
+
+  function ctlKey(cmd) {
+    var el = document.activeElement && document.activeElement !== document.body ? document.activeElement : null
+    if (el && ctlIsOurs(el)) el = null
+    if (el && ctlSensitive(el)) return ctlNote('That field is for the customer to fill in.')
+    var target = el || document.body
+    var o = { key: cmd.key, code: cmd.code, ctrlKey: cmd.ctrl, shiftKey: cmd.shift, altKey: cmd.alt, metaKey: cmd.meta, bubbles: true, cancelable: true, composed: true }
+    var go = true
+    try { go = target.dispatchEvent(new KeyboardEvent('keydown', o)) } catch (e) {}
+    if (go) {
+      var k = cmd.key
+      var field = el && (ctlTextField(el) || el.isContentEditable)
+      if ((cmd.ctrl || cmd.meta) && k.toLowerCase() === 'a' && field && !el.isContentEditable) {
+        try { el.select() } catch (e) {}
+      } else if (k.length === 1 && !cmd.ctrl && !cmd.meta) {
+        if (field) ctlInsert(el, k)
+      } else if (k === 'Backspace' || k === 'Delete') {
+        if (field) ctlErase(el, k === 'Delete')
+      } else if (k === 'Enter') {
+        if (el && (el.tagName === 'TEXTAREA' || el.isContentEditable)) ctlInsert(el, '\n')
+        else if (el && el.tagName === 'INPUT' && el.form) {
+          ctlChanged()
+          if (typeof el.form.requestSubmit === 'function') el.form.requestSubmit()
+          else el.form.submit()
+        } else if (el && (el.tagName === 'BUTTON' || el.tagName === 'A')) el.click()
+      } else if (k === 'Tab') {
+        ctlChanged()
+        var list = ctlFocusables()
+        var i = el ? list.indexOf(el) : -1
+        var next = list[cmd.shift ? (i <= 0 ? list.length - 1 : i - 1) : (i + 1) % list.length]
+        if (next) next.focus()
+      } else if ((k === 'ArrowDown' || k === 'ArrowUp') && el && el.tagName === 'SELECT') {
+        var n = el.selectedIndex + (k === 'ArrowDown' ? 1 : -1)
+        if (n >= 0 && n < el.options.length) {
+          el.selectedIndex = n
+          el.dispatchEvent(new Event('input', { bubbles: true }))
+          el.dispatchEvent(new Event('change', { bubbles: true }))
+        }
+      } else if ((k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Home' || k === 'End') && el && ctlTextField(el)) {
+        try {
+          var pos = el.selectionStart, len = el.value.length
+          pos = k === 'Home' ? 0 : k === 'End' ? len : Math.max(0, Math.min(len, pos + (k === 'ArrowLeft' ? -1 : 1)))
+          el.setSelectionRange(pos, pos)
+        } catch (e) {}
+      } else if ((k === 'PageDown' || k === 'PageUp') && !field) {
+        window.scrollBy({ top: (k === 'PageDown' ? 1 : -1) * window.innerHeight * 0.85 })
+      } else if ((k === 'ArrowDown' || k === 'ArrowUp') && !field) {
+        window.scrollBy({ top: k === 'ArrowDown' ? 60 : -60 })
+      }
+    }
+    try { target.dispatchEvent(new KeyboardEvent('keyup', o)) } catch (e) {}
+  }
+
+  function ctlHandle(d) {
+    if (d.agent) ctlAgent = d.agent
+    if (d.kind === 'call') {
+      callInfo = { live: !!d.live, muted: !!d.muted, mic: d.mic !== false, sharing: !!d.sharing }
+      callRender()
+      return
+    }
+    if (d.kind === 'state') {
+      var was = ctlState
+      ctlState = d.state === 'on' || d.state === 'asked' ? d.state : 'off'
+      if (was === 'on' && ctlState !== 'on') ctlChanged()
+      ctlRender()
+      return
+    }
+    var cmd = d.cmd || {}
+    var hide = function () { if (ctlPtr) ctlPtr.style.display = 'none' }
+    if (cmd.t === 'ptr') { var at = ctlPoint(cmd); if (at) ctlShowPointer(at); else hide() }
+    else if (cmd.t === 'ptr-hide') hide()
+    else if (cmd.t === 'tap') { var p = ctlPoint(cmd); if (p) { ctlShowPointer(p); ctlRipple(p) } }
+    else if (ctlState !== 'on') return
+    else if (cmd.t === 'click') ctlClick(cmd)
+    else if (cmd.t === 'wheel') ctlScroll(cmd)
+    else if (cmd.t === 'key') ctlKey(cmd)
+  }
 
   // window.SocialChat.open('support', {screen, url}) -- e.g. a site's own Help link
   window.SocialChat = {
@@ -544,14 +978,14 @@
       }
     },
     close: function () { closeChat() },
+    supportUnread: 0,
   }
 
   // Listen for new-message events from the iframe so we can show the badge + play sound
   window.addEventListener('message', function (ev) {
     if (ev.data && ev.data.type === 'sc_new_message' && !open) {
       unread++
-      badge.textContent = unread > 9 ? '9+' : String(unread)
-      badge.style.display = 'block'
+      renderBadge()
       playNotificationSound()
     }
   })

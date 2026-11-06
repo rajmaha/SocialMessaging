@@ -10,6 +10,8 @@ import TicketHistory from "@/components/TicketHistory";
 import { API_URL } from '@/lib/config';
 import QuickTicketModal from '@/components/QuickTicketModal'
 import { useSoftphone } from '@/lib/softphone-context'
+import { useEvents } from '@/lib/events-context'
+import { supportCountsChanged } from '@/lib/support-alerts'
 
 export default function Workspace() {
     const [user, setUser] = useState<any>(null);
@@ -97,6 +99,16 @@ export default function Workspace() {
         }
     };
 
+    // ?tab=support (a support alert's link) opens on the Support queue
+    useEffect(() => {
+        if (new URLSearchParams(window.location.search).get('tab') === 'support') setFilterType('support');
+    }, []);
+
+    // a customer raised, answered or reopened a request: show it at once
+    const { subscribe } = useEvents();
+    useEffect(() => subscribe('support_ticket', () => { fetchSupportQueue(); fetchMyTickets(); }), [subscribe]);
+    useEffect(() => subscribe('ticket_forwarded', () => { fetchMyTickets(); }), [subscribe]);
+
     // the shared queue fills from sites at any time: look again every 30 seconds
     useEffect(() => {
         const timer = setInterval(() => {
@@ -105,12 +117,17 @@ export default function Workspace() {
         return () => clearInterval(timer);
     }, []);
 
+    // a support request whose last word is the customer's: unread for the agent holding it
+    const awaitingMe = (t: any) => typeof t.source === 'string' && t.source.startsWith('support_')
+        && t.last_author === 'customer' && t.status !== 'solved';
+
     const takeSupport = async (ticketNumber: string) => {
         setTakeMessage('');
         const res = await fetch(`${API_URL}/api/tickets/${ticketNumber}/take`, {
             method: 'POST', headers: { 'Authorization': `Bearer ${getAuthToken()}` }
         });
         if (res.ok) {
+            supportCountsChanged();
             router.push(`/workspace/tickets/${ticketNumber}?from=workspace`);
             return;
         }
@@ -349,6 +366,9 @@ export default function Workspace() {
                                     className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${filterType === 'all' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'}`}
                                 >
                                     My Open Tickets
+                                    {myTickets.filter(awaitingMe).length > 0 && (
+                                        <span className="ml-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{myTickets.filter(awaitingMe).length}</span>
+                                    )}
                                 </button>
                                 <button
                                     onClick={() => setFilterType('forwarded')}
@@ -445,8 +465,11 @@ export default function Workspace() {
                                                             {typeof ticket.source === 'string' && ticket.source.startsWith('support_') && (
                                                                 <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-bold uppercase align-middle" title={ticket.support_site_name || ''}>Support</span>
                                                             )}
+                                                            {awaitingMe(ticket) && (
+                                                                <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white font-bold uppercase align-middle animate-pulse" title="The customer wrote last: waiting for your reply">New reply</span>
+                                                            )}
                                                             {ticket.support_subject && (
-                                                                <div className="text-xs text-gray-600 font-normal mt-0.5 max-w-[240px] truncate">{ticket.support_subject}</div>
+                                                                <div className={`text-xs mt-0.5 max-w-[240px] truncate ${awaitingMe(ticket) ? 'text-gray-900 font-semibold' : 'text-gray-600 font-normal'}`}>{ticket.support_subject}</div>
                                                             )}
                                                             {ticket.parent_ticket_id && (
                                                                 <span title={`Follow up to #${ticket.parent_ticket_id}`} className="ml-2 inline-block w-2 h-2 rounded-full bg-blue-400"></span>

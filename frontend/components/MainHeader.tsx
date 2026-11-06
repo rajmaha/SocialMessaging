@@ -11,6 +11,7 @@ import type { User } from '@/lib/auth'
 import { getAuthToken } from '@/lib/auth'
 import { hasModuleAccess, hasAnyAdminPermission } from '@/lib/permissions'
 import { useEvents } from '@/lib/events-context'
+import { fetchSupportCounts, SUPPORT_COUNTS_EVENT, askDesktopNotices } from '@/lib/support-alerts'
 
 import { useState, useEffect } from 'react'
 import { API_URL } from '@/lib/config'
@@ -134,6 +135,30 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
         const unsub3 = evts.subscribe('conversation_assigned', refresh)
         return () => { unsub1(); unsub2(); unsub3() }
     }, [eventsCtx, user?.user_id])
+
+    // Support desk badge: requests waiting to be taken + my requests waiting for my reply
+    const [supportCount, setSupportCount] = useState(0)
+    const [supportTip, setSupportTip] = useState('')
+    useEffect(() => {
+        if (!user?.user_id) return
+        let alive = true
+        const load = () => fetchSupportCounts().then(c => {
+            if (!alive || !c) return
+            setSupportCount(c.total)
+            setSupportTip(`${c.queue} waiting to be taken, ${c.waiting} waiting for your reply`)
+        })
+        load()
+        const unsub = eventsCtx ? eventsCtx.subscribe('support_ticket', load) : () => {}
+        window.addEventListener(SUPPORT_COUNTS_EVENT, load)
+        const timer = setInterval(() => { if (document.visibilityState === 'visible') load() }, 60000)
+        return () => { alive = false; unsub(); window.removeEventListener(SUPPORT_COUNTS_EVENT, load); clearInterval(timer) }
+    }, [eventsCtx, user?.user_id])
+
+    // The tab's title carries the count, so it shows on a background tab too
+    useEffect(() => {
+        const base = document.title.replace(/^\(\d+\+?\) /, '')
+        document.title = supportCount > 0 ? `(${supportCount > 99 ? '99+' : supportCount}) ${base}` : base
+    }, [supportCount])
 
     // Unseen shared reminders badge count
     const [unseenCount, setUnseenCount] = useState(0)
@@ -296,6 +321,8 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                     {canAccessWorkspace && (
                         <Link
                             href="/workspace"
+                            onClick={askDesktopNotices}
+                            title={supportCount > 0 ? supportTip : undefined}
                             className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition ${isWorkspaceActive
                                 ? 'text-white shadow-sm'
                                 : 'text-gray-600 hover:bg-gray-100'
@@ -304,6 +331,11 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
                         >
                             <FiHeadphones size={15} />
                             Workspace
+                            {supportCount > 0 && (
+                                <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none animate-pulse">
+                                    {supportCount > 99 ? '99+' : supportCount}
+                                </span>
+                            )}
                         </Link>
                     )}
 

@@ -13,18 +13,28 @@
  *
  * Messages to and from the host page (window.parent):
  *  out: sc:support-ready {enabled, chat_enabled}   sc:identity-expired
- *  in:  sc:identity {token}   sc:open {screen, url}
+ *       sc:support-unread {count, increased}  -- the widget's badge and chime
+ *       sc:ctl {kind: cmd|state, cmd, state, agent}  -- live help pointer and control
+ *  in:  sc:identity {token}   sc:open {screen, url}   sc:shown {shown}
+ *       sc:ctl-host {vw, vh, visible}   sc:ctl-reply {msg}   (lib/live-control.ts)
+ *
+ * Unread: a request whose last word is support's (from_support) and whose
+ * updated_at differs from the one this browser saw when the thread was open on
+ * screen. Kept in localStorage per widget key; the first look on a browser
+ * counts what is already there as seen. A reply chimes once (announced keys).
  * Every rule is the backend's (/api/support/v1, app/routes/support_public.py).
  */
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { API_URL } from '@/lib/config'
+import { LiveBus, newHostId } from '@/lib/live-control'
 
 const SESSION_KEY = 'webchat_session_id'
 const NAME_KEY = 'webchat_visitor_name'
 const EMAIL_KEY = 'webchat_visitor_email'
 const POLL_MS = 8000
+const UNREAD_POLL_MS = 20000
 
 type Config = {
   name: string; primary_color: string | null; categories: string[]; priorities: string[]
@@ -38,6 +48,7 @@ type Attachment = { index: number; name: string; size: number; url: string }
 type Message = { id: number; author_type: 'customer' | 'agent' | 'system'; author_name: string; body: string; attachments: Attachment[]; created_at: string }
 type Request = {
   ticket_no: string; subject: string; status: string; status_label: string; category?: string; priority?: string
+  from_support?: boolean
   screen?: string; can_reply?: boolean; created_at?: string; updated_at?: string; messages?: Message[]; last_message?: string
 }
 
@@ -74,6 +85,15 @@ function SupportWidget() {
   const seenAsk = useRef(0)
   const tokenRef = useRef('')
   const tokenWaiters = useRef<((t: string) => void)[]>([])
+  const shownRef = useRef(false)                    // the panel is open on this tab
+  const listRef = useRef<Request[]>([])
+  const currentRef = useRef<Request | null>(null)
+  const lastUnread = useRef(-1)
+  // live help pointer and control: this page on the bus to the live window
+  const hostId = useRef(newHostId())
+  const hostView = useRef<{ vw: number; vh: number; visible: boolean }>({ vw: 0, vh: 0, visible: false })
+  const liveBus = useRef<LiveBus | null>(null)
+  const liveWin = useRef<Window | null>(null)
 
   const color = config?.primary_color || '#4f46e5'
   const signedIn = !!token
@@ -92,6 +112,17 @@ function SupportWidget() {
         tokenWaiters.current.splice(0).forEach(fn => fn(ev.data.token))
       } else if (ev.data.type === 'sc:no-identity') {
         setWaitingForToken(false)
+      } else if (ev.data.type === 'sc:ctl-host') {
+        hostView.current = { vw: Number(ev.data.vw) || 0, vh: Number(ev.data.vh) || 0, visible: !!ev.data.visible }
+        if (hostView.current.visible) liveBus.current?.send({ kind: 'host', id: hostId.current, vw: hostView.current.vw, vh: hostView.current.vh })
+      } else if (ev.data.type === 'sc:ctl-reply') {
+        liveBus.current?.send({ kind: 'reply', id: hostId.current, msg: ev.data.msg })
+      } else if (ev.data.type === 'sc:shown') {
+        shownRef.current = !!ev.data.shown
+        const c = currentRef.current
+        if (shownRef.current && c) markSeenRef.current(c.ticket_no, c.updated_at || '')
+        // the panel opened: show the list as it is now, not as it was when the page loaded
+        if (shownRef.current && !c) loadListRef.current()
       } else if (ev.data.type === 'sc:open') {
         setPrefill({ screen: String(ev.data.screen || '').slice(0, 500), url: String(ev.data.url || '').slice(0, 500) })
         setView('new')
@@ -102,6 +133,21 @@ function SupportWidget() {
     // a page with no identity to give answers sc:no-identity; an old host page never answers
     const t = setTimeout(() => setWaitingForToken(false), 1500)
     return () => { window.removeEventListener('message', onMessage); clearTimeout(t) }
+  }, [])
+
+  // the bus to a live help window (this browser's): commands for this page go to the widget
+  useEffect(() => {
+    const bus = new LiveBus((m) => {
+      if (m.kind === 'who') {
+        if (hostView.current.visible) bus.send({ kind: 'host', id: hostId.current, vw: hostView.current.vw, vh: hostView.current.vh })
+      } else if ((m.kind === 'cmd' || m.kind === 'state' || m.kind === 'call') && m.to === hostId.current) {
+        toParent({ type: 'sc:ctl', kind: m.kind, cmd: m.cmd, state: m.state, agent: typeof m.agent === 'string' ? m.agent.slice(0, 80) : '',
+                   live: !!m.live, muted: !!m.muted, mic: m.mic !== false, sharing: !!m.sharing })
+      }
+    }, () => (liveWin.current && !liveWin.current.closed ? [liveWin.current] : []))
+    liveBus.current = bus
+    toParent({ type: 'sc:ctl-ready' })       // the widget answers with this page's size
+    return () => { bus.close(); liveBus.current = null }
   }, [])
 
   /** A fresh token from the host page, after the one we had expired. */
@@ -134,9 +180,78 @@ function SupportWidget() {
       .catch((e: any) => { setUnavailable(e.message); toParent({ type: 'sc:support-ready', enabled: false }) })
   }, [widgetKey, call])
 
+  // ── unread replies: the widget's badge and chime ─────────────────────────
+  const seenKey = `sc_support_seen_${widgetKey}`
+  const announcedKey = `sc_support_told_${widgetKey}`
+  const readJson = (key: string): Record<string, string> | null => {
+    try { const v = JSON.parse(readStore(key) || 'null'); return v && typeof v === 'object' ? v : null } catch { return null }
+  }
+
+  const reportUnread = useCallback((items: Request[]) => {
+    let seen = readJson(seenKey)
+    if (!seen) {
+      // the first look on this browser: what is already there is not news
+      seen = {}
+      items.forEach(i => { seen![i.ticket_no] = i.updated_at || '' })
+      writeStore(seenKey, JSON.stringify(seen))
+    }
+    const unreadKeys = items
+      .filter(i => i.from_support && seen![i.ticket_no] !== (i.updated_at || ''))
+      .map(i => `${i.ticket_no}@${i.updated_at || ''}`)
+    const told = readJson(announcedKey) || {}
+    const fresh = unreadKeys.filter(k => !told[k])
+    if (fresh.length) {
+      fresh.forEach(k => { told[k] = '1' })
+      // keep the list short: only what is still unread
+      const kept: Record<string, string> = {}
+      unreadKeys.forEach(k => { if (told[k]) kept[k] = '1' })
+      writeStore(announcedKey, JSON.stringify(kept))
+    }
+    if (unreadKeys.length !== lastUnread.current || fresh.length) {
+      toParent({ type: 'sc:support-unread', count: unreadKeys.length, increased: fresh.length > 0 })
+      lastUnread.current = unreadKeys.length
+    }
+  }, [seenKey, announcedKey])
+
+  /** The person has seen this request as it now stands. */
+  const markSeen = useCallback((no: string, updatedAt: string) => {
+    const seen = readJson(seenKey) || {}
+    seen[no] = updatedAt
+    writeStore(seenKey, JSON.stringify(seen))
+    listRef.current = listRef.current.map(i => i.ticket_no === no ? { ...i, updated_at: updatedAt } : i)
+    setList(listRef.current)
+    reportUnread(listRef.current)
+  }, [seenKey, reportUnread])
+  const markSeenRef = useRef(markSeen)
+  markSeenRef.current = markSeen
+  useEffect(() => { currentRef.current = view === 'thread' ? current : null }, [view, current])
+
   const loadList = useCallback(async () => {
-    try { const d = await call('/requests'); setList(d.items || []); setError('') } catch (e: any) { setError(e.message) }
-  }, [call])
+    try {
+      const d = await call('/requests')
+      listRef.current = d.items || []
+      setList(listRef.current)
+      setError('')
+      reportUnread(listRef.current)
+    } catch (e: any) { setError(e.message) }
+  }, [call, reportUnread])
+
+  const loadListRef = useRef(loadList)
+  loadListRef.current = loadList
+
+  // look for replies every 20 seconds, even with the panel shut: that is what the badge is for
+  useEffect(() => {
+    if (!config || waitingForToken || !known) return
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      call('/requests').then(d => {
+        listRef.current = d.items || []
+        setList(listRef.current)
+        reportUnread(listRef.current)
+      }).catch(() => {})
+    }, UNREAD_POLL_MS)
+    return () => clearInterval(timer)
+  }, [config, waitingForToken, known, call, reportUnread])
 
   useEffect(() => {
     if (!config || waitingForToken || !known) return
@@ -145,7 +260,11 @@ function SupportWidget() {
   }, [config, waitingForToken, known, token, session, call, loadList])
 
   const openThread = async (no: string) => {
-    try { setCurrent(await call(`/requests/${encodeURIComponent(no)}`)); setView('thread'); setError('') } catch (e: any) { setError(e.message) }
+    try {
+      const r = await call(`/requests/${encodeURIComponent(no)}`)
+      setCurrent(r); setView('thread'); setError('')
+      markSeen(r.ticket_no, r.updated_at || '')
+    } catch (e: any) { setError(e.message) }
   }
 
   // the open thread asks for what is new every few seconds
@@ -159,11 +278,12 @@ function SupportWidget() {
         if (ch.live) showAsk(ch.live)
         if (ch.messages.length || ch.status !== current.status) {
           setCurrent(c => c ? { ...c, ...ch, messages: [...(c.messages || []), ...ch.messages] } : c)
+          if (shownRef.current) markSeen(ch.ticket_no, ch.updated_at || '')
         }
       } catch {}
     }, POLL_MS)
     return () => clearInterval(timer)
-  }, [view, current, call])
+  }, [view, current, call, markSeen])
 
   // ── live help: an agent asking to talk or to see the screen ──────────────
   const showAsk = useCallback((a: LiveAsk | null) => {
@@ -199,7 +319,8 @@ function SupportWidget() {
     if (!asking) return
     setLiveBusy(true); setError('')
     // opened now, while the click still counts, then sent to its address once the pass is here
-    const win = window.open('', 'sc_live_help', 'width=440,height=600')
+    const win = window.open('', 'sc_live_help', 'width=400,height=460')
+    liveWin.current = win
     try { if (win) win.document.body.innerHTML = '<p style="font-family:sans-serif;padding:24px;color:#555">Connecting...</p>' } catch {}
     const screenOk = !!(navigator.mediaDevices && (navigator.mediaDevices as any).getDisplayMedia) && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
     try {
@@ -261,7 +382,8 @@ function SupportWidget() {
       {liveBanner}
       {error && <p className="px-4 pt-3 text-xs text-red-600">{error}</p>}
       {view === 'list' && (
-        <RequestList color={color} items={list} onOpen={openThread} onNew={() => setView('new')} />
+        <RequestList color={color} items={list} onOpen={openThread} onNew={() => setView('new')}
+          unread={r => !!r.from_support && (readJson(seenKey) || {})[r.ticket_no] !== (r.updated_at || '')} />
       )}
       {view === 'new' && (
         <NewRequest color={color} config={config} phone={me?.phone || ''} prefill={prefill} call={call}
@@ -343,7 +465,7 @@ function StatusPill({ status, label }: { status: string; label: string }) {
   return <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${c}`}>{label}</span>
 }
 
-function RequestList({ color, items, onOpen, onNew }: { color: string; items: Request[]; onOpen: (no: string) => void; onNew: () => void }) {
+function RequestList({ color, items, onOpen, onNew, unread }: { color: string; items: Request[]; onOpen: (no: string) => void; onNew: () => void; unread?: (r: Request) => boolean }) {
   return (
     <div className="p-4 space-y-3">
       <button onClick={onNew} className="w-full py-2.5 rounded-lg text-white text-sm font-semibold" style={{ background: color }}>New request</button>
@@ -352,7 +474,8 @@ function RequestList({ color, items, onOpen, onNew }: { color: string; items: Re
       ) : items.map(r => (
         <button key={r.ticket_no} onClick={() => onOpen(r.ticket_no)} className="w-full text-left bg-white border border-gray-200 rounded-lg p-3 hover:border-gray-300">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold truncate flex-1">{r.subject}</p>
+            {unread?.(r) && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" title="New reply" />}
+            <p className={`text-sm truncate flex-1 ${unread?.(r) ? 'font-bold' : 'font-semibold'}`}>{r.subject}</p>
             <StatusPill status={r.status} label={r.status_label} />
           </div>
           {r.last_message && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{r.last_message}</p>}

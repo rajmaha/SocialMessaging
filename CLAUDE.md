@@ -248,6 +248,28 @@ support site (Admin -> Widget Domains -> Support). Site-facing guide:
   (the PUT and notes routes do), or the customer and their site are not told.
 - `TicketResponse.source` lists the support sources: leaving one out fails every
   ticket list.
+- **Forwarding hands a ticket over.** The notes route takes `forward_to` (a user
+  id, from `/conversations/agents`) and `forward_reason` with status
+  `forwarded`, checks both before writing, sets `assigned_to` (so support alerts
+  follow), `forward_target` (the name) and `forward_reason`, logs the note, and
+  sends `ticket_forwarded` to that agent (toast, chime). It used to store a typed
+  name only, and nothing reached "Forwarded to Me".
+- **Alerts.** A customer's write sends the live event `support_ticket` to the
+  assignee, else the domain's linked agents AND every admin (an admin's queue
+  lists every site). `EventNotifications` chimes (`lib/support-alerts.ts`,
+  three rising notes), shows a toast that opens the queue or the ticket, and a
+  desktop notice while the tab is hidden; the header's Workspace link carries
+  `GET /api/tickets/support-counts` (`queue` + my requests whose last word is
+  the customer's), also in the tab title. Anything that changes those counts
+  calls `supportCountsChanged()`.
+- **The widget's count.** The Support iframe polls `/requests` every 20 s;
+  `from_support` (support wrote last) with an `updated_at` other than the one
+  seen in the open thread is unread (localStorage per widget key; the first
+  look counts everything as seen). It posts `sc:support-unread {count,
+  increased}`; `chat-widget.js` adds it to the launcher badge, chimes once per
+  reply, and fires `socialchat:support-unread` on the host window (OMS shows it
+  beside Get help). The widget tells the iframe `sc:shown` so a reply is read
+  only while the panel shows it.
 
 ### Live help (talk, see the screen)
 
@@ -272,6 +294,40 @@ site guide: `docs/support-desk.md` section 7.
   The widget opens it inside the Accept click (blank first, then pointed at
   the pass) so a pop-up blocker allows it; if it is blocked anyway the widget
   shows an Open live help link.
+- **Pointer and control** (`lib/live-control.ts` has the whole route): the
+  agent's pointer, clicks, scrolling and keys go over a WebRTC data channel
+  `ctl` (made by the customer, the offerer) to the live window, which passes
+  them on a BroadcastChannel to the Support iframe of the page being shown (the
+  latest visible one announces itself after every page load), which hands them
+  to `chat-widget.js` to draw or repeat. Coordinates are 0..1 of the picture and
+  every command carries the share's `s` (displaySurface): a **tab** maps exactly;
+  a **window** or **whole screen** is placed by the page from its own
+  screenX/Y and outer-less-inner size (`ctlPoint()`), which is close but not
+  exact (zoom, a dock or menu bar, a docked developer panel; the screen's start
+  is `screen.availLeft/availTop`). A point off the page hides the pointer and
+  refuses the click. **Line up pointer** (agent, on a screen or window share)
+  sends the arrow to the middle; the agent clicks its tip and every later point
+  is moved by that difference (`off` in SupportLiveHelp), reset when the share
+  changes or the call ends.
+- The live window closes itself 2 s after the call ends (a failure stays).
+  The pointer needs no consent; clicks, scrolling and keys only while the state
+  is `on`, which the live window sets solely from the customer's Allow on their
+  page (an agent's message cannot set it). The page shows a bottom-left banner
+  with Stop control, never types into password / PIN / card / OTP fields, never
+  clicks the widget's own controls, and looks through its own banner when
+  finding what was clicked. Synthetic input cannot open file pickers or native
+  select lists (lists move with the arrow keys). BroadcastChannel is partitioned
+  in some browsers even between subdomains, so the live window also keeps the
+  site's TAB (`window.opener.top`, which outlives page reloads, unlike the
+  opener iframe) and posts to its frames -- only the Support iframe (our origin)
+  takes it -- asking `who` every 3 s; each side answers whoever wrote
+  (`LiveBus` peers). Before this, control was lost on the first page load.
+- **The call bar.** Once connected the live window shrinks to a corner
+  (`resizeTo` / `moveTo`, which a browser may refuse) and sends `call {live,
+  muted, mic, sharing}` on the same bus; the page shows a bottom-left bar with
+  Mute and Stop (replies `call-mute`, `call-end`), the control banner stacked
+  above it. Its audio element is redrawn with the layout, so the agent's
+  stream is reattached by a ref callback.
 - **Call phone** stamps the next outbound call from that agent to that number
   within 30 minutes with the ticket number (`support_call_links`, read by the
   FreePBX CDR sync).

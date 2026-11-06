@@ -338,6 +338,9 @@ class TicketNoteCreate(BaseModel):
     action_taken: Optional[str] = None
     status: Optional[str] = None
     priority: Optional[str] = None
+    # status "forwarded": the agent it goes to (a user id) and why; the ticket becomes theirs
+    forward_to: Optional[int] = None
+    forward_reason: Optional[str] = None
 
 @router.post("/{ticket_number}/notes", response_model=TicketResponse)
 def add_ticket_note(
@@ -354,6 +357,20 @@ def add_ticket_note(
     if not parent_ticket:
         raise HTTPException(status_code=404, detail="Parent ticket not found")
 
+    # Forwarding hands the ticket to another agent: checked before anything is written
+    target = None
+    forward_reason = (note_data.forward_reason or "").strip()[:500]
+    if note_data.status == TicketStatus.FORWARDED.value:
+        if not note_data.forward_to:
+            raise HTTPException(status_code=422, detail="Choose the agent to forward this ticket to.")
+        if not forward_reason:
+            raise HTTPException(status_code=422, detail="Say why it is being forwarded.")
+        target = db.query(User).filter(User.id == note_data.forward_to, User.is_active == True).first()  # noqa: E712
+        if target is None:
+            raise HTTPException(status_code=422, detail="That agent was not found or is not active.")
+        if target.id == current_user.id:
+            raise HTTPException(status_code=422, detail="Choose another agent: the ticket is already yours.")
+
     # 1. Update Parent Ticket if status/priority changed
     if note_data.status and parent_ticket.support_site_id:
         _support_status(db, parent_ticket, note_data.status, current_user)
@@ -361,9 +378,31 @@ def add_ticket_note(
         parent_ticket.status = note_data.status
     if note_data.priority and note_data.priority != parent_ticket.priority:
         parent_ticket.priority = note_data.priority
+    target_name = None
+    if target is not None:
+        target_name = target.display_name or target.full_name or target.username or target.email
+        parent_ticket.assigned_to = target.id
+        parent_ticket.forward_target = target_name
+        parent_ticket.forward_reason = forward_reason
 
     db.commit()
     db.refresh(parent_ticket)
+
+    if target is not None:
+        # the agent it went to hears at once (a toast and a chime on any workspace page)
+        from app.services.events_service import events_service
+        by = getattr(current_user, 'display_name', None) or current_user.full_name or current_user.username or current_user.email
+        event = events_service.create_event("ticket_forwarded", {
+            "ticket_number": parent_ticket.ticket_number,
+            "subject": parent_ticket.support_subject or parent_ticket.category,
+            "customer": parent_ticket.customer_name,
+            "by": by,
+            "reason": forward_reason,
+        })
+        _tid = target.id
+        _support.run_later(lambda: _support._broadcast([_tid], event))
+        if not note_data.note:
+            note_data.note = f"Forwarded to {target_name}: {forward_reason}"
 
     # 2. If a note or action was provided, create a child ticket to log it in history
     if note_data.note or note_data.action_taken:
@@ -563,6 +602,36 @@ def support_queue(db: Session = Depends(get_db), current_user: User = Depends(ge
             return []
         q = q.filter(Ticket.support_site_id.in_(ids))
     return q.order_by(Ticket.created_at.asc()).limit(200).all()
+
+
+@router.get("/support-counts")
+def support_counts(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """For the header badge: requests waiting to be taken (as the Support queue lists them), and
+    the agent's own open requests whose last word is the customer's (waiting for a reply)."""
+    from sqlalchemy import false, func
+    from app.models.support import SupportMessage
+    q = db.query(func.count(Ticket.id)).filter(
+        Ticket.support_site_id.isnot(None),
+        Ticket.assigned_to.is_(None),
+        Ticket.status.in_([TicketStatus.PENDING, TicketStatus.FORWARDED]),
+    )
+    ids = _linked_domain_ids(db, current_user)
+    if ids is not None:
+        q = q.filter(Ticket.support_site_id.in_(ids)) if ids else q.filter(false())
+    queue = q.scalar() or 0
+
+    last = (db.query(SupportMessage.ticket_id, func.max(SupportMessage.id).label("mid"))
+            .filter(SupportMessage.author_type.in_(["customer", "agent"]))
+            .group_by(SupportMessage.ticket_id).subquery())
+    waiting = (db.query(func.count(Ticket.id))
+               .join(last, last.c.ticket_id == Ticket.id)
+               .join(SupportMessage, SupportMessage.id == last.c.mid)
+               .filter(Ticket.support_site_id.isnot(None),
+                       Ticket.assigned_to == current_user.id,
+                       Ticket.status != TicketStatus.SOLVED,
+                       SupportMessage.author_type == "customer")
+               .scalar() or 0)
+    return {"queue": int(queue), "waiting": int(waiting), "total": int(queue) + int(waiting)}
 
 
 @router.post("/{ticket_number}/take", response_model=TicketResponse)

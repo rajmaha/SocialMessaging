@@ -299,6 +299,11 @@ def test_customer_requests_list(db):
     got = svc.customer_requests(db, d, p, page=1, per_page=2)
     assert got["total"] == 3 and got["has_more"] is True and len(got["items"]) == 2
     assert got["items"][0]["status_label"] == "Waiting for support"
+    assert got["items"][0]["from_support"] is False
+    t = db.query(Ticket).filter(Ticket.support_subject == got["items"][0]["subject"]).one()
+    svc.reply(db, t, "Fixed", agent=make_user(db))
+    top = svc.customer_requests(db, d, p)["items"][0]
+    assert top["ticket_no"] == t.ticket_number and top["from_support"] is True   # the widget's unread
 
 
 def test_agent_conversation_names_agents_in_full(db):

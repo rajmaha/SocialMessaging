@@ -181,3 +181,52 @@ def test_not_a_support_ticket(env):
     for path in ("/conversation", "/take", "/webhook-resend"):
         method = c.get if path == "/conversation" else c.post
         assert method(f"/api/tickets/TCK-plain{path}").status_code == 404
+
+
+def test_support_counts_badge(env):
+    """The header badge: waiting to be taken, plus mine whose last word is the customer's."""
+    t1 = env["ids"]["t1"]
+    assert as_(env, "ram").get("/api/tickets/support-counts").json() == {"queue": 1, "waiting": 0, "total": 1}
+    assert as_(env, "admin").get("/api/tickets/support-counts").json()["queue"] == 2   # every site
+    as_(env, "ram").post(f"/api/tickets/{t1}/take")
+    assert as_(env, "ram").get("/api/tickets/support-counts").json() == {"queue": 0, "waiting": 1, "total": 1}
+    assert as_(env, "gita").get("/api/tickets/support-counts").json()["total"] == 0
+    as_(env, "ram").post(f"/api/tickets/{t1}/conversation", data={"body": "Looking now."})
+    assert as_(env, "ram").get("/api/tickets/support-counts").json()["waiting"] == 0
+    with env["Session"]() as s:
+        t = s.query(Ticket).filter_by(ticket_number=t1).one()
+        svc.reply(s, t, "Still blank.", customer=s.query(SupportUser).filter_by(uid="oms.example.com:42").one())
+    assert as_(env, "ram").get("/api/tickets/support-counts").json()["waiting"] == 1
+
+
+def test_unclaimed_request_tells_linked_agents_and_admins(env):
+    with env["Session"]() as s:
+        t = s.query(Ticket).filter_by(ticket_number=env["ids"]["t1"]).one()
+        told = set(svc._agents_for(s, t))
+        assert told == {env["ids"]["ram"], env["ids"]["gita"], env["ids"]["admin"]}
+        t.assigned_to = env["ids"]["ram"]
+        assert svc._agents_for(s, t) == [env["ids"]["ram"]]
+
+
+def test_forward_hands_the_ticket_to_an_agent(env):
+    t1, tid = env["ids"]["t1"], env["ids"]["t1_id"]
+    c = as_(env, "ram")
+    c.post(f"/api/tickets/{t1}/take")
+    # refused before anything is written: no agent, no reason, oneself, nobody
+    assert c.post(f"/api/tickets/{t1}/notes", json={"status": "forwarded", "forward_reason": "x"}).status_code == 422
+    assert c.post(f"/api/tickets/{t1}/notes", json={"status": "forwarded", "forward_to": env["ids"]["gita"]}).status_code == 422
+    assert c.post(f"/api/tickets/{t1}/notes", json={"status": "forwarded", "forward_to": env["ids"]["ram"], "forward_reason": "x"}).status_code == 422
+    assert c.post(f"/api/tickets/{t1}/notes", json={"status": "forwarded", "forward_to": 999999, "forward_reason": "x"}).status_code == 422
+    with env["Session"]() as s:
+        assert s.get(Ticket, tid).assigned_to == env["ids"]["ram"] and s.get(Ticket, tid).status.value == "pending"
+
+    r = c.post(f"/api/tickets/{t1}/notes", json={"status": "forwarded", "forward_to": env["ids"]["gita"], "forward_reason": "Billing question"})
+    assert r.status_code == 200, r.text
+    with env["Session"]() as s:
+        t = s.get(Ticket, tid)
+        assert t.assigned_to == env["ids"]["gita"] and t.status.value == "forwarded"
+        assert t.forward_target == "Gita Devi" and t.forward_reason == "Billing question"
+        note = s.query(Ticket).filter(Ticket.parent_ticket_id == tid).one()
+        assert note.app_type_data["follow_up_note"] == "Forwarded to Gita Devi: Billing question"
+    mine = as_(env, "gita").get("/api/tickets/my-tickets").json()
+    assert [t["ticket_number"] for t in mine] == [t1]
