@@ -28,3 +28,14 @@ backend/attachment_storage/support/
 
 # coturn: the filled-in config holds the TURN password
 deploy/coturn/turnserver.conf
+
+# Push credentials. This repository is PUBLIC, and the Firebase
+# service-account JSON and the APNs signing key are true secrets: the service
+# account can send notifications to every registered device. The backend reads
+# it from FCM_SERVICE_ACCOUNT_JSON / FCM_SERVICE_ACCOUNT_FILE, never from a
+# file in the tree. (google-services.json and GoogleService-Info.plist are
+# client config, not secrets, and the Android/iOS builds need them committed.)
+**/*service-account*.json
+**/firebase-adminsdk-*.json
+**/AuthKey_*.p8
+backend/secrets/

@@ -120,6 +120,14 @@ killed. To enable it:
 
    or `FCM_SERVICE_ACCOUNT_FILE=/path/to/service-account.json`.
 
+> **This repository is public.** The service-account JSON is a real secret —
+> it can push a notification to every registered device. Keep it in the
+> environment, never in the tree; `.gitignore` blocks the usual filenames
+> (`*service-account*.json`, `firebase-adminsdk-*.json`, `AuthKey_*.p8`,
+> `backend/secrets/`) as a backstop. `google-services.json` and
+> `GoogleService-Info.plist` are different: they are client config, they ship
+> inside the app anyway, and the builds need them committed.
+
 **Both variables are already named in `docker-compose.yml`'s backend
 `environment:` block** — a variable set only in the deploy panel never reaches
 the container (see CLAUDE.md).
