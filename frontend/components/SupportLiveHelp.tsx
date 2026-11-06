@@ -171,11 +171,13 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
     };
 
     const onTab = pinfo?.surface === 'browser';
+    // a whole screen or a window works too: their page works out where it sits on it
+    const shownSurface = !!pinfo && ['browser', 'monitor', 'window'].includes(pinfo.surface);
     const pageThere = !!pinfo?.host;
     const mismatch = !!(onTab && pinfo && pinfo.vw && pinfo.vh && vdim.w && vdim.h
         && Math.abs((vdim.w / vdim.h) / (pinfo.vw / pinfo.vh) - 1) > 0.05);
     const controlling = ctl === 'on' && ctlOpen;
-    const canPoint = floating && ctlOpen && onTab && pageThere && (pointerOn || controlling);
+    const canPoint = floating && ctlOpen && shownSurface && pageThere && (pointerOn || controlling);
 
     // Never disabled: a dim button on the drag bar read as covered. When control cannot be
     // asked for, the reason shows on the panel's bottom line; the customer's side still
@@ -183,7 +185,7 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
     const askControl = () => {
         if (ctl !== 'off') { sendCtl({ t: 'ctl-stop' }); setCtl('off'); return; }
         if (!ctlOpen) { flashNote('Pointer and control are not available on their device.'); return; }
-        if (pinfo && !onTab) { flashNote('They are sharing a whole screen or a window: ask them to stop and share the browser tab with the page.'); return; }
+        if (pinfo && !shownSurface) { flashNote('They are not sharing their screen, so there is nothing to control.'); return; }
         setCtl('asked');
         sendCtl({ t: 'ctl-ask' });
     };
@@ -218,11 +220,11 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
 
     // their page not found yet: ask the customer's side to look for it every few seconds
     useEffect(() => {
-        if (!ctlOpen || !onTab || pageThere) return;
+        if (!ctlOpen || !shownSurface || pageThere) return;
         sendCtl({ t: 'who' });
         const t = setInterval(() => sendCtl({ t: 'who' }), 3000);
         return () => clearInterval(t);
-    }, [ctlOpen, onTab, pageThere]);
+    }, [ctlOpen, shownSurface, pageThere]);
 
     // scrolling over the picture scrolls their page while controlling (a passive React handler cannot stop the page's own)
     useEffect(() => {
@@ -248,12 +250,13 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
         if (!showVideo) return '';
         if (!ctlOpen) return 'Pointer and control are not available on their device.';
         if (!pinfo) return '';
-        if (!onTab) return 'They are sharing a whole screen or a window: to point or control, ask them to share the browser tab with the page.';
+        if (!shownSurface) return 'They are not sharing their screen.';
         if (!pageThere) return 'Their page with the support button is not open in that browser.';
         if (mismatch) return 'The picture does not match their page: ask them to share the tab with the page.';
-        if (ctl === 'on') return 'You are controlling their page: click, scroll and type in the picture. Passwords and PINs are theirs to type.';
+        const rough = onTab ? '' : ' (they share a whole screen or window: it works on their page only, and is most exact when they share the tab)';
+        if (ctl === 'on') return 'You are controlling their page: click, scroll and type in the picture. Passwords and PINs are theirs to type.' + rough;
         if (ctl === 'asked') return 'Waiting for the customer to allow control...';
-        return pointerOn ? 'They see your pointer. Click in the picture to show them where.' : 'Your pointer is hidden.';
+        return (pointerOn ? 'They see your pointer on their page. Click in the picture to show them where.' : 'Your pointer is hidden.') + rough;
     })();
 
     // keep the panel on screen when the window shrinks

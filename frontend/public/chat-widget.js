@@ -615,9 +615,40 @@
   document.addEventListener('visibilitychange', ctlReport)
   window.addEventListener('focus', ctlReport)
 
+  /**
+   * Where a point of the shared picture is on this page, or null when it is off the page.
+   *   browser (a shared tab): the picture IS the page.
+   *   window: the picture is the browser window; the page sits at its bottom, below the
+   *     toolbars (outer less inner size).
+   *   monitor (a whole screen): the window sits on the screen at screenX/Y. The screen this
+   *     window is on is assumed to be the one shared; Mac and Windows place the toolbars at
+   *     the top, so the page starts outerHeight - innerHeight below the window's top.
+   * Approximate for a window and a screen (zoom, a docked developer panel), exact for a tab.
+   */
   function ctlPoint(cmd) {
-    return { x: Math.round(Math.max(0, Math.min(1, +cmd.x || 0)) * window.innerWidth),
-             y: Math.round(Math.max(0, Math.min(1, +cmd.y || 0)) * window.innerHeight) }
+    var x = Math.max(0, Math.min(1, +cmd.x || 0))
+    var y = Math.max(0, Math.min(1, +cmd.y || 0))
+    var W = window.innerWidth, H = window.innerHeight
+    // side borders are split between left and right; a wide gap is a panel docked on the right
+    var extraX = Math.max(0, window.outerWidth - W)
+    var chromeX = extraX < 40 ? extraX / 2 : 0, chromeY = Math.max(0, window.outerHeight - H)
+    var px, py
+    if (cmd.s === 'window') {
+      px = x * window.outerWidth - chromeX
+      py = y * window.outerHeight - chromeY
+    } else if (cmd.s === 'monitor') {
+      var sc = window.screen
+      var sw = sc.width || W, sh = sc.height || H
+      // the screen's own top left: a second screen starts where the first ends
+      var ox = Math.floor((window.screenX + 1) / sw) * sw, oy = Math.floor((window.screenY + 1) / sh) * sh
+      px = x * sw - (window.screenX - ox) - chromeX
+      py = y * sh - (window.screenY - oy) - chromeY
+    } else {
+      px = x * W
+      py = y * H
+    }
+    if (px < 0 || py < 0 || px > W || py > H) return null
+    return { x: Math.round(px), y: Math.round(py) }
   }
 
   function ctlShowPointer(p) {
@@ -768,6 +799,7 @@
 
   function ctlClick(cmd) {
     var p = ctlPoint(cmd)
+    if (!p) return ctlNote('That is outside their page: only the page can be clicked.')
     ctlShowPointer(p)
     ctlRipple(p)
     var el = ctlElementAt(p)
@@ -796,7 +828,7 @@
   }
 
   function ctlScroll(cmd) {
-    var p = ctlPoint(cmd)
+    var p = ctlPoint(cmd) || { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) }
     var el = ctlElementAt(p)
     for (var n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
       var cs = window.getComputedStyle(n)
@@ -919,9 +951,10 @@
       return
     }
     var cmd = d.cmd || {}
-    if (cmd.t === 'ptr') ctlShowPointer(ctlPoint(cmd))
-    else if (cmd.t === 'ptr-hide') { if (ctlPtr) ctlPtr.style.display = 'none' }
-    else if (cmd.t === 'tap') { var p = ctlPoint(cmd); ctlShowPointer(p); ctlRipple(p) }
+    var hide = function () { if (ctlPtr) ctlPtr.style.display = 'none' }
+    if (cmd.t === 'ptr') { var at = ctlPoint(cmd); if (at) ctlShowPointer(at); else hide() }
+    else if (cmd.t === 'ptr-hide') hide()
+    else if (cmd.t === 'tap') { var p = ctlPoint(cmd); if (p) { ctlShowPointer(p); ctlRipple(p) } }
     else if (ctlState !== 'on') return
     else if (cmd.t === 'click') ctlClick(cmd)
     else if (cmd.t === 'wheel') ctlScroll(cmd)

@@ -93,7 +93,9 @@ export default function LiveHelpWindow() {
     return () => window.removeEventListener('pagehide', bye)
   }, [])
 
-  const surfaceIsTab = () => surface() === 'browser'
+  // a tab, a whole screen or a window: the page works out where it sits in each
+  const SURFACES = ['browser', 'monitor', 'window']
+  const surfaceKnown = () => SURFACES.includes(surface())
   const surface = () => {
     try { return String((screenRef.current?.getSettings() as any)?.displaySurface || '') } catch { return '' }
   }
@@ -114,17 +116,18 @@ export default function LiveHelpWindow() {
   /** What the agent sends: the pointer always (it only points), the rest only while control is allowed. */
   const fromAgent = (m: any) => {
     if (!m || typeof m !== 'object') return
-    const onTab = surface() === 'browser'
+    const shown = surfaceKnown()
+    const withSurface = (c: any) => (c ? { ...c, s: surface() } : c)
     if (m.t === 'ptr' || m.t === 'ptr-hide' || m.t === 'tap') {
-      if (onTab) toHost(cleanCommand(m))
+      if (shown) toHost(withSurface(cleanCommand(m)))
     } else if (m.t === 'click' || m.t === 'wheel' || m.t === 'key') {
-      if (ctlRef.current === 'on' && onTab) toHost(cleanCommand(m))
+      if (ctlRef.current === 'on' && shown) toHost(withSurface(cleanCommand(m)))
     } else if (m.t === 'who') {
       bus.current?.send({ kind: 'who' })                // the agent has not heard of their page: look again
     } else if (m.t === 'ctl-ask') {
       if (ctlRef.current === 'on') return
       const decide = () => {
-        if (!surfaceIsTab()) setCtl('off', 'not a tab')
+        if (!surfaceKnown()) setCtl('off', 'not a tab')
         else if (!host.current) setCtl('off', 'no page')
         else setCtl('asked')
       }
@@ -248,7 +251,7 @@ export default function LiveHelpWindow() {
     let last = ''
     const t = setInterval(() => {
       const now = surface()
-      if (now !== last) { last = now; sendInfo(); if (now !== 'browser' && ctlRef.current !== 'off') setCtl('off') }
+      if (now !== last) { last = now; sendInfo(); if (!SURFACES.includes(now) && ctlRef.current !== 'off') setCtl('off') }
     }, 2000)
     return () => clearInterval(t)
   }, [sharing])

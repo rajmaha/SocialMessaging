@@ -251,9 +251,12 @@ site guide: `docs/support-desk.md` section 7.
   `ctl` (made by the customer, the offerer) to the live window, which passes
   them on a BroadcastChannel to the Support iframe of the page being shown (the
   latest visible one announces itself after every page load), which hands them
-  to `chat-widget.js` to draw or repeat. Coordinates are 0..1 of the picture, so
-  they map only when the customer shares the **browser tab**; the live window
-  sends `info.surface` and refuses everything else on a screen or window share.
+  to `chat-widget.js` to draw or repeat. Coordinates are 0..1 of the picture and
+  every command carries the share's `s` (displaySurface): a **tab** maps exactly;
+  a **window** or **whole screen** is placed by the page from its own
+  screenX/Y and outer-less-inner size (`ctlPoint()`), which is close but not
+  exact (zoom, a second screen, a docked developer panel). A point off the
+  page hides the pointer and refuses the click.
   The pointer needs no consent; clicks, scrolling and keys only while the state
   is `on`, which the live window sets solely from the customer's Allow on their
   page (an agent's message cannot set it). The page shows a bottom-left banner
