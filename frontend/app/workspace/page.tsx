@@ -10,6 +10,8 @@ import TicketHistory from "@/components/TicketHistory";
 import { API_URL } from '@/lib/config';
 import QuickTicketModal from '@/components/QuickTicketModal'
 import { useSoftphone } from '@/lib/softphone-context'
+import { useEvents } from '@/lib/events-context'
+import { supportCountsChanged } from '@/lib/support-alerts'
 
 export default function Workspace() {
     const [user, setUser] = useState<any>(null);
@@ -97,6 +99,15 @@ export default function Workspace() {
         }
     };
 
+    // ?tab=support (a support alert's link) opens on the Support queue
+    useEffect(() => {
+        if (new URLSearchParams(window.location.search).get('tab') === 'support') setFilterType('support');
+    }, []);
+
+    // a customer raised, answered or reopened a request: show it at once
+    const { subscribe } = useEvents();
+    useEffect(() => subscribe('support_ticket', () => { fetchSupportQueue(); fetchMyTickets(); }), [subscribe]);
+
     // the shared queue fills from sites at any time: look again every 30 seconds
     useEffect(() => {
         const timer = setInterval(() => {
@@ -111,6 +122,7 @@ export default function Workspace() {
             method: 'POST', headers: { 'Authorization': `Bearer ${getAuthToken()}` }
         });
         if (res.ok) {
+            supportCountsChanged();
             router.push(`/workspace/tickets/${ticketNumber}?from=workspace`);
             return;
         }

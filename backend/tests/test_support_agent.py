@@ -181,3 +181,28 @@ def test_not_a_support_ticket(env):
     for path in ("/conversation", "/take", "/webhook-resend"):
         method = c.get if path == "/conversation" else c.post
         assert method(f"/api/tickets/TCK-plain{path}").status_code == 404
+
+
+def test_support_counts_badge(env):
+    """The header badge: waiting to be taken, plus mine whose last word is the customer's."""
+    t1 = env["ids"]["t1"]
+    assert as_(env, "ram").get("/api/tickets/support-counts").json() == {"queue": 1, "waiting": 0, "total": 1}
+    assert as_(env, "admin").get("/api/tickets/support-counts").json()["queue"] == 2   # every site
+    as_(env, "ram").post(f"/api/tickets/{t1}/take")
+    assert as_(env, "ram").get("/api/tickets/support-counts").json() == {"queue": 0, "waiting": 1, "total": 1}
+    assert as_(env, "gita").get("/api/tickets/support-counts").json()["total"] == 0
+    as_(env, "ram").post(f"/api/tickets/{t1}/conversation", data={"body": "Looking now."})
+    assert as_(env, "ram").get("/api/tickets/support-counts").json()["waiting"] == 0
+    with env["Session"]() as s:
+        t = s.query(Ticket).filter_by(ticket_number=t1).one()
+        svc.reply(s, t, "Still blank.", customer=s.query(SupportUser).filter_by(uid="oms.example.com:42").one())
+    assert as_(env, "ram").get("/api/tickets/support-counts").json()["waiting"] == 1
+
+
+def test_unclaimed_request_tells_linked_agents_and_admins(env):
+    with env["Session"]() as s:
+        t = s.query(Ticket).filter_by(ticket_number=env["ids"]["t1"]).one()
+        told = set(svc._agents_for(s, t))
+        assert told == {env["ids"]["ram"], env["ids"]["gita"], env["ids"]["admin"]}
+        t.assigned_to = env["ids"]["ram"]
+        assert svc._agents_for(s, t) == [env["ids"]["ram"]]

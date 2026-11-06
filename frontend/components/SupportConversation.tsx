@@ -10,6 +10,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAuthToken } from '@/lib/auth';
 import { API_URL } from '@/lib/config';
+import { useEvents } from '@/lib/events-context';
+import { supportCountsChanged } from '@/lib/support-alerts';
 import { Paperclip, Send, RefreshCw, ExternalLink, AlertTriangle, Monitor } from 'lucide-react';
 
 type Attachment = { index: number; name: string; size: number; type: string; url: string };
@@ -76,6 +78,12 @@ export default function SupportConversation({ ticketNumber, onChanged }: { ticke
         return () => clearInterval(timer);
     }, [ticketNumber]);
 
+    // the customer wrote on this request: show it now rather than at the next poll
+    const { subscribe } = useEvents();
+    useEffect(() => subscribe('support_ticket', (ev) => {
+        if (ev.data?.ticket_number === ticketNumber) load();
+    }), [subscribe, ticketNumber]);
+
     const count = conv?.messages.length || 0;
     useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }); }, [count]);
 
@@ -98,6 +106,7 @@ export default function SupportConversation({ ticketNumber, onChanged }: { ticke
             setBody('');
             setFiles([]);
             requestId.current = newRequestId();   // the next reply is a new one
+            supportCountsChanged();
             onChanged?.();
         } catch (e: any) {
             setError(e.message || 'The reply was not sent.');

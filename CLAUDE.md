@@ -206,6 +206,22 @@ support site (Admin -> Widget Domains -> Support). Site-facing guide:
   (the PUT and notes routes do), or the customer and their site are not told.
 - `TicketResponse.source` lists the support sources: leaving one out fails every
   ticket list.
+- **Alerts.** A customer's write sends the live event `support_ticket` to the
+  assignee, else the domain's linked agents AND every admin (an admin's queue
+  lists every site). `EventNotifications` chimes (`lib/support-alerts.ts`,
+  three rising notes), shows a toast that opens the queue or the ticket, and a
+  desktop notice while the tab is hidden; the header's Workspace link carries
+  `GET /api/tickets/support-counts` (`queue` + my requests whose last word is
+  the customer's), also in the tab title. Anything that changes those counts
+  calls `supportCountsChanged()`.
+- **The widget's count.** The Support iframe polls `/requests` every 20 s;
+  `from_support` (support wrote last) with an `updated_at` other than the one
+  seen in the open thread is unread (localStorage per widget key; the first
+  look counts everything as seen). It posts `sc:support-unread {count,
+  increased}`; `chat-widget.js` adds it to the launcher badge, chimes once per
+  reply, and fires `socialchat:support-unread` on the host window (OMS shows it
+  beside Get help). The widget tells the iframe `sc:shown` so a reply is read
+  only while the panel shows it.
 
 ### Live help (talk, see the screen)
 

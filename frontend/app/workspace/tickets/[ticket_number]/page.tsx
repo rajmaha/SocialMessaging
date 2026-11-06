@@ -10,6 +10,7 @@ import { authAPI, getAuthToken } from "@/lib/auth";
 import { ArrowLeft, Save, Phone, Hand } from 'lucide-react';
 import { API_URL } from '@/lib/config';
 import { useSoftphone } from '@/lib/softphone-context';
+import { supportCountsChanged } from '@/lib/support-alerts';
 
 export default function TicketFollowUpWrapper() {
     return (
@@ -99,6 +100,7 @@ function TicketFollowUp() {
             });
 
             if (res.ok) {
+                supportCountsChanged();
                 setNote('');
                 setActionTaken('');
                 fetchTicket(); // refresh ticket details
@@ -119,7 +121,7 @@ function TicketFollowUp() {
         const res = await fetch(`${API_URL}/api/tickets/${ticket_number}/take`, {
             method: 'POST', headers: { 'Authorization': `Bearer ${getAuthToken()}` }
         });
-        if (res.ok) { fetchTicket(); return; }
+        if (res.ok) { supportCountsChanged(); fetchTicket(); return; }
         setTakeError((await res.json().catch(() => ({}))).detail || 'Could not take this request.');
     };
 

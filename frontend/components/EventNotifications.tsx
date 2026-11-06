@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useEvents, EventMessage } from '@/lib/events-context'
 import { useBranding } from '@/lib/branding-context'
 import { formatTimeWithTimezone } from '@/lib/date-utils'
+import { playSupportChime, desktopSupportNotice, supportCountsChanged } from '@/lib/support-alerts'
 
 interface Notification {
   id: string
@@ -49,6 +50,16 @@ export function EventNotifications() {
     const unsubPmsEscalation = subscribe('pms_escalation', (event) => { addNotification(event) })
     const unsubPmsUpdated = subscribe('pms_task_updated', (event) => { addNotification(event) })
 
+    // Support desk: a customer raised a request, replied, or reopened one
+    const unsubSupport = subscribe('support_ticket', (event) => {
+      const d = event.data || {}
+      playSupportChime()
+      supportCountsChanged()
+      const c = supportContent(d)
+      desktopSupportNotice(c.title, c.description, supportHref(d))
+      addNotification(event)
+    })
+
     // CRM task events
     const unsubCrmOverdue = subscribe('crm_task_overdue', (event) => { addNotification(event) })
     const unsubCrmDueSoon = subscribe('crm_task_due_soon', (event) => { addNotification(event) })
@@ -67,6 +78,7 @@ export function EventNotifications() {
       unsubPmsUpdated()
       unsubCrmOverdue()
       unsubCrmDueSoon()
+      unsubSupport()
     }
   }, [subscribe])
 
@@ -198,6 +210,12 @@ export function EventNotifications() {
           icon: '⏰', bgColor: 'bg-red-50', borderColor: 'border-red-300',
           textColor: 'text-red-800', titleColor: 'text-red-900',
         }
+      case 'support_ticket':
+        return {
+          ...supportContent(d),
+          icon: '🛟', bgColor: 'bg-rose-50', borderColor: 'border-rose-300',
+          textColor: 'text-rose-800', titleColor: 'text-rose-900',
+        }
       case 'crm_task_due_soon':
         return {
           title: 'CRM Task Due Soon',
@@ -230,10 +248,13 @@ export function EventNotifications() {
               )
             : ''
 
+        const href = notification.event.type === 'support_ticket' ? supportHref(notification.event.data || {}) : ''
         return (
           <div
             key={notification.id}
-            className={`${content.bgColor} border ${content.borderColor} rounded-lg shadow-lg overflow-hidden transition-all duration-300 ${
+            onClick={href ? () => { removeNotification(notification.id); window.location.href = href } : undefined}
+            title={href ? 'Open' : undefined}
+            className={`${href ? 'cursor-pointer ' : ''}${content.bgColor} border ${content.borderColor} rounded-lg shadow-lg overflow-hidden transition-all duration-300 ${
               notification.visible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-96'
             }`}
           >
@@ -254,7 +275,7 @@ export function EventNotifications() {
                   </div>
                 </div>
                 <button
-                  onClick={() => removeNotification(notification.id)}
+                  onClick={(e) => { e.stopPropagation(); removeNotification(notification.id) }}
                   className={`ml-4 text-lg leading-none ${content.textColor} hover:opacity-70`}
                 >
                   ✕
@@ -266,4 +287,23 @@ export function EventNotifications() {
       })}
     </div>
   )
+}
+
+function supportContent(d: any) {
+  const who = d.customer || 'A customer'
+  const subject = d.subject ? `: ${String(d.subject).substring(0, 60)}` : ''
+  switch (d.what) {
+    case 'created':
+      return { title: 'New support request', description: `${who}${subject}` }
+    case 'reopened':
+      return { title: 'Support request reopened', description: `${who}${subject}` }
+    default:
+      return { title: 'Customer replied', description: `${who}${subject}` }
+  }
+}
+
+/** A request still in the queue opens the queue (it has to be taken first); else its page. */
+function supportHref(d: any) {
+  if (d.what === 'created' || !d.ticket_number) return '/workspace?tab=support'
+  return `/workspace/tickets/${encodeURIComponent(d.ticket_number)}?from=workspace`
 }

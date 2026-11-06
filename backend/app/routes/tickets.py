@@ -565,6 +565,36 @@ def support_queue(db: Session = Depends(get_db), current_user: User = Depends(ge
     return q.order_by(Ticket.created_at.asc()).limit(200).all()
 
 
+@router.get("/support-counts")
+def support_counts(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """For the header badge: requests waiting to be taken (as the Support queue lists them), and
+    the agent's own open requests whose last word is the customer's (waiting for a reply)."""
+    from sqlalchemy import false, func
+    from app.models.support import SupportMessage
+    q = db.query(func.count(Ticket.id)).filter(
+        Ticket.support_site_id.isnot(None),
+        Ticket.assigned_to.is_(None),
+        Ticket.status.in_([TicketStatus.PENDING, TicketStatus.FORWARDED]),
+    )
+    ids = _linked_domain_ids(db, current_user)
+    if ids is not None:
+        q = q.filter(Ticket.support_site_id.in_(ids)) if ids else q.filter(false())
+    queue = q.scalar() or 0
+
+    last = (db.query(SupportMessage.ticket_id, func.max(SupportMessage.id).label("mid"))
+            .filter(SupportMessage.author_type.in_(["customer", "agent"]))
+            .group_by(SupportMessage.ticket_id).subquery())
+    waiting = (db.query(func.count(Ticket.id))
+               .join(last, last.c.ticket_id == Ticket.id)
+               .join(SupportMessage, SupportMessage.id == last.c.mid)
+               .filter(Ticket.support_site_id.isnot(None),
+                       Ticket.assigned_to == current_user.id,
+                       Ticket.status != TicketStatus.SOLVED,
+                       SupportMessage.author_type == "customer")
+               .scalar() or 0)
+    return {"queue": int(queue), "waiting": int(waiting), "total": int(queue) + int(waiting)}
+
+
 @router.post("/{ticket_number}/take", response_model=TicketResponse)
 def take_support_ticket(ticket_number: str, db: Session = Depends(get_db),
                         current_user: User = Depends(get_current_user)):

@@ -348,6 +348,7 @@
 
   function switchTab(tab) {
     activeTab = tab
+    tellSupportShown(open && tab === 'support')
     iframe.style.display = 'none'
     menuPanel.style.display = 'none'
     channelsPanel.style.display = 'none'
@@ -458,7 +459,47 @@
     .catch(function () {})
 
   var open = false
-  var unread = 0
+  var unread = 0          // chat messages while the panel was shut
+  var supportUnread = 0   // support replies the person has not read (counted by the Support iframe)
+
+  /** The launcher's red count: unread chat plus unread support replies. */
+  function renderBadge() {
+    var n = unread + supportUnread
+    if (n > 0) {
+      badge.textContent = n > 9 ? '9+' : String(n)
+      badge.style.display = 'block'
+    } else {
+      badge.style.display = 'none'
+    }
+    // the launcher's icon is replaced on open/close; keep the badge on it
+    if (badge.parentNode !== launcher) launcher.appendChild(badge)
+  }
+
+  /** The Support iframe marks a reply read only while the person can see it. */
+  function tellSupportShown(shown) {
+    if (supportReady) toSupport({ type: 'sc:shown', shown: !!shown })
+  }
+
+  /** Three rising notes: a support reply, told apart from a chat message. */
+  function playSupportChime() {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)()
+      ;[660, 880, 1175].forEach(function (f, i) {
+        var t = ctx.currentTime + i * 0.14
+        var osc = ctx.createOscillator()
+        var gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(f, t)
+        gain.gain.setValueAtTime(0.0001, t)
+        gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22)
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start(t)
+        osc.stop(t + 0.24)
+      })
+    } catch (e) {}
+  }
 
   function playNotificationSound() {
     try {
@@ -485,9 +526,10 @@
       container.style.opacity = '1'
     })
     unread = 0
-    badge.style.display = 'none'
+    tellSupportShown(activeTab === 'support')
     launcher.innerHTML =
       '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'
+    renderBadge()
   }
 
   function closeChat() {
@@ -499,6 +541,8 @@
     }, 220)
     launcher.innerHTML =
       '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
+    tellSupportShown(false)
+    renderBadge()
   }
 
   launcher.addEventListener('click', function () {
@@ -521,8 +565,20 @@
         if (activeTab === 'chat') switchTab('support')
       }
       if (pendingOpen) { toSupport(pendingOpen); pendingOpen = null }
+      tellSupportShown(open && activeTab === 'support')
     } else if (d.type === 'sc:identity-expired') {
       renewIdentity()
+    } else if (d.type === 'sc:support-unread') {
+      supportUnread = Math.max(0, parseInt(d.count, 10) || 0)
+      renderBadge()
+      if (d.increased && !(open && activeTab === 'support')) playSupportChime()
+      // the host page may show its own count (OMS: next to Get help)
+      window.SocialChat && (window.SocialChat.supportUnread = supportUnread)
+      try {
+        window.dispatchEvent(new CustomEvent('socialchat:support-unread', {
+          detail: { count: supportUnread, increased: !!d.increased },
+        }))
+      } catch (e) {}
     } else if (d.type === 'sc:live-request') {
       // an agent asks to talk or to see the screen: the answer is on the Support tab
       openChat()
@@ -544,14 +600,14 @@
       }
     },
     close: function () { closeChat() },
+    supportUnread: 0,
   }
 
   // Listen for new-message events from the iframe so we can show the badge + play sound
   window.addEventListener('message', function (ev) {
     if (ev.data && ev.data.type === 'sc_new_message' && !open) {
       unread++
-      badge.textContent = unread > 9 ? '9+' : String(unread)
-      badge.style.display = 'block'
+      renderBadge()
       playNotificationSound()
     }
   })
