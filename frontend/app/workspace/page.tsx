@@ -107,6 +107,7 @@ export default function Workspace() {
     // a customer raised, answered or reopened a request: show it at once
     const { subscribe } = useEvents();
     useEffect(() => subscribe('support_ticket', () => { fetchSupportQueue(); fetchMyTickets(); }), [subscribe]);
+    useEffect(() => subscribe('ticket_forwarded', () => { fetchMyTickets(); }), [subscribe]);
 
     // the shared queue fills from sites at any time: look again every 30 seconds
     useEffect(() => {

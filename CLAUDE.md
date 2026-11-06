@@ -206,6 +206,12 @@ support site (Admin -> Widget Domains -> Support). Site-facing guide:
   (the PUT and notes routes do), or the customer and their site are not told.
 - `TicketResponse.source` lists the support sources: leaving one out fails every
   ticket list.
+- **Forwarding hands a ticket over.** The notes route takes `forward_to` (a user
+  id, from `/conversations/agents`) and `forward_reason` with status
+  `forwarded`, checks both before writing, sets `assigned_to` (so support alerts
+  follow), `forward_target` (the name) and `forward_reason`, logs the note, and
+  sends `ticket_forwarded` to that agent (toast, chime). It used to store a typed
+  name only, and nothing reached "Forwarded to Me".
 - **Alerts.** A customer's write sends the live event `support_ticket` to the
   assignee, else the domain's linked agents AND every admin (an admin's queue
   lists every site). `EventNotifications` chimes (`lib/support-alerts.ts`,

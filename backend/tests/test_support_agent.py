@@ -206,3 +206,27 @@ def test_unclaimed_request_tells_linked_agents_and_admins(env):
         assert told == {env["ids"]["ram"], env["ids"]["gita"], env["ids"]["admin"]}
         t.assigned_to = env["ids"]["ram"]
         assert svc._agents_for(s, t) == [env["ids"]["ram"]]
+
+
+def test_forward_hands_the_ticket_to_an_agent(env):
+    t1, tid = env["ids"]["t1"], env["ids"]["t1_id"]
+    c = as_(env, "ram")
+    c.post(f"/api/tickets/{t1}/take")
+    # refused before anything is written: no agent, no reason, oneself, nobody
+    assert c.post(f"/api/tickets/{t1}/notes", json={"status": "forwarded", "forward_reason": "x"}).status_code == 422
+    assert c.post(f"/api/tickets/{t1}/notes", json={"status": "forwarded", "forward_to": env["ids"]["gita"]}).status_code == 422
+    assert c.post(f"/api/tickets/{t1}/notes", json={"status": "forwarded", "forward_to": env["ids"]["ram"], "forward_reason": "x"}).status_code == 422
+    assert c.post(f"/api/tickets/{t1}/notes", json={"status": "forwarded", "forward_to": 999999, "forward_reason": "x"}).status_code == 422
+    with env["Session"]() as s:
+        assert s.get(Ticket, tid).assigned_to == env["ids"]["ram"] and s.get(Ticket, tid).status.value == "pending"
+
+    r = c.post(f"/api/tickets/{t1}/notes", json={"status": "forwarded", "forward_to": env["ids"]["gita"], "forward_reason": "Billing question"})
+    assert r.status_code == 200, r.text
+    with env["Session"]() as s:
+        t = s.get(Ticket, tid)
+        assert t.assigned_to == env["ids"]["gita"] and t.status.value == "forwarded"
+        assert t.forward_target == "Gita Devi" and t.forward_reason == "Billing question"
+        note = s.query(Ticket).filter(Ticket.parent_ticket_id == tid).one()
+        assert note.app_type_data["follow_up_note"] == "Forwarded to Gita Devi: Billing question"
+    mine = as_(env, "gita").get("/api/tickets/my-tickets").json()
+    assert [t["ticket_number"] for t in mine] == [t1]

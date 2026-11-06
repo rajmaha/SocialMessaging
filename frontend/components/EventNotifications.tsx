@@ -60,6 +60,16 @@ export function EventNotifications() {
       addNotification(event)
     })
 
+    // A ticket another agent forwarded to me
+    const unsubForwarded = subscribe('ticket_forwarded', (event) => {
+      const d = event.data || {}
+      playSupportChime()
+      supportCountsChanged()
+      desktopSupportNotice('Ticket forwarded to you', `${d.by || 'An agent'}: ${d.reason || d.subject || ''}`,
+        `/workspace/tickets/${encodeURIComponent(d.ticket_number || '')}?from=workspace`)
+      addNotification(event)
+    })
+
     // CRM task events
     const unsubCrmOverdue = subscribe('crm_task_overdue', (event) => { addNotification(event) })
     const unsubCrmDueSoon = subscribe('crm_task_due_soon', (event) => { addNotification(event) })
@@ -79,6 +89,7 @@ export function EventNotifications() {
       unsubCrmOverdue()
       unsubCrmDueSoon()
       unsubSupport()
+      unsubForwarded()
     }
   }, [subscribe])
 
@@ -216,6 +227,13 @@ export function EventNotifications() {
           icon: '🛟', bgColor: 'bg-rose-50', borderColor: 'border-rose-300',
           textColor: 'text-rose-800', titleColor: 'text-rose-900',
         }
+      case 'ticket_forwarded':
+        return {
+          title: 'Ticket forwarded to you',
+          description: `${d.by || 'An agent'}: ${(d.reason || d.subject || d.ticket_number || '').substring(0, 80)}`,
+          icon: '📨', bgColor: 'bg-orange-50', borderColor: 'border-orange-300',
+          textColor: 'text-orange-800', titleColor: 'text-orange-900',
+        }
       case 'crm_task_due_soon':
         return {
           title: 'CRM Task Due Soon',
@@ -248,7 +266,9 @@ export function EventNotifications() {
               )
             : ''
 
-        const href = notification.event.type === 'support_ticket' ? supportHref(notification.event.data || {}) : ''
+        const ev = notification.event
+        const href = ev.type === 'support_ticket' ? supportHref(ev.data || {})
+          : ev.type === 'ticket_forwarded' && ev.data?.ticket_number ? `/workspace/tickets/${encodeURIComponent(ev.data.ticket_number)}?from=workspace` : ''
         return (
           <div
             key={notification.id}

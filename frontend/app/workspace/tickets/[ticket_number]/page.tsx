@@ -53,6 +53,19 @@ function TicketFollowUp() {
     // Support requests (source support_*) open on the customer's thread
     const [tab, setTab] = useState<'conversation' | 'note'>('conversation');
     const [takeError, setTakeError] = useState('');
+    // Forwarded: the agent it goes to, and why (the ticket becomes theirs)
+    const [agents, setAgents] = useState<{ id: number; full_name: string; role: string }[]>([]);
+    const [forwardTo, setForwardTo] = useState('');
+    const [forwardReason, setForwardReason] = useState('');
+    const [saveError, setSaveError] = useState('');
+    useEffect(() => {
+        if (status !== 'forwarded' || agents.length) return;
+        fetch(`${API_URL}/conversations/agents`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } })
+            .then(r => (r.ok ? r.json() : []))
+            .then(list => setAgents(Array.isArray(list) ? list.filter((a: any) => a.id !== user?.user_id) : []))
+            .catch(() => undefined);
+    }, [status]);
+    const forwarding = status === 'forwarded' && !!forwardTo;
 
     useEffect(() => {
         if (!user) { router.push('/login'); return; }
@@ -80,7 +93,12 @@ function TicketFollowUp() {
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!note.trim() && !actionTaken.trim() && status === ticket.status && priority === ticket.priority) return;
+        if (!note.trim() && !actionTaken.trim() && status === ticket.status && priority === ticket.priority && !forwarding) return;
+        setSaveError('');
+        if (status === 'forwarded' && (!forwardTo || !forwardReason.trim())) {
+            setSaveError('Choose the agent to forward to and say why.');
+            return;
+        }
 
         setSaving(true);
         try {
@@ -94,11 +112,23 @@ function TicketFollowUp() {
                 body: JSON.stringify({
                     note: note.trim() || undefined,
                     action_taken: actionTaken.trim() || undefined,
-                    status: status !== ticket.status ? status : undefined,
-                    priority: priority !== ticket.priority ? priority : undefined
+                    status: status !== ticket.status || forwarding ? status : undefined,
+                    priority: priority !== ticket.priority ? priority : undefined,
+                    forward_to: forwarding ? Number(forwardTo) : undefined,
+                    forward_reason: forwarding ? forwardReason.trim() : undefined,
                 })
             });
 
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                setSaveError(typeof d.detail === 'string' ? d.detail : 'The update was not saved.');
+            }
+            if (res.ok && forwarding) {
+                // it is someone else's now: back to the workspace
+                supportCountsChanged();
+                router.push('/workspace');
+                return;
+            }
             if (res.ok) {
                 supportCountsChanged();
                 setNote('');
@@ -136,7 +166,9 @@ function TicketFollowUp() {
     if (!ticket || !user) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">Ticket not found or unauthorized.</div>;
 
     return (
-        <div className="pt-14 min-h-screen bg-gray-50 flex flex-col pb-16 md:pb-0">
+        // On a wide screen the page fits the window and only the conversation scrolls; the side
+        // columns stay put (each scrolls inside itself if it ever runs long). A phone scrolls the page.
+        <div className="pt-14 min-h-screen lg:h-screen lg:overflow-hidden bg-gray-50 flex flex-col pb-16 md:pb-0">
             <MainHeader user={user} />
 
             {/* Top Navigation */}
@@ -162,10 +194,10 @@ function TicketFollowUp() {
             </div>
 
             {/* 3-Column Layout */}
-            <main className="flex-1 w-full p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 h-full min-h-0">
+            <main className="flex-1 w-full p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-1 gap-6 min-h-0">
 
                 {/* LEFT: Ticket Details */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-3 flex flex-col">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-3 flex flex-col lg:min-h-0">
                     <div className="p-4 border-b border-gray-100 bg-gray-50 font-bold text-gray-700">Ticket Details</div>
                     <div className="p-5 space-y-5 overflow-y-auto flex-1">
                         <div>
@@ -239,7 +271,7 @@ function TicketFollowUp() {
                             </div>
                         )}
                     </div>
-                    {isSupport && <div className="p-4 border-t border-gray-100 mt-auto">
+                    {isSupport && <div className="p-4 border-t border-gray-100 mt-auto shrink-0">
                         <SupportLiveHelp ticketNumber={ticket.ticket_number} onPhone={initiateCall} />
                     </div>}
                     {!isSupport && hasPhone && <div className="p-4 border-t border-gray-100 bg-gray-50 mt-auto">
@@ -253,7 +285,7 @@ function TicketFollowUp() {
                 </div>
 
                 {/* MIDDLE: Follow-Up Form */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-5 flex flex-col">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-5 flex flex-col lg:min-h-0">
                     {isSupport ? (
                         <div className="px-4 pt-3 border-b border-gray-100 bg-gray-50 flex gap-1">
                             {(['conversation', 'note'] as const).map(t => (
@@ -302,6 +334,28 @@ function TicketFollowUp() {
                             </div>
                         </div>
 
+                        {status === 'forwarded' && (
+                            <div className="grid grid-cols-2 gap-4 bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                <div>
+                                    <label className="block text-sm font-semibold text-orange-900 mb-1">Forward to *</label>
+                                    <select value={forwardTo} onChange={e => setForwardTo(e.target.value)}
+                                            className="w-full border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                        <option value="">Choose an agent...</option>
+                                        {agents.map(a => (
+                                            <option key={a.id} value={a.id}>{a.full_name}{a.role === 'admin' ? ' (admin)' : ''}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-orange-900 mb-1">Why *</label>
+                                    <input value={forwardReason} onChange={e => setForwardReason(e.target.value)} maxLength={500}
+                                           placeholder="What they need to do"
+                                           className="w-full border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                                </div>
+                                <p className="col-span-2 text-xs text-orange-800">The ticket becomes theirs and they are told at once.</p>
+                            </div>
+                        )}
+
                         <div className="flex-1 flex flex-col gap-4">
                             <div className="flex-1 flex flex-col">
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">Follow-Up Note</label>
@@ -323,13 +377,14 @@ function TicketFollowUp() {
                             </div>
                         </div>
 
-                        <div className="pt-4 border-t border-gray-100 mt-auto flex justify-end">
+                        <div className="pt-4 border-t border-gray-100 mt-auto flex justify-end items-center gap-3">
+                            {saveError && <p className="text-sm text-red-600 flex-1">{saveError}</p>}
                             <button
                                 type="submit"
-                                disabled={saving || (!note.trim() && !actionTaken.trim() && status === ticket.status && priority === ticket.priority)}
+                                disabled={saving || (!note.trim() && !actionTaken.trim() && status === ticket.status && priority === ticket.priority && !forwarding)}
                                 className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center gap-2"
                             >
-                                {saving ? 'Saving...' : <><Save className="w-4 h-4" /> Save Update</>}
+                                {saving ? 'Saving...' : <><Save className="w-4 h-4" /> {forwarding ? 'Forward' : 'Save Update'}</>}
                             </button>
                         </div>
                     </form>
@@ -337,7 +392,7 @@ function TicketFollowUp() {
                 </div>
 
                 {/* RIGHT: Ticket History */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-4 flex flex-col">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-4 flex flex-col lg:min-h-0">
                     <TicketHistory
                         activeNumber={ticket.phone_number}
                         ticketId={isSupport ? ticket.id : undefined}
