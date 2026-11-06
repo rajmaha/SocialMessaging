@@ -62,7 +62,16 @@ export default function LiveHelpWindow() {
     let screenTrack: MediaStreamTrack | null = null
     if (withScreen) {
       try {
-        const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+        // Open the picker on Entire screen and keep this little window out of it: people
+        // picked "this window" and the agent saw only the live help box. Browsers that do
+        // not know these hints ignore them.
+        const display = await navigator.mediaDevices.getDisplayMedia({
+          video: { displaySurface: 'monitor' } as any,
+          audio: false,
+          selfBrowserSurface: 'exclude',
+          surfaceSwitching: 'include',
+          monitorTypeSurfaces: 'include',
+        } as any)
         screenTrack = display.getVideoTracks()[0] || null
       } catch (e: any) {
         setPhase('start')
@@ -141,6 +150,10 @@ export default function LiveHelpWindow() {
       </p>
       {canShare ? (
         <>
+          <p className="text-xs text-gray-700 bg-indigo-50 rounded-lg p-2 text-left">
+            In the box that opens, choose <b>Entire screen</b> (or the tab with the page you need help on),
+            then press <b>Share</b>. Not this small window: {info.agent} would see only this box.
+          </p>
           <button onClick={() => start(true)} disabled={phase === 'asking'}
                   className="w-full py-2.5 rounded-lg bg-indigo-600 text-white font-semibold disabled:opacity-50">Share my screen</button>
           <button onClick={() => start(false)} disabled={phase === 'asking'}
@@ -167,6 +180,7 @@ export default function LiveHelpWindow() {
         <button onClick={stop} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold">{sharing ? 'Stop' : 'End'}</button>
       </div>
       {noMic && <p className="text-xs text-amber-700">Your microphone is off: {info.agent} can see your screen but cannot hear you.</p>}
+      {sharing && <p className="text-xs text-gray-600">Now go back to your page: {info.agent} sees what you see. If they say they see only this box, press Stop, accept again and choose Entire screen.</p>}
       <p className="text-[11px] text-gray-400">Keep this window open. Closing it ends the call.</p>
     </>)
   }
