@@ -601,6 +601,8 @@
   var ctlState = 'off'
   var ctlAgent = 'Support'
   var ctlPtr = null, ctlPtrTimer = null, ctlBanner = null, ctlAsk = null, ctlEdited = null
+  // the call bar: Mute and Stop on the page itself, so the small live window can stay out of the way
+  var callBar = null, callInfo = { live: false, muted: false, mic: true, sharing: false }
   var Z = '2147483646'
 
   function ctlReply(msg) { toSupport({ type: 'sc:ctl-reply', msg: msg }) }
@@ -645,7 +647,7 @@
 
   function ctlIsOurs(el) {
     for (var n = el; n; n = n.parentNode) {
-      if (n === container || n === launcher || n === ctlBanner || n === ctlAsk || n === ctlPtr) return true
+      if (n === container || n === launcher || n === ctlBanner || n === ctlAsk || n === ctlPtr || n === callBar) return true
     }
     return false
   }
@@ -704,10 +706,48 @@
         document.body.appendChild(ctlBanner)
       }
       ctlBanner.firstChild.textContent = ctlAgent + ' from Support is controlling this page'
+      ctlBanner.style.bottom = callBar ? '68px' : '16px'
     } else if (ctlBanner) {
       ctlBanner.parentNode && ctlBanner.parentNode.removeChild(ctlBanner)
       ctlBanner = null
     }
+  }
+
+  function callRender() {
+    if (!callInfo.live) {
+      if (callBar && callBar.parentNode) callBar.parentNode.removeChild(callBar)
+      callBar = null
+      if (ctlBanner) ctlBanner.style.bottom = '16px'
+      return
+    }
+    if (!callBar) {
+      callBar = document.createElement('div')
+      callBar.setAttribute('role', 'status')
+      Object.assign(callBar.style, { position: 'fixed', bottom: '16px', left: '16px', zIndex: Z, background: '#111827', color: '#fff',
+        borderRadius: '999px', padding: '6px 6px 6px 14px', boxShadow: '0 6px 18px rgba(0,0,0,.3)', display: 'flex', alignItems: 'center',
+        font: '600 13px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' })
+      var dot = document.createElement('span')
+      Object.assign(dot.style, { width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', marginRight: '8px', display: 'inline-block' })
+      callBar.appendChild(dot)
+      callBar.appendChild(document.createElement('span'))
+      callBar.appendChild(ctlButton('Mute', '#374151', '#fff', function () {
+        callInfo.muted = !callInfo.muted
+        ctlReply({ t: 'call-mute', mute: callInfo.muted })
+        callRender()
+      }))
+      callBar.appendChild(ctlButton('Stop', '#dc2626', '#fff', function () {
+        ctlReply({ t: 'call-end' })
+        callInfo.live = false
+        callRender()
+      }))
+      document.body.appendChild(callBar)
+    }
+    callBar.childNodes[1].textContent = (callInfo.sharing ? 'Sharing your screen with ' : 'Talking with ') + ctlAgent
+    var mute = callBar.childNodes[2]
+    mute.style.display = callInfo.mic ? '' : 'none'
+    mute.textContent = callInfo.muted ? 'Unmute' : 'Mute'
+    callBar.childNodes[3].textContent = callInfo.sharing ? 'Stop sharing' : 'End call'
+    if (ctlBanner) ctlBanner.style.bottom = '68px'
   }
 
   function ctlMouse(el, type, p, buttons) {
@@ -748,7 +788,7 @@
 
   /** The page's element at a point, looking through the banner and the question (they are ours, not the page). */
   function ctlElementAt(p) {
-    var mine = [ctlBanner, ctlAsk].filter(Boolean)
+    var mine = [ctlBanner, ctlAsk, callBar].filter(Boolean)
     mine.forEach(function (n) { n.style.pointerEvents = 'none' })
     var el = document.elementFromPoint(p.x, p.y)
     mine.forEach(function (n) { n.style.pointerEvents = '' })
@@ -866,6 +906,11 @@
 
   function ctlHandle(d) {
     if (d.agent) ctlAgent = d.agent
+    if (d.kind === 'call') {
+      callInfo = { live: !!d.live, muted: !!d.muted, mic: d.mic !== false, sharing: !!d.sharing }
+      callRender()
+      return
+    }
     if (d.kind === 'state') {
       var was = ctlState
       ctlState = d.state === 'on' || d.state === 'asked' ? d.state : 'off'

@@ -263,6 +263,12 @@ site guide: `docs/support-desk.md` section 7.
   select lists (lists move with the arrow keys). BroadcastChannel is partitioned
   for a site on another domain than SocialMessaging; there it works only until
   that page reloads (postMessage between the opener iframe and the window).
+- **The call bar.** Once connected the live window shrinks to a corner
+  (`resizeTo` / `moveTo`, which a browser may refuse) and sends `call {live,
+  muted, mic, sharing}` on the same bus; the page shows a bottom-left bar with
+  Mute and Stop (replies `call-mute`, `call-end`), the control banner stacked
+  above it. Its audio element is redrawn with the layout, so the agent's
+  stream is reattached by a ref callback.
 - **Call phone** stamps the next outbound call from that agent to that number
   within 30 minutes with the ticket number (`support_call_links`, read by the
   FreePBX CDR sync).

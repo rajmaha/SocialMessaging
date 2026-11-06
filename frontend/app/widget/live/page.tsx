@@ -64,12 +64,22 @@ export default function LiveHelpWindow() {
   const [noMic, setNoMic] = useState(false)
   const [error, setError] = useState('')
   const call = useRef<LiveCall | null>(null)
-  const audio = useRef<HTMLAudioElement>(null)
+  const audio = useRef<HTMLAudioElement | null>(null)
+  const remote = useRef<MediaStream | null>(null)
+  // the agent's voice: the element is drawn anew when the layout changes, so it is reattached each time
+  const audioRef = (el: HTMLAudioElement | null) => {
+    audio.current = el
+    if (el && remote.current && el.srcObject !== remote.current) el.srcObject = remote.current
+  }
   // pointer and control (lib/live-control.ts): the page they are on, and whether they let the agent act on it
   const screenRef = useRef<MediaStreamTrack | null>(null)
   const bus = useRef<LiveBus | null>(null)
   const host = useRef<{ id: string; vw: number; vh: number } | null>(null)
   const ctlRef = useRef<Ctl>('off')
+  // the call bar on their page (Mute / Stop there, so this window can stay small and out of the way)
+  const mutedRef = useRef(false)
+  const liveRef = useRef(false)
+  const micRef = useRef(true)
   const [ctl, setCtlShown] = useState<Ctl>('off')
 
   useEffect(() => {
@@ -94,6 +104,10 @@ export default function LiveHelpWindow() {
     setCtlShown(state)
     if (host.current) bus.current?.send({ kind: 'state', to: host.current.id, state, agent: info?.agent || 'Support' })
     tellAgent({ t: 'ctl', state, why })
+  }
+  const sendCall = (live: boolean) => {
+    if (host.current) bus.current?.send({ kind: 'call', to: host.current.id, agent: info?.agent || 'Support',
+      live, muted: mutedRef.current, mic: micRef.current, sharing: !!screenRef.current })
   }
   const toHost = (cmd: any) => { if (host.current && cmd) bus.current?.send({ kind: 'cmd', to: host.current.id, cmd }) }
 
@@ -126,17 +140,22 @@ export default function LiveHelpWindow() {
     if (m.kind === 'host' && typeof m.id === 'string') {
       host.current = { id: m.id, vw: Number(m.vw) || 0, vh: Number(m.vh) || 0 }
       sendInfo()
-      // the banner (or the question) follows them onto the next page
+      // the banner (or the question), and the call bar, follow them onto the next page
       bus.current?.send({ kind: 'state', to: m.id, state: ctlRef.current, agent: info?.agent || 'Support' })
+      if (liveRef.current) sendCall(true)
     } else if (m.kind === 'reply' && host.current && m.id === host.current.id) {
       const r = m.msg || {}
       if (r.t === 'ctl-answer' && ctlRef.current === 'asked') setCtl(r.allow ? 'on' : 'off', r.allow ? '' : 'denied')
       else if (r.t === 'ctl-stop' && ctlRef.current !== 'off') setCtl('off', 'stopped')
       else if (r.t === 'note' && typeof r.text === 'string') tellAgent({ t: 'note', text: r.text.slice(0, 200) })
+      else if (r.t === 'call-mute') setMute(!!r.mute)
+      else if (r.t === 'call-end') stop()
     }
   }
 
   const stopControlAll = () => {
+    liveRef.current = false
+    sendCall(false)
     if (ctlRef.current !== 'off') setCtl('off')
     toHost({ t: 'ptr-hide' })
     bus.current?.close()
@@ -193,6 +212,7 @@ export default function LiveHelpWindow() {
       // a screen can be shown without a microphone; they will not hear you
     }
     setNoMic(!mic)
+    micRef.current = !!mic
     const tracks: MediaStreamTrack[] = mic ? [...mic.getAudioTracks()] : []
     if (screenTrack) tracks.push(screenTrack)
     if (tracks.length === 0) {
@@ -206,7 +226,7 @@ export default function LiveHelpWindow() {
       onPhase: (p, w) => { setPhase(p); if (w) setWhy(w); if (p === 'ended' || p === 'failed') stopControlAll() },
       onControl: fromAgent,
       onControlOpen: (open) => { if (open) { sendInfo(); tellAgent({ t: 'ctl', state: ctlRef.current }) } },
-      onRemoteStream: (stream) => { if (audio.current) audio.current.srcObject = stream },
+      onRemoteStream: (stream) => { remote.current = stream; if (audio.current) audio.current.srcObject = stream },
       onMessage: (msg) => {
         if (msg.type === 'ready') c.send({ type: 'state', sharing: !!screenTrack })
       },
@@ -217,10 +237,8 @@ export default function LiveHelpWindow() {
     }
     setSharing(!!screenTrack)
     call.current = c
-    if (screenTrack) {
-      bus.current = new LiveBus(fromPage, () => (window.opener && !window.opener.closed ? [window.opener] : []))
-      bus.current.send({ kind: 'who' })
-    }
+    bus.current = new LiveBus(fromPage, () => (window.opener && !window.opener.closed ? [window.opener] : []))
+    bus.current.send({ kind: 'who' })
     c.start()
   }
 
@@ -236,13 +254,32 @@ export default function LiveHelpWindow() {
   }, [sharing])
 
   const stop = () => { stopControlAll(); call.current?.end(); setSharing(false) }
-  const toggleMute = () => { call.current?.setEnabled('audio', muted); setMuted(!muted) }
+  function setMute(on: boolean) {
+    mutedRef.current = on
+    call.current?.setEnabled('audio', !on)
+    setMuted(on)
+    if (liveRef.current) sendCall(true)
+  }
+  const toggleMute = () => setMute(!mutedRef.current)
+
+  // connected: this window shrinks to a corner (the page's call bar has Mute and Stop too)
+  useEffect(() => {
+    if (phase !== 'live') return
+    liveRef.current = true
+    sendCall(true)
+    try {
+      const w = 340, h = 240
+      window.resizeTo(w, h)
+      const sc: any = window.screen
+      window.moveTo((sc.availLeft || 0) + sc.availWidth - w - 16, (sc.availTop || 0) + sc.availHeight - h - 16)
+    } catch { /* a browser may refuse; the window simply stays where it is */ }
+  }, [phase])
 
   const box = (children: React.ReactNode) => (
     <div className="h-screen flex items-center justify-center bg-gray-50 p-6 text-gray-900"
          style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       <div className="w-full max-w-sm bg-white rounded-xl shadow p-6 text-center space-y-4">{children}</div>
-      <audio ref={audio} autoPlay />
+      <audio ref={audioRef} autoPlay />
     </div>
   )
 
@@ -283,23 +320,28 @@ export default function LiveHelpWindow() {
   }
 
   if (phase === 'live') {
-    return box(<>
-      <p className="font-semibold text-green-700">{sharing ? `Sharing your screen with ${info.agent}` : `Talking with ${info.agent}`}</p>
-      <div className="flex gap-2 justify-center">
-        {!noMic && <button onClick={toggleMute} className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-semibold">{muted ? 'Unmute' : 'Mute'}</button>}
-        <button onClick={stop} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold">{sharing ? 'Stop' : 'End'}</button>
-      </div>
-      {noMic && <p className="text-xs text-amber-700">Your microphone is off: {info.agent} can see your screen but cannot hear you.</p>}
-      {ctl === 'asked' && <p className="text-xs text-indigo-700">{info.agent} asked to control your page: answer on your page.</p>}
-      {ctl === 'on' && (
-        <div className="text-xs text-red-700 bg-red-50 rounded-lg p-2 space-y-1">
-          <p>{info.agent} is controlling your page.</p>
-          <button onClick={() => setCtl('off', 'stopped')} className="px-3 py-1 rounded bg-red-600 text-white font-semibold">Stop control</button>
+    return (
+      <div className="h-screen flex flex-col justify-center gap-2 bg-white px-4 text-gray-900"
+           style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+        <p className="text-sm font-semibold text-green-700 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          {sharing ? `Sharing with ${info.agent}` : `Talking with ${info.agent}`}
+        </p>
+        <div className="flex gap-2">
+          {!noMic && <button onClick={toggleMute} className="flex-1 py-1.5 rounded-lg border border-gray-300 text-sm font-semibold">{muted ? 'Unmute' : 'Mute'}</button>}
+          <button onClick={stop} className="flex-1 py-1.5 rounded-lg bg-red-600 text-white text-sm font-semibold">{sharing ? 'Stop' : 'End'}</button>
         </div>
-      )}
-      {sharing && <p className="text-xs text-gray-600">Now go back to your page: {info.agent} sees what you see. If they say they see only this box, press Stop, accept again and choose Entire screen.</p>}
-      <p className="text-[11px] text-gray-400">Keep this window open. Closing it ends the call.</p>
-    </>)
+        {noMic && <p className="text-[11px] text-amber-700">Your microphone is off: {info.agent} cannot hear you.</p>}
+        {ctl === 'on' && (
+          <button onClick={() => setCtl('off', 'stopped')} className="py-1 rounded bg-red-50 text-red-700 text-xs font-semibold">
+            {info.agent} is controlling your page: Stop control
+          </button>
+        )}
+        {ctl === 'asked' && <p className="text-[11px] text-indigo-700">{info.agent} asked to control your page: answer on your page.</p>}
+        <p className="text-[11px] text-gray-500">You can go back to your page: Mute and Stop are there too. Closing this window ends the call.</p>
+        <audio ref={audioRef} autoPlay />
+      </div>
+    )
   }
 
   if (phase === 'failed') {

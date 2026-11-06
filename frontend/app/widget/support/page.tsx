@@ -140,8 +140,9 @@ function SupportWidget() {
     const bus = new LiveBus((m) => {
       if (m.kind === 'who') {
         if (hostView.current.visible) bus.send({ kind: 'host', id: hostId.current, vw: hostView.current.vw, vh: hostView.current.vh })
-      } else if ((m.kind === 'cmd' || m.kind === 'state') && m.to === hostId.current) {
-        toParent({ type: 'sc:ctl', kind: m.kind, cmd: m.cmd, state: m.state, agent: typeof m.agent === 'string' ? m.agent.slice(0, 80) : '' })
+      } else if ((m.kind === 'cmd' || m.kind === 'state' || m.kind === 'call') && m.to === hostId.current) {
+        toParent({ type: 'sc:ctl', kind: m.kind, cmd: m.cmd, state: m.state, agent: typeof m.agent === 'string' ? m.agent.slice(0, 80) : '',
+                   live: !!m.live, muted: !!m.muted, mic: m.mic !== false, sharing: !!m.sharing })
       }
     }, () => (liveWin.current && !liveWin.current.closed ? [liveWin.current] : []))
     liveBus.current = bus
@@ -318,7 +319,7 @@ function SupportWidget() {
     if (!asking) return
     setLiveBusy(true); setError('')
     // opened now, while the click still counts, then sent to its address once the pass is here
-    const win = window.open('', 'sc_live_help', 'width=440,height=600')
+    const win = window.open('', 'sc_live_help', 'width=400,height=460')
     liveWin.current = win
     try { if (win) win.document.body.innerHTML = '<p style="font-family:sans-serif;padding:24px;color:#555">Connecting...</p>' } catch {}
     const screenOk = !!(navigator.mediaDevices && (navigator.mediaDevices as any).getDisplayMedia) && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
