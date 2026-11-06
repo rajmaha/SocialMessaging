@@ -108,6 +108,8 @@ function SupportWidget() {
         shownRef.current = !!ev.data.shown
         const c = currentRef.current
         if (shownRef.current && c) markSeenRef.current(c.ticket_no, c.updated_at || '')
+        // the panel opened: show the list as it is now, not as it was when the page loaded
+        if (shownRef.current && !c) loadListRef.current()
       } else if (ev.data.type === 'sc:open') {
         setPrefill({ screen: String(ev.data.screen || '').slice(0, 500), url: String(ev.data.url || '').slice(0, 500) })
         setView('new')
@@ -205,6 +207,9 @@ function SupportWidget() {
       reportUnread(listRef.current)
     } catch (e: any) { setError(e.message) }
   }, [call, reportUnread])
+
+  const loadListRef = useRef(loadList)
+  loadListRef.current = loadList
 
   // look for replies every 20 seconds, even with the panel shut: that is what the badge is for
   useEffect(() => {
