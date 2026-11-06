@@ -83,6 +83,7 @@ export default function LiveHelpWindow() {
     return () => window.removeEventListener('pagehide', bye)
   }, [])
 
+  const surfaceIsTab = () => surface() === 'browser'
   const surface = () => {
     try { return String((screenRef.current?.getSettings() as any)?.displaySurface || '') } catch { return '' }
   }
@@ -104,11 +105,17 @@ export default function LiveHelpWindow() {
       if (onTab) toHost(cleanCommand(m))
     } else if (m.t === 'click' || m.t === 'wheel' || m.t === 'key') {
       if (ctlRef.current === 'on' && onTab) toHost(cleanCommand(m))
+    } else if (m.t === 'who') {
+      bus.current?.send({ kind: 'who' })                // the agent has not heard of their page: look again
     } else if (m.t === 'ctl-ask') {
       if (ctlRef.current === 'on') return
-      if (!host.current) tellAgent({ t: 'note', text: 'Their site page is not open in this browser.' })
-      else if (!onTab) tellAgent({ t: 'note', text: 'They are not sharing a browser tab: control needs them to share the tab with the page.' })
-      else setCtl('asked')
+      const decide = () => {
+        if (!surfaceIsTab()) setCtl('off', 'not a tab')
+        else if (!host.current) setCtl('off', 'no page')
+        else setCtl('asked')
+      }
+      if (host.current) decide()
+      else { bus.current?.send({ kind: 'who' }); setTimeout(decide, 1500) }   // it may only have been missed
     } else if (m.t === 'ctl-stop') {
       setCtl('off')
     }

@@ -166,9 +166,15 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
     const controlling = ctl === 'on' && ctlOpen;
     const canPoint = floating && ctlOpen && onTab && pageThere && (pointerOn || controlling);
 
+    // Never disabled: a dim button on the drag bar read as covered. When control cannot be
+    // asked for, the reason shows on the panel's bottom line; the customer's side still
+    // looks for their page once more (it may have been missed) before it answers.
     const askControl = () => {
-        if (ctl === 'off') { setCtl('asked'); sendCtl({ t: 'ctl-ask' }); }
-        else { sendCtl({ t: 'ctl-stop' }); setCtl('off'); }
+        if (ctl !== 'off') { sendCtl({ t: 'ctl-stop' }); setCtl('off'); return; }
+        if (!ctlOpen) { flashNote('Pointer and control are not available on their device.'); return; }
+        if (pinfo && !onTab) { flashNote('They are sharing a whole screen or a window: ask them to stop and share the browser tab with the page.'); return; }
+        setCtl('asked');
+        sendCtl({ t: 'ctl-ask' });
     };
     const togglePointer = () => {
         if (pointerOn) sendCtl({ t: 'ptr-hide' });
@@ -198,6 +204,14 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
         e.preventDefault();
         sendCtl({ t: 'key', key: e.key, code: e.code, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey });
     };
+
+    // their page not found yet: ask the customer's side to look for it every few seconds
+    useEffect(() => {
+        if (!ctlOpen || !onTab || pageThere) return;
+        sendCtl({ t: 'who' });
+        const t = setInterval(() => sendCtl({ t: 'who' }), 3000);
+        return () => clearInterval(t);
+    }, [ctlOpen, onTab, pageThere]);
 
     // scrolling over the picture scrolls their page while controlling (a passive React handler cannot stop the page's own)
     useEffect(() => {
@@ -307,6 +321,8 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
                     if (st === 'on') flashNote('The customer allowed control.');
                     else if (st === 'off' && m.why === 'denied') flashNote('The customer said no to control.');
                     else if (st === 'off' && m.why === 'stopped') flashNote('The customer stopped control.');
+                    else if (st === 'off' && m.why === 'not a tab') flashNote('They are not sharing a browser tab: ask them to stop and share the tab with the page, then ask again.');
+                    else if (st === 'off' && m.why === 'no page') flashNote('Their page with the support button was not found in that browser: ask them to reload it, then ask again.');
                 } else if (m.t === 'note' && typeof m.text === 'string') flashNote(m.text.slice(0, 200));
             },
             onMessage: (msg) => {
@@ -472,14 +488,14 @@ export default function SupportLiveHelp({ ticketNumber, onPhone }: { ticketNumbe
                         <Monitor size={14} /> <span className="flex-1 truncate">Their screen</span>
                         {ctlOpen && (
                             <>
-                                <button onClick={togglePointer} disabled={!onTab || !pageThere}
+                                <button onClick={togglePointer}
                                         title={pointerOn ? 'Hide my pointer' : 'Show my pointer on their page'}
-                                        className={`px-2 py-1 rounded flex items-center gap-1 disabled:opacity-40 ${pointerOn ? 'bg-white/20' : 'hover:bg-white/15'}`}>
+                                        className={`px-2 py-1 rounded flex items-center gap-1 ${pointerOn ? 'bg-white/20' : 'hover:bg-white/15'}`}>
                                     <MousePointer2 size={13} /> Pointer
                                 </button>
-                                <button onClick={askControl} disabled={ctl === 'off' && (!onTab || !pageThere)}
+                                <button onClick={askControl}
                                         title={ctl === 'on' ? 'Stop controlling their page' : ctl === 'asked' ? 'Call off the request' : 'Ask to click and type on their page'}
-                                        className={`px-2 py-1 rounded flex items-center gap-1 disabled:opacity-40 ${ctl === 'on' ? 'bg-red-600 hover:bg-red-700' : ctl === 'asked' ? 'bg-amber-500' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                                        className={`px-2 py-1 rounded flex items-center gap-1 ${ctl === 'on' ? 'bg-red-600 hover:bg-red-700' : ctl === 'asked' ? 'bg-amber-500' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
                                     <Hand size={13} /> {ctl === 'on' ? 'Stop control' : ctl === 'asked' ? 'Asking...' : 'Ask for control'}
                                 </button>
                             </>
