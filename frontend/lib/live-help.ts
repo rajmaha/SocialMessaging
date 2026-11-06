@@ -13,6 +13,8 @@
 import { API_URL } from './config';
 
 export const CONNECT_MS = 20000;
+/** The shared screen's bitrate ceiling: enough for a sharp 1080p screen of text. */
+export const SCREEN_KBPS = 3000;
 
 export type LiveRole = 'agent' | 'customer';
 export type LivePhase = 'connecting' | 'waiting' | 'live' | 'ended' | 'failed';
@@ -98,6 +100,7 @@ export class LiveCall {
                     const offer = await this.pc!.createOffer();
                     await this.pc!.setLocalDescription(offer);
                     this.send({ type: 'offer', sdp: offer.sdp });
+                    await this.sharpen();
                 }
                 break;
             case 'offer':
@@ -169,6 +172,28 @@ export class LiveCall {
                 // often comes back by itself; a lasting break turns into failed above
             }
         };
+    }
+
+    /**
+     * The shared screen at its full resolution: WebRTC's default bitrate makes the encoder
+     * scale a screen down, and text then blurs. Allow up to SCREEN_KBPS and, when the line
+     * cannot carry it, drop frames before resolution. Best effort: a browser that refuses
+     * keeps its own defaults.
+     */
+    private async sharpen() {
+        const pc = this.pc;
+        if (!pc) return;
+        for (const sender of pc.getSenders()) {
+            if (!sender.track || sender.track.kind !== 'video') continue;
+            try {
+                const p: any = sender.getParameters();
+                if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+                p.encodings[0].maxBitrate = SCREEN_KBPS * 1000;
+                p.encodings[0].scaleResolutionDownBy = 1;
+                p.degradationPreference = 'maintain-resolution';
+                await sender.setParameters(p);
+            } catch { /* keep the browser's defaults */ }
+        }
     }
 
     private useControl(ch: RTCDataChannel) {

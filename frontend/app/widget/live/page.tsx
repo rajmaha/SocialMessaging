@@ -193,13 +193,17 @@ export default function LiveHelpWindow() {
         // picked "this window" and the agent saw only the live help box. Browsers that do
         // not know these hints ignore them.
         const display = await navigator.mediaDevices.getDisplayMedia({
-          video: { displaySurface: 'browser' } as any,
+          // as sharp as the screen allows: text has to be readable on the agent's side
+          video: { displaySurface: 'browser', width: { ideal: 1920, max: 2560 }, height: { ideal: 1080, max: 1600 },
+                   frameRate: { ideal: 15, max: 30 } } as any,
           audio: false,
           selfBrowserSurface: 'exclude',
           surfaceSwitching: 'include',
           monitorTypeSurfaces: 'include',
         } as any)
         screenTrack = display.getVideoTracks()[0] || null
+        // a screen of text: keep it sharp rather than smooth (the encoder favours resolution)
+        if (screenTrack && 'contentHint' in screenTrack) { try { (screenTrack as any).contentHint = 'detail' } catch { /* ignore */ } }
       } catch (e: any) {
         setPhase('start')
         const msg = String((e && e.message) || '')
