@@ -24,6 +24,29 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- The socialinbox:// scheme the Android manifest already declares.
+	     Without it iOS refuses to open the app from a deep link, so a
+	     notification tap routed through NativeShell's appUrlOpen listener
+	     never arrived. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.socialmedia.inbox</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>socialinbox</string>
+			</array>
+		</dict>
+	</array>
+	<!-- Lets a CAP_SERVER_URL=http://localhost:3000 build load the dev
+	     server. This exempts local-network addresses only; plain http to
+	     any remote host stays blocked, so it is safe to ship. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

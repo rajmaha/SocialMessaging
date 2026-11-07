@@ -1,5 +1,16 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
+// Where the shell loads the frontend from. Defaults to the hosted app; set
+// CAP_SERVER_URL to preview local work on a device or simulator, e.g.
+//
+//   CAP_SERVER_URL=http://localhost:3000 npx cap sync ios
+//
+// `cap sync` bakes this into ios/App/App/capacitor.config.json and the
+// Android equivalent, both of which are tracked — re-run sync without the
+// variable before committing, or you ship a build pointing at a laptop.
+const SERVER_URL = process.env.CAP_SERVER_URL || 'https://workspace.saraloms.com';
+const serverHost = new URL(SERVER_URL).hostname;
+
 const config: CapacitorConfig = {
   appId: 'com.socialmedia.inbox',
   appName: 'SocialMedia Inbox',
@@ -9,11 +20,12 @@ const config: CapacitorConfig = {
   // To build a fully offline APK later, remove the server block
   // and run: next build + next export, then npx cap sync.
   server: {
-    url: 'https://workspace.saraloms.com',
-    cleartext: false,
+    url: SERVER_URL,
+    // Only ever true for a local http:// preview; the hosted app is https.
+    cleartext: SERVER_URL.startsWith('http://'),
     // Deep links and the hosted app share this hostname, so navigation
     // within it stays in the WebView; anything else opens in the browser.
-    allowNavigation: ['workspace.saraloms.com'],
+    allowNavigation: [serverHost],
   },
 
   android: {
