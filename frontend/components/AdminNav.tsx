@@ -11,6 +11,15 @@ import { useEvents } from '@/lib/events-context'
 import { menuApi, pmsApi, menuShortcutApi } from '@/lib/api'
 import { FiMenu, FiStar, FiSearch, FiX } from 'react-icons/fi'
 
+/**
+ * Where the sidebar starts: directly under the fixed header.
+ *
+ * It used to be a literal 56, which stopped matching once the header grew by
+ * the status-bar inset in the packaged app — the sidebar's first entries ran
+ * underneath it. --sa-top is 0px on the web, so this is still 56px there.
+ */
+const SIDEBAR_TOP = 'calc(var(--topbar-height) + var(--sa-top))'
+
 // Every admin page renders its own sidebar, so keep the last answer here and the
 // Favorites/Recent sections do not flash empty on each navigation.
 let shortcutsCache: { favorites: string[]; recent: string[] } | null = null
@@ -173,7 +182,11 @@ export default function AdminNav() {
     return (
         <>
             <button
-                className="fixed top-[60px] left-2 z-50 p-2 bg-white rounded-lg shadow-md md:hidden"
+                className="fixed left-2 z-50 p-2 bg-white rounded-lg shadow-md md:hidden"
+                // Was a hardcoded top-[60px], sized for a 56px header. In the
+                // packaged app the header also carries the status-bar inset,
+                // so the button hid behind it (header is z-60, this is z-50).
+                style={{ top: 'calc(var(--topbar-height) + var(--sa-top) + 4px)' }}
                 onClick={() => setMobileOpen(!mobileOpen)}
             >
                 <FiMenu size={20} />
@@ -184,7 +197,7 @@ export default function AdminNav() {
             <Suspense fallback={
                 <aside
                     className={`fixed left-0 bottom-0 flex flex-col border-r border-gray-700 z-40 transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
-                    style={{ top: 56, width: 240, backgroundColor: 'var(--secondary-color)' }}
+                    style={{ top: SIDEBAR_TOP, width: 240, backgroundColor: 'var(--secondary-color)' }}
                 />
             }>
                 <AdminNavInner mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
@@ -547,7 +560,7 @@ function AdminNavInner({ mobileOpen, setMobileOpen }: { mobileOpen: boolean; set
             <aside
                 className={`fixed left-0 bottom-0 flex flex-col border-r border-gray-700 z-40 transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
                 style={{
-                    top: 56,
+                    top: SIDEBAR_TOP,
                     width: 240,
                     backgroundColor: 'var(--secondary-color)',
                     color: 'var(--sidebar-text)'
@@ -561,7 +574,7 @@ function AdminNavInner({ mobileOpen, setMobileOpen }: { mobileOpen: boolean; set
             <aside
                 className={`fixed left-0 bottom-0 flex flex-col border-r border-gray-700 z-40 transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
                 style={{
-                    top: 56,
+                    top: SIDEBAR_TOP,
                     width: 240,
                     backgroundColor: 'var(--secondary-color)',
                     color: 'var(--sidebar-text)'
