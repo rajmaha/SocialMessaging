@@ -15,6 +15,11 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Required for env(safe-area-inset-*) to report real values. Without it
+  // iOS lays the page out inside the safe area and reports every inset as
+  // 0, so lib/native.ts probed 0, --sa-top stayed 0px, and the fixed header
+  // rendered underneath the status bar and Dynamic Island.
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({
