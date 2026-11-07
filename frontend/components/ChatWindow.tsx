@@ -95,7 +95,15 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
   const [leadCreated, setLeadCreated] = useState(false)
   const [crmLead, setCrmLead] = useState<any>(null)
   const [crmCardOpen, setCrmCardOpen] = useState(false)
+  // Open by default only where it is a side panel. Below md it renders as a
+  // full-screen overlay, so defaulting it open buried the conversation the
+  // moment one was opened on a phone. ChatWindow mounts before any
+  // conversation is selected and the overlay only renders with one, so
+  // closing it here costs no visible frame.
   const [crmSidebarOpen, setCrmSidebarOpen] = useState(true)
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 767px)').matches) setCrmSidebarOpen(false)
+  }, [])
   const [quickTicketOpen, setQuickTicketOpen] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [allowedTypes, setAllowedTypes] = useState<string[]>([])
@@ -1149,7 +1157,10 @@ export default function ChatWindow({ conversation, onRefresh }: ChatWindowProps)
       </div>
       {/* CRM Sidebar — full-screen overlay on mobile, fixed panel on desktop */}
       {crmSidebarOpen && conversation && (
-        <div className="fixed inset-0 z-50 md:relative md:inset-auto md:z-auto bg-white flex flex-col">
+        // Starts below the fixed header rather than at inset-0: the header is
+        // z-60 and this is z-50, so a full-screen overlay put its own close
+        // button underneath it and there was no way back to the conversation.
+        <div className="fixed left-0 right-0 bottom-0 top-[calc(var(--topbar-height)+var(--sa-top))] z-50 md:relative md:inset-auto md:top-auto md:z-auto bg-white flex flex-col">
           {/* Mobile close button */}
           <div className="flex items-center justify-between px-4 py-2 border-b md:hidden">
             <span className="text-sm font-semibold text-gray-700">CRM Details</span>
