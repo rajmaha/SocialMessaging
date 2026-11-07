@@ -33,6 +33,10 @@ services:
       # panel reaches the container only when it is named here.
       SUPPORT_SERVICE_KEYS: ${SUPPORT_SERVICE_KEYS:-}
       SUPPORT_PUBLIC_URL: ${SUPPORT_PUBLIC_URL:-}
+      # Reported by /api/health so a deploy can be confirmed from outside.
+      # Optional: without it health still reports started_at, which is what
+      # actually answers "has the backend restarted since my push?".
+      BUILD_SHA: ${BUILD_SHA:-${SOURCE_COMMIT:-}}
       # Mobile push notifications. The Firebase service-account JSON, inline.
       # Unset: the app still gets notifications while it is running (over the
       # WebSocket), just not while it is closed. Same rule as above -- a

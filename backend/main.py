@@ -3629,10 +3629,75 @@ def shutdown_event():
         scheduler.shutdown()
         logger.info("✅ Email auto-sync scheduler stopped")
 
+# ── Build / restart marker ────────────────────────────────────────────────────
+
+_STARTED_AT = datetime.utcnow()
+
+# Deploy platforms expose the deployed commit under various names; take the
+# first that is set rather than requiring one particular platform.
+_BUILD_ENV_VARS = ("BUILD_SHA", "GIT_COMMIT", "SOURCE_COMMIT", "COMMIT_SHA")
+
+
+def _build_sha() -> tuple[str | None, str]:
+    """Return (sha, where it came from). Never raises."""
+    for name in _BUILD_ENV_VARS:
+        value = (os.getenv(name) or "").strip()
+        if value:
+            return value[:40], f"env {name}"
+    # Falls back to the checkout, which is how this reads in local dev; a
+    # built image usually has no .git, and that is fine -- the answer is then
+    # "unknown" rather than wrong.
+    try:
+        git_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".git")
+        head = os.path.join(git_dir, "HEAD")
+        if os.path.exists(head):
+            with open(head) as f:
+                ref = f.read().strip()
+            if ref.startswith("ref: "):
+                ref_path = os.path.join(git_dir, ref[5:])
+                if os.path.exists(ref_path):
+                    with open(ref_path) as f:
+                        return f.read().strip()[:40], "git"
+            elif ref:
+                return ref[:40], "git"
+    except Exception:
+        pass
+    return None, "unknown"
+
+
+def _health_payload() -> dict:
+    """What /health and /api/health both answer.
+
+    started_at is the point of this: it says whether the backend has actually
+    restarted since a push, which is otherwise invisible from outside.
+    """
+    sha, source = _build_sha()
+    now = datetime.utcnow()
+    return {
+        "status": "ok",
+        "message": "Social Media Messaging System is running",
+        "started_at": _STARTED_AT.isoformat() + "Z",
+        "uptime_seconds": int((now - _STARTED_AT).total_seconds()),
+        "build": sha,
+        "build_source": source,
+    }
+
+
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
-    return {"status": "ok", "message": "Social Media Messaging System is running"}
+    return _health_payload()
+
+
+@app.get("/api/health")
+def api_health_check():
+    """Same as /health, reachable through the frontend's /api/* proxy.
+
+    The frontend does not forward /health -- that path belongs to its own
+    container healthcheck, and routing it to the backend would make the
+    frontend look unhealthy whenever the backend is down.
+    """
+    return _health_payload()
 
 
 @app.get("/debug/trigger-scheduled")
