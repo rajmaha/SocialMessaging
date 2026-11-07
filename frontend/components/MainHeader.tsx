@@ -248,7 +248,9 @@ function MainHeaderInner({ user, activeTab: propActiveTab, setActiveTab }: MainH
     const logoSrc = branding?.logo_url
 
     if (!isMounted || !user) {
-        return <header className="bg-white border-b border-gray-200 flex items-center justify-between px-6 h-14 fixed top-0 left-0 right-0 z-[60]" />
+        // Carries app-topbar like the real header below, or this placeholder
+        // renders under the status bar and the bar jumps once the user loads.
+        return <header className="app-topbar bg-white border-b border-gray-200 flex items-center justify-between px-6 h-14 fixed top-0 left-0 right-0 z-[60]" />
     }
 
     return (
