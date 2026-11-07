@@ -1,14 +1,67 @@
 """
 Service for handling integrations with different messaging platforms
 """
+import logging
 import httpx
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 class WhatsAppService:
     """WhatsApp Business API Integration"""
 
     BASE_URL = "https://graph.facebook.com/v18.0"
+
+    # Refuse anything larger than this rather than pulling it into memory.
+    MAX_MEDIA_BYTES = 25 * 1024 * 1024
+
+    @staticmethod
+    async def download_media(
+        media_id: str,
+        access_token: str = None,
+    ) -> Optional[Tuple[bytes, str]]:
+        """Fetch an inbound media file. Returns (content, mime_type), or None.
+
+        An inbound Cloud API message carries only a media *id*. Turning that
+        into bytes takes two calls -- id -> temporary URL, then the URL itself
+        -- and the bearer token is required on both, because that URL is not
+        public and expires. Returns None on any failure so the caller can fall
+        back to a text placeholder rather than dropping the message.
+        """
+        token = access_token or settings.WHATSAPP_API_KEY
+        if not token or not media_id:
+            return None
+
+        headers = {"Authorization": f"Bearer {token}"}
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                meta = await client.get(
+                    f"{WhatsAppService.BASE_URL}/{media_id}", headers=headers
+                )
+                meta.raise_for_status()
+                info = meta.json()
+
+                url = info.get("url")
+                if not url:
+                    logger.warning("WhatsApp media %s has no url", media_id)
+                    return None
+
+                size = int(info.get("file_size") or 0)
+                if size > WhatsAppService.MAX_MEDIA_BYTES:
+                    logger.warning(
+                        "WhatsApp media %s is %d bytes, over the limit", media_id, size
+                    )
+                    return None
+
+                binary = await client.get(url, headers=headers)
+                binary.raise_for_status()
+                if len(binary.content) > WhatsAppService.MAX_MEDIA_BYTES:
+                    return None
+                return binary.content, info.get("mime_type") or ""
+        except Exception as e:
+            logger.warning("WhatsApp media %s download failed: %s", media_id, e)
+            return None
 
     @staticmethod
     async def send_message(

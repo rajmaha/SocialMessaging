@@ -12,6 +12,10 @@ import hashlib
 import hmac
 import json
 import logging
+import mimetypes
+import os
+import re
+import uuid
 from datetime import datetime
 
 import httpx
@@ -30,6 +34,66 @@ from app.services.platform_service import FacebookService, ViberService, WhatsAp
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 logger = logging.getLogger(__name__)
+
+
+# ── Inbound media ─────────────────────────────────────────────────────────────
+
+# Same folder and URL shape that /messages/upload-attachment writes, so the
+# chat window renders a webhook image exactly like an agent-uploaded one.
+_MEDIA_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "attachment_storage", "messages"
+)
+_MAX_MEDIA_BYTES = 25 * 1024 * 1024
+
+# ChatWindow only knows how to render 'image' and 'file'; everything else
+# (video, audio, document, sticker) is offered as a download.
+_IMAGE_TYPES = {"image", "picture", "photo", "sticker"}
+
+
+def _media_kind(raw_type: str) -> str:
+    return "image" if (raw_type or "").lower() in _IMAGE_TYPES else "file"
+
+
+def _store_media(content: bytes, mime_type: str = "", filename: str = "") -> str | None:
+    """Write inbound bytes to message storage and return their served URL."""
+    if not content or len(content) > _MAX_MEDIA_BYTES:
+        return None
+    try:
+        name = filename or ""
+        if not os.path.splitext(name)[1]:
+            # No usable extension on the wire; derive one so the browser and
+            # the media library can both tell what this is.
+            ext = mimetypes.guess_extension(mime_type.split(";")[0].strip()) if mime_type else None
+            name = (name or "attachment") + (ext or "")
+        # Stricter than /messages/upload-attachment, which keeps spaces: this
+        # name goes straight into an <img src>, and an unencoded space there
+        # is a needless thing to rely on the browser to fix.
+        safe_name = re.sub(r"[^\w\-.]", "_", name)
+        unique_name = f"{uuid.uuid4().hex}_{safe_name}"
+
+        os.makedirs(_MEDIA_DIR, exist_ok=True)
+        with open(os.path.join(_MEDIA_DIR, unique_name), "wb") as f_out:
+            f_out.write(content)
+        return f"/attachments/messages/{unique_name}"
+    except Exception as e:
+        logger.warning("Storing inbound media failed: %s", e)
+        return None
+
+
+async def _fetch_public_media(url: str) -> tuple[bytes, str] | None:
+    """Download a directly-addressable media URL (Facebook, Viber)."""
+    if not url:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            res = await client.get(url)
+            res.raise_for_status()
+            if len(res.content) > _MAX_MEDIA_BYTES:
+                return None
+            return res.content, res.headers.get("content-type", "")
+    except Exception as e:
+        logger.warning("Inbound media download failed for %s: %s", url, e)
+        return None
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -200,10 +264,29 @@ async def _process_whatsapp(data: dict):
                     contact_name = contacts.get(contact_id, contact_id)
                     msg_type = msg.get("type", "text")
 
+                    saved_type, saved_media = "text", None
+
                     if msg_type == "text":
                         text = msg.get("text", {}).get("body", "")
                     elif msg_type in ("image", "video", "audio", "document"):
                         text = f"[{msg_type} attachment]"
+                        # Pull the file down now: the Cloud API URL needs our
+                        # token and expires, so it is useless to the browser.
+                        part = msg.get(msg_type, {}) or {}
+                        acct_for_media = _find_account(db, "whatsapp", wa_phone_number_id)
+                        fetched = await WhatsAppService.download_media(
+                            part.get("id", ""),
+                            acct_for_media.access_token if acct_for_media else None,
+                        )
+                        if fetched:
+                            content, mime = fetched
+                            stored = _store_media(
+                                content, mime, part.get("filename", "") or msg_type
+                            )
+                            if stored:
+                                saved_type = _media_kind(msg_type)
+                                saved_media = stored
+                                text = part.get("caption") or part.get("filename") or text
                     elif msg_type == "button":
                         text = msg.get("button", {}).get("text", "")
                     else:
@@ -215,7 +298,9 @@ async def _process_whatsapp(data: dict):
                         acct.id if acct else None,
                         acct.user_id if acct else None,
                     )
-                    saved = _save_inbound_message(db, conv, text, "whatsapp", contact_name)
+                    saved = _save_inbound_message(
+                        db, conv, text, "whatsapp", contact_name, saved_type, saved_media
+                    )
                     await _notify_agents(saved, conv)
 
                     reply_token = acct.access_token if acct else None
@@ -315,11 +400,25 @@ async def _process_facebook(data: dict):
                     continue
 
                 text = msg.get("text", "")
+                saved_type, saved_media = "text", None
                 if not text:
                     # Attachment-only message
                     attachments = msg.get("attachments", [])
                     if attachments:
-                        text = f"[{attachments[0].get('type','attachment')} attachment]"
+                        att = attachments[0]
+                        att_type = att.get("type", "attachment")
+                        text = f"[{att_type} attachment]"
+                        # Messenger's payload URL is directly fetchable, but it
+                        # is signed and short-lived, so copy it locally.
+                        fetched = await _fetch_public_media(
+                            (att.get("payload") or {}).get("url", "")
+                        )
+                        if fetched:
+                            content, mime = fetched
+                            stored = _store_media(content, mime, att_type)
+                            if stored:
+                                saved_type = _media_kind(att_type)
+                                saved_media = stored
                     else:
                         continue
 
@@ -332,7 +431,9 @@ async def _process_facebook(data: dict):
                     acct.id if acct else None,
                     acct.user_id if acct else None,
                 )
-                saved = _save_inbound_message(db, conv, text, "facebook", contact_name)
+                saved = _save_inbound_message(
+                    db, conv, text, "facebook", contact_name, saved_type, saved_media
+                )
                 await _notify_agents(saved, conv)
 
                 reply_token = acct.access_token if acct else None
@@ -410,10 +511,23 @@ async def _process_viber(data: dict):
         msg = data.get("message", {})
         msg_type = msg.get("type", "")
 
+        saved_type, saved_media = "text", None
+
         if msg_type == "text":
             text = msg.get("text", "")
         elif msg_type in ("picture", "video", "file", "sticker"):
             text = f"[{msg_type} attachment]"
+            # Viber hands over a plain media URL that expires, so copy it.
+            fetched = await _fetch_public_media(msg.get("media", ""))
+            if fetched:
+                content, mime = fetched
+                stored = _store_media(
+                    content, mime, msg.get("file_name", "") or msg_type
+                )
+                if stored:
+                    saved_type = _media_kind(msg_type)
+                    saved_media = stored
+                    text = msg.get("file_name") or text
         else:
             return
 
@@ -426,7 +540,9 @@ async def _process_viber(data: dict):
             acct.id if acct else None,
             acct.user_id if acct else None,
         )
-        saved = _save_inbound_message(db, conv, text, "viber", contact_name)
+        saved = _save_inbound_message(
+            db, conv, text, "viber", contact_name, saved_type, saved_media
+        )
         await _notify_agents(saved, conv)
 
         reply_token = acct.access_token if acct else None
