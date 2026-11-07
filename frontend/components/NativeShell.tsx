@@ -28,6 +28,7 @@ import {
   isNative,
   isDesktopApp,
   applySafeAreaInsets,
+  syncStatusBarStyle,
 } from '@/lib/native'
 import { useUnreadCounts } from '@/lib/use-unread'
 import {
@@ -104,6 +105,18 @@ export default function NativeShell() {
       hideSplash()
     })
   }, [branding?.primary_color])
+
+  // The status bar sits on top of the page, and what is under it changes
+  // between the auth screens (brand gradient) and the app (white header), so
+  // re-match the clock colour after each navigation. rAF lets the new route
+  // paint first, otherwise we read the outgoing page's header.
+  useEffect(() => {
+    if (!isNative()) return
+    const id = requestAnimationFrame(() =>
+      syncStatusBarStyle(branding?.primary_color || '#2563eb')
+    )
+    return () => cancelAnimationFrame(id)
+  }, [pathname, branding?.primary_color])
 
   // ── Hardware back button (Android) ────────────────────────────────────────
   useEffect(() => {

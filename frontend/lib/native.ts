@@ -116,29 +116,80 @@ function tagDocument(): void {
  * *light text on a dark bar*, so it is chosen from the background's luminance
  * rather than hard-coded.
  */
-async function initStatusBar(backgroundColor: string): Promise<void> {
+/**
+ * What is actually drawn behind the status bar.
+ *
+ * Since viewport-fit=cover the page runs under the status bar, so the clock
+ * sits on top of whatever the page paints there — the fixed header on signed
+ * in pages, the gradient on the auth screens. Picking the style from the
+ * brand colour instead painted a white clock onto the white header and the
+ * time, wifi and battery vanished.
+ */
+function colorBehindStatusBar(fallback: string): string {
+  if (typeof document === 'undefined') return fallback
+
+  const bar = document.querySelector('.app-topbar')
+  if (bar) {
+    // Walk up past transparent ancestors to whatever actually paints.
+    let el: Element | null = bar
+    while (el) {
+      const bg = getComputedStyle(el).backgroundColor
+      if (bg && bg !== 'transparent' && !/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(bg)) {
+        return bg
+      }
+      el = el.parentElement
+    }
+  }
+  return fallback
+}
+
+/**
+ * Match the status bar text to its backdrop. Safe to call repeatedly; it is
+ * re-run on navigation because the backdrop changes between the auth screens
+ * and the app.
+ */
+export async function syncStatusBarStyle(fallbackColor = '#2563eb'): Promise<void> {
+  if (!isNative()) return
   try {
     const { StatusBar, Style } = await import('@capacitor/status-bar')
-    const dark = isColorDark(backgroundColor)
-    await StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light })
+    const behind = colorBehindStatusBar(fallbackColor)
+    // Style.Dark = light text for a dark backdrop; Style.Light = dark text.
+    await StatusBar.setStyle({ style: isColorDark(behind) ? Style.Dark : Style.Light })
     if (isAndroid()) {
       // iOS throws on setBackgroundColor — Android only.
-      await StatusBar.setBackgroundColor({ color: backgroundColor })
+      await StatusBar.setBackgroundColor({ color: fallbackColor })
     }
   } catch {
     /* plugin absent or web build */
   }
 }
 
+async function initStatusBar(backgroundColor: string): Promise<void> {
+  await syncStatusBarStyle(backgroundColor)
+}
+
 /** Relative luminance test (sRGB), used to pick readable status-bar text. */
-export function isColorDark(hex: string): boolean {
-  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim())
+export function isColorDark(color: string): boolean {
+  const c = color.trim()
+
+  // Computed styles come back as rgb()/rgba(), not hex.
+  const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(c)
+  if (rgb) {
+    return isDarkFromChannels(+rgb[1] / 255, +rgb[2] / 255, +rgb[3] / 255)
+  }
+
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c)
   if (!m) return true
   let h = m[1]
   if (h.length === 3) h = h.split('').map((c) => c + c).join('')
-  const r = parseInt(h.slice(0, 2), 16) / 255
-  const g = parseInt(h.slice(2, 4), 16) / 255
-  const b = parseInt(h.slice(4, 6), 16) / 255
+  return isDarkFromChannels(
+    parseInt(h.slice(0, 2), 16) / 255,
+    parseInt(h.slice(2, 4), 16) / 255,
+    parseInt(h.slice(4, 6), 16) / 255
+  )
+}
+
+function isDarkFromChannels(r: number, g: number, b: number): boolean {
   const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4))
   const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
   return L < 0.5
