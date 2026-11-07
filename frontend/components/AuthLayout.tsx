@@ -9,8 +9,9 @@
  * lives here so the individual pages are just their form.
  */
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
+import { FiEye, FiEyeOff } from 'react-icons/fi'
 import { useBranding } from '@/lib/branding-context'
 
 interface AuthLayoutProps {
@@ -24,7 +25,7 @@ interface AuthLayoutProps {
 }
 
 export default function AuthLayout({ title, subtitle, children, footer }: AuthLayoutProps) {
-  const { branding } = useBranding()
+  const { branding, loading } = useBranding()
 
   const primary = branding?.primary_color || '#2563eb'
   const secondary = branding?.secondary_color || '#1e40af'
@@ -53,8 +54,12 @@ export default function AuthLayout({ title, subtitle, children, footer }: AuthLa
               className="h-14 w-auto mx-auto mb-3 object-contain drop-shadow-sm"
             />
           ) : null}
-          <div className="text-white text-xl font-semibold tracking-tight">
-            {branding?.company_name || 'Workspace'}
+          {/* While branding is in flight the slot is held open but empty: on a
+              white-labelled product, flashing a fallback name on the front
+              door and then swapping it looks broken. min-h matches text-xl's
+              line box so nothing jumps when the real name lands. */}
+          <div className="text-white text-xl font-semibold tracking-tight min-h-[1.75rem]">
+            {loading ? '' : branding?.company_name || 'Workspace'}
           </div>
         </div>
 
@@ -111,6 +116,39 @@ export function AuthInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
       // fed straight in; the old code set a non-existent `focusRingColor`.
       style={{ ['--tw-ring-color' as any]: primary, ...props.style }}
     />
+  )
+}
+
+/**
+ * Password field with a show/hide toggle.
+ *
+ * Worth the extra control: on a phone every character is a dot, so a typo in
+ * a *new* password only surfaces as "passwords do not match" two fields
+ * later. The toggle is a real button so it is reachable by keyboard, and it
+ * sits outside the tab order of the form's happy path.
+ */
+export function AuthPasswordInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  const [shown, setShown] = useState(false)
+
+  return (
+    <div className="relative">
+      <AuthInput
+        {...props}
+        type={shown ? 'text' : 'password'}
+        className={`pr-12 ${props.className || ''}`}
+      />
+      <button
+        type="button"
+        onClick={() => setShown((s) => !s)}
+        // Not a form control, so keep it out of the tab run between fields.
+        tabIndex={-1}
+        aria-label={shown ? 'Hide password' : 'Show password'}
+        className="absolute right-0 top-0 h-12 w-12 flex items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-40"
+        disabled={props.disabled}
+      >
+        {shown ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+      </button>
+    </div>
   )
 }
 
